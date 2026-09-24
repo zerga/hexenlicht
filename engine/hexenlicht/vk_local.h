@@ -89,6 +89,15 @@ void VK_SwapchainChanged (void);	/* window size or present settings changed */
  * VK_EndFrame submits and presents. */
 qboolean VK_BeginFrame (void);
 void VK_ClearScreen (float r, float g, float b);
+void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op);
+void VK_EndSwapchainRendering (void);
 void VK_EndFrame (void);
+
+/* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert" */
+VkShaderModule VK_LoadShader (const char *name);
+
+/* vk_testpattern.c: placeholder screen until the 2D renderer (story 1.6) */
+void VK_DrawTestPattern (float time);
+void VK_ShutdownTestPattern (void);
 
 #endif	/* HEXENLICHT_VK_LOCAL_H */

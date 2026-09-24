@@ -371,6 +371,64 @@ void VK_ClearScreen (float r, float g, float b)
 				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
 }
 
+/* start rendering into the current swapchain image (dynamic rendering),
+ * with viewport and scissor covering it. load_op: CLEAR (to black),
+ * LOAD (draw on top of what is there) or DONT_CARE (everything is
+ * overwritten anyway) */
+void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op)
+{
+	VkRenderingAttachmentInfo	color;
+	VkRenderingInfo			info;
+	VkViewport			viewport;
+	VkRect2D			scissor;
+	VkCommandBuffer			cmd;
+
+	if (!vk.frame_active)
+		return;
+	cmd = vk.frames[vk.frame_index].cmd;
+
+	VK_TransitionImage (VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+	memset (&color, 0, sizeof(color));
+	color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	color.imageView = vk.views[vk.image_index];
+	color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	color.loadOp = load_op;
+	color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	/* clearValue stays black */
+
+	memset (&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	info.renderArea.extent = vk.extent;
+	info.layerCount = 1;
+	info.colorAttachmentCount = 1;
+	info.pColorAttachments = &color;
+	vkCmdBeginRendering (cmd, &info);
+
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)vk.extent.width;
+	viewport.height = (float)vk.extent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport (cmd, 0, 1, &viewport);
+
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent = vk.extent;
+	vkCmdSetScissor (cmd, 0, 1, &scissor);
+}
+
+void VK_EndSwapchainRendering (void)
+{
+	if (!vk.frame_active)
+		return;
+	vkCmdEndRendering (vk.frames[vk.frame_index].cmd);
+}
+
 void VK_EndFrame (void)
 {
 	vk_frame_t			*f;

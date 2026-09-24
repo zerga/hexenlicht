@@ -163,13 +163,13 @@ void SCR_Init (void)
 	Cvar_RegisterVariable (&scr_viewsize);
 }
 
-/* until the 2D renderer (story 1.6): a cleared frame proves the
- * Vulkan path works end to end */
+/* until the 2D renderer (story 1.6): a shader-drawn test pattern proves
+ * the Vulkan and shader path works end to end */
 void SCR_UpdateScreen (void)
 {
 	if (VK_BeginFrame ())
 	{
-		VK_ClearScreen (0.10f, 0.06f, 0.16f);	/* dark purple */
+		VK_DrawTestPattern ((float)realtime);
 		VK_EndFrame ();
 	}
 	VID_EndFrame ();

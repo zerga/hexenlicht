@@ -59,5 +59,6 @@ jobs:
             build/${{ matrix.preset }}/bin/*.exe
             build/${{ matrix.preset }}/bin/*.dll
             build/${{ matrix.preset }}/bin/*.pdb
+            build/${{ matrix.preset }}/bin/shaders/*.spv
           if-no-files-found: error
           retention-days: 30
