@@ -64,12 +64,17 @@ is normal (it only exists in an OEM edition).
 
 ## 3. Run from CLion
 
-The repository ships two run configurations in `.run/`:
+The repository ships these run configurations in `.run/`:
 
 | Configuration | Starts |
 |---|---|
-| `glhexen2` | Hexen II, windowed 1280×720 |
+| `glhexen2` | Hexen II with the upstream OpenGL renderer, windowed 1280×720 |
 | `glhexen2 (Portal of Praevus)` | the same with `-portals` |
+| `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game without a window and quits; the log is `Hexenlicht-data\debug_h2.log` and should end with `Hexen II Initialized` and the config files being executed |
+
+`hexenlicht.exe` does not open a window yet (stories 1.2 and 1.3). Note
+that it writes `config.cfg` on exit without the OpenGL renderer's
+settings, so `glh2.exe` falls back to defaults for those afterwards.
 
 Pick one in the run configuration box at the top right, pick the
 `windows-debug` or `windows-release` profile next to it, and press Run or

@@ -116,3 +116,14 @@ set(H2_COMMON_SOURCES
 )
 
 set(H2_WIN32_RC ${H2S_DIR}/win32res.rc)
+
+# Files of the GL renderer that make no OpenGL calls and are reused by the
+# hexenlicht target: model loading, alias model mesh building, particle
+# simulation (r_part.c leaves out its GL drawing when HEXENLICHT is
+# defined) and static entity fragments.
+set(H2_HEXENLICHT_REUSED_SOURCES
+	${H2S_DIR}/gl_model.c
+	${H2S_DIR}/gl_mesh.c
+	${H2_DIR}/r_part.c
+	${H2S_DIR}/gl_refrag.c
+)

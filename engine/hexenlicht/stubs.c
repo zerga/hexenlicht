@@ -1,0 +1,328 @@
+/* stubs.c -- placeholder renderer interface for the hexenlicht target.
+ *
+ * The engine expects its renderer to provide the R_*, Draw_*, SCR_* and
+ * VID_* functions and a few globals (see the GL renderer: gl_rmain.c,
+ * gl_rmisc.c, gl_draw.c, gl_screen.c, gl_vidnt.c). This file provides
+ * all of them, doing nothing, so that hexenlicht.exe links and runs its
+ * game logic without a window. It is replaced piece by piece: each section
+ * names the story (docs/hexenlicht/PLAN.md, section 8) that implements it
+ * for real, and shrinks until the file can be deleted.
+ *
+ * The few functions with behavior the game logic depends on (particle pool,
+ * per-map resets, the "missing texture" placeholder, loading plaque flags)
+ * keep the renderer-independent parts of Hammer of Thyrion's GL versions.
+ *
+ * Copyright (C) 1996-1997  Id Software, Inc.
+ * Copyright (C) 1997-1998  Raven Software Corp.
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#include "quakedef.h"
+#include "winquake.h"
+#include "r_part.h"
+
+
+/* ==========================================================================
+ * Video: window, modes, palette.            -> story 1.2 (vid_vk.c)
+ * ========================================================================== */
+
+viddef_t	vid;			/* global video state */
+modestate_t	modestate = MS_UNINIT;
+HWND		mainwindow;
+int		window_center_x, window_center_y;
+RECT		window_rect;
+unsigned int	d_8to24table[256];
+byte		globalcolormap[VID_GRADES*256];
+
+cvar_t		_enable_mouse = {"_enable_mouse", "1", CVAR_ARCHIVE};
+
+#if !defined(NO_SPLASHES)
+extern HWND	hwnd_dialog;		/* startup splash, created in sys_win.c */
+#endif
+
+void VID_Init (const unsigned char *palette)
+{
+	int		i;
+	const unsigned char	*pal = palette;
+
+	Cvar_RegisterVariable (&_enable_mouse);
+
+	/* no window yet: a nominal 640x480 screen for the console code */
+	vid.width  = vid.conwidth  = 640;
+	vid.height = vid.conheight = 480;
+	vid.aspect = ((float)vid.height / (float)vid.width) * (320.0 / 240.0);
+	vid.numpages = 2;
+	vid.maxwarpwidth = 320;		/* WARP_WIDTH/HEIGHT of gl_vidnt.c */
+	vid.maxwarpheight = 200;
+	vid.colormap = host_colormap;
+	vid.fullbright = 256 - LittleLong (*((int *)vid.colormap + 2048));
+	vid.recalc_refdef = 1;
+
+	/* plain RGBA palette, index 255 transparent (full version: story 1.5) */
+	for (i = 0; i < 256; i++, pal += 3)
+	{
+		d_8to24table[i] = (unsigned int)pal[0] | ((unsigned int)pal[1] << 8) |
+				  ((unsigned int)pal[2] << 16) | 0xff000000u;
+	}
+	d_8to24table[255] &= 0x00ffffffu;
+
+#if !defined(NO_SPLASHES)
+	if (hwnd_dialog)
+	{
+		DestroyWindow (hwnd_dialog);
+		hwnd_dialog = NULL;
+	}
+#endif
+	Con_Printf ("Hexenlicht: no video output yet (stub renderer)\n");
+}
+
+void VID_Shutdown (void) {}
+void VID_ShiftPalette (const unsigned char *palette) { (void)palette; }
+void VID_LockBuffer (void) {}
+void VID_UnlockBuffer (void) {}
+void VID_HandlePause (qboolean paused) { (void)paused; }
+void VID_ChangeConsize (int dir) { (void)dir; }
+float VID_ReportConsize (void) { return 1.0f; }
+void D_ShowLoadingSize (void) {}
+
+
+/* ==========================================================================
+ * Textures.                                 -> story 1.5 (texture manager)
+ * ========================================================================== */
+
+int		numgltextures;
+qboolean	flush_textures;
+int		gl_texlevel;
+int		gl_filter_idx = 4;	/* Bilinear */
+GLfloat		gl_max_anisotropy = 1.0f;
+byte		*playerTranslation;
+texture_t	*r_notexture_mip;
+
+/* same table as gl_draw.c: the video menu shows these names */
+glmode_t gl_texmodes[NUM_GL_FILTERS] =
+{
+	{ "GL_NEAREST",			GL_NEAREST,			GL_NEAREST },
+	{ "GL_NEAREST_MIPMAP_NEAREST",	GL_NEAREST_MIPMAP_NEAREST,	GL_NEAREST },
+	{ "GL_NEAREST_MIPMAP_LINEAR",	GL_NEAREST_MIPMAP_LINEAR,	GL_NEAREST },
+	{ "GL_LINEAR",			GL_LINEAR,			GL_LINEAR  },
+	{ "GL_LINEAR_MIPMAP_NEAREST",	GL_LINEAR_MIPMAP_NEAREST,	GL_LINEAR  },
+	{ "GL_LINEAR_MIPMAP_LINEAR",	GL_LINEAR_MIPMAP_LINEAR,	GL_LINEAR  }
+};
+
+/* player class skin color offsets into playerTranslation (gl_rmisc.c) */
+const int color_offsets[MAX_PLAYER_CLASS] =
+{
+	2 * 14 * 256,
+	0,
+	1 * 14 * 256,
+	2 * 14 * 256,
+	2 * 14 * 256
+};
+
+GLuint GL_LoadTexture (const char *identifier, byte *data,
+			int width, int height, int flags)
+{
+	(void)identifier; (void)data; (void)width; (void)height; (void)flags;
+	return 0;
+}
+
+void R_TranslatePlayerSkin (int playernum) { (void)playernum; }
+
+/* The model loader substitutes this for missing textures, so it must be a
+ * valid texture: the 16x16 checkerboard from gl_rmisc.c. Also called by
+ * dedicated servers (host.c). */
+void R_InitTextures (void)
+{
+	int		x, y, m;
+	byte	*dest;
+
+	r_notexture_mip = (texture_t *) Hunk_AllocName (sizeof(texture_t) + 16*16+8*8+4*4+2*2, "notexture");
+
+	r_notexture_mip->width = r_notexture_mip->height = 16;
+	r_notexture_mip->offsets[0] = sizeof(texture_t);
+	r_notexture_mip->offsets[1] = r_notexture_mip->offsets[0] + 16*16;
+	r_notexture_mip->offsets[2] = r_notexture_mip->offsets[1] + 8*8;
+	r_notexture_mip->offsets[3] = r_notexture_mip->offsets[2] + 4*4;
+
+	for (m = 0; m < 4; m++)
+	{
+		dest = (byte *)r_notexture_mip + r_notexture_mip->offsets[m];
+
+		for (y = 0; y < (16 >> m); y++)
+		{
+			for (x = 0; x < (16 >> m); x++)
+			{
+				if ( (y < (8 >> m)) ^ (x < (8 >> m)) )
+					*dest++ = 0;
+				else
+					*dest++ = 0xff;
+			}
+		}
+	}
+}
+
+
+/* ==========================================================================
+ * 2D drawing and screen layout.             -> story 1.6 (2D renderer)
+ * ========================================================================== */
+
+qboolean	draw_reinit = false;
+
+float		scr_con_current;
+float		scr_centertime_off;
+int		scr_copytop;
+int		scr_copyeverything;
+int		scr_fullupdate;
+int		scr_topupdate;
+qboolean	scr_skipupdate;
+qboolean	scr_disabled_for_loading;
+qboolean	block_drawing;
+int		clearnotify;
+int		trans_level = 0;
+int		total_loading_size, current_loading_size, loading_stage;
+
+cvar_t		scr_viewsize = {"viewsize", "110", CVAR_ARCHIVE};
+
+/* callers keep and dereference returned pics (e.g. for their size) */
+static qpic_t	stub_pic = { 1, 1, {0} };
+
+void Draw_Init (void) {}
+qpic_t *Draw_PicFromWad (const char *name) { (void)name; return &stub_pic; }
+qpic_t *Draw_CachePic (const char *path) { (void)path; return &stub_pic; }
+qpic_t *Draw_CachePicNoTrans (const char *path) { (void)path; return &stub_pic; }
+void Draw_Character (int x, int y, unsigned int num) { (void)x; (void)y; (void)num; }
+void Draw_BigCharacter (int x, int y, int num) { (void)x; (void)y; (void)num; }
+void Draw_String (int x, int y, const char *str) { (void)x; (void)y; (void)str; }
+void Draw_SmallString (int x, int y, const char *str) { (void)x; (void)y; (void)str; }
+void Draw_Pic (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
+void Draw_PicCropped (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
+void Draw_TransPic (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
+void Draw_TransPicCropped (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
+void Draw_TransPicTranslate (int x, int y, qpic_t *pic, byte *translation, int p_class)
+{
+	(void)x; (void)y; (void)pic; (void)translation; (void)p_class;
+}
+void Draw_IntermissionPic (qpic_t *pic) { (void)pic; }
+void Draw_ConsoleBackground (int lines) { (void)lines; }
+void Draw_Fill (int x, int y, int w, int h, int c) { (void)x; (void)y; (void)w; (void)h; (void)c; }
+void Draw_FadeScreen (void) {}
+
+void SCR_Init (void)
+{
+	Cvar_RegisterVariable (&scr_viewsize);
+}
+
+void SCR_UpdateScreen (void) {}
+void SCR_CenterPrint (const char *str) { (void)str; }
+void SCR_SetPlaqueMessage (const char *msg) { (void)msg; }
+
+/* no display to answer on: log the question and say "no" */
+int SCR_ModalMessage (const char *text)
+{
+	Con_Printf ("%s\n(no display: answered \"no\")\n", text);
+	return false;
+}
+
+/* the flag handling of gl_screen.c, without drawing */
+void SCR_BeginLoadingPlaque (void)
+{
+	S_StopAllSounds (true);
+
+	if (cls.state != ca_connected)
+		return;
+	if (cls.signon != SIGNONS)
+		return;
+
+	Con_ClearNotify ();
+	scr_centertime_off = 0;
+	scr_con_current = 0;
+	scr_disabled_for_loading = true;
+	scr_fullupdate = 0;
+}
+
+void SCR_EndLoadingPlaque (void)
+{
+	scr_disabled_for_loading = false;
+	scr_fullupdate = 0;
+	Con_ClearNotify ();
+}
+
+
+/* ==========================================================================
+ * 3D scene, lighting, surfaces.             -> epics E2-E4
+ * ========================================================================== */
+
+refdef_t	r_refdef;
+vec3_t		r_origin, vpn, vright, vup;
+int		r_framecount;
+entity_t	r_worldentity;
+int		d_lightstylevalue[256];	/* 8.8 fraction of base light value */
+
+int		gl_lightmap_format = GL_RGBA;
+int		gl_coloredstatic;
+
+/* same cvars as the GL renderer, so config files keep their settings */
+cvar_t		gl_glows = {"gl_glows", "0", CVAR_ARCHIVE};
+cvar_t		gl_other_glows = {"gl_other_glows", "0", CVAR_ARCHIVE};
+cvar_t		gl_missile_glows = {"gl_missile_glows", "1", CVAR_ARCHIVE};
+cvar_t		gl_coloredlight = {"gl_coloredlight", "0", CVAR_ARCHIVE};
+cvar_t		gl_colored_dynamic_lights = {"gl_colored_dynamic_lights", "0", CVAR_ARCHIVE};
+cvar_t		gl_extra_dynamic_lights = {"gl_extra_dynamic_lights", "0", CVAR_ARCHIVE};
+cvar_t		gl_purge_maptex = {"gl_purge_maptex", "1", CVAR_ARCHIVE};
+cvar_t		gl_lightmapfmt = {"gl_lightmapfmt", "GL_RGBA", CVAR_ARCHIVE};
+
+void R_Init (void)
+{
+	Cvar_RegisterVariable (&gl_purge_maptex);
+	Cvar_RegisterVariable (&gl_glows);
+	Cvar_RegisterVariable (&gl_missile_glows);
+	Cvar_RegisterVariable (&gl_other_glows);
+	Cvar_RegisterVariable (&gl_coloredlight);
+	Cvar_RegisterVariable (&gl_colored_dynamic_lights);
+	Cvar_RegisterVariable (&gl_extra_dynamic_lights);
+	Cvar_RegisterVariable (&gl_lightmapfmt);
+
+	R_InitParticles ();	/* particle pool used by the client effects */
+
+	playerTranslation = (byte *)FS_LoadHunkFile ("gfx/player.lmp", NULL);
+	if (!playerTranslation)
+		Sys_Error ("Couldn't load gfx/player.lmp");
+}
+
+/* the renderer-independent parts of gl_rmisc.c's R_NewMap */
+void R_NewMap (void)
+{
+	int		i;
+
+	for (i = 0; i < 256; i++)
+		d_lightstylevalue[i] = 264;	/* normal light value */
+
+	memset (&r_worldentity, 0, sizeof(r_worldentity));
+	r_worldentity.model = cl.worldmodel;
+
+	/* clear out efrags in case the level hasn't been reloaded */
+	for (i = 0; i < cl.worldmodel->numleafs; i++)
+		cl.worldmodel->leafs[i].efrags = NULL;
+
+	R_ClearParticles ();
+}
+
+void R_RenderView (void) {}
+void R_PushDlights (void) {}
+void R_InitSky (texture_t *mt) { (void)mt; }
+void D_FlushCaches (void) {}
+
+/* called by the model loader for warped (water/sky) surfaces */
+void GL_SubdivideSurface (qmodel_t *m, msurface_t *fa) { (void)m; (void)fa; }
+void GL_SetupLightmapFmt (void) {}
