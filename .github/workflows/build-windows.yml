@@ -1,0 +1,54 @@
+# Hexenlicht: Windows x64 build with MSVC through the CMake presets.
+# (build-linux.yml is upstream's Makefile build and is left untouched.)
+
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.preset }}
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [windows-debug, windows-release]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # CMake and Ninja
+      - uses: lukka/get-cmake@v4.4.2
+
+      # MSVC x64 environment (cl, link, rc, Windows SDK)
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: hexenlicht-${{ matrix.preset }}
+          path: |
+            build/${{ matrix.preset }}/bin/*.exe
+            build/${{ matrix.preset }}/bin/*.dll
+            build/${{ matrix.preset }}/bin/*.pdb
+          if-no-files-found: error
+          retention-days: 30
