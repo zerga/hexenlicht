@@ -891,7 +891,7 @@ void VID_Init (const unsigned char *palette)
 	VID_InitWindowedModes ();
 	Con_SafePrintf ("Desktop settings: %d x %d\n", vid_deskwidth, vid_deskheight);
 
-	// perform an early read of config.cfg
+	// perform an early read of hexenlicht.cfg (config.cfg until it exists)
 	CFG_ReadCvars (read_vars, num_readvars);
 
 	width = vid_config_glx.integer;

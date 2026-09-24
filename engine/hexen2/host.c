@@ -42,6 +42,15 @@
 
 static void Host_WriteConfiguration (const char *fname);
 
+#if defined(HEXENLICHT)
+/* Hexenlicht keeps its settings in its own file, so that it and glhexen2
+ * don't drop each other's cvars from a shared config.cfg. Until the file
+ * exists, config.cfg is read instead (here and in cmd.c's exec). */
+#define	CONFIG_NAME	"hexenlicht.cfg"
+#else
+#define	CONFIG_NAME	"config.cfg"
+#endif
+
 quakeparms_t	*host_parms;
 
 qboolean	host_initialized;		// true if into command execution
@@ -1007,7 +1016,12 @@ void Host_Init (void)
 	FS_Init ();
 	CL_Cmd_Init ();
 	Host_RemoveGIPFiles(NULL);
+#if defined(HEXENLICHT)
+	if (CFG_OpenConfig (CONFIG_NAME) != 0)
+		CFG_OpenConfig ("config.cfg");
+#else
 	CFG_OpenConfig ("config.cfg");
+#endif
 	Host_InitLocal ();
 	PR_Init ();
 	Mod_Init ();
@@ -1107,7 +1121,7 @@ void Host_Shutdown(void)
 // keep Con_Printf from trying to update the screen
 	scr_disabled_for_loading = true;
 
-	Host_WriteConfiguration ("config.cfg");
+	Host_WriteConfiguration (CONFIG_NAME);
 
 	NET_Shutdown ();
 

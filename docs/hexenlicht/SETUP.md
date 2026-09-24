@@ -86,9 +86,10 @@ exit the log reports `Vulkan validation: N errors, M warnings` — keep that
 at zero. Fullscreen is borderless at the
 monitor's desktop resolution (`-fullscreen`, or *Fullscreen* in the video
 menu); the display mode is never changed. The process is per-monitor DPI
-aware, so window sizes are physical pixels. Note that it writes
-`config.cfg` on exit without the OpenGL renderer's settings, so `glh2.exe`
-falls back to defaults for those afterwards (#91).
+aware, so window sizes are physical pixels. Its settings are saved to
+`hexenlicht.cfg` next to `config.cfg`, so it and `glh2.exe` keep separate
+settings; on the first start, when there is no `hexenlicht.cfg` yet, it
+reads `config.cfg` (key bindings, mouse, sound) instead.
 
 Pick one in the run configuration box at the top right, pick the
 `windows-debug` or `windows-release` profile next to it, and press Run or

@@ -95,6 +95,14 @@ changes one, with a line on what we changed:
   name is chosen, `#if defined(HEXENLICHT)` calls `VK_RequestScreenshot()`
   instead of the `glReadPixels` part (story 1.6). The rest of the screen
   layout is reused unchanged.
+- `engine/hexen2/host.c` — Hexenlicht's settings file is `hexenlicht.cfg`
+  (story 1.8): a `CONFIG_NAME` define after the `Host_WriteConfiguration`
+  prototype, used by `Host_Shutdown`; in `Host_Init` an
+  `#if defined(HEXENLICHT)` branch opens it for the early cvar reads,
+  falling back to `config.cfg`.
+- `engine/h2shared/cmd.c` — `Cmd_Exec_f` takes the file name into a local
+  `name`; under `#if defined(HEXENLICHT)`, `exec config.cfg` runs
+  `hexenlicht.cfg` when that file exists (story 1.8), so `hexen.rc` loads it.
 
 To check: `git diff --name-status upstream/master main | grep -v "^A"`
 prints every upstream file that differs on `main`.
