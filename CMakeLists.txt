@@ -178,6 +178,13 @@ add_custom_command(TARGET glhexen2 POST_BUILD
 # paths, plus HEXENLICHT for the few places where Hexenlicht differs.
 # ---------------------------------------------------------------------------
 set(HEXENLICHT_DIR ${CMAKE_SOURCE_DIR}/engine/hexenlicht)
+
+include(cmake/HexenlichtShaders.cmake)
+hexenlicht_add_shaders(hexenlicht_shaders
+	${HEXENLICHT_SHADER_DIR}/fullscreen.vert
+	${HEXENLICHT_SHADER_DIR}/testpattern.frag
+)
+
 add_executable(hexenlicht WIN32
 	${H2_COMMON_SOURCES}
 	${H2_HEXENLICHT_REUSED_SOURCES}
@@ -185,12 +192,15 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vid_vk.c
 	${HEXENLICHT_DIR}/vk_core.c
 	${HEXENLICHT_DIR}/vk_swapchain.c
+	${HEXENLICHT_DIR}/vk_shader.c
+	${HEXENLICHT_DIR}/vk_testpattern.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma)
+add_dependencies(hexenlicht hexenlicht_shaders)	# building the exe also builds its shaders
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

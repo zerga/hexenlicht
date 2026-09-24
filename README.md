@@ -59,7 +59,8 @@ cmake --build --preset windows-debug
 
 The executables and the music codec DLLs end up in `build/<preset>/bin/`:
 `glh2.exe` is Hexen II with the upstream OpenGL renderer, `hexenlicht.exe`
-the Hexenlicht renderer (work in progress: it does not open a window yet).
+the Hexenlicht renderer (work in progress: it shows a test pattern so far),
+with its compiled shaders in the `shaders` folder next to it.
 
 GitHub Actions builds both presets for every pull request and every push to
 `main`; the binaries can be downloaded from the run's *Artifacts* section for

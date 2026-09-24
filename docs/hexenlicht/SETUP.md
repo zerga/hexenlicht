@@ -73,9 +73,11 @@ The repository ships these run configurations in `.run/`:
 | `hexenlicht` | `hexenlicht.exe`, windowed 1280×720, console log in `Hexenlicht-data\debug_h2.log` |
 | `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game and quits; the log should end with `Hexen II Initialized` and the config files being executed |
 
-`hexenlicht.exe` runs on Vulkan but only clears the screen to dark purple
-each frame so far: menus and the console are invisible until the 2D
-renderer arrives (story 1.6). It needs a GPU with Vulkan 1.3 and hardware
+`hexenlicht.exe` runs on Vulkan but only draws a slowly shimmering
+purple-to-orange test pattern so far: menus and the console are invisible
+until the 2D renderer arrives (story 1.6). Its shaders are loaded from the
+`shaders` folder next to the exe (`build\<preset>\bin\shaders`); keep that
+folder with the exe when copying it elsewhere. It needs a GPU with Vulkan 1.3 and hardware
 ray tracing and says so at startup if there is none. In Debug builds the
 Vulkan validation layer is on; its messages go to the console log, and on
 exit the log reports `Vulkan validation: N errors, M warnings` — keep that

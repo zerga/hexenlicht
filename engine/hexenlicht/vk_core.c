@@ -559,6 +559,7 @@ void VK_Shutdown (void)
 	if (vk.device)
 	{
 		vkDeviceWaitIdle (vk.device);
+		VK_ShutdownTestPattern ();
 		VK_ShutdownSwapchain ();
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
