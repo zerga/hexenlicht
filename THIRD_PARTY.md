@@ -29,6 +29,13 @@ From the [project plan](docs/hexenlicht/PLAN.md#4-licensing-rules):
 `libs/vma/vma_impl.cpp` and `libs/stb/stb_image_impl.c` are Hexenlicht's own
 files (GPL-2.0-or-later) that compile the libraries' implementations.
 
+Source code adapted from other projects keeps its copyright lines in the
+file headers:
+
+| Project | License | Adapted in |
+|---|---|---|
+| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c` |
+
 Used from the LunarG Vulkan SDK at build time, not vendored:
 
 | Component | License | Used for |
