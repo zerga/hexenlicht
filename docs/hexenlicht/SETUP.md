@@ -73,9 +73,13 @@ The repository ships these run configurations in `.run/`:
 | `hexenlicht` | `hexenlicht.exe`, windowed 1280×720, console log in `Hexenlicht-data\debug_h2.log` |
 | `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game and quits; the log should end with `Hexen II Initialized` and the config files being executed |
 
-`hexenlicht.exe` opens its window but draws nothing into it yet: the
-window stays black until the Vulkan renderer arrives (stories 1.3–1.6), so
-menus and the console are invisible. Fullscreen is borderless at the
+`hexenlicht.exe` runs on Vulkan but only clears the screen to dark purple
+each frame so far: menus and the console are invisible until the 2D
+renderer arrives (story 1.6). It needs a GPU with Vulkan 1.3 and hardware
+ray tracing and says so at startup if there is none. In Debug builds the
+Vulkan validation layer is on; its messages go to the console log, and on
+exit the log reports `Vulkan validation: N errors, M warnings` — keep that
+at zero. Fullscreen is borderless at the
 monitor's desktop resolution (`-fullscreen`, or *Fullscreen* in the video
 menu); the display mode is never changed. The process is per-monitor DPI
 aware, so window sizes are physical pixels. Note that it writes
@@ -110,6 +114,16 @@ directory, or pass `-basedir D:\dev\Hexenlicht-data`.
 | `-condebug` | Write the console log to `Hexenlicht-data\debug_h2.log` |
 | `+map <name>` | Load a map directly, e.g. `+map demo1` |
 | `+quit` | Quit after startup (quick smoke test) |
+| `-validation` / `-novalidation` | Force the Vulkan validation layer on (Release) or off (Debug) — `hexenlicht.exe` only |
+| `-vkdevice <n>` | Use Vulkan device *n* (the startup log lists them) — `hexenlicht.exe` only |
+
+Console commands and variables of `hexenlicht.exe` so far:
+
+| Command / variable | Effect |
+|---|---|
+| `vk_info` | Device, driver, ray tracing features, swapchain and validation counts |
+| `vid_vsync 1` / `0` | Wait for vertical blank (default), or present immediately (mailbox) |
+| `vid_restart` | Apply `vid_mode` (window size) |
 
 ## Troubleshooting
 
