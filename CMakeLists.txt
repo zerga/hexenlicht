@@ -5,6 +5,7 @@
 #
 # Targets:
 #   glhexen2   Hexen II with the upstream OpenGL renderer (glh2.exe)
+#   h2patch    patches retail pak files to v1.11
 #
 # Use the presets in CMakePresets.json (CLion picks them up automatically):
 #   cmake --preset windows-debug   &&  cmake --build --preset windows-debug
@@ -111,3 +112,28 @@ add_custom_command(TARGET glhexen2 POST_BUILD
 	COMMAND_EXPAND_LISTS
 	VERBATIM
 )
+
+# ---------------------------------------------------------------------------
+# h2patch: patches retail Hexen II pak files to v1.11 (see h2patch/Makefile).
+# Run it from the game data folder; it reads the deltas from ./patchdat
+# (copy gamecode/patch111/patchdat there). See docs/hexenlicht/SETUP.md.
+# ---------------------------------------------------------------------------
+set(XDELTA_DIR ${CMAKE_SOURCE_DIR}/libs/xdelta3)
+add_executable(h2patch
+	${CMAKE_SOURCE_DIR}/h2patch/h2patch3.c
+	${H2CMN_DIR}/qsnprint.c
+	${XDELTA_DIR}/xdelta3.c
+	${CMAKE_SOURCE_DIR}/h2patch/h2patch3.rc
+)
+target_include_directories(h2patch PRIVATE
+	${CMAKE_SOURCE_DIR}/h2patch
+	${H2CMN_DIR}
+	${XDELTA_DIR}
+	${OSLIBS_WIN}/misc/include
+)
+target_compile_definitions(h2patch PRIVATE WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+# h2patch3.rc embeds upstream's manifest; don't let the linker add a second one.
+target_link_options(h2patch PRIVATE /MANIFEST:NO)
+# xdelta3 settings from upstream's Visual Studio project (Win32 file I/O).
+set_source_files_properties(${XDELTA_DIR}/xdelta3.c PROPERTIES COMPILE_DEFINITIONS
+	"XD3_DEBUG=0;XD3_STDIO=0;XD3_POSIX=0;XD3_WIN32=1;XD3_USE_LARGEFILE64=1")
