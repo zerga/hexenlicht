@@ -313,7 +313,8 @@ Goal: v1.0 on GitHub Releases.
 | 7.5 | v1.0 release | S | Published |
 
 ### Recurring
-- Upstream merge from `sezero/uhexen2` when upstream changes.
+- Upstream merge from `sezero/uhexen2` when upstream changes — procedure in
+  [UPSTREAM.md](UPSTREAM.md).
 
 ---
 
