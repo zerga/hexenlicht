@@ -34,7 +34,6 @@ jobs:
       # Vulkan SDK: headers and glslangValidator (cached between runs).
       # Keep in step with the version recommended in docs/hexenlicht/SETUP.md.
       - name: Install Vulkan SDK
-        id: vulkan
         uses: jakoch/install-vulkan-sdk-action@v1.6.0
         with:
           vulkan_version: 1.4.357.0
@@ -45,10 +44,9 @@ jobs:
         with:
           arch: x64
 
+      # (install-vulkan-sdk-action exports VULKAN_SDK for the following steps)
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
-        env:
-          VULKAN_SDK: ${{ steps.vulkan.outputs.VULKAN_SDK }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
