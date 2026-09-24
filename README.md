@@ -62,10 +62,10 @@ The upstream Makefiles still work for all other platforms; see
 ## Game data
 
 Hexenlicht does not include any game data. You need a copy of the original
-Hexen II (and optionally the Portal of Praevus mission pack). Hammer of
-Thyrion expects the game's pak files patched to version 1.11; the `h2patch`
-tool in this repository does that (see [docs/README](docs/README)).
-Step-by-step setup instructions will follow with the first playable builds.
+Hexen II (and optionally the Portal of Praevus mission pack), with its pak
+files patched to version 1.11; the `h2patch` tool in this repository does
+that. The [development setup guide](docs/hexenlicht/SETUP.md) walks through
+the data folder, patching and running from CLion.
 
 ## License
 
