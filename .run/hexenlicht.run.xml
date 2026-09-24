@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="hexenlicht" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="-window -width 1280 -height 720 -condebug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$/../Hexenlicht-data" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Hexenlicht" TARGET_NAME="hexenlicht" CONFIG_NAME="windows-debug" RUN_TARGET_PROJECT_NAME="Hexenlicht" RUN_TARGET_NAME="hexenlicht">
+    <method v="2">
+      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+    </method>
+  </configuration>
+</component>

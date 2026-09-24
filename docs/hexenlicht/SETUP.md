@@ -70,11 +70,17 @@ The repository ships these run configurations in `.run/`:
 |---|---|
 | `glhexen2` | Hexen II with the upstream OpenGL renderer, windowed 1280×720 |
 | `glhexen2 (Portal of Praevus)` | the same with `-portals` |
-| `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game without a window and quits; the log is `Hexenlicht-data\debug_h2.log` and should end with `Hexen II Initialized` and the config files being executed |
+| `hexenlicht` | `hexenlicht.exe`, windowed 1280×720, console log in `Hexenlicht-data\debug_h2.log` |
+| `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game and quits; the log should end with `Hexen II Initialized` and the config files being executed |
 
-`hexenlicht.exe` does not open a window yet (stories 1.2 and 1.3). Note
-that it writes `config.cfg` on exit without the OpenGL renderer's
-settings, so `glh2.exe` falls back to defaults for those afterwards.
+`hexenlicht.exe` opens its window but draws nothing into it yet: the
+window stays black until the Vulkan renderer arrives (stories 1.3–1.6), so
+menus and the console are invisible. Fullscreen is borderless at the
+monitor's desktop resolution (`-fullscreen`, or *Fullscreen* in the video
+menu); the display mode is never changed. The process is per-monitor DPI
+aware, so window sizes are physical pixels. Note that it writes
+`config.cfg` on exit without the OpenGL renderer's settings, so `glh2.exe`
+falls back to defaults for those afterwards (#91).
 
 Pick one in the run configuration box at the top right, pick the
 `windows-debug` or `windows-release` profile next to it, and press Run or
