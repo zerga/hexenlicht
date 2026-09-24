@@ -64,6 +64,11 @@ Debug. CLion builds the target first.
 To change the command line for yourself, copy a configuration
 (*Edit Configurations… → Copy*) instead of editing the shared one.
 
+CLion stores the CMake profile of a configuration in these files
+(`CONFIG_NAME`, `windows-debug` by default). If CLion rewrites them, for
+example after switching profiles, and git shows them as modified, that is
+local noise; don't commit it.
+
 ## 4. Run without CLion
 
 Start `build\<preset>\bin\glh2.exe` with `Hexenlicht-data` as the working

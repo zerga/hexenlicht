@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This checkout is being turned into **Hexenlicht**, a Vulkan path-traced fork of Hammer of Thyrion (Windows x64, CMake + MSVC in CLion). Read `docs/hexenlicht/PLAN.md` before starting any Hexenlicht work — it holds the settled decisions, licensing rules (no NVIDIA DLSS binaries or NGX static libs in the repo), and the epic/story breakdown. Live status is in the GitHub issue tracker, not in the plan. The owner drives: propose each story's approach and get approval before implementing.
 
+Upstream (`sezero/uhexen2`) is merged into `main` following `docs/hexenlicht/UPSTREAM.md`: local `master` is a read-only mirror of `upstream/master`, syncs are real merges (never rebase/squash). When a change modifies an upstream file (rather than adding a new one), add it to the "Conflict hot spots" list there.
+
 ## What this is
 
 Hexen II: Hammer of Thyrion (uHexen2) — a cross-platform source port of Raven Software's GPL-released Hexen II / HexenWorld engine. Heavily descended from the Quake codebase. C with x86 NASM assembly fast paths. GPLv2.
