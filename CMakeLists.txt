@@ -5,6 +5,7 @@
 #
 # Targets:
 #   glhexen2   Hexen II with the upstream OpenGL renderer (glh2.exe)
+#   hexenlicht Hexen II with the Hexenlicht renderer (work in progress)
 #   h2patch    patches retail pak files to v1.11
 #   volk, vma, stb_image   vendored libraries for the Vulkan renderer
 #
@@ -167,6 +168,27 @@ target_link_libraries(glhexen2 PRIVATE h2_client_settings)
 # Copy the codec DLLs next to the executable.
 add_custom_command(TARGET glhexen2 POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:glhexen2>
+	COMMAND_EXPAND_LISTS
+	VERBATIM
+)
+
+# ---------------------------------------------------------------------------
+# hexenlicht: Hexen II with the Hexenlicht renderer (work in progress).
+# Compiled with GLQUAKE so the client code takes its hardware-renderer
+# paths, plus HEXENLICHT for the few places where Hexenlicht differs.
+# ---------------------------------------------------------------------------
+set(HEXENLICHT_DIR ${CMAKE_SOURCE_DIR}/engine/hexenlicht)
+add_executable(hexenlicht WIN32
+	${H2_COMMON_SOURCES}
+	${H2_HEXENLICHT_REUSED_SOURCES}
+	${HEXENLICHT_DIR}/stubs.c
+	${H2_WIN32_RC}
+)
+target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})
+target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
+target_link_libraries(hexenlicht PRIVATE h2_client_settings)
+add_custom_command(TARGET hexenlicht POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS
 	VERBATIM
 )

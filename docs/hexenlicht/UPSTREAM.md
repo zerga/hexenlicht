@@ -86,7 +86,11 @@ git log --oneline main..upstream/master
 Upstream files that Hexenlicht modifies. List them here as soon as a story
 changes one, with a line on what we changed:
 
-- *None yet.* As of 2026-09-24, Hexenlicht only adds files.
+- `engine/hexen2/r_part.c` — `R_DrawParticles` (the OpenGL and the
+  software version) is left out when `HEXENLICHT` is defined: an
+  `#if defined(HEXENLICHT)` branch in front of the existing
+  `#if defined(GLQUAKE)` (story 1.1). The particle simulation is reused
+  unchanged.
 
 To check: `git diff --name-status upstream/master main | grep -v "^A"`
 prints every upstream file that differs on `main`.
