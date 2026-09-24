@@ -37,10 +37,27 @@ HexenWorld is not part of Hexenlicht's scope.
 
 ## Building
 
-A CMake build for Windows (MSVC, CLion) is being added as part of the first
-epic. Until then, the upstream build instructions apply: see
-[docs/COMPILE](docs/COMPILE) and [CLAUDE.md](CLAUDE.md) for an overview of
-the Makefile-based build.
+Hexenlicht builds on Windows x64 with MSVC and CMake.
+
+Requirements:
+- Visual Studio 2022 or newer, or the Visual Studio Build Tools, with the
+  *Desktop development with C++* workload and a Windows SDK.
+- CMake 3.25+ and Ninja (both are bundled with CLion).
+
+In **CLion**, open the repository folder, set the *Visual Studio* toolchain
+as the default, and pick the `windows-debug` or `windows-release` preset.
+From a *Developer Command Prompt* (x64):
+
+```
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+```
+
+The executable (`glh2.exe`, Hexen II with the upstream OpenGL renderer for
+now) and the music codec DLLs end up in `build/<preset>/bin/`.
+
+The upstream Makefiles still work for all other platforms; see
+[docs/COMPILE](docs/COMPILE).
 
 ## Game data
 

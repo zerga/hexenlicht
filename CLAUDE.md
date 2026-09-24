@@ -12,7 +12,13 @@ Hexen II: Hammer of Thyrion (uHexen2) — a cross-platform source port of Raven 
 
 Current version: see `HOT_VERSION_*` in `engine/hexen2/quakedef.h` (1.5.10 at time of writing). The HexenC bytecode (gamecode) carries its own version (`ENGINE_VERSION` in the same file, currently 1.29 — these are not the same number).
 
-## Build environment
+## Hexenlicht CMake build (Windows x64, MSVC)
+
+Root `CMakeLists.txt` + `CMakePresets.json` (presets `windows-debug`, `windows-release`; Ninja; output in `build/<preset>/bin/`). Source lists live in `cmake/Hexen2Sources.cmake` and mirror the win64 object lists in `engine/hexen2/Makefile` — when an upstream merge changes the Makefile's object lists, update that file too. Target `glhexen2` (output `glh2.exe`) is the unmodified OpenGL client. Codec DLLs from `oslibs/windows/codecs/x64` are copied next to the exe post-build.
+
+Command-line builds need the MSVC environment: run `<VS install>\VC\Auxiliary\Build\vcvarsall.bat x64` first, with CMake and Ninja on `PATH` (CLion bundles both under `<CLion>\bin\cmake\win\x64\bin` and `<CLion>\bin\ninja\win\x64`). From Git Bash, pass MSVC tool options with `-` instead of `/` (Git Bash rewrites `/opt` into a path).
+
+## Upstream build environment (Makefiles)
 
 Builds **require a Unix-like shell** — bash, GNU make, plus the helper scripts under `scripts/`. On Windows, that means MSYS/MSYS2 or WSL; native cmd/PowerShell will not work for the Makefiles. The makefile machinery (driven by `scripts/makefile.inc`) shells out to `uname`/`sed`/`tr`/`which` to auto-detect host and target. Watcom builds (`Makefile.wat`/`Makefile.os2`) are the exception — those use `wmake` natively.
 
