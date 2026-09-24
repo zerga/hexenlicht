@@ -45,6 +45,8 @@ Requirements:
 - Visual Studio 2022 or newer, or the Visual Studio Build Tools, with the
   *Desktop development with C++* workload and a Windows SDK.
 - CMake 3.25+ and Ninja (both are bundled with CLion).
+- The [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows),
+  1.3 or newer (1.4.357.0 is what CI uses).
 
 In **CLion**, open the repository folder, set the *Visual Studio* toolchain
 as the default, and pick the `windows-debug` or `windows-release` preset.

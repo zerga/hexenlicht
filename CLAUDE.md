@@ -16,6 +16,8 @@ Current version: see `HOT_VERSION_*` in `engine/hexen2/quakedef.h` (1.5.10 at ti
 
 Root `CMakeLists.txt` + `CMakePresets.json` (presets `windows-debug`, `windows-release`; Ninja; output in `build/<preset>/bin/`). Source lists live in `cmake/Hexen2Sources.cmake` and mirror the win64 object lists in `engine/hexen2/Makefile` — when an upstream merge changes the Makefile's object lists, update that file too. Target `glhexen2` (output `glh2.exe`) is the unmodified OpenGL client. Codec DLLs from `oslibs/windows/codecs/x64` are copied next to the exe post-build.
 
+Configuring requires the LunarG Vulkan SDK 1.3+ via `VULKAN_SDK` (CI pins the version in `.github/workflows/build-windows.yml`). Vendored libraries for the Vulkan renderer are static-library targets `volk` (`libs/volk`), `vma` (`libs/vma`, C++ implementation in `vma_impl.cpp`, uses volk's loaders via `VMA_DYNAMIC_VULKAN_FUNCTIONS`) and `stb_image` (`libs/stb`, PNG/TGA only, `STBI_NO_STDIO`). Versions and licenses are recorded in `THIRD_PARTY.md`; update it whenever a vendored library changes.
+
 Command-line builds need the MSVC environment: run `<VS install>\VC\Auxiliary\Build\vcvarsall.bat x64` first, with CMake and Ninja on `PATH` (CLion bundles both under `<CLion>\bin\cmake\win\x64\bin` and `<CLion>\bin\ninja\win\x64`). From Git Bash, pass MSVC tool options with `-` instead of `/` (Git Bash rewrites `/opt` into a path).
 
 ## Upstream build environment (Makefiles)

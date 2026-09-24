@@ -6,13 +6,16 @@
 # Targets:
 #   glhexen2   Hexen II with the upstream OpenGL renderer (glh2.exe)
 #   h2patch    patches retail pak files to v1.11
+#   volk, vma, stb_image   vendored libraries for the Vulkan renderer
+#
+# Requires the LunarG Vulkan SDK 1.3+ (VULKAN_SDK environment variable).
 #
 # Use the presets in CMakePresets.json (CLion picks them up automatically):
 #   cmake --preset windows-debug   &&  cmake --build --preset windows-debug
 
 cmake_minimum_required(VERSION 3.25)
 
-project(Hexenlicht LANGUAGES C RC)
+project(Hexenlicht LANGUAGES C CXX RC)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 	message(FATAL_ERROR "Hexenlicht's CMake build supports Windows x64 only. "
@@ -68,6 +71,61 @@ set(H2_CODEC_DLLS
 	${CODECS_DIR}/x64/libvorbis-0.dll
 	${CODECS_DIR}/x64/libvorbisfile-3.dll
 )
+
+# ---------------------------------------------------------------------------
+# Vulkan SDK: headers and the GLSL shader compiler. Vulkan functions are
+# loaded at runtime through volk, so nothing links against vulkan-1.lib.
+# Version 1.3+ headers include the KHR ray tracing extensions.
+# ---------------------------------------------------------------------------
+find_package(Vulkan COMPONENTS glslangValidator)
+# Old SDKs report only VK_HEADER_VERSION (e.g. "131"), which would pass a
+# plain version check, so require a full 1.x.y version and the ray query
+# extension in the headers.
+set(_vk_ok FALSE)
+if(Vulkan_FOUND AND Vulkan_glslangValidator_FOUND
+		AND Vulkan_VERSION MATCHES "^1\\.[0-9]+\\.[0-9]+$"
+		AND NOT Vulkan_VERSION VERSION_LESS 1.3)
+	file(STRINGS "${Vulkan_INCLUDE_DIRS}/vulkan/vulkan_core.h" _vk_rq
+		REGEX "^#define VK_KHR_ray_query 1")
+	if(_vk_rq)
+		set(_vk_ok TRUE)
+	endif()
+endif()
+if(NOT _vk_ok)
+	message(FATAL_ERROR "Vulkan SDK 1.3 or newer with ray tracing headers "
+		"not found (found: '${Vulkan_VERSION}' in '${Vulkan_INCLUDE_DIRS}'). "
+		"Install the current LunarG Vulkan SDK from "
+		"https://vulkan.lunarg.com/sdk/home#windows and restart CLion (or "
+		"the shell) so that the VULKAN_SDK environment variable points to it. "
+		"See docs/hexenlicht/SETUP.md.")
+endif()
+message(STATUS "Vulkan SDK ${Vulkan_VERSION}: ${Vulkan_INCLUDE_DIRS}")
+message(STATUS "glslangValidator: ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}")
+
+# ---------------------------------------------------------------------------
+# Vendored libraries for the Vulkan renderer (see THIRD_PARTY.md).
+# ---------------------------------------------------------------------------
+set(LIBS_DIR ${CMAKE_SOURCE_DIR}/libs)
+
+# volk: Vulkan function loader
+add_library(volk STATIC ${LIBS_DIR}/volk/volk.c)
+target_include_directories(volk PUBLIC ${LIBS_DIR}/volk)
+target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
+target_link_libraries(volk PUBLIC Vulkan::Headers)
+
+# VMA: Vulkan Memory Allocator (C interface, C++ implementation)
+add_library(vma STATIC ${LIBS_DIR}/vma/vma_impl.cpp)
+target_include_directories(vma PUBLIC ${LIBS_DIR}/vma)
+target_compile_definitions(vma
+	PUBLIC VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=1
+	PRIVATE NOMINMAX)	# keep windows.h min/max macros away from std::min/max
+target_compile_features(vma PRIVATE cxx_std_17)
+target_link_libraries(vma PUBLIC volk)
+
+# stb_image: PNG/TGA loading from memory
+add_library(stb_image STATIC ${LIBS_DIR}/stb/stb_image_impl.c)
+target_include_directories(stb_image PUBLIC ${LIBS_DIR}/stb)
+target_compile_definitions(stb_image PUBLIC STBI_NO_STDIO)
 
 # ---------------------------------------------------------------------------
 # Settings shared by all Hexen II client targets (Makefile win64 section).

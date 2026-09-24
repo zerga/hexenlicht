@@ -31,6 +31,15 @@ jobs:
       # CMake and Ninja
       - uses: lukka/get-cmake@v4.4.2
 
+      # Vulkan SDK: headers and glslangValidator (cached between runs).
+      # Keep in step with the version recommended in docs/hexenlicht/SETUP.md.
+      - name: Install Vulkan SDK
+        id: vulkan
+        uses: jakoch/install-vulkan-sdk-action@v1.6.0
+        with:
+          vulkan_version: 1.4.357.0
+          cache: true
+
       # MSVC x64 environment (cl, link, rc, Windows SDK)
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -38,6 +47,8 @@ jobs:
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
+        env:
+          VULKAN_SDK: ${{ steps.vulkan.outputs.VULKAN_SDK }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}

@@ -22,7 +22,19 @@ From the [project plan](docs/hexenlicht/PLAN.md#4-licensing-rules):
 
 | Component | Version | License | Location | Used for |
 |---|---|---|---|---|
-| *(none yet — added with story 0.6)* | | | | |
+| [volk](https://github.com/zeux/volk) | 1.4.350 | MIT | `libs/volk` | Loading Vulkan functions at runtime |
+| [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.4.0 | MIT | `libs/vma` | GPU memory management |
+| [stb_image](https://github.com/nothings/stb) | 2.30 (commit `2c980bb`) | MIT or public domain | `libs/stb` | Loading PNG/TGA textures |
+
+`libs/vma/vma_impl.cpp` and `libs/stb/stb_image_impl.c` are Hexenlicht's own
+files (GPL-2.0-or-later) that compile the libraries' implementations.
+
+Used from the LunarG Vulkan SDK at build time, not vendored:
+
+| Component | License | Used for |
+|---|---|---|
+| Vulkan headers (Khronos) | Apache-2.0 OR MIT — used under MIT | Vulkan API declarations |
+| glslangValidator | BSD-3-Clause and others (see the SDK) | Compiling shaders at build time; not part of the binary |
 
 ## Bundled by upstream (Hammer of Thyrion)
 
