@@ -1,0 +1,12 @@
+# IDE project and state folders
+.idea/
+.vs/
+*.user
+
+# CMake build trees
+/build/
+/cmake-build-*/
+/out/
+
+# Claude Code personal settings (shared settings would go in .claude/settings.json)
+.claude/settings.local.json
