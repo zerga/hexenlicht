@@ -25,6 +25,7 @@
 
 #include "quakedef.h"
 #include "r_scene.h"
+#include "vk_local.h"
 
 scene_t		r_scene;
 
@@ -245,6 +246,8 @@ void R_NewMap (void)
 	memset (&r_scene, 0, sizeof(r_scene));	/* no scene until the first frame */
 
 	R_ClearParticles ();
+
+	VK_LoadWorld (cl.worldmodel);	/* the world and its submodels on the GPU */
 }
 
 

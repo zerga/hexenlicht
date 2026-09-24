@@ -97,9 +97,7 @@ static VkSampler	sampler_nearest_repeat;	/* point, repeat (TEX_REPEAT: the 2D ba
 static VkSampler	sampler_linear;		/* bilinear, no mips, clamp */
 static VkSampler	sampler_trilinear;	/* trilinear + anisotropy, repeat */
 static VkDescriptorPool	texture_pool;
-static VkCommandPool	upload_pool;
-static VkCommandBuffer	upload_cmd;
-static VkFence		upload_fence;
+static VkCommandBuffer	upload_cmd;		/* while uploading: from VK_BeginUpload */
 
 
 /* ==========================================================================
@@ -196,17 +194,11 @@ static void VK_ImageBarrier (VkImage image, uint32_t base_mip, uint32_t num_mips
  * waits for the GPU, so it is only for load time */
 static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 {
-	VkBufferCreateInfo		buffer_info;
 	VkImageCreateInfo		image_info;
 	VkImageViewCreateInfo		view_info;
 	VmaAllocationCreateInfo		alloc_info;
-	VmaAllocationInfo		staging_info;
-	VkBuffer			staging;
-	VmaAllocation			staging_alloc;
-	VkCommandBufferBeginInfo	begin;
+	vk_buffer_t			staging;
 	VkBufferImageCopy		copy;
-	VkCommandBufferSubmitInfo	cmd_info;
-	VkSubmitInfo2			submit;
 	VkDeviceSize			size = (VkDeviceSize)t->width * t->height * 4;
 	uint32_t			i, w, h;
 
@@ -218,16 +210,9 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	}
 
 	/* staging buffer with the pixels */
-	memset (&buffer_info, 0, sizeof(buffer_info));
-	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = size;
-	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	memset (&alloc_info, 0, sizeof(alloc_info));
-	alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-	alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-	VK_CHECK (vmaCreateBuffer (vk.allocator, &buffer_info, &alloc_info, &staging, &staging_alloc, &staging_info));
-	memcpy (staging_info.pMappedData, rgba, (size_t)size);
-	VK_CHECK (vmaFlushAllocation (vk.allocator, staging_alloc, 0, VK_WHOLE_SIZE));
+	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+	memcpy (staging.mapped, rgba, (size_t)size);
+	VK_CHECK (vmaFlushAllocation (vk.allocator, staging.allocation, 0, VK_WHOLE_SIZE));
 
 	/* the image */
 	memset (&image_info, 0, sizeof(image_info));
@@ -249,11 +234,7 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	VK_CHECK (vmaCreateImage (vk.allocator, &image_info, &alloc_info, &t->image, &t->allocation, NULL));
 
 	/* commands: copy level 0, blit each further level from the previous */
-	VK_CHECK (vkResetCommandPool (vk.device, upload_pool, 0));
-	memset (&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	VK_CHECK (vkBeginCommandBuffer (upload_cmd, &begin));
+	upload_cmd = VK_BeginUpload ();
 
 	VK_ImageBarrier (t->image, 0, t->mip_levels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			 VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
@@ -263,7 +244,7 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	copy.imageSubresource.layerCount = 1;
 	copy.imageExtent = image_info.extent;
-	vkCmdCopyBufferToImage (upload_cmd, staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	vkCmdCopyBufferToImage (upload_cmd, staging.buffer, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
 	w = (uint32_t)t->width;
 	h = (uint32_t)t->height;
@@ -307,20 +288,9 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 			 VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 			 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
-	VK_CHECK (vkEndCommandBuffer (upload_cmd));
-
-	memset (&cmd_info, 0, sizeof(cmd_info));
-	cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-	cmd_info.commandBuffer = upload_cmd;
-	memset (&submit, 0, sizeof(submit));
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-	submit.commandBufferInfoCount = 1;
-	submit.pCommandBufferInfos = &cmd_info;
-	VK_CHECK (vkQueueSubmit2 (vk.queue, 1, &submit, upload_fence));
-	VK_CHECK (vkWaitForFences (vk.device, 1, &upload_fence, VK_TRUE, UINT64_MAX));
-	VK_CHECK (vkResetFences (vk.device, 1, &upload_fence));
-
-	vmaDestroyBuffer (vk.allocator, staging, staging_alloc);
+	VK_EndUpload ();
+	upload_cmd = VK_NULL_HANDLE;
+	VK_DestroyBuffer (&staging);
 
 	memset (&view_info, 0, sizeof(view_info));
 	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -575,9 +545,6 @@ void VK_InitTextures (void)
 	VkDescriptorPoolSize			pool_size;
 	VkDescriptorPoolCreateInfo		pool_info;
 	VkDescriptorSetAllocateInfo		alloc_info;
-	VkCommandPoolCreateInfo			cmd_pool_info;
-	VkCommandBufferAllocateInfo		cmd_info;
-	VkFenceCreateInfo			fence_info;
 	VkPhysicalDeviceFeatures		features;
 	VkPhysicalDeviceVulkan12Properties	props12;
 	VkPhysicalDeviceProperties2		props;
@@ -650,22 +617,6 @@ void VK_InitTextures (void)
 	alloc_info.pSetLayouts = &vk.texture_set_layout;
 	VK_CHECK (vkAllocateDescriptorSets (vk.device, &alloc_info, &vk.texture_set));
 
-	/* uploads */
-	memset (&cmd_pool_info, 0, sizeof(cmd_pool_info));
-	cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	cmd_pool_info.queueFamilyIndex = vk.queue_family;
-	VK_CHECK (vkCreateCommandPool (vk.device, &cmd_pool_info, NULL, &upload_pool));
-	memset (&cmd_info, 0, sizeof(cmd_info));
-	cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmd_info.commandPool = upload_pool;
-	cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cmd_info.commandBufferCount = 1;
-	VK_CHECK (vkAllocateCommandBuffers (vk.device, &cmd_info, &upload_cmd));
-	memset (&fence_info, 0, sizeof(fence_info));
-	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	VK_CHECK (vkCreateFence (vk.device, &fence_info, NULL, &upload_fence));
-
 	/* slot 0: white, and every slot starts out pointing at it */
 	textures[0].width = textures[0].height = 1;
 	textures[0].flags = TEX_RGBA | TEX_LINEAR;
@@ -690,10 +641,6 @@ void VK_ShutdownTextures (void)
 	numgltextures = 0;
 	Hash_Free (&hash_textures);
 
-	if (upload_fence)
-		vkDestroyFence (vk.device, upload_fence, NULL);
-	if (upload_pool)
-		vkDestroyCommandPool (vk.device, upload_pool, NULL);
 	if (texture_pool)
 		vkDestroyDescriptorPool (vk.device, texture_pool, NULL);
 	if (vk.texture_set_layout)
@@ -706,8 +653,6 @@ void VK_ShutdownTextures (void)
 		vkDestroySampler (vk.device, sampler_linear, NULL);
 	if (sampler_trilinear)
 		vkDestroySampler (vk.device, sampler_trilinear, NULL);
-	upload_fence = VK_NULL_HANDLE;
-	upload_pool = VK_NULL_HANDLE;
 	texture_pool = VK_NULL_HANDLE;
 	vk.texture_set_layout = VK_NULL_HANDLE;
 	vk.texture_set = VK_NULL_HANDLE;

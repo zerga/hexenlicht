@@ -116,4 +116,76 @@ void VK_RequestScreenshot (const char *filename);
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert" */
 VkShaderModule VK_LoadShader (const char *name);
 
+/* vk_buffer.c: buffers, and one-time upload commands for load time
+ * (VK_EndUpload submits and waits) */
+typedef struct
+{
+	VkBuffer	buffer;
+	VmaAllocation	allocation;
+	VkDeviceSize	size;
+	VkDeviceAddress	address;	/* if created with SHADER_DEVICE_ADDRESS usage */
+	void		*mapped;	/* if host visible */
+} vk_buffer_t;
+
+void VK_InitBuffers (void);
+void VK_ShutdownBuffers (void);
+void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usage, qboolean host_visible);
+void VK_DestroyBuffer (vk_buffer_t *b);
+VkCommandBuffer VK_BeginUpload (void);
+void VK_EndUpload (void);
+void VK_UploadBuffer (vk_buffer_t *dst, VkDeviceSize offset, const void *data, VkDeviceSize size);
+
+/* vk_material.c: the material table (layout in shaders/hl_shared.h) */
+typedef struct
+{
+	char		name[16];	/* texture name */
+	int		base_texture;	/* texture slot */
+	int		num_frames;	/* animation: frames in the sequence (1 = none) */
+	int		next_frame;	/* material of the next frame */
+	int		alternate;	/* first material of the alternate animation, 0 = none */
+} vk_material_t;
+
+extern vk_buffer_t	vk_material_table;
+extern int		vk_num_materials;	/* including the unused index 0 */
+
+void VK_InitMaterials (void);
+void VK_ShutdownMaterials (void);
+void VK_ClearMaterials (void);
+int VK_AddMaterial (const char *name, int base_texture);
+vk_material_t *VK_GetMaterial (int index);
+void VK_UploadMaterials (void);
+uint16_t VK_FloatToHalf (float f);
+
+/* vk_world.c: the BSP world and its brush submodels in one GPU buffer:
+ * num_primitives VboPrimitives (shaders/hl_shared.h), then their
+ * positions (3 vec3 per triangle) for acceleration structure builds.
+ * Each model's primitives are grouped into ranges. */
+typedef struct
+{
+	uint32_t	first, count;	/* in primitives */
+} vk_primrange_t;
+
+typedef struct
+{
+	vk_primrange_t	opaque;		/* regular surfaces, lava */
+	vk_primrange_t	transparent;	/* water, slime, translucent (*rtex078, *lowlight) */
+	vk_primrange_t	sky;
+} vk_bspmodel_t;
+
+typedef struct
+{
+	qmodel_t	*worldmodel;	/* the model the buffer was built for, NULL = none */
+	int		num_models;	/* the world (0) and its submodels *1 .. */
+	vk_bspmodel_t	*models;
+	uint32_t	num_primitives;
+	vk_buffer_t	buffer;
+	VkDeviceSize	positions_offset;
+} vk_world_t;
+
+extern vk_world_t	vk_world;
+
+void VK_InitWorld (void);
+void VK_ShutdownWorld (void);
+void VK_LoadWorld (qmodel_t *worldmodel);	/* on map change, outside frames */
+
 #endif	/* HEXENLICHT_VK_LOCAL_H */

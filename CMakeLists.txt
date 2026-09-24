@@ -196,6 +196,9 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_shader.c
 	${HEXENLICHT_DIR}/vk_texture.c
 	${HEXENLICHT_DIR}/vk_draw.c
+	${HEXENLICHT_DIR}/vk_buffer.c
+	${HEXENLICHT_DIR}/vk_material.c
+	${HEXENLICHT_DIR}/vk_world.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}

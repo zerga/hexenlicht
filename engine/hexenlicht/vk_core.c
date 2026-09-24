@@ -555,7 +555,10 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 
 	Cmd_AddCommand ("vk_info", VK_Info_f);
 
+	VK_InitBuffers ();
 	VK_InitTextures ();
+	VK_InitMaterials ();
+	VK_InitWorld ();
 	VK_InitSwapchain ();
 	VK_InitDraw ();
 }
@@ -570,7 +573,10 @@ void VK_Shutdown (void)
 		vkDeviceWaitIdle (vk.device);
 		VK_ShutdownDraw ();
 		VK_ShutdownSwapchain ();
+		VK_ShutdownWorld ();
+		VK_ShutdownMaterials ();
 		VK_ShutdownTextures ();
+		VK_ShutdownBuffers ();
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
 		vkDestroyDevice (vk.device, NULL);
