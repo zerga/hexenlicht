@@ -3,6 +3,20 @@
 How to go from a fresh clone to running Hexen II from CLion. Building itself
 is described in the [README](../../README.md#building).
 
+## 0. Vulkan SDK
+
+Install the [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows),
+version 1.3 or newer — ideally the version CI uses (1.4.357.0, see
+`.github/workflows/build-windows.yml`). The installer lets you choose the
+installation folder; the default components are enough.
+
+The installer sets the `VULKAN_SDK` environment variable. **Restart CLion**
+(and any open shells) afterwards so they see it. Older SDKs can stay
+installed side by side; only the one `VULKAN_SDK` points to is used.
+
+CMake stops with *"Vulkan SDK 1.3 or newer with ray tracing headers not
+found"* if `VULKAN_SDK` is missing or points to an SDK that is too old.
+
 ## 1. Game data
 
 Hexenlicht needs the data files of the retail Hexen II, and optionally of the
@@ -90,6 +104,9 @@ directory, or pass `-basedir D:\dev\Hexenlicht-data`.
 - **"Hexenlicht's CMake build expects the MSVC toolchain"**: the CMake
   profile uses CLion's bundled MinGW. Use the preset profiles, which select
   the toolchain named *Visual Studio*.
+- **"Vulkan SDK 1.3 or newer with ray tracing headers not found"**: see
+  [section 0](#0-vulkan-sdk). After installing, restart CLion and use
+  *Reset Cache and Reload Project* in the CMake panel.
 - **`Unknown command "sys_delay"`** and similar lines at startup come from an
   old `config.cfg` written by the original 1997 executables. They are
   harmless.
