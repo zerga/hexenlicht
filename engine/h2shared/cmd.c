@@ -297,6 +297,7 @@ static void Cmd_Exec_f (void)
 {
 	char	*f;
 	int		mark;
+	const char	*name;
 
 	if (Cmd_Argc () != 2)
 	{
@@ -304,15 +305,23 @@ static void Cmd_Exec_f (void)
 		return;
 	}
 
+	name = Cmd_Argv(1);
+#if defined(HEXENLICHT)
+	/* Hexenlicht saves its settings to hexenlicht.cfg (see host.c), so
+	 * hexen.rc's "exec config.cfg" runs that once it exists. */
+	if (!q_strcasecmp (name, "config.cfg") && FS_FileExists ("hexenlicht.cfg", NULL))
+		name = "hexenlicht.cfg";
+#endif
+
 	// FIXME: is this safe freeing the hunk here???
 	mark = Hunk_LowMark ();
-	f = (char *)FS_LoadHunkFile (Cmd_Argv(1), NULL);
+	f = (char *)FS_LoadHunkFile (name, NULL);
 	if (!f)
 	{
-		Con_Printf ("couldn't exec %s\n",Cmd_Argv(1));
+		Con_Printf ("couldn't exec %s\n",name);
 		return;
 	}
-	Con_Printf ("execing %s\n", Cmd_Argv(1));
+	Con_Printf ("execing %s\n", name);
 
 	Cbuf_InsertText (f);
 	Hunk_FreeToLowMark (mark);
