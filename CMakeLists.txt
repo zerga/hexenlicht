@@ -183,12 +183,14 @@ add_executable(hexenlicht WIN32
 	${H2_HEXENLICHT_REUSED_SOURCES}
 	${HEXENLICHT_DIR}/stubs.c
 	${HEXENLICHT_DIR}/vid_vk.c
+	${HEXENLICHT_DIR}/vk_core.c
+	${HEXENLICHT_DIR}/vk_swapchain.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
-target_link_libraries(hexenlicht PRIVATE h2_client_settings)
+target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma)
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

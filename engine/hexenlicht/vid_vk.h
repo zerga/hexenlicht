@@ -7,9 +7,8 @@
 #ifndef HEXENLICHT_VID_VK_H
 #define HEXENLICHT_VID_VK_H
 
-/* Per-frame housekeeping of the video layer (windowed mouse grab changes;
- * from story 1.3 on: presenting the frame). Called at the end of
- * SCR_UpdateScreen. */
+/* Per-frame housekeeping of the video layer (windowed mouse grab changes).
+ * Called at the end of SCR_UpdateScreen. */
 void VID_EndFrame (void);
 
 /* Size of the window's client area in physical pixels, i.e. the size the

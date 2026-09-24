@@ -41,6 +41,7 @@
 #include "cdaudio.h"
 #include "resource.h"
 #include "vid_vk.h"
+#include "vk_local.h"
 
 #define MIN_WIDTH		320
 #define MIN_HEIGHT		240
@@ -498,6 +499,8 @@ static void VID_SetMode (int modenum)
 	/* fix the leftover Alt from any Alt-Tab or the like that switched us away */
 	ClearAllStates ();
 
+	VK_SwapchainChanged ();	/* in case no WM_SIZE arrived */
+
 	CDAudio_Resume ();
 }
 
@@ -719,20 +722,11 @@ static LRESULT WINAPI MainWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 {
 	LRESULT	ret = 0;
 	int	fActive, fMinimized, temp;
-	PAINTSTRUCT	ps;
-	HDC	hdc;
 
 	switch (uMsg)
 	{
 	case WM_ERASEBKGND:
-		return 1;
-
-	case WM_PAINT:
-		/* nothing presents frames yet (story 1.3): keep the window black */
-		hdc = BeginPaint (hWnd, &ps);
-		FillRect (hdc, &ps.rcPaint, (HBRUSH) GetStockObject (BLACK_BRUSH));
-		EndPaint (hWnd, &ps);
-		return 0;
+		return 1;	/* Vulkan presents every frame */
 
 	case WM_MOVE:
 		/* client area position in screen coordinates */
@@ -742,6 +736,8 @@ static LRESULT WINAPI MainWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 		break;
 
 	case WM_SIZE:
+		/* includes minimize/restore: the swapchain follows the client area */
+		VK_SwapchainChanged ();
 		break;
 
 	case WM_SYSCHAR:
@@ -1015,6 +1011,8 @@ void VID_Init (const unsigned char *palette)
 	Cvar_SetValueQuick (&vid_mode, vid_default);
 	VID_SetMode (vid_default);
 
+	VK_Init (global_hInstance, mainwindow);
+
 	// lock the early-read cvars until Host_Init is finished
 	for (i = 0; i < (int)num_readvars; i++)
 		Cvar_LockVar (read_vars[i]);
@@ -1034,6 +1032,7 @@ void VID_Shutdown (void)
 {
 	if (vid_initialized)
 	{
+		VK_Shutdown ();		/* before its surface's window goes away */
 		AppActivate (false, false);
 		if (mainwindow)
 		{
