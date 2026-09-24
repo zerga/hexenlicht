@@ -18,7 +18,11 @@ if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 		"Use the upstream Makefiles for other platforms.")
 endif()
 if(NOT MSVC)
-	message(FATAL_ERROR "Hexenlicht's CMake build expects the MSVC toolchain.")
+	message(FATAL_ERROR "Hexenlicht's CMake build expects the MSVC toolchain, "
+		"but the compiler is ${CMAKE_C_COMPILER_ID}. In CLion: use the "
+		"windows-debug / windows-release preset profiles, or set this "
+		"profile's toolchain to 'Visual Studio' (Settings > Build, Execution, "
+		"Deployment > CMake), then reset the CMake cache and reload.")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
