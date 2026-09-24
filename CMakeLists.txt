@@ -182,6 +182,8 @@ add_executable(hexenlicht WIN32
 	${H2_COMMON_SOURCES}
 	${H2_HEXENLICHT_REUSED_SOURCES}
 	${HEXENLICHT_DIR}/stubs.c
+	${HEXENLICHT_DIR}/vid_vk.c
+	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})

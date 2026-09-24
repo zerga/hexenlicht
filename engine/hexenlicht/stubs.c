@@ -31,70 +31,9 @@
 #include "quakedef.h"
 #include "winquake.h"
 #include "r_part.h"
+#include "vid_vk.h"
 
-
-/* ==========================================================================
- * Video: window, modes, palette.            -> story 1.2 (vid_vk.c)
- * ========================================================================== */
-
-viddef_t	vid;			/* global video state */
-modestate_t	modestate = MS_UNINIT;
-HWND		mainwindow;
-int		window_center_x, window_center_y;
-RECT		window_rect;
-unsigned int	d_8to24table[256];
-byte		globalcolormap[VID_GRADES*256];
-
-cvar_t		_enable_mouse = {"_enable_mouse", "1", CVAR_ARCHIVE};
-
-#if !defined(NO_SPLASHES)
-extern HWND	hwnd_dialog;		/* startup splash, created in sys_win.c */
-#endif
-
-void VID_Init (const unsigned char *palette)
-{
-	int		i;
-	const unsigned char	*pal = palette;
-
-	Cvar_RegisterVariable (&_enable_mouse);
-
-	/* no window yet: a nominal 640x480 screen for the console code */
-	vid.width  = vid.conwidth  = 640;
-	vid.height = vid.conheight = 480;
-	vid.aspect = ((float)vid.height / (float)vid.width) * (320.0 / 240.0);
-	vid.numpages = 2;
-	vid.maxwarpwidth = 320;		/* WARP_WIDTH/HEIGHT of gl_vidnt.c */
-	vid.maxwarpheight = 200;
-	vid.colormap = host_colormap;
-	vid.fullbright = 256 - LittleLong (*((int *)vid.colormap + 2048));
-	vid.recalc_refdef = 1;
-
-	/* plain RGBA palette, index 255 transparent (full version: story 1.5) */
-	for (i = 0; i < 256; i++, pal += 3)
-	{
-		d_8to24table[i] = (unsigned int)pal[0] | ((unsigned int)pal[1] << 8) |
-				  ((unsigned int)pal[2] << 16) | 0xff000000u;
-	}
-	d_8to24table[255] &= 0x00ffffffu;
-
-#if !defined(NO_SPLASHES)
-	if (hwnd_dialog)
-	{
-		DestroyWindow (hwnd_dialog);
-		hwnd_dialog = NULL;
-	}
-#endif
-	Con_Printf ("Hexenlicht: no video output yet (stub renderer)\n");
-}
-
-void VID_Shutdown (void) {}
-void VID_ShiftPalette (const unsigned char *palette) { (void)palette; }
-void VID_LockBuffer (void) {}
-void VID_UnlockBuffer (void) {}
-void VID_HandlePause (qboolean paused) { (void)paused; }
-void VID_ChangeConsize (int dir) { (void)dir; }
-float VID_ReportConsize (void) { return 1.0f; }
-void D_ShowLoadingSize (void) {}
+/* The video section (window, modes, VID_*) moved to vid_vk.c (story 1.2). */
 
 
 /* ==========================================================================
@@ -223,7 +162,10 @@ void SCR_Init (void)
 	Cvar_RegisterVariable (&scr_viewsize);
 }
 
-void SCR_UpdateScreen (void) {}
+void SCR_UpdateScreen (void)
+{
+	VID_EndFrame ();
+}
 void SCR_CenterPrint (const char *str) { (void)str; }
 void SCR_SetPlaqueMessage (const char *msg) { (void)msg; }
 
