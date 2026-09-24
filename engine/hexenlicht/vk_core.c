@@ -306,6 +306,8 @@ static void VK_CheckDevice (VkPhysicalDevice dev, vk_candidate_t *c)
 	if (!f->v12.descriptorBindingPartiallyBound)		VK_AddMissing (c, "descriptorBindingPartiallyBound");
 	if (!f->v12.descriptorBindingVariableDescriptorCount)	VK_AddMissing (c, "descriptorBindingVariableDescriptorCount");
 	if (!f->v12.shaderSampledImageArrayNonUniformIndexing)	VK_AddMissing (c, "shaderSampledImageArrayNonUniformIndexing");
+	if (!f->v12.descriptorBindingSampledImageUpdateAfterBind)	VK_AddMissing (c, "descriptorBindingSampledImageUpdateAfterBind");
+	if (!f->v12.descriptorBindingUpdateUnusedWhilePending)	VK_AddMissing (c, "descriptorBindingUpdateUnusedWhilePending");
 	if (!f->v12.timelineSemaphore)		VK_AddMissing (c, "timelineSemaphore");
 	if (!f->v12.scalarBlockLayout)		VK_AddMissing (c, "scalarBlockLayout");
 	if (!f->v13.dynamicRendering)		VK_AddMissing (c, "dynamicRendering");
@@ -427,6 +429,9 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	enable.v12.descriptorBindingPartiallyBound = VK_TRUE;
 	enable.v12.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	enable.v12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	/* textures are added to the bindless array while frames use it */
+	enable.v12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+	enable.v12.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 	enable.v12.timelineSemaphore = VK_TRUE;
 	enable.v12.scalarBlockLayout = VK_TRUE;
 	enable.v13.dynamicRendering = VK_TRUE;
@@ -548,6 +553,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 
 	Cmd_AddCommand ("vk_info", VK_Info_f);
 
+	VK_InitTextures ();
 	VK_InitSwapchain ();
 }
 
@@ -561,6 +567,7 @@ void VK_Shutdown (void)
 		vkDeviceWaitIdle (vk.device);
 		VK_ShutdownTestPattern ();
 		VK_ShutdownSwapchain ();
+		VK_ShutdownTextures ();
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
 		vkDestroyDevice (vk.device, NULL);
