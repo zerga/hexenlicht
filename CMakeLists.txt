@@ -182,7 +182,8 @@ set(HEXENLICHT_DIR ${CMAKE_SOURCE_DIR}/engine/hexenlicht)
 include(cmake/HexenlichtShaders.cmake)
 hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/fullscreen.vert
-	${HEXENLICHT_SHADER_DIR}/testpattern.frag
+	${HEXENLICHT_SHADER_DIR}/draw2d.vert
+	${HEXENLICHT_SHADER_DIR}/draw2d.frag
 )
 
 add_executable(hexenlicht WIN32
@@ -194,7 +195,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_swapchain.c
 	${HEXENLICHT_DIR}/vk_shader.c
 	${HEXENLICHT_DIR}/vk_texture.c
-	${HEXENLICHT_DIR}/vk_testpattern.c
+	${HEXENLICHT_DIR}/vk_draw.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )

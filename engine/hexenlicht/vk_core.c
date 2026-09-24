@@ -313,6 +313,7 @@ static void VK_CheckDevice (VkPhysicalDevice dev, vk_candidate_t *c)
 	if (!f->v13.dynamicRendering)		VK_AddMissing (c, "dynamicRendering");
 	if (!f->v13.synchronization2)		VK_AddMissing (c, "synchronization2");
 	if (!f->v13.maintenance4)		VK_AddMissing (c, "maintenance4");
+	if (!f->v13.shaderDemoteToHelperInvocation)	VK_AddMissing (c, "shaderDemoteToHelperInvocation");
 	if (!f->as.accelerationStructure)	VK_AddMissing (c, "accelerationStructure");
 	if (!f->rq.rayQuery)			VK_AddMissing (c, "rayQuery");
 	c->has_rtp = c->has_rtp && f->rtp.rayTracingPipeline;
@@ -437,6 +438,7 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	enable.v13.dynamicRendering = VK_TRUE;
 	enable.v13.synchronization2 = VK_TRUE;
 	enable.v13.maintenance4 = VK_TRUE;
+	enable.v13.shaderDemoteToHelperInvocation = VK_TRUE;	/* GLSL discard with a 1.3 target */
 	enable.as.accelerationStructure = VK_TRUE;
 	enable.rq.rayQuery = VK_TRUE;
 	enable.rtp.rayTracingPipeline = c->has_rtp;
@@ -555,6 +557,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 
 	VK_InitTextures ();
 	VK_InitSwapchain ();
+	VK_InitDraw ();
 }
 
 void VK_Shutdown (void)
@@ -565,7 +568,7 @@ void VK_Shutdown (void)
 	if (vk.device)
 	{
 		vkDeviceWaitIdle (vk.device);
-		VK_ShutdownTestPattern ();
+		VK_ShutdownDraw ();
 		VK_ShutdownSwapchain ();
 		VK_ShutdownTextures ();
 		if (vk.allocator)

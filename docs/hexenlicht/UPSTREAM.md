@@ -91,6 +91,10 @@ changes one, with a line on what we changed:
   `#if defined(HEXENLICHT)` branch in front of the existing
   `#if defined(GLQUAKE)` (story 1.1). The particle simulation is reused
   unchanged.
+- `engine/h2shared/gl_screen.c` — in `SCR_ScreenShot_f`, after the file
+  name is chosen, `#if defined(HEXENLICHT)` calls `VK_RequestScreenshot()`
+  instead of the `glReadPixels` part (story 1.6). The rest of the screen
+  layout is reused unchanged.
 
 To check: `git diff --name-status upstream/master main | grep -v "^A"`
 prints every upstream file that differs on `main`.

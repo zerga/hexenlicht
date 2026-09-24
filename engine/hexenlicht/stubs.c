@@ -93,101 +93,8 @@ void R_InitTextures (void)
 }
 
 
-/* ==========================================================================
- * 2D drawing and screen layout.             -> story 1.6 (2D renderer)
- * ========================================================================== */
-
-qboolean	draw_reinit = false;
-
-float		scr_con_current;
-float		scr_centertime_off;
-int		scr_copytop;
-int		scr_copyeverything;
-int		scr_fullupdate;
-int		scr_topupdate;
-qboolean	scr_skipupdate;
-qboolean	scr_disabled_for_loading;
-qboolean	block_drawing;
-int		clearnotify;
-int		trans_level = 0;
-int		total_loading_size, current_loading_size, loading_stage;
-
-cvar_t		scr_viewsize = {"viewsize", "110", CVAR_ARCHIVE};
-
-/* callers keep and dereference returned pics (e.g. for their size) */
-static qpic_t	stub_pic = { 1, 1, {0} };
-
-void Draw_Init (void) {}
-qpic_t *Draw_PicFromWad (const char *name) { (void)name; return &stub_pic; }
-qpic_t *Draw_CachePic (const char *path) { (void)path; return &stub_pic; }
-qpic_t *Draw_CachePicNoTrans (const char *path) { (void)path; return &stub_pic; }
-void Draw_Character (int x, int y, unsigned int num) { (void)x; (void)y; (void)num; }
-void Draw_BigCharacter (int x, int y, int num) { (void)x; (void)y; (void)num; }
-void Draw_String (int x, int y, const char *str) { (void)x; (void)y; (void)str; }
-void Draw_SmallString (int x, int y, const char *str) { (void)x; (void)y; (void)str; }
-void Draw_Pic (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
-void Draw_PicCropped (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
-void Draw_TransPic (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
-void Draw_TransPicCropped (int x, int y, qpic_t *pic) { (void)x; (void)y; (void)pic; }
-void Draw_TransPicTranslate (int x, int y, qpic_t *pic, byte *translation, int p_class)
-{
-	(void)x; (void)y; (void)pic; (void)translation; (void)p_class;
-}
-void Draw_IntermissionPic (qpic_t *pic) { (void)pic; }
-void Draw_ConsoleBackground (int lines) { (void)lines; }
-void Draw_Fill (int x, int y, int w, int h, int c) { (void)x; (void)y; (void)w; (void)h; (void)c; }
-void Draw_FadeScreen (void) {}
-
-void SCR_Init (void)
-{
-	Cvar_RegisterVariable (&scr_viewsize);
-}
-
-/* until the 2D renderer (story 1.6): a shader-drawn test pattern proves
- * the Vulkan and shader path works end to end */
-void SCR_UpdateScreen (void)
-{
-	if (VK_BeginFrame ())
-	{
-		VK_DrawTestPattern ((float)realtime);
-		VK_EndFrame ();
-	}
-	VID_EndFrame ();
-}
-void SCR_CenterPrint (const char *str) { (void)str; }
-void SCR_SetPlaqueMessage (const char *msg) { (void)msg; }
-
-/* no display to answer on: log the question and say "no" */
-int SCR_ModalMessage (const char *text)
-{
-	Con_Printf ("%s\n(no display: answered \"no\")\n", text);
-	return false;
-}
-
-/* the flag handling of gl_screen.c, without drawing */
-void SCR_BeginLoadingPlaque (void)
-{
-	S_StopAllSounds (true);
-
-	if (cls.state != ca_connected)
-		return;
-	if (cls.signon != SIGNONS)
-		return;
-
-	Con_ClearNotify ();
-	scr_centertime_off = 0;
-	scr_con_current = 0;
-	scr_disabled_for_loading = true;
-	scr_fullupdate = 0;
-}
-
-void SCR_EndLoadingPlaque (void)
-{
-	scr_disabled_for_loading = false;
-	scr_fullupdate = 0;
-	Con_ClearNotify ();
-}
-
+/* The 2D section (Draw_*, SCR_*) moved to vk_draw.c and the reused
+ * gl_screen.c (story 1.6). */
 
 /* ==========================================================================
  * 3D scene, lighting, surfaces.             -> epics E2-E4
@@ -196,6 +103,7 @@ void SCR_EndLoadingPlaque (void)
 refdef_t	r_refdef;
 vec3_t		r_origin, vpn, vright, vup;
 int		r_framecount;
+qboolean	r_cache_thrash;		/* software renderer's, read by gl_screen.c */
 entity_t	r_worldentity;
 int		d_lightstylevalue[256];	/* 8.8 fraction of base light value */
 

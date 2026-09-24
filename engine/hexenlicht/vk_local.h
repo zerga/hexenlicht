@@ -101,14 +101,19 @@ void VK_EndFrame (void);
 
 /* vk_texture.c: GL_LoadTexture (declared in glquake.h) returns the slot in
  * vk.texture_set; slot 0 is a 1x1 white texture */
+#define TEX_REPEAT	(1 << 20)	/* Hexenlicht only: repeat addressing for a non-mipmapped texture */
 void VK_InitTextures (void);
 void VK_ShutdownTextures (void);
 
+/* vk_draw.c: the 2D batch drawn by GL_EndRendering */
+void VK_InitDraw (void);
+void VK_ShutdownDraw (void);
+
+/* vk_swapchain.c: capture the next presented frame into a TGA file
+ * (gl_screen.c's "screenshot" command) */
+void VK_RequestScreenshot (const char *filename);
+
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert" */
 VkShaderModule VK_LoadShader (const char *name);
-
-/* vk_testpattern.c: placeholder screen until the 2D renderer (story 1.6) */
-void VK_DrawTestPattern (float time);
-void VK_ShutdownTestPattern (void);
 
 #endif	/* HEXENLICHT_VK_LOCAL_H */
