@@ -85,8 +85,9 @@ Vulkan validation layer is on; its messages go to the console log, and on
 exit the log reports `Vulkan validation: N errors, M warnings` — keep that
 at zero. Fullscreen is borderless at the
 monitor's desktop resolution (`-fullscreen`, or *Fullscreen* in the video
-menu); the display mode is never changed. The process is per-monitor DPI
-aware, so window sizes are physical pixels. Its settings are saved to
+menu); the display mode is never changed. The window can be resized and
+maximized; the last normal size is kept for the next start. The process is
+per-monitor DPI aware, so window sizes are physical pixels. Its settings are saved to
 `hexenlicht.cfg` next to `config.cfg`, so it and `glh2.exe` keep separate
 settings; on the first start, when there is no `hexenlicht.cfg` yet, it
 reads `config.cfg` (key bindings, mouse, sound) instead.

@@ -50,7 +50,7 @@
 #define WM_CLASSNAME		"HexenII"
 #define WM_WINDOWNAME		"Hexenlicht"
 
-#define WINDOWED_STYLE		(WS_OVERLAPPED | WS_BORDER | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX)
+#define WINDOWED_STYLE		(WS_OVERLAPPEDWINDOW)	/* resizable, with maximize button */
 #define FULLSCREEN_STYLE	(WS_POPUP)
 
 typedef struct {
@@ -89,6 +89,7 @@ static vmode_t	wmodelist[MAX_STDMODES + 1];	/* windowed modes (+ one user mode) 
 static vmode_t	fmodelist[1];			/* the one borderless fullscreen mode */
 static vmode_t	*modelist;			/* the list in use: one of the above */
 static int	num_wmodes;
+static int	vid_usermode = -1;		/* wmodelist index of the user mode, -1 = none */
 static int	num_fmodes;
 static int	*nummodes;
 static vmode_t	badmode;
@@ -107,6 +108,7 @@ static int	vid_default = RES_640X480;
 static int	vid_modenum = NO_MODE;	/* current mode, set after mode setting succeeds */
 static int	vid_deskwidth, vid_deskheight;
 static qboolean	vid_initialized = false;
+static qboolean	vid_setting_mode;	/* VID_SetMode is moving the window: not a user resize */
 
 /* vid_mode must be set before calling VID_SetMode or VID_Restart_f */
 static cvar_t	vid_mode = {"vid_mode", "0", CVAR_NONE};
@@ -130,6 +132,7 @@ extern HWND	hwnd_dialog;		/* startup splash, created in sys_win.c */
 static LRESULT WINAPI MainWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void VID_MenuDraw (void);
 static void VID_MenuKey (int key);
+static void VID_MenuModeChanged (int oldmode, int newmode);
 
 
 //====================================
@@ -224,9 +227,10 @@ static int VID_AutoUIScale (int width, int height)
 	return q_max (q_min (width / 640, height / 480), 1);
 }
 
-static void VID_ConWidth (int modenum)
+/* from the client area size, which differs from the mode's while maximized */
+static void VID_ConWidth (void)
 {
-	int	w = modelist[modenum].width, h = modelist[modenum].height;
+	int	w = window_width, h = window_height;
 	int	s = vid_uiscale.integer;
 
 	if (s <= 0)
@@ -244,7 +248,7 @@ static void VID_UIScaleChanged (cvar_t *var)
 {
 	(void)var;
 	if (vid_modenum != NO_MODE)
-		VID_ConWidth (vid_modenum);
+		VID_ConWidth ();
 }
 
 /* the menu's Scale slider: dir -1 smaller, +1 bigger */
@@ -255,7 +259,7 @@ void VID_ChangeConsize (int dir)
 	if (dir != -1 && dir != 1)
 		return;		/* bad key */
 	s = q_max (s, 1);
-	s = q_min (s, VID_MaxUIScale (modelist[vid_modenum].width, modelist[vid_modenum].height));
+	s = q_min (s, VID_MaxUIScale (window_width, window_height));
 	Cvar_SetValueQuick (&vid_uiscale, s);	/* the callback applies it */
 }
 
@@ -410,10 +414,14 @@ static void VID_SetMode (int modenum)
 		Sys_Error ("Bad video mode\n");
 
 	CDAudio_Pause ();
+	vid_setting_mode = true;	/* the WM_SIZEs below are ours */
 
 	if (modelist == fmodelist)
 		VID_UpdateFullscreenMode ();	/* the window may have moved monitors */
 	m = &modelist[modenum];
+
+	if (IsZoomed (mainwindow))
+		ShowWindow (mainwindow, SW_RESTORE);	/* modes are for a normal window */
 
 	if (m->type == MS_FULLDIB)
 	{
@@ -471,7 +479,7 @@ static void VID_SetMode (int modenum)
 	vid.aspect = ((float)vid.height / (float)vid.width) * (320.0 / 240.0);
 
 	/* setup the effective console width */
-	VID_ConWidth (modenum);
+	VID_ConWidth ();
 
 	vid_modenum = modenum;
 	if (modestate == MS_WINDOWED)
@@ -489,6 +497,7 @@ static void VID_SetMode (int modenum)
 
 	/* fix the leftover Alt from any Alt-Tab or the like that switched us away */
 	ClearAllStates ();
+	vid_setting_mode = false;
 
 	VK_SwapchainChanged ();	/* in case no WM_SIZE arrived */
 
@@ -520,6 +529,49 @@ static void VID_Restart_f (void)
 	BGM_Resume ();
 	scr_disabled_for_loading = temp;
 	Con_Printf ("%s\n", modelist[vid_modenum].modedesc);
+}
+
+/* The user resized or maximized the window (WM_SIZE). The 2D and 3D views
+ * follow the client area; a normal window's size also becomes the windowed
+ * mode, a standard one or the user mode, so it is kept for the next start.
+ * A maximized window keeps the mode of its normal size. */
+static void VID_WindowResized (int width, int height, qboolean maximized)
+{
+	int	i, oldmode = vid_modenum;
+
+	if (width == window_width && height == window_height)
+		return;		/* e.g. restored from minimized */
+
+	window_width = width;
+	window_height = height;
+	VID_UpdateWindowStatus ();
+
+	if (!maximized)
+	{
+		for (i = 0; i < num_wmodes; i++)
+		{
+			if (i != vid_usermode && wmodelist[i].width == width && wmodelist[i].height == height)
+				break;
+		}
+		if (i == num_wmodes)
+		{
+			if (vid_usermode < 0)
+				vid_usermode = num_wmodes++;
+			i = vid_usermode;
+			wmodelist[i].type = MS_WINDOWED;
+			wmodelist[i].width = width;
+			wmodelist[i].height = height;
+			q_snprintf (wmodelist[i].modedesc, MAX_DESC, "%dx%d (user mode)", width, height);
+		}
+		vid_modenum = i;
+		Cvar_SetValueQuick (&vid_mode, i);
+		Cvar_SetValueQuick (&vid_config_glx, width);
+		Cvar_SetValueQuick (&vid_config_gly, height);
+		VID_MenuModeChanged (oldmode, vid_modenum);
+	}
+
+	vid.aspect = ((float)height / (float)width) * (320.0 / 240.0);
+	VID_ConWidth ();
 }
 
 
@@ -729,6 +781,19 @@ static LRESULT WINAPI MainWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 	case WM_SIZE:
 		/* includes minimize/restore: the swapchain follows the client area */
 		VK_SwapchainChanged ();
+		if (modestate == MS_WINDOWED && !vid_setting_mode && wParam != SIZE_MINIMIZED)
+			VID_WindowResized (LOWORD(lParam), HIWORD(lParam), wParam == SIZE_MAXIMIZED);
+		break;
+
+	case WM_GETMINMAXINFO:
+		{	/* smallest window: a MIN_WIDTH x MIN_HEIGHT client area */
+			RECT	rect;
+
+			SetRect (&rect, 0, 0, MIN_WIDTH, MIN_HEIGHT);
+			AdjustWindowRectEx (&rect, WINDOWED_STYLE, FALSE, 0);
+			((MINMAXINFO *)lParam)->ptMinTrackSize.x = rect.right - rect.left;
+			((MINMAXINFO *)lParam)->ptMinTrackSize.y = rect.bottom - rect.top;
+		}
 		break;
 
 	case WM_SYSCHAR:
@@ -949,7 +1014,7 @@ void VID_Init (const unsigned char *palette)
 			wmodelist[num_wmodes].width = width;
 			wmodelist[num_wmodes].height = height;
 			q_snprintf (wmodelist[num_wmodes].modedesc, MAX_DESC, "%dx%d (user mode)", width, height);
-			vid_default = num_wmodes;
+			vid_default = vid_usermode = num_wmodes;
 			num_wmodes++;
 		}
 		if (vid_default >= num_wmodes)	/* tiny monitor paranoia */
@@ -1103,6 +1168,14 @@ static void VID_MenuDraw (void)
 	}
 
 	M_DrawCharacter (64, 92 + vid_cursor*8, 12+((int)(realtime*4)&1));
+}
+
+/* a resized window changed the windowed mode: an unchanged menu selection
+ * follows it instead of offering to apply the old size */
+static void VID_MenuModeChanged (int oldmode, int newmode)
+{
+	if (!vid_menu_firsttime && !vid_menu_fs && vid_menunum == oldmode)
+		vid_menunum = newmode;
 }
 
 /* the mode of the other list with the same size; for windowed, otherwise
