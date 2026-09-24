@@ -9,8 +9,8 @@
  * for real, and shrinks until the file can be deleted.
  *
  * The few functions with behavior the game logic depends on (particle pool,
- * per-map resets, the "missing texture" placeholder, loading plaque flags)
- * keep the renderer-independent parts of Hammer of Thyrion's GL versions.
+ * the "missing texture" placeholder) keep the renderer-independent parts of
+ * Hammer of Thyrion's GL versions.
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -33,9 +33,9 @@
 #include "r_part.h"
 #include "vid_vk.h"
 #include "vk_local.h"
+#include "r_scene.h"
 
 /* The video section (window, modes, VID_*) moved to vid_vk.c (story 1.2). */
-
 
 /* The texture manager (GL_LoadTexture, texture cache, flushing on map
  * change) moved to vk_texture.c (story 1.5). */
@@ -92,7 +92,6 @@ void R_InitTextures (void)
 	}
 }
 
-
 /* The 2D section (Draw_*, SCR_*) moved to vk_draw.c and the reused
  * gl_screen.c (story 1.6). */
 
@@ -100,12 +99,10 @@ void R_InitTextures (void)
  * 3D scene, lighting, surfaces.             -> epics E2-E4
  * ========================================================================== */
 
-refdef_t	r_refdef;
-vec3_t		r_origin, vpn, vright, vup;
-int		r_framecount;
+/* The view state (r_refdef, r_origin, ...), R_RenderView, R_NewMap and the
+ * light style animation moved to r_scene.c (story 1.7). */
+
 qboolean	r_cache_thrash;		/* software renderer's, read by gl_screen.c */
-entity_t	r_worldentity;
-int		d_lightstylevalue[256];	/* 8.8 fraction of base light value */
 
 int		gl_lightmap_format = GL_RGBA;
 int		gl_coloredstatic;
@@ -130,32 +127,13 @@ void R_Init (void)
 	Cvar_RegisterVariable (&gl_lightmapfmt);
 
 	R_InitParticles ();	/* particle pool used by the client effects */
+	R_InitScene ();
 
 	playerTranslation = (byte *)FS_LoadHunkFile ("gfx/player.lmp", NULL);
 	if (!playerTranslation)
 		Sys_Error ("Couldn't load gfx/player.lmp");
 }
 
-/* the renderer-independent parts of gl_rmisc.c's R_NewMap */
-void R_NewMap (void)
-{
-	int		i;
-
-	for (i = 0; i < 256; i++)
-		d_lightstylevalue[i] = 264;	/* normal light value */
-
-	memset (&r_worldentity, 0, sizeof(r_worldentity));
-	r_worldentity.model = cl.worldmodel;
-
-	/* clear out efrags in case the level hasn't been reloaded */
-	for (i = 0; i < cl.worldmodel->numleafs; i++)
-		cl.worldmodel->leafs[i].efrags = NULL;
-
-	R_ClearParticles ();
-}
-
-void R_RenderView (void) {}
-void R_PushDlights (void) {}
 void R_InitSky (texture_t *mt) { (void)mt; }
 
 /* called by the model loader for warped (water/sky) surfaces */
