@@ -93,6 +93,7 @@ static const unsigned int ColorPercent[16] = {
 #define SHIFT_A		24
 
 static VkSampler	sampler_nearest;	/* point, clamp */
+static VkSampler	sampler_nearest_repeat;	/* point, repeat (TEX_REPEAT: the 2D backtile) */
 static VkSampler	sampler_linear;		/* bilinear, no mips, clamp */
 static VkSampler	sampler_trilinear;	/* trilinear + anisotropy, repeat */
 static VkDescriptorPool	texture_pool;
@@ -149,7 +150,7 @@ static VkSampler VK_CreateSampler (VkFilter filter, VkSamplerMipmapMode mip_mode
 static VkSampler VK_SamplerForFlags (int flags)
 {
 	if (flags & TEX_NEAREST)
-		return sampler_nearest;
+		return (flags & TEX_REPEAT) ? sampler_nearest_repeat : sampler_nearest;
 	if (flags & TEX_MIPMAP)
 		return sampler_trilinear;
 	return sampler_linear;
@@ -604,6 +605,8 @@ void VK_InitTextures (void)
 	gl_max_anisotropy = features.samplerAnisotropy ? vk.props.limits.maxSamplerAnisotropy : 1.0f;
 	sampler_nearest = VK_CreateSampler (VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, false,
 					    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
+	sampler_nearest_repeat = VK_CreateSampler (VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, false,
+						   VK_SAMPLER_ADDRESS_MODE_REPEAT, 1.0f);
 	sampler_linear = VK_CreateSampler (VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, false,
 					   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
 	sampler_trilinear = VK_CreateSampler (VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, true,
@@ -697,6 +700,8 @@ void VK_ShutdownTextures (void)
 		vkDestroyDescriptorSetLayout (vk.device, vk.texture_set_layout, NULL);
 	if (sampler_nearest)
 		vkDestroySampler (vk.device, sampler_nearest, NULL);
+	if (sampler_nearest_repeat)
+		vkDestroySampler (vk.device, sampler_nearest_repeat, NULL);
 	if (sampler_linear)
 		vkDestroySampler (vk.device, sampler_linear, NULL);
 	if (sampler_trilinear)
@@ -706,5 +711,5 @@ void VK_ShutdownTextures (void)
 	texture_pool = VK_NULL_HANDLE;
 	vk.texture_set_layout = VK_NULL_HANDLE;
 	vk.texture_set = VK_NULL_HANDLE;
-	sampler_nearest = sampler_linear = sampler_trilinear = VK_NULL_HANDLE;
+	sampler_nearest = sampler_nearest_repeat = sampler_linear = sampler_trilinear = VK_NULL_HANDLE;
 }

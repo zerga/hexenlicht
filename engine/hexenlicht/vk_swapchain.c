@@ -48,6 +48,109 @@ void VK_SwapchainChanged (void)
 
 
 /* ==========================================================================
+ * Screenshots
+ * ========================================================================== */
+
+static void VK_TransitionImage (VkImageLayout new_layout,
+				VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+				VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
+
+static char		screenshot_name[MAX_OSPATH];	/* pending request, empty if none */
+static VkBuffer		screenshot_buffer;
+static VmaAllocation	screenshot_allocation;
+static VkDeviceSize	screenshot_size;
+
+void VK_RequestScreenshot (const char *filename)
+{
+	q_strlcpy (screenshot_name, filename, sizeof(screenshot_name));
+}
+
+/* copy the current swapchain image into the readback buffer */
+static void VK_RecordScreenshotCopy (VkCommandBuffer cmd)
+{
+	VkBufferCreateInfo	info;
+	VmaAllocationCreateInfo	alloc;
+	VkBufferImageCopy	copy;
+	VkDeviceSize		size = (VkDeviceSize)vk.extent.width * vk.extent.height * 4;
+
+	if (screenshot_size < size)
+	{
+		if (screenshot_buffer)
+			vmaDestroyBuffer (vk.allocator, screenshot_buffer, screenshot_allocation);
+		memset (&info, 0, sizeof(info));
+		info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		info.size = size;
+		info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		memset (&alloc, 0, sizeof(alloc));
+		alloc.usage = VMA_MEMORY_USAGE_AUTO;
+		alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+		VK_CHECK (vmaCreateBuffer (vk.allocator, &info, &alloc, &screenshot_buffer, &screenshot_allocation, NULL));
+		screenshot_size = size;
+	}
+
+	VK_TransitionImage (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+	memset (&copy, 0, sizeof(copy));
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = vk.extent.width;
+	copy.imageExtent.height = vk.extent.height;
+	copy.imageExtent.depth = 1;
+	vkCmdCopyImageToBuffer (cmd, vk.images[vk.image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				screenshot_buffer, 1, &copy);
+}
+
+/* after the frame finished: write the readback buffer as a 24-bit TGA */
+static void VK_WriteScreenshot (VkFence fence, const char *filename)
+{
+	int		w = (int)vk.extent.width, h = (int)vk.extent.height;
+	int		x, y, size = w * h * 3 + 18;
+	qboolean	bgra = (vk.surface_format.format == VK_FORMAT_B8G8R8A8_UNORM ||
+				vk.surface_format.format == VK_FORMAT_B8G8R8A8_SRGB);
+	byte		*tga, *out;
+	const byte	*pixels, *in;
+
+	VK_CHECK (vkWaitForFences (vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
+	VK_CHECK (vmaMapMemory (vk.allocator, screenshot_allocation, (void **)&pixels));
+	VK_CHECK (vmaInvalidateAllocation (vk.allocator, screenshot_allocation, 0, VK_WHOLE_SIZE));
+
+	tga = (byte *) malloc (size);
+	if (!tga)
+	{
+		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		Con_Printf ("screenshot: not enough memory\n");
+		return;
+	}
+	memset (tga, 0, 18);
+	tga[2] = 2;		/* uncompressed type */
+	tga[12] = w & 255;
+	tga[13] = w >> 8;
+	tga[14] = h & 255;
+	tga[15] = h >> 8;
+	tga[16] = 24;		/* pixel size */
+
+	/* TGA rows go bottom-up, pixels are BGR */
+	out = tga + 18;
+	for (y = h - 1; y >= 0; y--)
+	{
+		in = pixels + (size_t)y * w * 4;
+		for (x = 0; x < w; x++, in += 4, out += 3)
+		{
+			out[0] = bgra ? in[0] : in[2];
+			out[1] = in[1];
+			out[2] = bgra ? in[2] : in[0];
+		}
+	}
+	vmaUnmapMemory (vk.allocator, screenshot_allocation);
+
+	if (FS_WriteFile (filename, tga, size) == 0)
+		Con_Printf ("Wrote %s\n", filename);
+	free (tga);
+}
+
+
+/* ==========================================================================
  * Swapchain
  * ========================================================================== */
 
@@ -171,7 +274,8 @@ static void VK_CreateSwapchain (void)
 	info.imageColorSpace = vk.surface_format.colorSpace;
 	info.imageExtent = vk.extent;
 	info.imageArrayLayers = 1;
-	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+			  VK_IMAGE_USAGE_TRANSFER_SRC_BIT;	/* screenshots */
 	info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	info.preTransform = caps.currentTransform;
 	info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -328,6 +432,8 @@ qboolean VK_BeginFrame (void)
 		vk.swapchain_dirty = true;
 		return false;
 	}
+	if (result == VK_NOT_READY || result == VK_TIMEOUT)
+		return false;	/* no image this time; the semaphore was not signaled */
 	if (result == VK_SUBOPTIMAL_KHR)
 		vk.swapchain_dirty = true;	/* still usable for this frame */
 	else if (result != VK_SUCCESS)
@@ -438,9 +544,15 @@ void VK_EndFrame (void)
 	VkPresentInfoKHR		present;
 	VkResult			result;
 
+	qboolean			screenshot;
+
 	if (!vk.frame_active)
 		return;
 	f = &vk.frames[vk.frame_index];
+
+	screenshot = (screenshot_name[0] != 0);
+	if (screenshot)
+		VK_RecordScreenshotCopy (f->cmd);
 
 	VK_TransitionImage (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
@@ -487,6 +599,17 @@ void VK_EndFrame (void)
 	vk.frame_index = (vk.frame_index + 1) % VK_FRAMES_IN_FLIGHT;
 	vk.frame_active = false;
 	vk.frame_count++;
+
+	/* last: writing it prints to the console, which may draw a new frame,
+	 * so the request is cleared first */
+	if (screenshot)
+	{
+		char	name[MAX_OSPATH];
+
+		q_strlcpy (name, screenshot_name, sizeof(name));
+		screenshot_name[0] = 0;
+		VK_WriteScreenshot (f->fence, name);
+	}
 }
 
 
@@ -511,4 +634,8 @@ void VK_ShutdownSwapchain (void)
 		vkDestroySwapchainKHR (vk.device, vk.swapchain, NULL);
 	vk.swapchain = VK_NULL_HANDLE;
 	VK_DestroyFrames ();
+	if (screenshot_buffer)
+		vmaDestroyBuffer (vk.allocator, screenshot_buffer, screenshot_allocation);
+	screenshot_buffer = VK_NULL_HANDLE;
+	screenshot_size = 0;
 }

@@ -847,6 +847,12 @@ static void SCR_ScreenShot_f (void)
 		return;
 	}
 
+#if defined(HEXENLICHT)
+	{	/* Hexenlicht: the next presented frame is captured (vk_swapchain.c) */
+		extern void VK_RequestScreenshot (const char *filename);
+		VK_RequestScreenshot (pcxname);
+	}
+#else
 	size = glwidth * glheight * 3 + 18;
 	buffer = (byte *) Hunk_TempAlloc(size);
 	if (!buffer) {
@@ -882,6 +888,7 @@ static void SCR_ScreenShot_f (void)
 
 	if (i == 0)
 		Con_Printf ("Wrote %s\n", pcxname);
+#endif	/* HEXENLICHT */
 }
 
 //=============================================================================

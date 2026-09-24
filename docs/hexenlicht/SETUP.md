@@ -73,9 +73,11 @@ The repository ships these run configurations in `.run/`:
 | `hexenlicht` | `hexenlicht.exe`, windowed 1280×720, console log in `Hexenlicht-data\debug_h2.log` |
 | `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game and quits; the log should end with `Hexen II Initialized` and the config files being executed |
 
-`hexenlicht.exe` runs on Vulkan but only draws a slowly shimmering
-purple-to-orange test pattern so far: menus and the console are invisible
-until the 2D renderer arrives (story 1.6). Its shaders are loaded from the
+`hexenlicht.exe` runs on Vulkan and draws the 2D screens — console,
+menus, status bar, loading plaque, intermissions — but no 3D view yet
+(epic E2): the game area stays black. The 2D screen is scaled by a whole
+number (`vid_uiscale`, automatic by default: 2x at 1080p, 3x at 1440p, 4x
+at 4K; the *Scale* slider in the options menu changes it). Its shaders are loaded from the
 `shaders` folder next to the exe (`build\<preset>\bin\shaders`); keep that
 folder with the exe when copying it elsewhere. It needs a GPU with Vulkan 1.3 and hardware
 ray tracing and says so at startup if there is none. In Debug builds the
@@ -128,6 +130,8 @@ Console commands and variables of `hexenlicht.exe` so far:
 | `map <name>` | Start a map (e.g. `map demo1`); nothing of it is drawn yet, but its textures and models load |
 | `vid_vsync 1` / `0` | Wait for vertical blank (default), or present immediately (mailbox) |
 | `vid_restart` | Apply `vid_mode` (window size) |
+| `vid_uiscale 0` / `n` | Automatic 2D scale (largest whole number keeping the 2D screen at least 640×480), or a fixed factor *n* |
+| `screenshot` | Save the next frame as `Hexenlicht-data\data1\shots\hexenNN.tga` |
 
 ## Troubleshooting
 

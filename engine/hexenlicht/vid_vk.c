@@ -106,12 +106,12 @@ modestate_t	modestate = MS_UNINIT;
 static int	vid_default = RES_640X480;
 static int	vid_modenum = NO_MODE;	/* current mode, set after mode setting succeeds */
 static int	vid_deskwidth, vid_deskheight;
-static qboolean	vid_conscale = false;
 static qboolean	vid_initialized = false;
 
 /* vid_mode must be set before calling VID_SetMode or VID_Restart_f */
 static cvar_t	vid_mode = {"vid_mode", "0", CVAR_NONE};
-static cvar_t	vid_config_consize = {"vid_config_consize", "640", CVAR_ARCHIVE};
+static cvar_t	vid_config_consize = {"vid_config_consize", "640", CVAR_ARCHIVE};	/* = vid.conwidth, kept for compatibility */
+static cvar_t	vid_uiscale = {"vid_uiscale", "0", CVAR_ARCHIVE};	/* 0 = automatic */
 static cvar_t	vid_config_glx = {"vid_config_glx", "640", CVAR_ARCHIVE};
 static cvar_t	vid_config_gly = {"vid_config_gly", "480", CVAR_ARCHIVE};
 static cvar_t	vid_config_fscr = {"vid_config_fscr", "1", CVAR_ARCHIVE};
@@ -203,79 +203,70 @@ void VID_EndFrame (void)
 
 
 //====================================
-// console size
+// 2D screen size: an integer UI scale
+//
+// The 2D screen (console, menus, status bar) is vid.width x vid.height
+// virtual pixels, drawn with an integer scale so its pixels stay crisp.
+// vid_uiscale 0 (default) picks the largest scale that keeps the 2D screen
+// at least 640x480: 2x at 1920x1080, 3x at 2560x1440, 4x at 3840x2160.
+// The menu's Scale slider and -conwidth set it explicitly.
+
+static int	vid_ui_scale = 1;	/* the scale in use */
+
+static int VID_MaxUIScale (int width, int height)
+{
+	/* the 2D code needs at least 320x200 */
+	return q_max (q_min (width / MIN_WIDTH, height / 200), 1);
+}
+
+static int VID_AutoUIScale (int width, int height)
+{
+	return q_max (q_min (width / 640, height / 480), 1);
+}
 
 static void VID_ConWidth (int modenum)
 {
-	int	w, h;
+	int	w = modelist[modenum].width, h = modelist[modenum].height;
+	int	s = vid_uiscale.integer;
 
-	if (!vid_conscale)
-	{
-		Cvar_SetValueQuick (&vid_config_consize, modelist[modenum].width);
-		return;
-	}
+	if (s <= 0)
+		s = VID_AutoUIScale (w, h);
+	s = q_min (s, VID_MaxUIScale (w, h));
 
-	w = vid_config_consize.integer;
-	w &= ~7; /* make it a multiple of eight */
-	if (w < MIN_WIDTH)
-		w = MIN_WIDTH;
-	else if (w > modelist[modenum].width)
-		w = modelist[modenum].width;
-
-	h = w * modelist[modenum].height / modelist[modenum].width;
-	if (h < 200 /* MIN_HEIGHT */ ||
-	    h > modelist[modenum].height || w > modelist[modenum].width)
-	{
-		vid_conscale = false;
-		Cvar_SetValueQuick (&vid_config_consize, modelist[modenum].width);
-		return;
-	}
-	vid.width = vid.conwidth = w;
-	vid.height = vid.conheight = h;
-	if (w != modelist[modenum].width)
-		vid_conscale = true;
-	else	vid_conscale = false;
+	vid_ui_scale = s;
+	vid.width = vid.conwidth = w / s;
+	vid.height = vid.conheight = h / s;
+	Cvar_SetValueQuick (&vid_config_consize, vid.conwidth);	/* informational */
+	vid.recalc_refdef = 1;
 }
 
+static void VID_UIScaleChanged (cvar_t *var)
+{
+	(void)var;
+	if (vid_modenum != NO_MODE)
+		VID_ConWidth (vid_modenum);
+}
+
+/* the menu's Scale slider: dir -1 smaller, +1 bigger */
 void VID_ChangeConsize (int dir)
 {
-	int	w, h;
+	int	s = vid_ui_scale + dir;
 
-	switch (dir)
-	{
-	case -1: /* smaller text */
-		w = ((float)vid.conwidth/(float)vid.width + 0.05f) * vid.width; /* use 0.10f increment ?? */
-		w &= ~7; /* make it a multiple of eight */
-		if (w > modelist[vid_modenum].width)
-			w = modelist[vid_modenum].width;
-		break;
-
-	case 1: /* bigger text */
-		w = ((float)vid.conwidth/(float)vid.width - 0.05f) * vid.width;
-		w &= ~7; /* make it a multiple of eight */
-		if (w < MIN_WIDTH)
-			w = MIN_WIDTH;
-		break;
-
-	default:	/* bad key */
-		return;
-	}
-
-	h = w * modelist[vid_modenum].height / modelist[vid_modenum].width;
-	if (h < 200)
-		return;
-	vid.width = vid.conwidth = w;
-	vid.height = vid.conheight = h;
-	Cvar_SetValueQuick (&vid_config_consize, vid.conwidth);
-	vid.recalc_refdef = 1;
-	if (vid.conwidth != modelist[vid_modenum].width)
-		vid_conscale = true;
-	else	vid_conscale = false;
+	if (dir != -1 && dir != 1)
+		return;		/* bad key */
+	s = q_max (s, 1);
+	s = q_min (s, VID_MaxUIScale (modelist[vid_modenum].width, modelist[vid_modenum].height));
+	Cvar_SetValueQuick (&vid_uiscale, s);	/* the callback applies it */
 }
 
 float VID_ReportConsize (void)
 {
-	return (float)modelist[vid_modenum].width/vid.conwidth;
+	return (float)vid_ui_scale;
+}
+
+int VID_GetUIScale (void)
+{
+	return vid_ui_scale;
 }
 
 
@@ -874,13 +865,14 @@ void VID_Init (const unsigned char *palette)
 				"vid_config_fscr",
 				"vid_config_glx",
 				"vid_config_gly",
-				"vid_config_consize" };
+				"vid_uiscale" };
 #define num_readvars	Q_COUNTOF(read_vars)
 
 	Cvar_RegisterVariable (&vid_config_fscr);
 	Cvar_RegisterVariable (&vid_config_gly);
 	Cvar_RegisterVariable (&vid_config_glx);
 	Cvar_RegisterVariable (&vid_config_consize);
+	Cvar_RegisterVariable (&vid_uiscale);
 	Cvar_RegisterVariable (&vid_mode);
 	Cvar_RegisterVariable (&_enable_mouse);
 
@@ -909,9 +901,6 @@ void VID_Init (const unsigned char *palette)
 		Cvar_SetQuick (&vid_config_fscr, "0");
 	else if (COM_CheckParm("-fullscreen") || COM_CheckParm("-f"))
 		Cvar_SetQuick (&vid_config_fscr, "1");
-
-	if (vid_config_consize.integer != width)
-		vid_conscale = true;
 
 	if (!vid_config_fscr.integer)
 	{
@@ -974,20 +963,16 @@ void VID_Init (const unsigned char *palette)
 		width = fmodelist[0].width;
 	}
 
-	if (!vid_conscale)
-		Cvar_SetValueQuick (&vid_config_consize, width);
-
-	// This will display a bigger hud and readable fonts at high
-	// resolutions. The fonts will be somewhat distorted, though
+	// -conwidth <n>: the integer UI scale that comes closest to a 2D
+	// screen n pixels wide
 	i = COM_CheckParm("-conwidth");
 	if (i != 0 && i < com_argc-1)
+	{
 		i = atoi(com_argv[i + 1]);
-	else	i = vid_config_consize.integer;
-	if (i < MIN_WIDTH)	i = MIN_WIDTH;
-	else if (i > width)	i = width;
-	Cvar_SetValueQuick(&vid_config_consize, i);
-	if (vid_config_consize.integer != width)
-		vid_conscale = true;
+		if (i >= MIN_WIDTH)
+			Cvar_SetValueQuick (&vid_uiscale, q_max ((width + i / 2) / i, 1));
+	}
+	Cvar_SetCallback (&vid_uiscale, VID_UIScaleChanged);
 
 	vid_initialized = true;
 
