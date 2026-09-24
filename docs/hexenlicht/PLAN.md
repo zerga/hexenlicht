@@ -344,13 +344,19 @@ Goal: v1.0 on GitHub Releases.
 
 ## 11. Tracking
 
-GitHub Issues + a GitHub Project board on the `hexenlicht` repo:
+GitHub Issues + a GitHub Project board:
+[issues](https://github.com/zerga/hexenlicht/issues),
+[project board](https://github.com/users/zerga/projects/1).
 
-- **Epics** = one issue per epic (E0–E7), label `epic`.
-- **Stories** = sub-issues of their epic, label `story` (or `spike`).
-  The epic shows a progress bar from its sub-issues.
-- **Milestones** = releases (e.g. `0.1 first path-traced frame`,
-  `0.5 full base game lit`, `1.0`).
+- **Epics** = one issue per epic (E0–E7, issues #1–#8), label `epic`.
+- **Stories** = sub-issues of their epic, label `story` (or `spike`), titled
+  with their plan number (e.g. `3.9 Spike: ...`). The epic shows a progress
+  bar from its sub-issues.
+- **Milestones**: `0.1 Boots on Vulkan` (E0, E1), `0.2 First path-traced
+  frame` (E2, E3), `0.3 Lit and textured` (E4, E5), `0.4 Complete game` (E6),
+  `1.0` (E7).
+- New work found along the way becomes a new story under the right epic;
+  this plan is updated only when a decision or the scope changes.
 - **Labels**: `area:build`, `area:vid`, `area:2d`, `area:geometry`,
   `area:pathtracer`, `area:lighting`, `area:materials`, `area:effects`,
   `area:release`, `question`, `bug`, `upstream`.
