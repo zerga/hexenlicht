@@ -12,6 +12,7 @@
 
 #define VK_FRAMES_IN_FLIGHT	2
 #define VK_MAX_SWAPCHAIN_IMAGES	8
+#define VK_MAX_TEXTURES		4096	/* slots in the bindless texture array (power of 2) */
 
 typedef struct
 {
@@ -53,6 +54,11 @@ typedef struct
 	VkSemaphore		render_finished[VK_MAX_SWAPCHAIN_IMAGES];	/* per image */
 	qboolean		swapchain_dirty;	/* recreate before the next frame */
 
+	/* textures (vk_texture.c): one bindless array of combined image
+	 * samplers, indexed by the numbers GL_LoadTexture returns */
+	VkDescriptorSetLayout	texture_set_layout;
+	VkDescriptorSet		texture_set;
+
 	/* frames */
 	vk_frame_t		frames[VK_FRAMES_IN_FLIGHT];
 	uint32_t		frame_index;	/* slot in frames[] */
@@ -92,6 +98,11 @@ void VK_ClearScreen (float r, float g, float b);
 void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op);
 void VK_EndSwapchainRendering (void);
 void VK_EndFrame (void);
+
+/* vk_texture.c: GL_LoadTexture (declared in glquake.h) returns the slot in
+ * vk.texture_set; slot 0 is a 1x1 white texture */
+void VK_InitTextures (void);
+void VK_ShutdownTextures (void);
 
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert" */
 VkShaderModule VK_LoadShader (const char *name);

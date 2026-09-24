@@ -37,28 +37,15 @@
 /* The video section (window, modes, VID_*) moved to vid_vk.c (story 1.2). */
 
 
+/* The texture manager (GL_LoadTexture, texture cache, flushing on map
+ * change) moved to vk_texture.c (story 1.5). */
+
 /* ==========================================================================
- * Textures.                                 -> story 1.5 (texture manager)
+ * Model textures: player skins, missing texture.  -> epic E2 (models)
  * ========================================================================== */
 
-int		numgltextures;
-qboolean	flush_textures;
-int		gl_texlevel;
-int		gl_filter_idx = 4;	/* Bilinear */
-GLfloat		gl_max_anisotropy = 1.0f;
 byte		*playerTranslation;
 texture_t	*r_notexture_mip;
-
-/* same table as gl_draw.c: the video menu shows these names */
-glmode_t gl_texmodes[NUM_GL_FILTERS] =
-{
-	{ "GL_NEAREST",			GL_NEAREST,			GL_NEAREST },
-	{ "GL_NEAREST_MIPMAP_NEAREST",	GL_NEAREST_MIPMAP_NEAREST,	GL_NEAREST },
-	{ "GL_NEAREST_MIPMAP_LINEAR",	GL_NEAREST_MIPMAP_LINEAR,	GL_NEAREST },
-	{ "GL_LINEAR",			GL_LINEAR,			GL_LINEAR  },
-	{ "GL_LINEAR_MIPMAP_NEAREST",	GL_LINEAR_MIPMAP_NEAREST,	GL_LINEAR  },
-	{ "GL_LINEAR_MIPMAP_LINEAR",	GL_LINEAR_MIPMAP_LINEAR,	GL_LINEAR  }
-};
 
 /* player class skin color offsets into playerTranslation (gl_rmisc.c) */
 const int color_offsets[MAX_PLAYER_CLASS] =
@@ -69,13 +56,6 @@ const int color_offsets[MAX_PLAYER_CLASS] =
 	2 * 14 * 256,
 	2 * 14 * 256
 };
-
-GLuint GL_LoadTexture (const char *identifier, byte *data,
-			int width, int height, int flags)
-{
-	(void)identifier; (void)data; (void)width; (void)height; (void)flags;
-	return 0;
-}
 
 void R_TranslatePlayerSkin (int playernum) { (void)playernum; }
 
@@ -229,12 +209,10 @@ cvar_t		gl_missile_glows = {"gl_missile_glows", "1", CVAR_ARCHIVE};
 cvar_t		gl_coloredlight = {"gl_coloredlight", "0", CVAR_ARCHIVE};
 cvar_t		gl_colored_dynamic_lights = {"gl_colored_dynamic_lights", "0", CVAR_ARCHIVE};
 cvar_t		gl_extra_dynamic_lights = {"gl_extra_dynamic_lights", "0", CVAR_ARCHIVE};
-cvar_t		gl_purge_maptex = {"gl_purge_maptex", "1", CVAR_ARCHIVE};
 cvar_t		gl_lightmapfmt = {"gl_lightmapfmt", "GL_RGBA", CVAR_ARCHIVE};
 
 void R_Init (void)
 {
-	Cvar_RegisterVariable (&gl_purge_maptex);
 	Cvar_RegisterVariable (&gl_glows);
 	Cvar_RegisterVariable (&gl_missile_glows);
 	Cvar_RegisterVariable (&gl_other_glows);
@@ -271,7 +249,6 @@ void R_NewMap (void)
 void R_RenderView (void) {}
 void R_PushDlights (void) {}
 void R_InitSky (texture_t *mt) { (void)mt; }
-void D_FlushCaches (void) {}
 
 /* called by the model loader for warped (water/sky) surfaces */
 void GL_SubdivideSurface (qmodel_t *m, msurface_t *fa) { (void)m; (void)fa; }

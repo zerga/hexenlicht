@@ -124,6 +124,8 @@ Console commands and variables of `hexenlicht.exe` so far:
 | Command / variable | Effect |
 |---|---|
 | `vk_info` | Device, driver, ray tracing features, swapchain and validation counts |
+| `vk_textures` / `vk_textures list` | Number and memory of loaded textures / every texture with size, mip count and name |
+| `map <name>` | Start a map (e.g. `map demo1`); nothing of it is drawn yet, but its textures and models load |
 | `vid_vsync 1` / `0` | Wait for vertical blank (default), or present immediately (mailbox) |
 | `vid_restart` | Apply `vid_mode` (window size) |
 
