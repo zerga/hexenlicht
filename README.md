@@ -1,5 +1,7 @@
 # Hexenlicht
 
+[![Windows build](https://github.com/zerga/hexenlicht/actions/workflows/build-windows.yml/badge.svg)](https://github.com/zerga/hexenlicht/actions/workflows/build-windows.yml)
+
 **A path-traced fork of Hexen II: Hammer of Thyrion.**
 
 Hexenlicht ("witch-light") brings real-time path tracing to Raven Software's
@@ -55,6 +57,10 @@ cmake --build --preset windows-debug
 
 The executable (`glh2.exe`, Hexen II with the upstream OpenGL renderer for
 now) and the music codec DLLs end up in `build/<preset>/bin/`.
+
+GitHub Actions builds both presets for every pull request and every push to
+`main`; the binaries can be downloaded from the run's *Artifacts* section for
+30 days.
 
 The upstream Makefiles still work for all other platforms; see
 [docs/COMPILE](docs/COMPILE).
