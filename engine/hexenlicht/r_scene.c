@@ -216,6 +216,7 @@ void R_RenderView (void)
 
 	R_SetupFrame ();
 	R_BuildScene ();
+	VK_UpdateInstances ();	/* the brush entities, for the GPU */
 
 	/* drawing the scene: epic E2 */
 }
@@ -248,6 +249,7 @@ void R_NewMap (void)
 	R_ClearParticles ();
 
 	VK_LoadWorld (cl.worldmodel);	/* the world and its submodels on the GPU */
+	VK_ClearInstances ();
 }
 
 

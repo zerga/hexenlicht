@@ -220,4 +220,14 @@ void VK_FreePVS (void);
 const byte *VK_ClusterPVS (int cluster);	/* NULL for -1: everything visible */
 int VK_PointCluster (qmodel_t *worldmodel, const vec3_t point);
 
+/* vk_instance.c: the frame's model instances (ModelInstance in
+ * shaders/hl_shared.h), for now the brush entities; rebuilt from r_scene
+ * by R_RenderView and copied to this frame's mapped buffer */
+void VK_InitInstances (void);
+void VK_ShutdownInstances (void);
+void VK_ClearInstances (void);		/* on map change */
+void VK_UpdateInstances (void);
+int VK_NumInstances (void);
+const vk_buffer_t *VK_InstanceBuffer (void);	/* the current frame's */
+
 #endif	/* HEXENLICHT_VK_LOCAL_H */

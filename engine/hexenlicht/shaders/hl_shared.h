@@ -45,6 +45,7 @@ typedef float		vec4[4];
 typedef uint32_t	uvec2[2];
 typedef uint32_t	uvec3[3];
 typedef uint32_t	uvec4[4];
+typedef float		mat4[4][4];	/* [column][row], as GLSL stores it */
 
 #endif	/* VULKAN */
 
@@ -135,5 +136,50 @@ BEGIN_SHADER_STRUCT( VboPrimitive )
 	uvec2 custom2;
 }
 END_SHADER_STRUCT( VboPrimitive )
+
+
+/* ==========================================================================
+ * Model instances: the frame's entities with geometry, 208 bytes each.
+ * Quake II RTX's ModelInstance, with Hexen II's fields at the end.
+ * ========================================================================== */
+
+#define MAX_MODEL_INSTANCES		1024
+
+#define VERTEX_BUFFER_WORLD		0	/* source_buffer_idx: the world buffer (vk_world.c) */
+
+BEGIN_SHADER_STRUCT( ModelInstance )
+{
+	mat4 transform;		/* model to world */
+	mat4 transform_prev;	/* the same, last frame */
+
+	uint material;		/* unused for brush models */
+	uint shell;		/* unused */
+	int cluster;		/* vis cluster the model is in, -1 = none */
+	uint source_buffer_idx;	/* VERTEX_BUFFER_* with the primitives */
+	uint prim_count;
+
+	uint prim_offset_curr_pose_curr_frame;	/* animated models only */
+	uint prim_offset_prev_pose_curr_frame;
+	uint prim_offset_curr_pose_prev_frame;
+	uint prim_offset_prev_pose_prev_frame;
+
+	float pose_lerp_curr_frame;
+	float pose_lerp_prev_frame;
+	int iqm_matrix_offset_curr_frame;	/* unused, -1 */
+	int iqm_matrix_offset_prev_frame;
+
+	/* half float alpha (low 16 bits) | entity frame << 16; for brush
+	 * entities, a frame other than 0 shows the alternate animations */
+	uint alpha_and_frame;
+	uint render_buffer_idx;
+	uint render_prim_offset;	/* first primitive in render_buffer_idx */
+
+	/* Hexen II */
+	uint drawflags;		/* the entity's MLS_*, SCALE_*, DRF_* bits */
+	float abslight;		/* brightness for MLS_ABSLIGHT, 0-1 */
+	uint entity;		/* scene_entkind_t << 16 | entity number, for debugging */
+	uint pad;
+}
+END_SHADER_STRUCT( ModelInstance )
 
 #endif	/* HL_SHARED_H */
