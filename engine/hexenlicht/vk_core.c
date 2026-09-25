@@ -561,6 +561,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 	VK_InitWorld ();
 	VK_InitInstances ();
 	VK_InitAccel ();
+	VK_InitView ();
 	VK_InitSwapchain ();
 	VK_InitDraw ();
 }
@@ -575,6 +576,7 @@ void VK_Shutdown (void)
 		vkDeviceWaitIdle (vk.device);
 		VK_ShutdownDraw ();
 		VK_ShutdownSwapchain ();
+		VK_ShutdownView ();
 		VK_ShutdownAccel ();
 		VK_ShutdownInstances ();
 		VK_ShutdownWorld ();

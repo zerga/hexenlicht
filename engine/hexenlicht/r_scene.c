@@ -218,8 +218,9 @@ void R_RenderView (void)
 	R_BuildScene ();
 	VK_UpdateInstances ();	/* the brush entities, for the GPU */
 	VK_BuildTLAS ();	/* in this frame's command buffer */
+	VK_RenderView3D ();	/* the view pass into the view image */
 
-	/* drawing the scene: epic E2 */
+	/* r_debugview's pass for now; the path tracer comes with epic E3 */
 }
 
 /* The GL renderer marks the surfaces each dynamic light touches for

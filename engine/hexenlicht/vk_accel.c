@@ -71,6 +71,7 @@ typedef struct
 
 static vk_tlas_t	tlas[VK_FRAMES_IN_FLIGHT];
 static int		last_tlas = -1;		/* the slot built last, -1 = none since the map loaded */
+static uint64_t		last_tlas_frame;	/* vk.frame_count it was built in */
 static uint32_t		scratch_alignment;
 static VkQueryPool	query_pool;		/* 2 timestamps per slot */
 static double		tlas_build_ms;
@@ -388,11 +389,22 @@ void VK_BuildTLAS (void)
 		t->timed = true;
 	}
 	last_tlas = slot;
+	last_tlas_frame = vk.frame_count;
 }
 
 VkDeviceAddress VK_TLASAddress (void)
 {
 	return tlas[vk.frame_index].address;
+}
+
+VkDeviceAddress VK_TLASInfoAddress (void)
+{
+	return tlas[vk.frame_index].info.address;
+}
+
+qboolean VK_TLASBuiltThisFrame (void)
+{
+	return vk.frame_active && last_tlas == (int)vk.frame_index && last_tlas_frame == vk.frame_count;
 }
 
 

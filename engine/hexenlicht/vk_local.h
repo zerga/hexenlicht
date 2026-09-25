@@ -107,6 +107,7 @@ void VK_ShutdownTextures (void);
 
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
+void Draw_ClearCachedPics (void);	/* after texture slots were purged */
 void VK_ShutdownDraw (void);
 
 /* vk_swapchain.c: capture the next presented frame into a TGA file
@@ -245,5 +246,16 @@ void VK_BuildWorldAccel (void);		/* after the world buffer is uploaded */
 void VK_FreeWorldAccel (void);
 void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateInstances */
 VkDeviceAddress VK_TLASAddress (void);	/* the current frame's */
+VkDeviceAddress VK_TLASInfoAddress (void);	/* its TlasInstanceInfo[] */
+qboolean VK_TLASBuiltThisFrame (void);
+
+/* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
+ * TLAS: the view pass (r_debugview's debug_view.comp for now) renders
+ * into the view image; GL_EndRendering calls VK_DrawView3D, which copies
+ * it into the swapchain's 3D view rectangle before the 2D. */
+void VK_InitView (void);
+void VK_ShutdownView (void);
+void VK_RenderView3D (void);
+void VK_DrawView3D (void);
 
 #endif	/* HEXENLICHT_VK_LOCAL_H */
