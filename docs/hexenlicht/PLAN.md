@@ -235,7 +235,7 @@ Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after
 | 2.2 | Leaf clusters and decompressed PVS on the GPU | S | Visibility queryable from shaders |
 | 2.3 | Brush entities (doors, lifts, rotating) as instances with transforms | S | Moving brushes move |
 | 2.4a | MDL geometry and animation on the GPU: both MDL formats, compact poses, compute pass writing the frame's model triangles, frame interpolation (`r_lerpmodels`, on by default; 0 = GL's look; blending over the entity's own frame interval, since Hexen II animates at 20 or 10 Hz), scale types/origins, `EF_ROTATE`/`EF_FACE_VIEW` | M | Monsters, items, players animate correctly |
-| 2.4b | Model skins and draw state: skin groups, `gfx/skinN.lmp` skins, player class skins, model flags and draw flags as material kinds/alpha, lighting modes | M | Right skins, incl. Praevus models and class skins |
+| 2.4b | Model skins and draw state: skin groups, `gfx/skinN.lmp` skins, player class skins (translated 8-bit, so cutouts survive), model flags and draw flags as material kinds/alpha/cutouts, lighting modes and `colorshade` tint recorded | M | Right skins, incl. Praevus models and class skins |
 | 2.5 | Sprites and particles as geometry | M | Visible in the debug view |
 | 2.6 | Acceleration structures: static world BLAS, per-frame dynamic BLAS, TLAS, instance masks | M | Rebuilt/refit per frame, stable |
 | 2.7 | Debug view: primary rays showing albedo / normals / material / instance IDs | S | `r_debugview` cvar works |

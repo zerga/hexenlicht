@@ -8,14 +8,17 @@
  *
  * Brush entities (doors, lifts, trains, rotating brushes; dynamic and
  * static ones) come first; their primitives are in the world buffer
- * (vk_world.c). The alias model entities follow, opaque ones first: their
- * primitives are written every frame by vk_model.c's geometry pass into
- * the instanced buffer, from two poses of the model that the instance
- * blends (r_lerpmodels). The first-person weapon is left for E2's 2.8.
+ * (vk_world.c). The alias model entities follow, in three groups (opaque,
+ * transparent, masked = cutouts): their primitives are written every frame
+ * by vk_model.c's geometry pass into the instanced buffer, from two poses
+ * of the model that the instance blends (r_lerpmodels). The instance
+ * carries the material of the skin (vk_skin.c), the fixed light level and
+ * the colorshade tint GL uses. The first-person weapon is left for 2.8.
  *
- * The transforms and the pose choice are the GL renderer's: R_DrawBrushModel
- * and R_RotateForEntity in gl_rsurf.c and gl_rmain.c; R_RotateForEntity2,
- * R_DrawAliasModel's scaling and R_SetupAliasFrame in gl_rmain.c. The
+ * The transforms, the pose choice and the draw state are the GL
+ * renderer's: R_DrawBrushModel and R_RotateForEntity in gl_rsurf.c and
+ * gl_rmain.c; R_RotateForEntity2, R_DrawAliasModel and R_SetupAliasFrame
+ * in gl_rmain.c. The
  * cluster lookup follows Quake II RTX's process_bsp_entity, the blending
  * QuakeSpasm's R_SetupAliasFrame (src/refresh/vkpt/main.c; r_alias.c).
  *
@@ -48,7 +51,7 @@
 #define LERP_DEFAULT_TIME	0.1f	/* QuakeSpasm's blend time: Quake's monsters animate at 10 Hz */
 #define LERP_MAX_INTERVAL	0.2	/* a longer pause between frame changes: the default time */
 
-COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 208);	/* the shaders' std430 stride */
+COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 224);	/* the shaders' std430 stride */
 
 /* blend alias model poses between animation frames; 0 = GL's look */
 static cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
@@ -423,8 +426,10 @@ static void AddBrushInstance (const scene_entity_t *e)
 	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha) | ((uint32_t)(e->frame & 0xffff) << 16);
 	mi->drawflags = (uint32_t)e->drawflags;
-	mi->abslight = e->abslight / 255.0f;
+	/* R_DrawBrushModel: only MLS_ABSLIGHT sets a fixed light level */
+	mi->light = ((e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT) ? e->abslight / 255.0f : -1.0f;
 	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
+	mi->tint[0] = mi->tint[1] = mi->tint[2] = 1.0f;
 }
 
 
@@ -432,10 +437,33 @@ static void AddBrushInstance (const scene_entity_t *e)
  * Alias model entities
  * ========================================================================== */
 
-/* GL draws these in its translucent pass (R_DrawEntitiesOnList) */
-static qboolean AliasTransparent (const scene_entity_t *e)
+/* The groups of the instanced buffer, in Quake II RTX's order. GL draws
+ * all but the opaque ones in its translucent pass (R_DrawEntitiesOnList);
+ * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. */
+static int AliasGroup (const scene_entity_t *e)
 {
-	return (e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_HOLEY | EF_SPECIAL_TRANS));
+	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
+		return MODEL_GROUP_TRANSPARENT;
+	if (e->model->flags & EF_HOLEY)
+		return MODEL_GROUP_MASKED;
+	return MODEL_GROUP_OPAQUE;
+}
+
+/* R_DrawAliasModel's fixed light levels (255 = 1), in its order: spinning
+ * items pulse, MLS_ABSLIGHT, the other MLS_* modes (fullbright, power
+ * mode, torch, total darkness) from light styles 25-30; -1 = lit by the
+ * world */
+static float AliasLight (const scene_entity_t *e)
+{
+	int	mls = e->drawflags & MLS_MASKIN;
+
+	if (e->model->flags & EF_ROTATE)
+		return (float)((60 + 34 + sin(e->origin[0] + e->origin[1] + (r_scene.time*3.8)) * 34) / 255.0);
+	if (mls == MLS_ABSLIGHT)
+		return e->abslight / 255.0f;
+	if (mls != MLS_NONE)	/* d_lightstylevalue[24+mls]/2 */
+		return (float)((int)(r_scene.lightstyles[24 + mls] * 256.0f + 0.5f) / 2) / 255.0f;
+	return -1.0f;
 }
 
 /* R_SetupAliasFrame: the pose GL shows. Frame groups step through their
@@ -497,16 +525,16 @@ static float AliasBlend (entity_history_t *h, qboolean continues, int pose, floa
 	return (float) q_min (q_max ((time - h->lerp_start) / h->lerp_time, 0.0), 1.0);
 }
 
-static void AddAliasInstance (const scene_entity_t *e, uint32_t *next_prim)
+static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_prim)
 {
 	ModelInstance		*mi;
 	const vk_aliasmodel_t	*am;
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
-	qboolean		continues;
+	qboolean		continues, bad_skin;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
-	int			index = VK_AliasModelIndex (e->model), pose, curr, prev;
+	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
 
 	if (index < 0)
 		return;		/* nothing to draw */
@@ -568,7 +596,11 @@ static void AddAliasInstance (const scene_entity_t *e, uint32_t *next_prim)
 	}
 	EndHistory (h, e);
 
-	mi->material = am->material_id;
+	/* the skin GL would bind; translucent ones are Quake II RTX's transparent models */
+	material = VK_SkinMaterial (e, hdr, &bad_skin);
+	model_frame.bad_skins += bad_skin;
+	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |
+		       (uint32_t)material;
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;
 	mi->prim_count = (uint32_t)am->num_tris;
@@ -578,11 +610,23 @@ static void AddAliasInstance (const scene_entity_t *e, uint32_t *next_prim)
 	mi->render_prim_offset = *next_prim;
 	*next_prim += (uint32_t)am->num_tris;
 
-	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;	/* the rest is 2.4b's */
+	/* the entity's alpha; the skin's is in its texture (opacity) */
+	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha);
 	mi->drawflags = (uint32_t)e->drawflags;
-	mi->abslight = e->abslight / 255.0f;
+	mi->light = AliasLight (e);
 	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
+	mi->colorshade = (uint32_t)(e->colorshade & 0xff);
+	if (mi->colorshade)
+	{
+		mi->tint[0] = RTint[mi->colorshade];
+		mi->tint[1] = GTint[mi->colorshade];
+		mi->tint[2] = BTint[mi->colorshade];
+	}
+	else
+	{
+		mi->tint[0] = mi->tint[1] = mi->tint[2] = 1.0f;
+	}
 }
 
 
@@ -593,7 +637,7 @@ static void AddAliasInstance (const scene_entity_t *e, uint32_t *next_prim)
 /* called by R_RenderView after the scene is built */
 void VK_UpdateInstances (void)
 {
-	int		i, pass, dropped_total = model_frame.dropped_total;
+	int		i, group, dropped_total = model_frame.dropped_total;
 	uint32_t	next_prim = 0;
 
 	num_instances = 0;
@@ -610,20 +654,19 @@ void VK_UpdateInstances (void)
 			AddBrushInstance (e);
 	}
 
-	/* the alias models, opaque then transparent; not the view model yet */
+	/* the alias models, group by group; not the view model yet */
 	model_frame.first_instance = num_instances;
-	for (pass = 0; pass < 2; pass++)
+	for (group = 0; group < NUM_MODEL_GROUPS; group++)
 	{
-		vk_primrange_t	*range = pass ? &model_frame.transparent : &model_frame.opaque;
+		vk_primrange_t	*range = &model_frame.groups[group];
 
 		range->first = next_prim;
 		for (i = 0; i < r_scene.num_entities; i++)
 		{
 			const scene_entity_t	*e = &r_scene.entities[i];
 
-			if (e->model->type == mod_alias && e->kind != SCENE_ENT_VIEWMODEL &&
-			    AliasTransparent (e) == (qboolean)pass)
-				AddAliasInstance (e, &next_prim);
+			if (e->model->type == mod_alias && e->kind != SCENE_ENT_VIEWMODEL && AliasGroup (e) == group)
+				AddAliasInstance (e, group, &next_prim);
 		}
 		range->count = next_prim - range->first;
 	}
@@ -699,30 +742,39 @@ static void VK_Instances_f (void)
 		const ModelInstance	*mi = &instances[i];
 		const scene_entity_t	*e = instance_entities[i];
 		qboolean		has_moved = memcmp (mi->transform, mi->transform_prev, sizeof(mat4)) != 0;
-		const char		*state;
+		char			state[160], extra[96];
 
 		moved += has_moved;
+		extra[0] = '\0';
 		if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED)
 		{
 			const vk_aliasmodel_t	*am = VK_GetAliasModel ((int)mi->source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL);
+			const vk_material_t	*mat = VK_GetMaterial ((int)(mi->material & MATERIAL_INDEX_MASK));
 
-			state = va("frame %d pose %u<%u %.2f%s", e->frame, mi->prim_offset_curr_pose_curr_frame / am->num_pose_verts,
-				   mi->prim_offset_prev_pose_curr_frame / am->num_pose_verts, mi->pose_lerp_curr_frame,
-				   (e->scale && e->scale != 100) ? va(" scale %d%%", e->scale) : "");
+			q_snprintf (state, sizeof(state), "frame %d pose %u<%u %.2f skin %d %s%s%s", e->frame,
+				    mi->prim_offset_curr_pose_curr_frame / am->num_pose_verts,
+				    mi->prim_offset_prev_pose_curr_frame / am->num_pose_verts, mi->pose_lerp_curr_frame,
+				    e->skinnum, mat->name,
+				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL) ? " transp" : "",
+				    mat->mask_texture ? " cutout" : "");
+			if (e->scale && e->scale != 100)
+				q_strlcat (extra, va(" scale %d%%", e->scale), sizeof(extra));
+			if (mi->colorshade)
+				q_strlcat (extra, va(" tint %u (%.2f %.2f %.2f)", mi->colorshade, mi->tint[0], mi->tint[1], mi->tint[2]), sizeof(extra));
 		}
 		else
 		{
-			state = va("frame %u", mi->alpha_and_frame >> 16);
+			q_snprintf (state, sizeof(state), "frame %u", mi->alpha_and_frame >> 16);
 		}
+		if (mi->light >= 0.0f)
+			q_strlcat (extra, va(" light %.2f", mi->light), sizeof(extra));
 		Con_Printf ("%3d %-6s %4d %-16s org %.1f %.1f %.1f ang %.1f %.1f %.1f cluster %4d prims %u+%u alpha %.2f %s%s%s\n",
 				i, kinds[e->kind], e->num, e->model->name,
 				mi->transform[3][0], mi->transform[3][1], mi->transform[3][2],
 				e->angles[0], e->angles[1], e->angles[2],
 				mi->cluster, mi->render_prim_offset, mi->prim_count,
 				(mi->alpha_and_frame & 0xffff) == VK_FloatToHalf (1.0f) ? 1.0f : TRANSLUCENT_ALPHA,
-				state,
-				((mi->drawflags & MLS_MASKIN) == MLS_ABSLIGHT) ? va(" abslight %.2f", mi->abslight) : "",
-				has_moved ? " moved" : "");
+				state, extra, has_moved ? " moved" : "");
 	}
 	Con_Printf ("%d instances in frame %d (%d alias models), %d moved since the last frame\n", num_instances,
 			r_scene.framecount, model_frame.num_instances, moved);

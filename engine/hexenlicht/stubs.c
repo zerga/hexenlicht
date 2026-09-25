@@ -41,23 +41,13 @@
  * change) moved to vk_texture.c (story 1.5). */
 
 /* ==========================================================================
- * Model textures: player skins, missing texture.  -> epic E2 (models)
+ * Missing texture
  * ========================================================================== */
 
-byte		*playerTranslation;
+/* The model skins and player skin translation (R_TranslatePlayerSkin)
+ * moved to vk_skin.c (story 2.4b). */
+
 texture_t	*r_notexture_mip;
-
-/* player class skin color offsets into playerTranslation (gl_rmisc.c) */
-const int color_offsets[MAX_PLAYER_CLASS] =
-{
-	2 * 14 * 256,
-	0,
-	1 * 14 * 256,
-	2 * 14 * 256,
-	2 * 14 * 256
-};
-
-void R_TranslatePlayerSkin (int playernum) { (void)playernum; }
 
 /* The model loader substitutes this for missing textures, so it must be a
  * valid texture: the 16x16 checkerboard from gl_rmisc.c. Also called by
@@ -128,10 +118,7 @@ void R_Init (void)
 
 	R_InitParticles ();	/* particle pool used by the client effects */
 	R_InitScene ();
-
-	playerTranslation = (byte *)FS_LoadHunkFile ("gfx/player.lmp", NULL);
-	if (!playerTranslation)
-		Sys_Error ("Couldn't load gfx/player.lmp");
+	R_InitSkins ();		/* gl_nocolors, gfx/player.lmp */
 }
 
 void R_InitSky (texture_t *mt) { (void)mt; }

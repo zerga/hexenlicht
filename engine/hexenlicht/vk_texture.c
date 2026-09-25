@@ -18,6 +18,8 @@
  *   is point sampled, everything else bilinear, both clamped to the edge.
  * - Slot 0 is a 1x1 white texture; freed slots point back to it, so the
  *   array never references a destroyed image.
+ * - TEX_SPECIAL_TRANS alpha is stored as opacity (GL blends those skins
+ *   with inverted alpha), so alpha means opacity in every texture.
  * - The array is updated after bind, so textures can be loaded while a
  *   frame is being recorded (the 2D code loads pics lazily while drawing).
  *
@@ -78,11 +80,11 @@ glmode_t gl_texmodes[NUM_GL_FILTERS] =
 	{ "GL_LINEAR_MIPMAP_LINEAR",	GL_LINEAR_MIPMAP_LINEAR,	GL_LINEAR  }
 };
 
-/* translucency table for TEX_SPECIAL_TRANS (gl_vidnt.c) */
-static const int ColorIndex[16] = {
+/* translucency table for TEX_SPECIAL_TRANS and colorshade tints (gl_vidnt.c) */
+const int ColorIndex[16] = {
 	0, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 199, 207, 223, 231
 };
-static const unsigned int ColorPercent[16] = {
+const unsigned int ColorPercent[16] = {
 	25, 51, 76, 102, 114, 127, 140, 153, 165, 178, 191, 204, 216, 229, 237, 247
 };
 /* alpha of the odd colors of TEX_TRANSPARENT: the GL renderer's default
@@ -369,9 +371,11 @@ static void VK_Convert8 (const byte *data, unsigned int *trans, vk_texture_t *t)
 			}
 			else if (t->flags & TEX_SPECIAL_TRANS)
 			{
+				/* GL blends these with (1 - alpha, alpha): alpha is how much
+				 * shows through. Stored as opacity, like every other texture. */
 				p = data[i];
 				trans[i] = d_8to24table[ColorIndex[p>>4]] & MASK_RGB;
-				trans[i] |= (ColorPercent[p&15] & 0xff) << SHIFT_A;
+				trans[i] |= ((255 - ColorPercent[p&15]) & 0xff) << SHIFT_A;
 			}
 		}
 
@@ -465,6 +469,25 @@ GLuint GL_LoadTexture (const char *identifier, byte *data, int width, int height
 	t->sampler = VK_SamplerForFlags (t->flags);
 	VK_WriteTextureDescriptor (slot, t->view, t->sampler);
 	return (GLuint)slot;
+}
+
+/* the slot holding the texture loaded as identifier, -1 = none (e.g.
+ * purged on a map change) */
+int VK_FindTexture (const char *identifier)
+{
+	int	i, key = Hash_GenerateKeyString (&hash_textures, identifier, true);
+
+	for (i = Hash_First(&hash_textures, key); i != -1; i = Hash_Next(&hash_textures, i))
+	{
+		if (!strcmp (identifier, textures[i].identifier))
+			return i;
+	}
+	return -1;
+}
+
+const char *VK_TextureName (int slot)
+{
+	return (slot >= 0 && slot < numgltextures) ? textures[slot].identifier : "";
 }
 
 GLuint GL_LoadPicTexture (qpic_t *pic)

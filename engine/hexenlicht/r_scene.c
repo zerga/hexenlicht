@@ -122,6 +122,7 @@ static void R_AddSceneEntity (entity_t *e, scene_entkind_t kind, int num)
 	s->scale = e->scale;
 	s->drawflags = e->drawflags;
 	s->abslight = e->abslight;
+	s->colorshade = e->colorshade;
 	s->effects = e->effects;
 
 	/* chase-cam pitch adj. by FrikaC, as in the GL renderer */
@@ -322,6 +323,8 @@ static void DumpEntity (const scene_entity_t *s)
 		q_strlcat (extra, va(" effects 0x%x", s->effects), sizeof(extra));
 	if (s->colormap && s->colormap != vid.colormap)
 		q_strlcat (extra, " colormap", sizeof(extra));
+	if (s->colorshade)
+		q_strlcat (extra, va(" colorshade %d", s->colorshade), sizeof(extra));
 
 	Con_Printf ("%-6s %4d %-24s frame %3d skin %3d org %.0f %.0f %.0f ang %.0f %.0f %.0f%s\n",
 			kind_names[s->kind], s->num, s->model->name, s->frame, s->skinnum,

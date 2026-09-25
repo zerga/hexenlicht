@@ -119,6 +119,7 @@ static cvar_t	vid_config_gly = {"vid_config_gly", "480", CVAR_ARCHIVE};
 static cvar_t	vid_config_fscr = {"vid_config_fscr", "1", CVAR_ARCHIVE};
 
 unsigned int	d_8to24table[256];
+float		RTint[256], GTint[256], BTint[256];	/* colorshade tints (glquake.h) */
 byte		globalcolormap[VID_GRADES*256];
 
 /* input */
@@ -910,7 +911,7 @@ static LRESULT WINAPI MainWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
 static void VID_InitPalette (const unsigned char *palette)
 {
-	int	i;
+	int	i, p;
 	const unsigned char	*pal = palette;
 
 	/* RGBA, index 255 transparent (little endian, as on all Windows targets) */
@@ -920,6 +921,18 @@ static void VID_InitPalette (const unsigned char *palette)
 				  ((unsigned int)pal[2] << 16) | 0xff000000u;
 	}
 	d_8to24table[255] &= 0x00ffffffu;
+
+	/* the model tints of colorshade i * 16 + p, as gl_vidnt.c's VID_SetPalette */
+	for (i = 0; i < 16; i++)
+	{
+		pal = palette + ColorIndex[i] * 3;
+		for (p = 0; p < 16; p++)
+		{
+			RTint[i*16 + p] = ((float)pal[0]) / ((float)ColorPercent[15-p]);
+			GTint[i*16 + p] = ((float)pal[1]) / ((float)ColorPercent[15-p]);
+			BTint[i*16 + p] = ((float)pal[2]) / ((float)ColorPercent[15-p]);
+		}
+	}
 }
 
 void VID_Init (const unsigned char *palette)

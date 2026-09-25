@@ -8,8 +8,8 @@
  * order. A small model table (AliasModel in shaders/hl_shared.h) holds each
  * model's decode scale and the addresses of its data. Models are built for
  * every alias model the map precaches, and when one is first drawn (the
- * client's effects load debris and other models later). The first skin
- * is the model's material until E2's 2.4b picks the real one.
+ * client's effects load debris and other models later). The instance
+ * carries the material of the skin it shows (vk_skin.c).
  *
  * Every frame, VK_UpdateModelGeometry runs model_geometry.comp: one
  * workgroup per alias instance (vk_instance.c) writes the instance's
@@ -173,8 +173,7 @@ static int BuildAliasModel (qmodel_t *model)
 	aliashdr_t	*hdr;
 	byte		*data;
 	size_t		triangles_size, poses_size;
-	char		name[MAX_QPATH];
-	int		index, num_tris, material;
+	int		index, num_tris;
 	unsigned	h;
 
 	if (num_alias_models >= MAX_ALIAS_MODELS)
@@ -211,16 +210,9 @@ static int BuildAliasModel (qmodel_t *model)
 	am->num_tris = num_tris;
 	am->num_pose_verts = hdr->poseverts;
 	am->num_poses = hdr->numposes;
-
-	/* the first skin, until 2.4b */
-	COM_FileBase (model->name, name, sizeof(name));
-	material = VK_AddMaterial (name, (int)hdr->gl_texturenum[0][0]);
+	am->num_skins = hdr->numskins;
 	if (!loading_models)
-	{
-		VK_UploadMaterialRange (material, 1);
-		built_later++;
-	}
-	am->material_id = MATERIAL_KIND_REGULAR | (uint32_t)material;
+		built_later++;	/* its skins' materials are made when drawn */
 
 	WriteModelTable (index);
 	return index;
@@ -262,19 +254,21 @@ static void FreeModels (void)
 	last_pass.slot = -1;
 }
 
-/* on map change, after VK_LoadWorld (which cleared the materials) */
+/* on map change, after VK_LoadWorld (which cleared the materials): the
+ * precached alias models and their skins' materials */
 void VK_LoadModels (void)
 {
 	int	i, first_material = vk_num_materials;
 
 	vkDeviceWaitIdle (vk.device);	/* frames in flight may still use the old buffers */
 	FreeModels ();
+	VK_ClearSkins ();
 
 	loading_models = true;
 	for (i = 1; i < MAX_MODELS && cl.model_precache[i]; i++)
 	{
-		if (cl.model_precache[i]->type == mod_alias)
-			VK_AliasModelIndex (cl.model_precache[i]);
+		if (cl.model_precache[i]->type == mod_alias && VK_AliasModelIndex (cl.model_precache[i]) >= 0)
+			VK_AddSkinMaterials (cl.model_precache[i]);
 	}
 	loading_models = false;
 	if (vk_num_materials > first_material)
@@ -555,10 +549,12 @@ static void CpuTriangle (const ModelInstance *mi, const aliashdr_t *hdr, const A
 static void VK_ModelsCheck (void)
 {
 	const vk_modelframe_t	*mf = &last_pass.frame;
-	uint32_t		total = mf->transparent.first + mf->transparent.count;
+	uint32_t		total = mf->groups[NUM_MODEL_GROUPS - 1].first + mf->groups[NUM_MODEL_GROUPS - 1].count;
 	vk_buffer_t		readback;
 	VkCommandBuffer		cmd;
-	VkBufferCopy		copy[2];
+	VkBufferCopy		copy[3];
+	VkDeviceSize		materials_size;
+	const uint32_t		*gpu_materials;
 	VkMemoryBarrier2	barrier;
 	VkDependencyInfo	dep;
 	const VboPrimitive	*gpu;
@@ -567,7 +563,7 @@ static void VK_ModelsCheck (void)
 	int			*inward_per_model;	/* triangles facing against their vertex normals */
 	int			i, k, differences, max_tris = 1, bad_instances = 0, checked = 0, unsure = 0;
 	int			inward = 0, shown = 0, pos_bad = 0, nrm_bad = 0, tan_bad = 0, flip_bad = 0;
-	int			uv_bad = 0, motion_bad = 0, field_bad = 0, positions_bad = 0;
+	int			uv_bad = 0, motion_bad = 0, field_bad = 0, positions_bad = 0, group_bad = 0, table_bad = 0;
 	float			max_pos = 0.0f, min_nrm = 1.0f, min_tan = 1.0f, max_motion = 0.0f;
 
 	if (last_pass.slot < 0 || last_pass.framecount != r_scene.framecount || !total)
@@ -577,7 +573,9 @@ static void VK_ModelsCheck (void)
 	}
 
 	vkDeviceWaitIdle (vk.device);	/* the last frame's pass has run */
-	VK_CreateBuffer (&readback, (VkDeviceSize)total * (sizeof(VboPrimitive) + 9 * sizeof(float)),
+	/* the triangles and their BLAS positions, and the material table */
+	materials_size = (VkDeviceSize)vk_num_materials * MATERIAL_UINTS * sizeof(uint32_t);
+	VK_CreateBuffer (&readback, (VkDeviceSize)total * (sizeof(VboPrimitive) + 9 * sizeof(float)) + materials_size,
 			 VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_READBACK);
 	memset (copy, 0, sizeof(copy));
 	copy[0].size = (VkDeviceSize)total * sizeof(VboPrimitive);
@@ -586,6 +584,10 @@ static void VK_ModelsCheck (void)
 	copy[1].size = (VkDeviceSize)total * 9 * sizeof(float);
 	cmd = VK_BeginUpload ();
 	vkCmdCopyBuffer (cmd, instanced[last_pass.slot].buffer, readback.buffer, 2, copy);
+	copy[2].srcOffset = 0;
+	copy[2].dstOffset = copy[1].dstOffset + copy[1].size;
+	copy[2].size = materials_size;
+	vkCmdCopyBuffer (cmd, vk_material_table.buffer, readback.buffer, 1, &copy[2]);
 	memset (&barrier, 0, sizeof(barrier));
 	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
 	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
@@ -601,6 +603,7 @@ static void VK_ModelsCheck (void)
 	VK_CHECK (vmaInvalidateAllocation (vk.allocator, readback.allocation, 0, VK_WHOLE_SIZE));
 	gpu = (const VboPrimitive *) readback.mapped;
 	gpu_pos = (const float *)((const byte *) readback.mapped + copy[0].size);
+	gpu_materials = (const uint32_t *)((const byte *) readback.mapped + copy[2].dstOffset);
 
 	for (i = 0; i < num_alias_models; i++)
 		max_tris = q_max (max_tris, alias_models[i].num_tris);
@@ -638,6 +641,32 @@ static void VK_ModelsCheck (void)
 		AliasTriangles (hdr, tris);
 		NormalMatrix (mi->transform, nm);
 		inward_per_model[index * 2 + 1] += num_tris;
+
+		/* the group its triangles are in against its material: transparent
+		 * ones are Q2RTX's transparent models, masked ones have the skin
+		 * as their cutout mask, the others neither; and the material as
+		 * the GPU's table has it (uploaded on map load or mid-frame) */
+		{
+			int			m = (int)(mi->material & MATERIAL_INDEX_MASK);
+			const vk_material_t	*mat = VK_GetMaterial (m);
+			const uint32_t		*gm = gpu_materials + m * MATERIAL_UINTS;
+			uint32_t		kind = mi->material & MATERIAL_KIND_MASK;
+			int			g;
+
+			for (g = 0; g < NUM_MODEL_GROUPS; g++)
+			{
+				if (mi->render_prim_offset >= mf->groups[g].first &&
+				    mi->render_prim_offset + mi->prim_count <= mf->groups[g].first + mf->groups[g].count)
+					break;
+			}
+			if (g == NUM_MODEL_GROUPS ||
+			    kind != ((g == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
+			    (g == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture) ||
+			    (g == MODEL_GROUP_OPAQUE && mat->mask_texture))
+				group_bad++;
+			if ((int)(gm[0] & 0xffff) != mat->base_texture || (int)(gm[1] >> 16) != mat->mask_texture)
+				table_bad++;
+		}
 
 		for (k = 0; k < num_tris; k++)
 		{
@@ -751,7 +780,8 @@ static void VK_ModelsCheck (void)
 	free (tris);
 	VK_DestroyBuffer (&readback);
 
-	differences = pos_bad + nrm_bad + tan_bad + flip_bad + uv_bad + motion_bad + field_bad + positions_bad + bad_instances;
+	differences = pos_bad + nrm_bad + tan_bad + flip_bad + uv_bad + motion_bad + field_bad + positions_bad + bad_instances +
+		      group_bad + table_bad;
 	Con_Printf ("models check: %d triangles of %d instances (frame %d): %s\n", checked, mf->num_instances,
 			last_pass.framecount, differences ? "DIFFERENCES" : "all agree");
 	Con_Printf ("  positions: max difference %.5f, %d over 0.01; BLAS positions %d differ\n", max_pos, pos_bad, positions_bad);
@@ -759,8 +789,9 @@ static void VK_ModelsCheck (void)
 			min_nrm, nrm_bad, min_tan, tan_bad, unsure);
 	Con_Printf ("  motion: max difference %.5f, %d over tolerance; uvs %d, handedness %d, material/cluster/instance/alpha %d differ\n",
 			max_motion, motion_bad, uv_bad, flip_bad, field_bad);
-	Con_Printf ("  %d instances with bad offsets; %d triangles face against their vertex normals%s\n", bad_instances,
-			inward, inward ? ", in:" : "");
+	Con_Printf ("  %d instances with bad offsets, %d whose material doesn't fit their group (kind, cutout mask), "
+		    "%d whose material differs in the GPU's table (texture, mask)\n", bad_instances, group_bad, table_bad);
+	Con_Printf ("  %d triangles face against their vertex normals%s\n", inward, inward ? ", in:" : "");
 	for (i = 0; i < num_alias_models; i++)
 	{
 		if (inward_per_model[i * 2])
@@ -796,9 +827,9 @@ static void VK_Models_f (void)
 		bytes += am->buffer.size;
 		if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "list"))
 		{
-			Con_Printf ("%3d %-28s %5d tris %5d verts %4d poses %7.1f KB material %u\n", i, am->model->name,
+			Con_Printf ("%3d %-28s %5d tris %5d verts %4d poses %7.1f KB %2d skins%s\n", i, am->model->name,
 					am->num_tris, am->num_pose_verts, am->num_poses, am->buffer.size / 1024.0,
-					am->material_id & MATERIAL_INDEX_MASK);
+					am->num_skins, VK_ModelHasCutouts (am->model) ? " cutout" : "");
 		}
 	}
 	Con_Printf ("%d alias models on the GPU (%d built after the map loaded): %d triangles, %d poses, %.2f MB%s\n",
@@ -806,10 +837,11 @@ static void VK_Models_f (void)
 			too_many_models ? va(" (%d found no room)", too_many_models) : "");
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
-	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent triangles, geometry pass %.3f ms on the GPU\n",
-			mf->num_instances, mf->opaque.count, mf->transparent.count, geometry_ms);
-	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d this frame\n",
-			mf->dropped, mf->dropped_total, mf->bad_frames);
+	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked triangles, geometry pass %.3f ms on the GPU\n",
+			mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count, mf->groups[MODEL_GROUP_TRANSPARENT].count,
+			mf->groups[MODEL_GROUP_MASKED].count, geometry_ms);
+	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
+			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 }
 
 

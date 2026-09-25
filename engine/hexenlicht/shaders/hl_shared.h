@@ -144,7 +144,7 @@ END_SHADER_STRUCT( VboPrimitive )
 
 
 /* ==========================================================================
- * Model instances: the frame's entities with geometry, 208 bytes each.
+ * Model instances: the frame's entities with geometry, 224 bytes each.
  * Quake II RTX's ModelInstance, with Hexen II's fields at the end.
  * ========================================================================== */
 
@@ -190,9 +190,12 @@ BEGIN_SHADER_STRUCT( ModelInstance )
 
 	/* Hexen II */
 	uint drawflags;		/* the entity's MLS_*, SCALE_*, DRF_* bits */
-	float abslight;		/* brightness for MLS_ABSLIGHT, 0-1 */
+	float light;		/* GL's fixed light level for the model (255 = 1): MLS_ABSLIGHT's abslight,
+				 * the MLS_* light styles, spinning items' pulse; -1 = lit by the world */
 	uint entity;		/* scene_entkind_t << 16 | entity number, for debugging */
-	uint pad;
+	uint colorshade;	/* the entity's colorshade, 0 = none */
+	vec3 tint;		/* GL's colorshade tint (RTint/GTint/BTint), which multiplies the light; 1 1 1 = none */
+	float pad;
 }
 END_SHADER_STRUCT( ModelInstance )
 

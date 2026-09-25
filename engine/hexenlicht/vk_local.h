@@ -104,6 +104,8 @@ void VK_EndFrame (void);
 #define TEX_REPEAT	(1 << 20)	/* Hexenlicht only: repeat addressing for a non-mipmapped texture */
 void VK_InitTextures (void);
 void VK_ShutdownTextures (void);
+int VK_FindTexture (const char *identifier);	/* its slot, -1 = none */
+const char *VK_TextureName (int slot);
 
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
@@ -148,6 +150,7 @@ typedef struct
 {
 	char		name[16];	/* texture name */
 	int		base_texture;	/* texture slot */
+	int		mask_texture;	/* cutout: texture slot whose alpha < 0.5 are holes, 0 = none */
 	int		num_frames;	/* animation: frames in the sequence (1 = none) */
 	int		next_frame;	/* material of the next frame */
 	int		alternate;	/* first material of the alternate animation, 0 = none */
@@ -235,7 +238,7 @@ typedef struct
 	int		num_tris;	/* 0: nothing to draw */
 	int		num_pose_verts;	/* vertices per pose (gl_mesh.c's command vertices) */
 	int		num_poses;
-	uint32_t	material_id;	/* the first skin's material, MATERIAL_KIND_REGULAR */
+	int		num_skins;
 } vk_aliasmodel_t;
 
 void VK_InitModels (void);
@@ -248,19 +251,37 @@ qboolean VK_ModelGeometryBuiltThisFrame (void);
 const vk_buffer_t *VK_InstancedBuffer (void);	/* the current frame's */
 VkDeviceAddress VK_InstancedPositionsAddress (void);
 
+/* vk_skin.c: alias model skins: GL's choice of skin per entity, as a
+ * material (one per skin texture; the skin is the cutout mask of EF_HOLEY
+ * models), and R_TranslatePlayerSkin */
+struct scene_entity_s;
+void R_InitSkins (void);
+void VK_ClearSkins (void);			/* on map change, after VK_LoadWorld */
+void VK_AddSkinMaterials (qmodel_t *model);	/* on map load; the caller uploads the materials */
+qboolean VK_ModelHasCutouts (const qmodel_t *model);
+int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboolean *bad_skin);
+
 /* vk_instance.c: the frame's model instances (ModelInstance in
- * shaders/hl_shared.h): the brush entities, then the alias entities,
- * opaque ones first; rebuilt from r_scene by R_RenderView and copied to
- * this frame's mapped buffer */
+ * shaders/hl_shared.h): the brush entities, then the alias entities group
+ * by group; rebuilt from r_scene by R_RenderView and copied to this
+ * frame's mapped buffer */
+enum
+{
+	MODEL_GROUP_OPAQUE,
+	MODEL_GROUP_TRANSPARENT,	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_SPECIAL_TRANS */
+	MODEL_GROUP_MASKED,		/* EF_HOLEY: cutouts, alpha tested */
+	NUM_MODEL_GROUPS
+};
+
 typedef struct
 {
 	int		first_instance;	/* the alias instances in the instance list */
 	int		num_instances;
-	vk_primrange_t	opaque;		/* their triangles in the instanced buffer */
-	vk_primrange_t	transparent;	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_HOLEY, EF_SPECIAL_TRANS */
+	vk_primrange_t	groups[NUM_MODEL_GROUPS];	/* their triangles in the instanced buffer, in this order */
 	int		dropped;	/* alias entities left out this frame: no room */
 	int		dropped_total;	/* the same since the map loaded */
 	int		bad_frames;	/* entities with a frame number the model doesn't have */
+	int		bad_skins;	/* the same for skin numbers */
 } vk_modelframe_t;
 
 void VK_InitInstances (void);
