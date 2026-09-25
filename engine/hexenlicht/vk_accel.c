@@ -5,8 +5,8 @@
  * brush submodel (vk_world.c: opaque, transparent, sky), from the world
  * buffer's packed positions. Every frame, VK_BuildTLAS builds the dynamic
  * BLASes over this frame's alias model triangles (vk_model.c's instanced
- * buffer, already in world space: one for the opaque models, one for the
- * transparent ones) and then the top level (TLAS), in the frame's command
+ * buffer, already in world space: one each for the opaque, transparent and
+ * masked (cutout) models) and then the top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per
  * brush entity (vk_instance.c) and the dynamic BLASes, with Quake II RTX's
  * instance masks. Each TLAS instance has a TlasInstanceInfo
@@ -60,10 +60,19 @@ static int		num_blases;
 static vk_buffer_t	blas_buffer;
 static VkDeviceSize	blas_scratch_size;
 
-/* dynamic BLASes, per frame in flight: the alias models' triangles */
-enum { DYN_OPAQUE, DYN_TRANSPARENT, NUM_DYN };
-static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent" };
-static const uint32_t dyn_masks[NUM_DYN] = { AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT };
+/* dynamic BLASes, per frame in flight: the alias models' triangles, one
+ * per model group (vk_local.h's MODEL_GROUP_*), with Quake II RTX's masks
+ * and instance flags: the masked models' hits are candidates, alpha tested
+ * against their cutout mask */
+#define NUM_DYN		NUM_MODEL_GROUPS
+static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked" };
+static const uint32_t dyn_masks[NUM_DYN] = { AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE };
+static const VkGeometryInstanceFlagsKHR dyn_flags[NUM_DYN] =
+{
+	VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR,
+	VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR,
+	VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR
+};
 
 #define DYN_MIN_CAPACITY	4096u	/* triangles */
 #define DYN_GROWTH		2	/* Quake II RTX's bloat factor: room to grow before rebuilding */
@@ -105,7 +114,7 @@ static double		tlas_build_ms, dyn_build_ms;
 /* the last TLAS's instances: range and model instance, for vk_rtcheck */
 static struct
 {
-	int		range;		/* RANGE_* or, for the dynamic BLASes, DYN_* */
+	int		range;		/* RANGE_* or, for the dynamic BLASes, MODEL_GROUP_* */
 	qboolean	models;		/* a dynamic BLAS */
 	int		model_instance;
 } tlas_sources[MAX_TLAS_INSTANCES];
@@ -305,7 +314,8 @@ void VK_BuildWorldAccel (void)
 /* one TLAS instance of a BLAS: transform NULL = identity; its primitives
  * start at prim_offset in the buffer custom_index names */
 static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, VkDeviceAddress blas, uint32_t prim_offset,
-			     uint32_t custom_index, uint32_t mask, int range, qboolean models, int model_instance)
+			     uint32_t custom_index, uint32_t mask, VkGeometryInstanceFlagsKHR flags, int range,
+			     qboolean models, int model_instance)
 {
 	VkAccelerationStructureInstanceKHR	*ai;
 	TlasInstanceInfo			*info;
@@ -324,7 +334,7 @@ static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, VkDeviceAddress
 	ai->instanceCustomIndex = custom_index;
 	ai->mask = mask;
 	ai->instanceShaderBindingTableRecordOffset = 0;
-	ai->flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+	ai->flags = flags;
 	ai->accelerationStructureReference = blas;
 
 	info = (TlasInstanceInfo *) t->info.mapped + t->num_instances;
@@ -366,7 +376,7 @@ static void BuildDynamicBLASes (vk_tlas_t *t, VkCommandBuffer cmd)
 	for (d = 0; d < NUM_DYN; d++)
 	{
 		vk_dynblas_t					*b = &t->dyn[d];
-		const vk_primrange_t				*r = (d == DYN_OPAQUE) ? &mf->opaque : &mf->transparent;
+		const vk_primrange_t				*r = &mf->groups[d];
 		VkAccelerationStructureGeometryTrianglesDataKHR	*tri;
 
 		b->first = r->first;
@@ -377,7 +387,7 @@ static void BuildDynamicBLASes (vk_tlas_t *t, VkCommandBuffer cmd)
 		memset (&geoms[n], 0, sizeof(geoms[n]));
 		geoms[n].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
 		geoms[n].geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-		geoms[n].flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		geoms[n].flags = (d == MODEL_GROUP_MASKED) ? 0 : VK_GEOMETRY_OPAQUE_BIT_KHR;
 		tri = &geoms[n].geometry.triangles;
 		tri->sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		tri->vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
@@ -490,7 +500,7 @@ void VK_BuildTLAS (void)
 	{
 		if (blases[r].as)
 			AddTLASInstance (t, NULL, blases[r].address, blases[r].first, VERTEX_BUFFER_WORLD,
-					 range_masks[r], r, false, -1);
+					 range_masks[r], VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, r, false, -1);
 	}
 	for (i = 0; i < VK_NumInstances (); i++)
 	{
@@ -506,7 +516,8 @@ void VK_BuildTLAS (void)
 
 			if (b->as)
 				AddTLASInstance (t, mi->transform, b->address, b->first, VERTEX_BUFFER_WORLD,
-						 translucent ? AS_FLAG_TRANSPARENT : range_masks[r], r, false, i);
+						 translucent ? AS_FLAG_TRANSPARENT : range_masks[r],
+						 VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, r, false, i);
 		}
 	}
 	/* the model triangles are in world space; their VboPrimitive.instance
@@ -516,7 +527,8 @@ void VK_BuildTLAS (void)
 		const vk_dynblas_t	*d = &t->dyn[r];
 
 		if (d->count)
-			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], r, true, -1);
+			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], dyn_flags[r],
+					 r, true, -1);
 	}
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->instances.allocation, 0, VK_WHOLE_SIZE));
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->info.allocation, 0, VK_WHOLE_SIZE));

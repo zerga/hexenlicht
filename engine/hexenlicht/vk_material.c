@@ -114,7 +114,7 @@ void VK_UploadMaterialRange (int first, int count)
 		/* the factors are Quake II RTX's defaults (MAT_Reset) */
 		d = table + (i - first) * MATERIAL_UINTS;
 		d[0] = (uint32_t)m->base_texture & 0xffff;
-		d[1] = 0;
+		d[1] = ((uint32_t)m->mask_texture & 0xffff) << 16;
 		d[2] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (-1.0f) << 16);	/* bump scale, no roughness override */
 		d[3] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* metalness, emissive factor */
 		d[4] = ((uint32_t)m->num_frames & 0xffff) | (((uint32_t)m->next_frame & 0xffff) << 16);
@@ -138,6 +138,7 @@ void VK_InitMaterials (void)
 {
 	VK_CreateBuffer (&vk_material_table, MAX_MATERIALS * MATERIAL_UINTS * sizeof(uint32_t),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+			 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |	/* vk_models check reads it back */
 			 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
 	vk_num_materials = 0;
 	VK_ClearMaterials ();

@@ -55,6 +55,7 @@ typedef struct scene_entity_s
 	int		scale;		/* percent, 0 = 100 */
 	int		drawflags;	/* MLS_*, SCALE_TYPE_*, SCALE_ORIGIN_*, DRF_* */
 	int		abslight;	/* light level for MLS_ABSLIGHT */
+	int		colorshade;	/* tint (the entity's colormap field), 0 = none */
 	int		effects;	/* EF_* */
 } scene_entity_t;
 
