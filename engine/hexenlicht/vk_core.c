@@ -559,6 +559,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 	VK_InitTextures ();
 	VK_InitMaterials ();
 	VK_InitWorld ();
+	VK_InitInstances ();
 	VK_InitSwapchain ();
 	VK_InitDraw ();
 }
@@ -573,6 +574,7 @@ void VK_Shutdown (void)
 		vkDeviceWaitIdle (vk.device);
 		VK_ShutdownDraw ();
 		VK_ShutdownSwapchain ();
+		VK_ShutdownInstances ();
 		VK_ShutdownWorld ();
 		VK_ShutdownMaterials ();
 		VK_ShutdownTextures ();
