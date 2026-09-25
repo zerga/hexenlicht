@@ -4,8 +4,9 @@
  * R_RenderView calls VK_RenderView3D after the TLAS is built: it fills
  * this frame's ViewUniforms (shaders/hl_shared.h) from r_scene and
  * dispatches the view pass into the view image, sized to the 3D view in
- * pixels. For now the pass is debug_view.comp, selected by r_debugview;
- * the path tracer of epic E3 replaces it. GL_EndRendering then calls
+ * pixels. For now the pass is debug_view.comp, selected by r_debugview,
+ * which also walks the effects TLAS for the particles and sprites; the
+ * path tracer of epic E3 replaces it. GL_EndRendering then calls
  * VK_DrawView3D, which copies the image into the swapchain's 3D view
  * rectangle (view_composite.frag) before the 2D is drawn on top.
  *
@@ -31,7 +32,7 @@
 
 #define VIEW_FORMAT	VK_FORMAT_R16G16B16A16_SFLOAT	/* linear, room for HDR later */
 
-COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 152);	/* the shaders' std430 layout */
+COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 184);	/* the shaders' std430 layout */
 
 /* 1 albedo, 2 normals, 3 material kinds, 4 instances, 5 clusters (and the
  * camera's PVS), 6 motion since the last frame; 0 draws no 3D view */
@@ -323,6 +324,10 @@ void VK_RenderView3D (void)
 	u->materials = vk_material_table.address;
 	u->pvs = vk_pvs.buffer.address;
 	u->instanced = VK_InstancedBuffer ()->address;
+	u->effects_tlas = VK_EffectsTLASAddress ();
+	u->particles = VK_EffectsFrame ()->particles;
+	u->sprites = VK_EffectsFrame ()->sprites;
+	u->particle_texture = (uint32_t)VK_ParticleTexture ();
 	VK_CHECK (vmaFlushAllocation (vk.allocator, uniform_buffers[vk.frame_index].allocation, 0, sizeof(*u)));
 
 	if (!debug_pipeline)

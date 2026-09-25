@@ -227,7 +227,7 @@ Goal: `hexenlicht.exe` boots with Vulkan; menus, console and HUD work; maps load
 
 ### E2 — Scene on the GPU
 Goal: all geometry and animation correct in a ray-traced debug view.
-Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after them), then 2.4a, 2.4b, 2.5, 2.8, 2.9.
+Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after them), then 2.4a, 2.4b, 2.5, 2.8, 2.9, 2.10.
 
 | # | Story | Size | Done when |
 |---|---|---|---|
@@ -236,11 +236,12 @@ Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after
 | 2.3 | Brush entities (doors, lifts, rotating) as instances with transforms | S | Moving brushes move |
 | 2.4a | MDL geometry and animation on the GPU: both MDL formats, compact poses, compute pass writing the frame's model triangles, frame interpolation (`r_lerpmodels`, on by default; 0 = GL's look; blending over the entity's own frame interval, since Hexen II animates at 20 or 10 Hz), scale types/origins, `EF_ROTATE`/`EF_FACE_VIEW` | M | Monsters, items, players animate correctly |
 | 2.4b | Model skins and draw state: skin groups, `gfx/skinN.lmp` skins, player class skins (translated 8-bit, so cutouts survive), model flags and draw flags as material kinds/alpha/cutouts, lighting modes and `colorshade` tint recorded | M | Right skins, incl. Praevus models and class skins |
-| 2.5 | Sprites and particles as geometry | M | Visible in the debug view |
+| 2.5 | Sprites and particles as geometry: rebuilt every frame on the CPU as GL draws them (a camera-facing triangle per particle with GL's dot texture, a quad per sprite for all five orientation types), in their own effects TLAS as in Q2RTX (never blocking other rays); the debug view blends them in front of its hit | M | Visible in the debug view |
 | 2.6 | Acceleration structures: static world BLAS, per-frame dynamic BLAS, TLAS, instance masks | M | Rebuilt/refit per frame, stable |
 | 2.7 | Debug view: primary rays showing albedo / normals / material / instance IDs | S | `r_debugview` cvar works |
 | 2.8 | First-person weapon model (own FOV, masks) | S | Weapon renders correctly |
 | 2.9 | Smooth movement of walking monsters (`r_lerpmove`, QuakeSpasm's; needs the server's step bit kept in the client, an upstream hot spot) | S | Walking monsters move smoothly with 1, step like GL with 0 |
+| 2.10 | Beam segments (the client's stream entities, e.g. the sunstaff's `stsunsf1/2.mdl`) drawn as GL draws them: the reflected sunstaff beam is missing, the horizontal one looks different | S | Sunstaff, lightning and chain beams match `glhexen2` |
 
 ### E3 — Path tracer core
 Goal: a test map path-traced, denoised, 60+ fps at 1440p with upscaling.

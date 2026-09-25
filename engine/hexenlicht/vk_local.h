@@ -297,19 +297,48 @@ const struct ModelInstance *VK_GetInstance (int i);
 const struct scene_entity_s *VK_InstanceEntity (int i);
 int VK_InstanceSubmodel (int i);		/* brush submodel number (*N), 0 = none (alias models) */
 
+/* vk_effects.c: the frame's particles and sprites as triangles, in a
+ * mapped buffer per frame in flight (layout in shaders/hl_shared.h) */
+typedef struct
+{
+	uint64_t	frame_count;		/* vk.frame_count it was written in */
+	int		num_particles;		/* one triangle each */
+	int		num_sprites;		/* one quad each */
+	VkDeviceAddress	positions;		/* vec3 per vertex: the particles' */
+	VkDeviceAddress	sprite_positions;	/* the sprites', after them */
+	VkDeviceAddress	particles;		/* EffectParticle[] */
+	VkDeviceAddress	sprites;		/* EffectSprite[] */
+	VkDeviceAddress	indices;		/* the sprite quads' uint16 indices */
+	int		dropped_particles;	/* left out: no room */
+	int		dropped_sprites;
+	int		bad_frames;		/* sprite frame numbers the model doesn't have */
+	int		edge_on;		/* upright sprites seen from straight above or below: GL skips them */
+} vk_effectsframe_t;
+
+void VK_InitEffects (void);
+void VK_ShutdownEffects (void);
+void VK_ClearEffects (void);			/* on map change */
+void VK_UpdateEffects (void);			/* in R_RenderView, before VK_BuildTLAS */
+const vk_effectsframe_t *VK_EffectsFrame (void);	/* the current frame's; nothing unless written this frame */
+int VK_ParticleTexture (void);
+
 /* vk_accel.c: acceleration structures. Static BLASes for the world's and
  * the submodels' primitive ranges are built on map load; every frame, the
  * dynamic BLASes over the instanced buffer's model triangles (opaque,
- * transparent) and the TLAS (world + model instances, shaders/hl_shared.h)
- * are rebuilt in the frame's command buffer, one per frame in flight. */
+ * transparent, masked) and the effects (particles, sprites), the TLAS
+ * (world + model instances, shaders/hl_shared.h) and the effects TLAS are
+ * rebuilt in the frame's command buffer, one per frame in flight. */
 void VK_InitAccel (void);
 void VK_ShutdownAccel (void);
 void VK_BuildWorldAccel (void);		/* after the world buffer is uploaded */
 void VK_FreeWorldAccel (void);
-void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateModelGeometry */
+void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateModelGeometry and VK_UpdateEffects */
 VkDeviceAddress VK_TLASAddress (void);	/* the current frame's */
 VkDeviceAddress VK_TLASInfoAddress (void);	/* its TlasInstanceInfo[] */
 qboolean VK_TLASBuiltThisFrame (void);
+VkDeviceAddress VK_EffectsTLASAddress (void);	/* the current frame's, 0 = no effects */
+VkDeviceAddress VK_LastEffectsTLAS (int *slot, uint64_t *frame_count);	/* the last one built (0 = none), for checks */
+void VK_PrintEffectsAccel (void);	/* the effects' BLASes and TLAS, for vk_effects */
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
  * TLAS: the view pass (r_debugview's debug_view.comp for now) renders

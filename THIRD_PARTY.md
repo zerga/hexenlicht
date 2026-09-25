@@ -34,7 +34,7 @@ file headers:
 
 | Project | License | Adapted in |
 |---|---|---|
-| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/shaders/debug_view.comp`, `engine/hexenlicht/shaders/model_geometry.comp`, `engine/hexenlicht/shaders/normal.glsl` |
+| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/vk_effects.c`, `engine/hexenlicht/shaders/debug_view.comp`, `engine/hexenlicht/shaders/model_geometry.comp`, `engine/hexenlicht/shaders/normal.glsl` |
 | [QuakeSpasm](https://sourceforge.net/projects/quakespasm/) | GPL-2.0-or-later | `engine/hexenlicht/vk_instance.c` (alias model frame blending, after `R_SetupAliasFrame`) |
 
 Used from the LunarG Vulkan SDK at build time, not vendored:
