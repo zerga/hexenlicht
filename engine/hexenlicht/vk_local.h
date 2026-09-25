@@ -162,6 +162,7 @@ void VK_ClearMaterials (void);
 int VK_AddMaterial (const char *name, int base_texture);
 vk_material_t *VK_GetMaterial (int index);
 void VK_UploadMaterials (void);
+void VK_UploadMaterialRange (int first, int count);	/* new materials, while others are in use */
 uint16_t VK_FloatToHalf (float f);
 
 /* vk_world.c: the BSP world and its brush submodels in one GPU buffer:
@@ -221,30 +222,70 @@ void VK_FreePVS (void);
 const byte *VK_ClusterPVS (int cluster);	/* NULL for -1: everything visible */
 int VK_PointCluster (qmodel_t *worldmodel, const vec3_t point);
 
+/* vk_model.c: alias models on the GPU. Each model's triangles and poses
+ * (AliasModel in shaders/hl_shared.h) are built from gl_model.c's data on
+ * map load or when the model is first drawn; every frame,
+ * VK_UpdateModelGeometry runs model_geometry.comp over the frame's alias
+ * instances into this frame's instanced buffer (VERTEX_BUFFER_INSTANCED:
+ * VboPrimitives, then their positions for the dynamic BLASes). */
+typedef struct
+{
+	qmodel_t	*model;
+	vk_buffer_t	buffer;		/* [AliasTriangle x num_tris][pose vertices x num_poses x num_pose_verts] */
+	int		num_tris;	/* 0: nothing to draw */
+	int		num_pose_verts;	/* vertices per pose (gl_mesh.c's command vertices) */
+	int		num_poses;
+	uint32_t	material_id;	/* the first skin's material, MATERIAL_KIND_REGULAR */
+} vk_aliasmodel_t;
+
+void VK_InitModels (void);
+void VK_ShutdownModels (void);
+void VK_LoadModels (void);		/* on map change, after VK_LoadWorld: every alias model in cl.model_precache */
+int VK_AliasModelIndex (qmodel_t *model);	/* builds the model's data on first use; -1 = can't be drawn */
+const vk_aliasmodel_t *VK_GetAliasModel (int index);
+void VK_UpdateModelGeometry (void);	/* in R_RenderView, after VK_UpdateInstances */
+qboolean VK_ModelGeometryBuiltThisFrame (void);
+const vk_buffer_t *VK_InstancedBuffer (void);	/* the current frame's */
+VkDeviceAddress VK_InstancedPositionsAddress (void);
+
 /* vk_instance.c: the frame's model instances (ModelInstance in
- * shaders/hl_shared.h), for now the brush entities; rebuilt from r_scene
- * by R_RenderView and copied to this frame's mapped buffer */
+ * shaders/hl_shared.h): the brush entities, then the alias entities,
+ * opaque ones first; rebuilt from r_scene by R_RenderView and copied to
+ * this frame's mapped buffer */
+typedef struct
+{
+	int		first_instance;	/* the alias instances in the instance list */
+	int		num_instances;
+	vk_primrange_t	opaque;		/* their triangles in the instanced buffer */
+	vk_primrange_t	transparent;	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_HOLEY, EF_SPECIAL_TRANS */
+	int		dropped;	/* alias entities left out this frame: no room */
+	int		dropped_total;	/* the same since the map loaded */
+	int		bad_frames;	/* entities with a frame number the model doesn't have */
+} vk_modelframe_t;
+
 void VK_InitInstances (void);
 void VK_ShutdownInstances (void);
 void VK_ClearInstances (void);		/* on map change */
 void VK_UpdateInstances (void);
 int VK_NumInstances (void);
 const vk_buffer_t *VK_InstanceBuffer (void);	/* the current frame's */
+const vk_modelframe_t *VK_ModelFrame (void);
 struct ModelInstance;
 struct scene_entity_s;
 const struct ModelInstance *VK_GetInstance (int i);
 const struct scene_entity_s *VK_InstanceEntity (int i);
-int VK_InstanceSubmodel (int i);		/* brush submodel number (*N), 0 = none */
+int VK_InstanceSubmodel (int i);		/* brush submodel number (*N), 0 = none (alias models) */
 
 /* vk_accel.c: acceleration structures. Static BLASes for the world's and
- * the submodels' primitive ranges are built on map load; the TLAS (world
- * + model instances, shaders/hl_shared.h) is rebuilt every frame in the
- * frame's command buffer, one per frame in flight. */
+ * the submodels' primitive ranges are built on map load; every frame, the
+ * dynamic BLASes over the instanced buffer's model triangles (opaque,
+ * transparent) and the TLAS (world + model instances, shaders/hl_shared.h)
+ * are rebuilt in the frame's command buffer, one per frame in flight. */
 void VK_InitAccel (void);
 void VK_ShutdownAccel (void);
 void VK_BuildWorldAccel (void);		/* after the world buffer is uploaded */
 void VK_FreeWorldAccel (void);
-void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateInstances */
+void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateModelGeometry */
 VkDeviceAddress VK_TLASAddress (void);	/* the current frame's */
 VkDeviceAddress VK_TLASInfoAddress (void);	/* its TlasInstanceInfo[] */
 qboolean VK_TLASBuiltThisFrame (void);

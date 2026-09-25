@@ -22,6 +22,8 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
+#include "hl_shared.h"
+
 layout(local_size_x = 64) in;
 
 struct RayResult
@@ -60,11 +62,16 @@ void main()
 	vec3 dir = normalize(push.forward.xyz + push.right.xyz * uv.x * push.tan_half_fov.x
 			     - push.up.xyz * uv.y * push.tan_half_fov.y);
 
+	/* every hit is a candidate, so the alias models (which have no
+	 * collision hulls to compare with) can be passed through */
 	rayQueryEXT rq;
-	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.tlas), gl_RayFlagsOpaqueEXT,
+	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.tlas), gl_RayFlagsNoOpaqueEXT,
 			      push.cull_mask, push.origin.xyz, 0.0, dir, push.tmax);
 	while (rayQueryProceedEXT(rq))
 	{
+		if (rayQueryGetIntersectionTypeEXT(rq, false) == gl_RayQueryCandidateIntersectionTriangleEXT &&
+		    uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false)) != VERTEX_BUFFER_INSTANCED)
+			rayQueryConfirmIntersectionEXT(rq);
 	}
 
 	RayResult res;

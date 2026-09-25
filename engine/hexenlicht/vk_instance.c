@@ -1,19 +1,28 @@
 /* vk_instance.c -- the frame's model instances
  *
- * Every frame, VK_UpdateInstances turns the scene's brush entities (doors,
- * lifts, trains, rotating brushes; dynamic and static ones) into
- * ModelInstances (shaders/hl_shared.h): a model-to-world transform and
- * last frame's, the vis cluster the model is in, its primitives in the
- * world buffer (vk_world.c) and the entity's Hexen II draw state. They go
- * to a mapped buffer per frame in flight, for the acceleration structures
- * and the shaders. The alias models of epic E2's 2.4 will be appended.
+ * Every frame, VK_UpdateInstances turns the scene's entities with geometry
+ * into ModelInstances (shaders/hl_shared.h): a model-to-world transform
+ * and last frame's, the vis cluster the model is in, where its primitives
+ * are and the entity's Hexen II draw state. They go to a mapped buffer
+ * per frame in flight, for the acceleration structures and the shaders.
  *
- * The transform is the GL renderer's: R_DrawBrushModel and
- * R_RotateForEntity in gl_rsurf.c and gl_rmain.c. The cluster lookup
- * follows Quake II RTX's process_bsp_entity (src/refresh/vkpt/main.c).
+ * Brush entities (doors, lifts, trains, rotating brushes; dynamic and
+ * static ones) come first; their primitives are in the world buffer
+ * (vk_world.c). The alias model entities follow, opaque ones first: their
+ * primitives are written every frame by vk_model.c's geometry pass into
+ * the instanced buffer, from two poses of the model that the instance
+ * blends (r_lerpmodels). The first-person weapon is left for E2's 2.8.
+ *
+ * The transforms and the pose choice are the GL renderer's: R_DrawBrushModel
+ * and R_RotateForEntity in gl_rsurf.c and gl_rmain.c; R_RotateForEntity2,
+ * R_DrawAliasModel's scaling and R_SetupAliasFrame in gl_rmain.c. The
+ * cluster lookup follows Quake II RTX's process_bsp_entity, the blending
+ * QuakeSpasm's R_SetupAliasFrame (src/refresh/vkpt/main.c; r_alias.c).
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
+ * Copyright (C) 2002-2009  John Fitzgibbons and others
+ * Copyright (C) 2010-2014  QuakeSpasm developers
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -36,26 +45,58 @@
 
 #define TRANSLUCENT_ALPHA	0.33f	/* r_wateralpha's default, which GL uses for DRF_TRANSLUCENT */
 
+#define LERP_DEFAULT_TIME	0.1f	/* QuakeSpasm's blend time: Quake's monsters animate at 10 Hz */
+#define LERP_MAX_INTERVAL	0.2	/* a longer pause between frame changes: the default time */
+
 COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 208);	/* the shaders' std430 stride */
+
+/* blend alias model poses between animation frames; 0 = GL's look */
+static cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
 
 /* this frame's instances */
 static int			num_instances;
 static ModelInstance		instances[MAX_MODEL_INSTANCES];
 static const scene_entity_t	*instance_entities[MAX_MODEL_INSTANCES];	/* their sources */
-static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c */
+static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c; 0 = alias */
+static vk_modelframe_t		model_frame;
 
 static vk_buffer_t		instance_buffers[VK_FRAMES_IN_FLIGHT];
 
-/* last frame's transforms, per dynamic and static entity */
+/* what an entity showed last frame: its transform (for the motion) and,
+ * for alias models, the animation */
 typedef struct
 {
-	mat4		transform;
+	const entity_t	*ent;		/* temporary entities: the entity it belongs to */
 	qmodel_t	*model;
 	int		framecount;	/* r_scene.framecount it was set in, 0 = never */
-} prev_transform_t;
+	mat4		transform;
+	vec3_t		origin;
 
-static prev_transform_t	prev_dynamic[MAX_EDICTS];
-static prev_transform_t	prev_static[MAX_STATIC_ENTITIES];
+	/* blending from prev_pose to pose, which became the pose at
+	 * lerp_start; measured: lerp_start was a frame change */
+	int		pose, prev_pose;
+	double		lerp_start;
+	float		lerp_time;
+	qboolean	measured;
+
+	/* the poses and backlerp last frame showed */
+	int		shown_pose, shown_prev_pose;
+	float		shown_backlerp;
+} entity_history_t;
+
+/* Temporary entities (the client's effects, beams) have no number: their
+ * entity's address is the key; big enough to stay mostly empty. The
+ * effects' entities (cl_effect.c) keep their address, but beam segments
+ * (cl_tent.c's stream entities) are made anew every frame, so a slot can
+ * hold another segment of the same model next frame: their motion and
+ * blending are approximate (their frames and roll are random per frame
+ * anyway). */
+#define TEMP_HISTORY_SIZE	1024	/* power of 2 */
+#define TEMP_HISTORY_PROBES	32
+
+static entity_history_t	history_dynamic[MAX_EDICTS];
+static entity_history_t	history_static[MAX_STATIC_ENTITIES];
+static entity_history_t	history_temp[TEMP_HISTORY_SIZE];
 
 
 /* ==========================================================================
@@ -86,31 +127,146 @@ static void MulMat3 (float out[3][3], const float a[3][3], const float b[3][3])
 	}
 }
 
+/* three rotations applied as glRotatef calls in this order */
+static void Rotations (float rot[3][3], int axis1, float deg1, int axis2, float deg2, int axis3, float deg3)
+{
+	float	r1[3][3], r2[3][3], r3[3][3], t[3][3];
+
+	AxisRotation (r1, axis1, deg1);
+	AxisRotation (r2, axis2, deg2);
+	AxisRotation (r3, axis3, deg3);
+	MulMat3 (t, r1, r2);
+	MulMat3 (rot, t, r3);
+}
+
+/* translation to origin, then rot, then a scale per axis and an offset
+ * (in the rotated frame): m(p) = origin + rot * (scale * p + offset) */
+static void BuildTransform (mat4 m, const vec3_t origin, const float rot[3][3], const vec3_t scale, const vec3_t offset)
+{
+	int	r, c;
+
+	for (c = 0; c < 3; c++)
+	{
+		for (r = 0; r < 3; r++)
+			m[c][r] = rot[r][c] * scale[c];
+		m[c][3] = 0.0f;
+	}
+	for (r = 0; r < 3; r++)
+		m[3][r] = origin[r] + rot[r][0] * offset[0] + rot[r][1] * offset[1] + rot[r][2] * offset[2];
+	m[3][3] = 1.0f;
+}
+
 /* R_DrawBrushModel negates pitch and roll ("stupid quake bug") and calls
  * R_RotateForEntity, which translates to the origin and rotates by yaw
  * about z, by -pitch about y and by -roll about x. So the model is
  * rotated by yaw, pitch and roll as they are. */
 static void BrushTransform (mat4 m, const vec3_t origin, const vec3_t angles)
 {
-	float	rz[3][3], ry[3][3], rx[3][3], t[3][3], rot[3][3];
-	int	r, c;
+	static const vec3_t	one = { 1.0f, 1.0f, 1.0f }, zero = { 0.0f, 0.0f, 0.0f };
+	float			rot[3][3];
 
-	AxisRotation (rz, 2, angles[YAW]);
-	AxisRotation (ry, 1, angles[PITCH]);
-	AxisRotation (rx, 0, angles[ROLL]);
-	MulMat3 (t, rz, ry);
-	MulMat3 (rot, t, rx);
+	Rotations (rot, 2, angles[YAW], 1, angles[PITCH], 0, angles[ROLL]);
+	BuildTransform (m, origin, rot, one, zero);
+}
 
-	for (c = 0; c < 3; c++)
+/* R_RotateForEntity2: yaw about z (EF_ROTATE items spin with time), -pitch
+ * about y, -roll about x; EF_FACE_VIEW models turn to the camera, pitch
+ * first */
+static void AliasRotation (const scene_entity_t *e, float rot[3][3])
+{
+	float	yaw, pitch, forward;
+	vec3_t	dir;
+
+	if (e->model->flags & EF_FACE_VIEW)
 	{
-		for (r = 0; r < 3; r++)
-			m[c][r] = rot[r][c];
-		m[c][3] = 0.0f;
+		VectorSubtract (r_scene.vieworg, e->origin, dir);
+		VectorNormalize (dir);
+		if (dir[1] == 0 && dir[0] == 0)
+		{
+			yaw = 0;
+			pitch = (dir[2] > 0) ? 90 : 270;
+		}
+		else
+		{
+			yaw = (float)(int) (atan2(dir[1], dir[0]) * 180 / M_PI);
+			if (yaw < 0)
+				yaw += 360;
+			forward = (float) sqrt (dir[0]*dir[0] + dir[1]*dir[1]);
+			pitch = (float)(int) (atan2(dir[2], forward) * 180 / M_PI);
+			if (pitch < 0)
+				pitch += 360;
+		}
+		Rotations (rot, 1, -pitch, 2, yaw, 0, -e->angles[ROLL]);
+		return;
 	}
-	m[3][0] = origin[0];
-	m[3][1] = origin[1];
-	m[3][2] = origin[2];
-	m[3][3] = 1.0f;
+
+	if (e->model->flags & EF_ROTATE)
+		yaw = anglemod ((float)((e->origin[0] + e->origin[1]) * 0.8 + (108 * r_scene.time)));
+	else
+		yaw = e->angles[YAW];
+	Rotations (rot, 2, yaw, 1, -e->angles[PITCH], 0, -e->angles[ROLL]);
+}
+
+/* R_DrawAliasModel folds the entity's scale (e->scale percent, the
+ * SCALE_TYPE_* axes and SCALE_ORIGIN_* point) and the EF_ROTATE bobbing
+ * into the pose decode: tmatrix(v) = hdr->scale * scale * v + tm_offset.
+ * The decode p = hdr->scale * v + hdr->scale_origin stays in the model
+ * table here, so what remains, in model space, is p' = scale * p + offset
+ * with offset = tm_offset - scale * hdr->scale_origin. */
+static void AliasScale (const scene_entity_t *e, const aliashdr_t *hdr, vec3_t scale, vec3_t offset)
+{
+	float	tm_offset[3];	/* GL's tmatrix translation */
+	float	ent_scale, xyfact = 1.0f, zfact = 1.0f;
+	int	i;
+
+	for (i = 0; i < 3; i++)
+	{
+		scale[i] = 1.0f;
+		tm_offset[i] = hdr->scale_origin[i];
+	}
+
+	if (e->scale != 0 && e->scale != 100)
+	{
+		ent_scale = (float)e->scale / 100.0f;
+		switch (e->drawflags & SCALE_TYPE_MASKIN)
+		{
+		case SCALE_TYPE_XYONLY:
+			scale[0] = scale[1] = ent_scale;
+			xyfact = (float)((ent_scale - 1.0) * 127.95);
+			zfact = 1.0f;	/* sic: GL moves z by one step of the model's grid */
+			break;
+		case SCALE_TYPE_ZONLY:
+			scale[2] = ent_scale;
+			xyfact = 1.0f;	/* sic, as above */
+			zfact = (float)((ent_scale - 1.0) * 127.95);
+			break;
+		default:	/* SCALE_TYPE_UNIFORM */
+			scale[0] = scale[1] = scale[2] = ent_scale;
+			xyfact = zfact = (float)((ent_scale - 1.0) * 127.95);
+			break;
+		}
+
+		tm_offset[0] = hdr->scale_origin[0] - hdr->scale[0] * xyfact;
+		tm_offset[1] = hdr->scale_origin[1] - hdr->scale[1] * xyfact;
+		switch (e->drawflags & SCALE_ORIGIN_MASKIN)
+		{
+		case SCALE_ORIGIN_BOTTOM:
+			tm_offset[2] = hdr->scale_origin[2];
+			break;
+		case SCALE_ORIGIN_TOP:
+			tm_offset[2] = (float)(hdr->scale_origin[2] - hdr->scale[2] * zfact * 2.0);
+			break;
+		default:	/* SCALE_ORIGIN_CENTER */
+			tm_offset[2] = hdr->scale_origin[2] - hdr->scale[2] * zfact;
+			break;
+		}
+	}
+
+	if (e->model->flags & EF_ROTATE)	/* floating motion */
+		tm_offset[2] = (float)(tm_offset[2] + sin(e->origin[0] + e->origin[1] + (r_scene.time * 3)) * 5.5);
+
+	for (i = 0; i < 3; i++)
+		offset[i] = tm_offset[i] - scale[i] * hdr->scale_origin[i];
 }
 
 static void TransformPoint (const mat4 m, const vec3_t in, vec3_t out)
@@ -122,7 +278,8 @@ static void TransformPoint (const mat4 m, const vec3_t in, vec3_t out)
 }
 
 /* Quake II RTX's way: the cluster at the model's center or, when that is
- * in solid (e.g. a button pushed into a wall), at one of its corners */
+ * in solid (e.g. a button pushed into a wall, an item's origin on the
+ * floor), at one of its corners */
 static int InstanceCluster (qmodel_t *model, const mat4 m)
 {
 	vec3_t	p, world_p;
@@ -145,23 +302,97 @@ static int InstanceCluster (qmodel_t *model, const mat4 m)
 
 
 /* ==========================================================================
- * The frame's instances
+ * Entity history
  * ========================================================================== */
 
-static prev_transform_t *PrevTransform (const scene_entity_t *e)
+static unsigned TempHash (const entity_t *ent)
 {
-	if (e->kind == SCENE_ENT_DYNAMIC && e->num >= 0 && e->num < MAX_EDICTS)
-		return &prev_dynamic[e->num];
-	if (e->kind == SCENE_ENT_STATIC && e->num >= 0 && e->num < MAX_STATIC_ENTITIES)
-		return &prev_static[e->num];
-	return NULL;
+	return (unsigned)((((uintptr_t)ent) >> 3) * 2654435761u) & (TEMP_HISTORY_SIZE - 1);
 }
+
+/* A temporary entity's history: its own if it was drawn last frame, else a
+ * slot nobody used in the last two frames, cleared. Slots are never
+ * emptied, so a search ends at one that was never used. */
+static entity_history_t *TempHistory (const entity_t *ent)
+{
+	entity_history_t	*h, *free_slot = NULL;
+	unsigned		i = TempHash (ent), n;
+	qboolean		live;
+
+	for (n = 0; n < TEMP_HISTORY_PROBES; n++, i = (i + 1) & (TEMP_HISTORY_SIZE - 1))
+	{
+		h = &history_temp[i];
+		live = h->framecount && h->framecount >= r_scene.framecount - 1;
+		if (h->ent == ent && live)
+			return h;
+		if (!live && !free_slot)
+			free_slot = h;
+		if (!h->ent)
+			break;
+	}
+	if (free_slot)
+	{
+		memset (free_slot, 0, sizeof(*free_slot));
+		free_slot->ent = ent;
+	}
+	return free_slot;	/* NULL: the table is full around here, no history */
+}
+
+static entity_history_t *EntityHistory (const scene_entity_t *e)
+{
+	switch (e->kind)
+	{
+	case SCENE_ENT_DYNAMIC:
+		return (e->num >= 0 && e->num < MAX_EDICTS) ? &history_dynamic[e->num] : NULL;
+	case SCENE_ENT_STATIC:
+		return (e->num >= 0 && e->num < MAX_STATIC_ENTITIES) ? &history_static[e->num] : NULL;
+	case SCENE_ENT_TEMP:
+		return TempHistory (e->ent);
+	default:
+		return NULL;
+	}
+}
+
+/* was h this entity last frame? */
+static qboolean HistoryContinues (const entity_history_t *h, const scene_entity_t *e)
+{
+	return h && h->model == e->model && h->framecount && h->framecount == r_scene.framecount - 1;
+}
+
+/* Last frame's transform, and this frame's for the next. An entity that
+ * jumped over 100 units on an axis since the last frame teleported (or is
+ * a new entity in a reused slot), as CL_RelinkEntities assumes: no motion. */
+static void UpdateTransformHistory (ModelInstance *mi, entity_history_t *h, qboolean continues, const scene_entity_t *e)
+{
+	if (continues && fabsf (e->origin[0] - h->origin[0]) <= 100.0f && fabsf (e->origin[1] - h->origin[1]) <= 100.0f &&
+	    fabsf (e->origin[2] - h->origin[2]) <= 100.0f)
+		memcpy (mi->transform_prev, h->transform, sizeof(mat4));
+	else
+		memcpy (mi->transform_prev, mi->transform, sizeof(mat4));
+	if (h)
+		memcpy (h->transform, mi->transform, sizeof(mat4));
+}
+
+static void EndHistory (entity_history_t *h, const scene_entity_t *e)
+{
+	if (h)
+	{
+		h->model = e->model;
+		h->framecount = r_scene.framecount;
+		VectorCopy (e->origin, h->origin);
+	}
+}
+
+
+/* ==========================================================================
+ * Brush entities
+ * ========================================================================== */
 
 static void AddBrushInstance (const scene_entity_t *e)
 {
 	ModelInstance		*mi;
 	const vk_bspmodel_t	*bsp;
-	prev_transform_t	*prev;
+	entity_history_t	*h;
 	int			submodel = atoi (e->model->name + 1);	/* "*N" */
 	float			alpha;
 
@@ -176,17 +407,9 @@ static void AddBrushInstance (const scene_entity_t *e)
 	memset (mi, 0, sizeof(*mi));
 
 	BrushTransform (mi->transform, e->origin, e->angles);
-	prev = PrevTransform (e);
-	if (prev && prev->model == e->model && prev->framecount == r_scene.framecount - 1)
-		memcpy (mi->transform_prev, prev->transform, sizeof(mat4));
-	else
-		memcpy (mi->transform_prev, mi->transform, sizeof(mat4));
-	if (prev)
-	{
-		memcpy (prev->transform, mi->transform, sizeof(mat4));
-		prev->model = e->model;
-		prev->framecount = r_scene.framecount;
-	}
+	h = EntityHistory (e);
+	UpdateTransformHistory (mi, h, HistoryContinues (h, e), e);
+	EndHistory (h, e);
 
 	/* the model's opaque, transparent and sky ranges follow each other */
 	mi->cluster = InstanceCluster (e->model, mi->transform);
@@ -204,12 +427,178 @@ static void AddBrushInstance (const scene_entity_t *e)
 	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
 }
 
+
+/* ==========================================================================
+ * Alias model entities
+ * ========================================================================== */
+
+/* GL draws these in its translucent pass (R_DrawEntitiesOnList) */
+static qboolean AliasTransparent (const scene_entity_t *e)
+{
+	return (e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_HOLEY | EF_SPECIAL_TRANS));
+}
+
+/* R_SetupAliasFrame: the pose GL shows. Frame groups step through their
+ * poses with time; *group_interval is their interval, 0 otherwise. */
+static int AliasPose (const scene_entity_t *e, const aliashdr_t *hdr, float *group_interval)
+{
+	int	frame = e->frame, pose, numposes;
+
+	if (frame >= hdr->numframes || frame < 0)
+	{
+		model_frame.bad_frames++;	/* GL prints it with developer 1; no printing inside a frame */
+		frame = 0;
+	}
+	pose = hdr->frames[frame].firstpose;
+	numposes = hdr->frames[frame].numposes;
+	*group_interval = 0.0f;
+	if (numposes > 1 && hdr->frames[frame].interval > 0.0f)
+	{
+		*group_interval = hdr->frames[frame].interval;
+		pose += (int)(r_scene.time / hdr->frames[frame].interval) % numposes;
+	}
+	return pose;
+}
+
+/* QuakeSpasm's frame blending: when the pose changes, blend from the old
+ * one to the new over the time the animation takes per frame. Quake
+ * animates at 10 Hz, QuakeSpasm's fixed 0.1 s, but Hexen II animates many
+ * things at 20 Hz (HX_FRAME_TIME), so the time is the interval between
+ * the entity's last two frame changes; the default after a pause or
+ * when the entity appears. Returns the current pose's weight. */
+static float AliasBlend (entity_history_t *h, qboolean continues, int pose, float group_interval)
+{
+	double	time = r_scene.time, since;
+
+	if (!continues || time < h->lerp_start)
+	{
+		h->pose = h->prev_pose = pose;
+		h->lerp_start = time;
+		h->lerp_time = 0.0f;
+		h->measured = false;
+	}
+	else if (pose != h->pose)
+	{
+		since = time - h->lerp_start;
+		if (group_interval > 0.0f)
+			h->lerp_time = group_interval;
+		else if (h->measured && since > 0.0 && since <= LERP_MAX_INTERVAL)
+			h->lerp_time = (float)since;
+		else
+			h->lerp_time = LERP_DEFAULT_TIME;
+		h->prev_pose = h->pose;
+		h->pose = pose;
+		h->lerp_start = time;
+		h->measured = true;
+	}
+
+	if (h->lerp_time <= 0.0f)
+		return 1.0f;
+	return (float) q_min (q_max ((time - h->lerp_start) / h->lerp_time, 0.0), 1.0);
+}
+
+static void AddAliasInstance (const scene_entity_t *e, uint32_t *next_prim)
+{
+	ModelInstance		*mi;
+	const vk_aliasmodel_t	*am;
+	const aliashdr_t	*hdr;
+	entity_history_t	*h;
+	qboolean		continues;
+	float			rot[3][3], group_interval, blend, backlerp, alpha;
+	vec3_t			scale, offset;
+	int			index = VK_AliasModelIndex (e->model), pose, curr, prev;
+
+	if (index < 0)
+		return;		/* nothing to draw */
+	am = VK_GetAliasModel (index);
+	if (num_instances >= MAX_MODEL_INSTANCES || *next_prim + (uint32_t)am->num_tris > (uint32_t)MAX_INSTANCED_PRIMITIVES)
+	{
+		model_frame.dropped++;
+		return;
+	}
+	hdr = (const aliashdr_t *) Mod_Extradata (e->model);
+
+	mi = &instances[num_instances];
+	instance_entities[num_instances] = e;
+	instance_submodels[num_instances] = 0;
+	num_instances++;
+	memset (mi, 0, sizeof(*mi));
+
+	AliasRotation (e, rot);
+	AliasScale (e, hdr, scale, offset);
+	BuildTransform (mi->transform, e->origin, rot, scale, offset);
+	h = EntityHistory (e);
+	continues = HistoryContinues (h, e);
+	UpdateTransformHistory (mi, h, continues, e);
+
+	/* the poses: blending from prev to curr, or GL's pose */
+	pose = AliasPose (e, hdr, &group_interval);
+	curr = prev = pose;
+	backlerp = 0.0f;
+	if (h)
+	{
+		blend = AliasBlend (h, continues, pose, group_interval);
+		if (r_lerpmodels.integer)
+		{
+			curr = h->pose;
+			prev = h->prev_pose;
+			backlerp = (curr != prev) ? 1.0f - blend : 0.0f;
+		}
+	}
+	mi->prim_offset_curr_pose_curr_frame = (uint32_t)(curr * am->num_pose_verts);
+	mi->prim_offset_prev_pose_curr_frame = (uint32_t)(prev * am->num_pose_verts);
+	mi->pose_lerp_curr_frame = backlerp;
+	if (continues)
+	{
+		mi->prim_offset_curr_pose_prev_frame = (uint32_t)(h->shown_pose * am->num_pose_verts);
+		mi->prim_offset_prev_pose_prev_frame = (uint32_t)(h->shown_prev_pose * am->num_pose_verts);
+		mi->pose_lerp_prev_frame = h->shown_backlerp;
+	}
+	else
+	{
+		mi->prim_offset_curr_pose_prev_frame = mi->prim_offset_curr_pose_curr_frame;
+		mi->prim_offset_prev_pose_prev_frame = mi->prim_offset_prev_pose_curr_frame;
+		mi->pose_lerp_prev_frame = backlerp;
+	}
+	if (h)
+	{
+		h->shown_pose = curr;
+		h->shown_prev_pose = prev;
+		h->shown_backlerp = backlerp;
+	}
+	EndHistory (h, e);
+
+	mi->material = am->material_id;
+	mi->cluster = InstanceCluster (e->model, mi->transform);
+	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;
+	mi->prim_count = (uint32_t)am->num_tris;
+	mi->iqm_matrix_offset_curr_frame = -1;
+	mi->iqm_matrix_offset_prev_frame = -1;
+	mi->render_buffer_idx = VERTEX_BUFFER_INSTANCED;
+	mi->render_prim_offset = *next_prim;
+	*next_prim += (uint32_t)am->num_tris;
+
+	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;	/* the rest is 2.4b's */
+	mi->alpha_and_frame = VK_FloatToHalf (alpha);
+	mi->drawflags = (uint32_t)e->drawflags;
+	mi->abslight = e->abslight / 255.0f;
+	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
+}
+
+
+/* ==========================================================================
+ * The frame's instances
+ * ========================================================================== */
+
 /* called by R_RenderView after the scene is built */
 void VK_UpdateInstances (void)
 {
-	int	i;
+	int		i, pass, dropped_total = model_frame.dropped_total;
+	uint32_t	next_prim = 0;
 
 	num_instances = 0;
+	memset (&model_frame, 0, sizeof(model_frame));
+	model_frame.dropped_total = dropped_total;
 	if (!vk_world.worldmodel || vk_world.worldmodel != r_scene.worldmodel)
 		return;
 
@@ -220,6 +609,26 @@ void VK_UpdateInstances (void)
 		if (e->model->type == mod_brush && e->model->name[0] == '*')
 			AddBrushInstance (e);
 	}
+
+	/* the alias models, opaque then transparent; not the view model yet */
+	model_frame.first_instance = num_instances;
+	for (pass = 0; pass < 2; pass++)
+	{
+		vk_primrange_t	*range = pass ? &model_frame.transparent : &model_frame.opaque;
+
+		range->first = next_prim;
+		for (i = 0; i < r_scene.num_entities; i++)
+		{
+			const scene_entity_t	*e = &r_scene.entities[i];
+
+			if (e->model->type == mod_alias && e->kind != SCENE_ENT_VIEWMODEL &&
+			    AliasTransparent (e) == (qboolean)pass)
+				AddAliasInstance (e, &next_prim);
+		}
+		range->count = next_prim - range->first;
+	}
+	model_frame.num_instances = num_instances - model_frame.first_instance;
+	model_frame.dropped_total += model_frame.dropped;
 
 	if (vk.frame_active && num_instances)
 	{
@@ -255,11 +664,18 @@ const vk_buffer_t *VK_InstanceBuffer (void)
 	return &instance_buffers[vk.frame_index];
 }
 
+const vk_modelframe_t *VK_ModelFrame (void)
+{
+	return &model_frame;
+}
+
 void VK_ClearInstances (void)
 {
 	num_instances = 0;
-	memset (prev_dynamic, 0, sizeof(prev_dynamic));
-	memset (prev_static, 0, sizeof(prev_static));
+	memset (&model_frame, 0, sizeof(model_frame));
+	memset (history_dynamic, 0, sizeof(history_dynamic));
+	memset (history_static, 0, sizeof(history_static));
+	memset (history_temp, 0, sizeof(history_temp));
 }
 
 
@@ -283,19 +699,33 @@ static void VK_Instances_f (void)
 		const ModelInstance	*mi = &instances[i];
 		const scene_entity_t	*e = instance_entities[i];
 		qboolean		has_moved = memcmp (mi->transform, mi->transform_prev, sizeof(mat4)) != 0;
+		const char		*state;
 
 		moved += has_moved;
-		Con_Printf ("%3d %-6s %4d %-5s org %.1f %.1f %.1f ang %.1f %.1f %.1f cluster %4d prims %u+%u alpha %.2f frame %u%s%s\n",
+		if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED)
+		{
+			const vk_aliasmodel_t	*am = VK_GetAliasModel ((int)mi->source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL);
+
+			state = va("frame %d pose %u<%u %.2f%s", e->frame, mi->prim_offset_curr_pose_curr_frame / am->num_pose_verts,
+				   mi->prim_offset_prev_pose_curr_frame / am->num_pose_verts, mi->pose_lerp_curr_frame,
+				   (e->scale && e->scale != 100) ? va(" scale %d%%", e->scale) : "");
+		}
+		else
+		{
+			state = va("frame %u", mi->alpha_and_frame >> 16);
+		}
+		Con_Printf ("%3d %-6s %4d %-16s org %.1f %.1f %.1f ang %.1f %.1f %.1f cluster %4d prims %u+%u alpha %.2f %s%s%s\n",
 				i, kinds[e->kind], e->num, e->model->name,
 				mi->transform[3][0], mi->transform[3][1], mi->transform[3][2],
 				e->angles[0], e->angles[1], e->angles[2],
 				mi->cluster, mi->render_prim_offset, mi->prim_count,
 				(mi->alpha_and_frame & 0xffff) == VK_FloatToHalf (1.0f) ? 1.0f : TRANSLUCENT_ALPHA,
-				mi->alpha_and_frame >> 16,
+				state,
 				((mi->drawflags & MLS_MASKIN) == MLS_ABSLIGHT) ? va(" abslight %.2f", mi->abslight) : "",
 				has_moved ? " moved" : "");
 	}
-	Con_Printf ("%d instances in frame %d, %d moved since the last frame\n", num_instances, r_scene.framecount, moved);
+	Con_Printf ("%d instances in frame %d (%d alias models), %d moved since the last frame\n", num_instances,
+			r_scene.framecount, model_frame.num_instances, moved);
 }
 
 
@@ -313,6 +743,7 @@ void VK_InitInstances (void)
 				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 				 VK_MEMORY_UPLOAD);
 	}
+	Cvar_RegisterVariable (&r_lerpmodels);
 	Cmd_AddCommand ("vk_instances", VK_Instances_f);
 }
 

@@ -1,8 +1,7 @@
 /* debug_view.comp -- the r_debugview pass: one primary ray per pixel of
  * the 3D view through the TLAS, showing albedo, normals, material kinds,
- * instances or vis clusters of what it hits.
- *
- * decode_normal is Quake II RTX's (src/refresh/vkpt/shader/utils.glsl).
+ * instances, vis clusters or the motion since the last frame of what it
+ * hits.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -51,16 +50,7 @@ ViewUniforms view;
 #define pvs_table	UintBuffer(view.pvs).d
 #include "material.glsl"
 #include "pvs.glsl"
-
-vec3
-decode_normal(uint enc)
-{
-	vec2 p = vec2(uvec2(enc & 0xffffu, enc >> 16)) / float(0xffff) * 2.0 - 1.0;
-	vec3 n = vec3(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
-	float t = max(0.0, -n.z);
-	n.xy += mix(vec2(t), vec2(-t), greaterThanEqual(n.xy, vec2(0.0)));
-	return normalize(n);
-}
+#include "normal.glsl"
 
 vec3
 hash_color(uint x)
@@ -114,16 +104,22 @@ main()
 	float t = rayQueryGetIntersectionTEXT(rq, true);
 	uint tlas_instance = uint(rayQueryGetIntersectionInstanceIdEXT(rq, true));
 	uint prim_index = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));
+	bool instanced = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true)) == VERTEX_BUFFER_INSTANCED;
 	vec2 bary2 = rayQueryGetIntersectionBarycentricsEXT(rq, true);
 	mat4x3 to_world = rayQueryGetIntersectionObjectToWorldEXT(rq, true);
 	vec3 bary = vec3(1.0 - bary2.x - bary2.y, bary2.x, bary2.y);
 
+	/* the world's and brush models' triangles are in the world buffer, the
+	 * alias models' (already in world space) in this frame's instanced
+	 * buffer, where each triangle names its model instance */
 	TlasInstanceInfo info = TlasInfoBuffer(view.tlas_info).i[tlas_instance];
-	VboPrimitive prim = PrimitiveBuffer(view.primitives).p[info.prim_offset + prim_index];
+	VboPrimitive prim = PrimitiveBuffer(instanced ? view.instanced : view.primitives).p[info.prim_offset + prim_index];
+	int model_instance = instanced ? int(prim.instance) : info.model_instance;
 
-	/* flat normal and world positions, through the instance's transform */
+	/* vertex normals and world positions, through the instance's transform */
 	mat3 rot = mat3(to_world);
-	vec3 normal = normalize(rot * decode_normal(prim.normals.x));
+	vec3 normal = normalize(rot * (decode_normal(prim.normals.x) * bary.x + decode_normal(prim.normals.y) * bary.y +
+				       decode_normal(prim.normals.z) * bary.z));
 	vec3 p0 = to_world * vec4(prim.pos0, 1.0);
 	vec3 p1 = to_world * vec4(prim.pos1, 1.0);
 	vec3 p2 = to_world * vec4(prim.pos2, 1.0);
@@ -133,8 +129,8 @@ main()
 	/* the texture frame: time, and the alternate animation for brush
 	 * entities whose frame is not 0 */
 	bool alternate = false;
-	if (info.model_instance >= 0)
-		alternate = (InstanceBuffer(view.instances).m[info.model_instance].alpha_and_frame >> 16) != 0u;
+	if (model_instance >= 0)
+		alternate = (InstanceBuffer(view.instances).m[model_instance].alpha_and_frame >> 16) != 0u;
 	uint material = animate_material(prim.material_id, view.anim_frame, alternate);
 	MaterialInfo minfo = get_material_info(material);
 
@@ -158,13 +154,35 @@ main()
 		color = kind_color(material) * (0.4 + 0.6 * dot(albedo, vec3(0.299, 0.587, 0.114))) * shade;
 		break;
 	case DEBUGVIEW_INSTANCES:
-		color = ((info.model_instance < 0) ? vec3(0.5) : hash_color(uint(info.model_instance))) * shade;
+		color = ((model_instance < 0) ? vec3(0.5) : hash_color(uint(model_instance))) * shade;
 		break;
 	case DEBUGVIEW_CLUSTERS:
 		color = ((prim.cluster < 0) ? vec3(0.5) : hash_color(uint(prim.cluster))) * shade;
 		if (!pvs_visible(view.view_cluster, prim.cluster))
 			color *= 0.25;	/* not in the camera's PVS */
 		break;
+	case DEBUGVIEW_MOTION:
+	{
+		/* how far the point moved since the last frame: the model
+		 * triangles carry it per vertex, brush entities have last frame's
+		 * transform; gray = still, blue to yellow = up to 4 units */
+		vec3 motion = vec3(0.0);
+		if (instanced)
+		{
+			motion = unpackHalf4x16(prim.custom0).xyz * bary.x + unpackHalf4x16(prim.custom1).xyz * bary.y +
+				 unpackHalf4x16(prim.custom2).xyz * bary.z;
+		}
+		else if (model_instance >= 0)
+		{
+			ModelInstance mi = InstanceBuffer(view.instances).m[model_instance];
+			vec3 p = view.origin.xyz + dir * t;
+			motion = vec3(mi.transform_prev * (inverse(mi.transform) * vec4(p, 1.0))) - p;
+		}
+		float len = length(motion);
+		color = (len < 0.001) ? vec3(0.3) : mix(vec3(0.1, 0.2, 1.0), vec3(1.0, 1.0, 0.0), clamp(len / 4.0, 0.0, 1.0));
+		color *= shade;
+		break;
+	}
 	default:
 		color = albedo;
 		break;

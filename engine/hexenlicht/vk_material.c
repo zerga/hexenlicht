@@ -95,21 +95,24 @@ vk_material_t *VK_GetMaterial (int index)
 	return &materials[index];
 }
 
-/* writes all materials to the GPU table; nothing may be using it */
-void VK_UploadMaterials (void)
+/* writes materials first .. first + count - 1 to the GPU table; nothing
+ * may be using those entries (materials added since the last upload) */
+void VK_UploadMaterialRange (int first, int count)
 {
 	uint32_t	*table, *d;
 	int		i;
 
-	table = (uint32_t *) calloc (vk_num_materials * MATERIAL_UINTS, sizeof(uint32_t));
+	if (first < 0 || count <= 0 || first + count > vk_num_materials)
+		Sys_Error ("%s: bad range %d+%d", __thisfunc__, first, count);
+	table = (uint32_t *) calloc (count * MATERIAL_UINTS, sizeof(uint32_t));
 	if (!table)
 		Sys_Error ("%s: out of memory", __thisfunc__);
-	for (i = 1; i < vk_num_materials; i++)
+	for (i = q_max (first, 1); i < first + count; i++)
 	{
 		const vk_material_t	*m = &materials[i];
 
 		/* the factors are Quake II RTX's defaults (MAT_Reset) */
-		d = table + i * MATERIAL_UINTS;
+		d = table + (i - first) * MATERIAL_UINTS;
 		d[0] = (uint32_t)m->base_texture & 0xffff;
 		d[1] = 0;
 		d[2] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (-1.0f) << 16);	/* bump scale, no roughness override */
@@ -119,8 +122,15 @@ void VK_UploadMaterials (void)
 		d[6] = (uint32_t)m->alternate;
 		d[7] = 0;
 	}
-	VK_UploadBuffer (&vk_material_table, 0, table, vk_num_materials * MATERIAL_UINTS * sizeof(uint32_t));
+	VK_UploadBuffer (&vk_material_table, (VkDeviceSize)first * MATERIAL_UINTS * sizeof(uint32_t), table,
+			 (VkDeviceSize)count * MATERIAL_UINTS * sizeof(uint32_t));
 	free (table);
+}
+
+/* writes all materials to the GPU table; nothing may be using it */
+void VK_UploadMaterials (void)
+{
+	VK_UploadMaterialRange (0, vk_num_materials);
 }
 
 
