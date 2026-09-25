@@ -107,4 +107,9 @@ extern scene_t	r_scene;
 
 void R_InitScene (void);
 
+/* r_light.c: GL's light level on the first-person weapon, into
+ * cl.light_level (the server's player light_level: how well monsters see
+ * the player, when the Assassin cloaks) */
+void R_ViewModelLight (void);
+
 #endif	/* R_SCENE_H */

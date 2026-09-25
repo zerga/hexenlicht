@@ -174,9 +174,9 @@ trace_effects(vec3 dir, float t_max)
 /* writes the pixel: what the ray hit (color, at t_max) and, in albedo
  * mode, the effects in front of it over it */
 void
-store_pixel(ivec2 px, vec3 color, vec3 dir, float t_max)
+store_pixel(ivec2 px, vec3 color, vec3 dir, float t_max, bool effects_over)
 {
-	if (view.debug_mode == DEBUGVIEW_ALBEDO && view.effects_tlas != uvec2(0u))
+	if (effects_over && view.debug_mode == DEBUGVIEW_ALBEDO && view.effects_tlas != uvec2(0u))
 	{
 		vec4 effects = trace_effects(dir, t_max);
 		color = effects.rgb + (1.0 - effects.a) * color;
@@ -217,25 +217,41 @@ main()
 	vec3 dir = normalize(view.forward.xyz + view.right.xyz * uv.x * view.tan_half_fov.x
 			     - view.up.xyz * uv.y * view.tan_half_fov.y);
 
-	/* everything is opaque but the masked models' cutouts, whose hits
-	 * are candidates: kept where the mask's alpha is at least 0.5 */
+	/* The first-person weapon first: GL draws it over everything (its
+	 * depth range hack keeps it out of walls), so where a ray meets it, it
+	 * is what the pixel shows, with no effects over it (a translucent
+	 * weapon will need them behind it, with E6's blending); like GL's,
+	 * from its near plane 4 units in front of the eye. Then the rest.
+	 * Everything is opaque but cutouts (masked models, a weapon with
+	 * them), whose hits are candidates: kept where the mask's alpha is at
+	 * least 0.5. */
 	rayQueryEXT rq;
-	rayQueryInitializeEXT(rq, accelerationStructureEXT(view.tlas), gl_RayFlagsNoneEXT, 0xff,
-			      view.origin.xyz, 0.0, dir, 65536.0);
-	while (rayQueryProceedEXT(rq))
+	bool weapon = false;
+	for (int pass = 0; pass < 2; pass++)
 	{
-		if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT)
-			continue;
-		TlasInstanceInfo cinfo = TlasInfoBuffer(view.tlas_info).i[uint(rayQueryGetIntersectionInstanceIdEXT(rq, false))];
-		VboPrimitive cprim = PrimitiveBuffer(view.instanced).p[cinfo.prim_offset +
-								      uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false))];
-		if (mask_alpha(cprim, rayQueryGetIntersectionBarycentricsEXT(rq, false)) >= 0.5)
-			rayQueryConfirmIntersectionEXT(rq);
+		rayQueryInitializeEXT(rq, accelerationStructureEXT(view.tlas), gl_RayFlagsNoneEXT,
+				      (pass == 0) ? AS_FLAG_VIEWER_WEAPON : (0xff & ~AS_FLAG_VIEWER_WEAPON), view.origin.xyz,
+				      (pass == 0) ? 4.0 / max(dot(dir, view.forward.xyz), 1e-3) : 0.0, dir, 65536.0);
+		while (rayQueryProceedEXT(rq))
+		{
+			if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT)
+				continue;
+			TlasInstanceInfo cinfo = TlasInfoBuffer(view.tlas_info).i[uint(rayQueryGetIntersectionInstanceIdEXT(rq, false))];
+			VboPrimitive cprim = PrimitiveBuffer(view.instanced).p[cinfo.prim_offset +
+									      uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false))];
+			if (mask_alpha(cprim, rayQueryGetIntersectionBarycentricsEXT(rq, false)) >= 0.5)
+				rayQueryConfirmIntersectionEXT(rq);
+		}
+		if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+		{
+			weapon = (pass == 0);
+			break;
+		}
 	}
 
 	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
 	{
-		store_pixel(px, vec3(0.0), dir, 65536.0);
+		store_pixel(px, vec3(0.0), dir, 65536.0, true);
 		return;
 	}
 
@@ -296,8 +312,9 @@ main()
 	case DEBUGVIEW_NORMALS:
 		color = normal * 0.5 + 0.5;
 		break;
-	case DEBUGVIEW_MATERIAL:	/* cutout materials (masked models) yellow */
-		color = ((minfo.mask_texture != 0u) ? vec3(1.0, 0.9, 0.2) : kind_color(material)) *
+	case DEBUGVIEW_MATERIAL:	/* the weapon's materials cyan, other cutout materials (masked models) yellow */
+		color = (((material & MATERIAL_FLAG_WEAPON) != 0u) ? vec3(0.2, 0.9, 1.0) :
+			 (minfo.mask_texture != 0u) ? vec3(1.0, 0.9, 0.2) : kind_color(material)) *
 			(0.4 + 0.6 * dot(albedo, vec3(0.299, 0.587, 0.114))) * shade;
 		break;
 	case DEBUGVIEW_INSTANCES:
@@ -335,5 +352,5 @@ main()
 		break;
 	}
 
-	store_pixel(px, color, dir, t);
+	store_pixel(px, color, dir, t, !weapon);
 }

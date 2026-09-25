@@ -6,7 +6,8 @@
  * buffer's packed positions. Every frame, VK_BuildTLAS builds the dynamic
  * BLASes over this frame's alias model triangles (vk_model.c's instanced
  * buffer, already in world space: one each for the opaque, transparent and
- * masked (cutout) models) and then the top level (TLAS), in the frame's command
+ * masked (cutout) models and the first-person weapon, whose mask is Quake
+ * II RTX's AS_FLAG_VIEWER_WEAPON) and then the top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per
  * brush entity (vk_instance.c) and the dynamic BLASes, with Quake II RTX's
  * instance masks. Each TLAS instance has a TlasInstanceInfo
@@ -68,27 +69,34 @@ static VkDeviceSize	blas_scratch_size;
  * per model group (vk_local.h's MODEL_GROUP_*), then the effects'
  * (particles; sprites, indexed quads), with Quake II RTX's masks and
  * instance flags: the masked models' hits are candidates, alpha tested
- * against their cutout mask; every effect hit is a candidate. The effects'
- * masks are the effects TLAS's own. */
+ * against their cutout mask; so are the weapon's when it has cutouts;
+ * every effect hit is a candidate. The effects' masks are the effects
+ * TLAS's own. */
 enum { DYN_PARTICLES = NUM_MODEL_GROUPS, DYN_SPRITES, NUM_DYN };
-static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "particles", "sprites" };
+static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "weapon", "particles", "sprites" };
 static const uint32_t dyn_masks[NUM_DYN] =
 {
-	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_EFFECTS, AS_FLAG_EFFECTS
-};
-static const VkGeometryInstanceFlagsKHR dyn_flags[NUM_DYN] =
-{
-	VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR,
-	VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR,
-	VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-	VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-	VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR
+	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_VIEWER_WEAPON, AS_FLAG_EFFECTS, AS_FLAG_EFFECTS
 };
 static const uint32_t dyn_max[NUM_DYN] =	/* triangles */
 {
-	MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES,
+	MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES,
 	MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES * 2
 };
+
+#define NO_OPAQUE_INSTANCE	(VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
+
+/* are a dynamic BLAS's hits candidates (cutouts, effects)? */
+static qboolean DynCandidates (int d)
+{
+	return d == MODEL_GROUP_MASKED || d >= DYN_PARTICLES ||
+	       (d == MODEL_GROUP_WEAPON && VK_ModelFrame ()->weapon_look == MODEL_GROUP_MASKED);
+}
+
+static VkGeometryInstanceFlagsKHR DynInstanceFlags (int d)
+{
+	return DynCandidates (d) ? NO_OPAQUE_INSTANCE : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+}
 
 #define DYN_MIN_CAPACITY	4096u	/* triangles */
 #define DYN_GROWTH		2	/* Quake II RTX's bloat factor: room to grow before rebuilding */
@@ -446,10 +454,13 @@ static void BuildDynamicBLASes (vk_tlas_t *t, VkCommandBuffer cmd)
 		memset (&geoms[n], 0, sizeof(geoms[n]));
 		geoms[n].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
 		geoms[n].geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-		if (d >= DYN_PARTICLES)		/* each effect triangle once: they are blended */
+		/* each effect triangle once: they are blended; the weapon's
+		 * geometry is never opaque, so its build sizes don't change with
+		 * the weapon: its instance flags make it opaque or not */
+		if (d >= DYN_PARTICLES)
 			geoms[n].flags = VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
 		else
-			geoms[n].flags = (d == MODEL_GROUP_MASKED) ? 0 : VK_GEOMETRY_OPAQUE_BIT_KHR;
+			geoms[n].flags = (d == MODEL_GROUP_WEAPON || DynCandidates (d)) ? 0 : VK_GEOMETRY_OPAQUE_BIT_KHR;
 		tri = &geoms[n].geometry.triangles;
 		tri->sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		tri->vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
@@ -621,7 +632,7 @@ void VK_BuildTLAS (void)
 		const vk_dynblas_t	*d = &t->dyn[r];
 
 		if (d->count)
-			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], dyn_flags[r],
+			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], DynInstanceFlags (r),
 					 r, true, -1);
 	}
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->instances.allocation, 0, VK_WHOLE_SIZE));
@@ -637,7 +648,7 @@ void VK_BuildTLAS (void)
 		if (d->count)
 			WriteASInstance ((VkAccelerationStructureInstanceKHR *) t->effects_instances.mapped + t->num_effects++,
 					 NULL, d->address, (r == DYN_PARTICLES) ? EFFECTS_PARTICLES : EFFECTS_SPRITES,
-					 dyn_masks[r], dyn_flags[r]);
+					 dyn_masks[r], DynInstanceFlags (r));
 	}
 	if (t->num_effects)
 		VK_CHECK (vmaFlushAllocation (vk.allocator, t->effects_instances.allocation, 0, VK_WHOLE_SIZE));

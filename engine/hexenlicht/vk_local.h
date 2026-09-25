@@ -263,13 +263,14 @@ int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboo
 
 /* vk_instance.c: the frame's model instances (ModelInstance in
  * shaders/hl_shared.h): the brush entities, then the alias entities group
- * by group; rebuilt from r_scene by R_RenderView and copied to this
- * frame's mapped buffer */
+ * by group, the first-person weapon last; rebuilt from r_scene by
+ * R_RenderView and copied to this frame's mapped buffer */
 enum
 {
 	MODEL_GROUP_OPAQUE,
 	MODEL_GROUP_TRANSPARENT,	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_SPECIAL_TRANS */
 	MODEL_GROUP_MASKED,		/* EF_HOLEY: cutouts, alpha tested */
+	MODEL_GROUP_WEAPON,		/* the first-person weapon (Quake II RTX's viewer weapon) */
 	NUM_MODEL_GROUPS
 };
 
@@ -278,6 +279,7 @@ typedef struct
 	int		first_instance;	/* the alias instances in the instance list */
 	int		num_instances;
 	vk_primrange_t	groups[NUM_MODEL_GROUPS];	/* their triangles in the instanced buffer, in this order */
+	int		weapon_look;	/* the weapon's MODEL_GROUP_OPAQUE, _TRANSPARENT or _MASKED */
 	int		dropped;	/* alias entities left out this frame: no room */
 	int		dropped_total;	/* the same since the map loaded */
 	int		bad_frames;	/* entities with a frame number the model doesn't have */

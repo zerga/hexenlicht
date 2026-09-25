@@ -216,6 +216,7 @@ void R_RenderView (void)
 		Sys_Error ("%s: NULL worldmodel", __thisfunc__);
 
 	R_SetupFrame ();
+	R_ViewModelLight ();		/* cl.light_level, for the game (r_light.c) */
 	R_BuildScene ();
 	VK_UpdateInstances ();		/* the brush and alias model entities, for the GPU */
 	VK_UpdateModelGeometry ();	/* the alias models' triangles, in this frame's command buffer */
@@ -382,6 +383,7 @@ static void R_DumpScene_f (void)
 	}
 
 	Con_Printf ("particles: %d\n", r_scene.num_particles);
+	Con_Printf ("light level on the weapon (cl.light_level, sent to the server): %d\n", cl.light_level);
 	Con_Printf ("view blend: %.2f %.2f %.2f %.2f\n",
 			r_scene.blend[0], r_scene.blend[1], r_scene.blend[2], r_scene.blend[3]);
 }

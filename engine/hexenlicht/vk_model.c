@@ -644,14 +644,17 @@ static void VK_ModelsCheck (void)
 
 		/* the group its triangles are in against its material: transparent
 		 * ones are Q2RTX's transparent models, masked ones have the skin
-		 * as their cutout mask, the others neither; and the material as
-		 * the GPU's table has it (uploaded on map load or mid-frame) */
+		 * as their cutout mask, the others neither (the weapon looks like
+		 * one of them, and only its triangles have the weapon flag); and
+		 * the material as the GPU's table has it (uploaded on map load or
+		 * mid-frame) */
 		{
 			int			m = (int)(mi->material & MATERIAL_INDEX_MASK);
 			const vk_material_t	*mat = VK_GetMaterial (m);
 			const uint32_t		*gm = gpu_materials + m * MATERIAL_UINTS;
 			uint32_t		kind = mi->material & MATERIAL_KIND_MASK;
-			int			g;
+			qboolean		weapon = (mi->material & MATERIAL_FLAG_WEAPON) != 0;
+			int			g, look;
 
 			for (g = 0; g < NUM_MODEL_GROUPS; g++)
 			{
@@ -659,10 +662,11 @@ static void VK_ModelsCheck (void)
 				    mi->render_prim_offset + mi->prim_count <= mf->groups[g].first + mf->groups[g].count)
 					break;
 			}
-			if (g == NUM_MODEL_GROUPS ||
-			    kind != ((g == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
-			    (g == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture) ||
-			    (g == MODEL_GROUP_OPAQUE && mat->mask_texture))
+			look = (g == MODEL_GROUP_WEAPON) ? mf->weapon_look : g;
+			if (g == NUM_MODEL_GROUPS || weapon != (g == MODEL_GROUP_WEAPON) ||
+			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
+			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture) ||
+			    (look == MODEL_GROUP_OPAQUE && mat->mask_texture))
 				group_bad++;
 			if ((int)(gm[0] & 0xffff) != mat->base_texture || (int)(gm[1] >> 16) != mat->mask_texture)
 				table_bad++;
@@ -837,9 +841,10 @@ static void VK_Models_f (void)
 			too_many_models ? va(" (%d found no room)", too_many_models) : "");
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
-	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked triangles, geometry pass %.3f ms on the GPU\n",
-			mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count, mf->groups[MODEL_GROUP_TRANSPARENT].count,
-			mf->groups[MODEL_GROUP_MASKED].count, geometry_ms);
+	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u weapon triangles, "
+		    "geometry pass %.3f ms on the GPU\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
+			mf->groups[MODEL_GROUP_TRANSPARENT].count, mf->groups[MODEL_GROUP_MASKED].count,
+			mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 }
