@@ -1040,6 +1040,139 @@ static void VK_RTCheck_f (void)
 }
 
 
+/* vk_rayprobe x y z: one ray from the camera towards the point through the
+ * last TLAS, every hit a candidate (ray_probe.comp); lists the first 32 by
+ * distance with what they are (world range, brush entity, model instance
+ * and triangle), for questions like "why don't I see that?" */
+static void VK_RayProbe_f (void)
+{
+	VkPushConstantRange		push_range;
+	VkPipelineLayoutCreateInfo	layout_info;
+	VkComputePipelineCreateInfo	pipe_info;
+	VkPipelineLayout		layout;
+	VkPipeline			pipeline;
+	VkShaderModule			module;
+	VkCommandBuffer			cmd;
+	VkMemoryBarrier2		barrier;
+	VkDependencyInfo		dep;
+	vk_buffer_t			out;
+	struct { VkDeviceAddress tlas, out; float origin[4], dir[4]; } push;
+	const uint32_t			*h;
+	int				i, j, n, order[32];
+	vec3_t				target;
+
+	if (last_tlas < 0 || Cmd_Argc () < 4)
+	{
+		Con_Printf ("vk_rayprobe x y z (in a map)\n");
+		return;
+	}
+	for (i = 0; i < 3; i++)
+		target[i] = (float) atof (Cmd_Argv (i + 1));
+	vkDeviceWaitIdle (vk.device);
+
+	module = VK_LoadShader ("ray_probe.comp");
+	memset (&push_range, 0, sizeof(push_range));
+	push_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	push_range.size = sizeof(push);
+	memset (&layout_info, 0, sizeof(layout_info));
+	layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layout_info.pushConstantRangeCount = 1;
+	layout_info.pPushConstantRanges = &push_range;
+	VK_CHECK (vkCreatePipelineLayout (vk.device, &layout_info, NULL, &layout));
+	memset (&pipe_info, 0, sizeof(pipe_info));
+	pipe_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	pipe_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	pipe_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	pipe_info.stage.module = module;
+	pipe_info.stage.pName = "main";
+	pipe_info.layout = layout;
+	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &pipe_info, NULL, &pipeline));
+	vkDestroyShaderModule (vk.device, module, NULL);
+	VK_CreateBuffer (&out, 33 * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			 VK_MEMORY_READBACK);
+
+	memset (&push, 0, sizeof(push));
+	push.tlas = tlas[last_tlas].address;
+	push.out = out.address;
+	VectorCopy (r_scene.vieworg, push.origin);
+	VectorSubtract (target, r_scene.vieworg, push.dir);
+	VectorNormalize (push.dir);
+
+	cmd = VK_BeginUpload ();
+	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+	vkCmdPushConstants (cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+	vkCmdDispatch (cmd, 1, 1, 1);
+	memset (&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	memset (&dep, 0, sizeof(dep));
+	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dep.memoryBarrierCount = 1;
+	dep.pMemoryBarriers = &barrier;
+	vkCmdPipelineBarrier2 (cmd, &dep);
+	VK_EndUpload ();
+	VK_CHECK (vmaInvalidateAllocation (vk.allocator, out.allocation, 0, VK_WHOLE_SIZE));
+
+	h = (const uint32_t *) out.mapped;
+	n = q_min ((int)h[0], 32);
+	for (i = 0; i < n; i++)
+		order[i] = i;
+	for (i = 1; i < n; i++)		/* by distance */
+	{
+		for (j = i; j > 0; j--)
+		{
+			float	a, b;
+			int	tmp;
+			memcpy (&a, &h[4 + order[j-1] * 4], 4);
+			memcpy (&b, &h[4 + order[j] * 4], 4);
+			if (a <= b)
+				break;
+			tmp = order[j]; order[j] = order[j-1]; order[j-1] = tmp;
+		}
+	}
+	Con_Printf ("rayprobe from %.1f %.1f %.1f to %.1f %.1f %.1f: %u hits\n", r_scene.vieworg[0], r_scene.vieworg[1],
+			r_scene.vieworg[2], target[0], target[1], target[2], h[0]);
+	for (i = 0; i < n; i++)
+	{
+		const uint32_t	*e = &h[4 + order[i] * 4];
+		float		t;
+		char		desc[96];
+
+		memcpy (&t, &e[0], 4);
+		if (e[1] == VERTEX_BUFFER_INSTANCED && e[2] < MAX_TLAS_INSTANCES)
+		{
+			uint32_t	p = ((const TlasInstanceInfo *) tlas[last_tlas].info.mapped)[e[2]].prim_offset + e[3];
+			int		k;
+
+			q_snprintf (desc, sizeof(desc), "model triangle %u (no instance)", p);
+			for (k = 0; k < VK_NumInstances (); k++)
+			{
+				const ModelInstance	*mi = VK_GetInstance (k);
+				if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED && p >= mi->render_prim_offset &&
+				    p < mi->render_prim_offset + mi->prim_count)
+				{
+					q_snprintf (desc, sizeof(desc), "instance %d %s triangle %u", k, VK_InstanceEntity (k)->model->name,
+						    p - mi->render_prim_offset);
+					break;
+				}
+			}
+		}
+		else
+		{
+			DescribeTLASInstance (e[2], desc, sizeof(desc));
+		}
+		Con_Printf ("  t %8.2f custom %u tlas instance %u primitive %u: %s\n", t, e[1], e[2], e[3], desc);
+	}
+
+	VK_DestroyBuffer (&out);
+	vkDestroyPipeline (vk.device, pipeline, NULL);
+	vkDestroyPipelineLayout (vk.device, layout, NULL);
+}
+
+
 /* ==========================================================================
  * Init / shutdown
  * ========================================================================== */
@@ -1127,6 +1260,7 @@ void VK_InitAccel (void)
 
 	Cmd_AddCommand ("vk_accel", VK_Accel_f);
 	Cmd_AddCommand ("vk_rtcheck", VK_RTCheck_f);
+	Cmd_AddCommand ("vk_rayprobe", VK_RayProbe_f);
 }
 
 void VK_ShutdownAccel (void)

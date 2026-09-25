@@ -187,6 +187,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/pvs_check.comp
 	${HEXENLICHT_SHADER_DIR}/rt_check.comp
 	${HEXENLICHT_SHADER_DIR}/effects_check.comp
+	${HEXENLICHT_SHADER_DIR}/ray_probe.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag

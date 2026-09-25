@@ -1,0 +1,56 @@
+/* ray_probe.comp -- vk_rayprobe: one ray through the main TLAS, every hit
+ * a candidate (none confirmed), the first 32 recorded as uvec4 (t bits,
+ * custom index, TLAS instance, primitive) after a count in h[0].x
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+
+#include "hl_shared.h"
+
+layout(local_size_x = 1) in;
+
+layout(buffer_reference, std430) writeonly buffer OutBuffer { uvec4 h[]; };
+
+layout(push_constant) uniform Push
+{
+	DeviceAddress tlas;
+	DeviceAddress out_hits;
+	vec4 origin;
+	vec4 dir;
+} push;
+
+void main()
+{
+	rayQueryEXT rq;
+	uint n = 0u;
+
+	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.tlas), gl_RayFlagsNoOpaqueEXT, 0xff,
+			      push.origin.xyz, 0.0, push.dir.xyz, 65536.0);
+	while (rayQueryProceedEXT(rq))
+	{
+		if (n < 32u)
+			OutBuffer(push.out_hits).h[1u + n] = uvec4(floatBitsToUint(rayQueryGetIntersectionTEXT(rq, false)),
+				uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false)),
+				uint(rayQueryGetIntersectionInstanceIdEXT(rq, false)),
+				uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)));
+		n++;
+	}
+	OutBuffer(push.out_hits).h[0] = uvec4(n, 0u, 0u, 0u);
+}
