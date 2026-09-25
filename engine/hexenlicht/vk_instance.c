@@ -13,7 +13,9 @@
  * by vk_model.c's geometry pass into the instanced buffer, from two poses
  * of the model that the instance blends (r_lerpmodels). The instance
  * carries the material of the skin (vk_skin.c), the fixed light level and
- * the colorshade tint GL uses. The first-person weapon is left for 2.8.
+ * the colorshade tint GL uses. The first-person weapon (cl.viewent) comes
+ * last, in a group of its own as Quake II RTX's viewer weapon, with GL's
+ * fov compensation; it looks like the group it would be in otherwise.
  *
  * The transforms, the pose choice and the draw state are the GL
  * renderer's: R_DrawBrushModel and R_RotateForEntity in gl_rsurf.c and
@@ -62,6 +64,7 @@ static ModelInstance		instances[MAX_MODEL_INSTANCES];
 static const scene_entity_t	*instance_entities[MAX_MODEL_INSTANCES];	/* their sources */
 static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c; 0 = alias */
 static vk_modelframe_t		model_frame;
+static uint32_t			weapon_reserve;	/* the weapon's triangles, kept free: it comes last */
 
 static vk_buffer_t		instance_buffers[VK_FRAMES_IN_FLIGHT];
 
@@ -100,6 +103,7 @@ typedef struct
 static entity_history_t	history_dynamic[MAX_EDICTS];
 static entity_history_t	history_static[MAX_STATIC_ENTITIES];
 static entity_history_t	history_temp[TEMP_HISTORY_SIZE];
+static entity_history_t	history_viewmodel;	/* cl.viewent; a new weapon is a new model */
 
 
 /* ==========================================================================
@@ -211,8 +215,9 @@ static void AliasRotation (const scene_entity_t *e, float rot[3][3])
 }
 
 /* R_DrawAliasModel folds the entity's scale (e->scale percent, the
- * SCALE_TYPE_* axes and SCALE_ORIGIN_* point) and the EF_ROTATE bobbing
- * into the pose decode: tmatrix(v) = hdr->scale * scale * v + tm_offset.
+ * SCALE_TYPE_* axes and SCALE_ORIGIN_* point), the EF_ROTATE bobbing and
+ * the weapon's fov compensation into the pose decode:
+ * tmatrix(v) = hdr->scale * scale * v + tm_offset.
  * The decode p = hdr->scale * v + hdr->scale_origin stays in the model
  * table here, so what remains, in model space, is p' = scale * p + offset
  * with offset = tm_offset - scale * hdr->scale_origin. */
@@ -267,6 +272,19 @@ static void AliasScale (const scene_entity_t *e, const aliashdr_t *hdr, vec3_t s
 
 	if (e->model->flags & EF_ROTATE)	/* floating motion */
 		tm_offset[2] = (float)(tm_offset[2] + sin(e->origin[0] + e->origin[1] + (r_scene.time * 3)) * 5.5);
+
+	/* GL stretches the weapon across the view (y) and up (z) by
+	 * tan(fov / 2) above fov 90, so it isn't distorted */
+	if (e->kind == SCENE_ENT_VIEWMODEL && scr_fov.integer > 90)
+	{
+		float	fovscale = (float) tan (scr_fov.value * (0.5 * M_PI / 180));
+
+		for (i = 1; i < 3; i++)
+		{
+			scale[i] *= fovscale;
+			tm_offset[i] *= fovscale;
+		}
+	}
 
 	for (i = 0; i < 3; i++)
 		offset[i] = tm_offset[i] - scale[i] * hdr->scale_origin[i];
@@ -351,6 +369,8 @@ static entity_history_t *EntityHistory (const scene_entity_t *e)
 		return (e->num >= 0 && e->num < MAX_STATIC_ENTITIES) ? &history_static[e->num] : NULL;
 	case SCENE_ENT_TEMP:
 		return TempHistory (e->ent);
+	case SCENE_ENT_VIEWMODEL:
+		return &history_viewmodel;
 	default:
 		return NULL;
 	}
@@ -535,11 +555,13 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
+	uint32_t		reserve = (e->kind == SCENE_ENT_VIEWMODEL) ? 0 : weapon_reserve;
 
 	if (index < 0)
 		return;		/* nothing to draw */
 	am = VK_GetAliasModel (index);
-	if (num_instances >= MAX_MODEL_INSTANCES || *next_prim + (uint32_t)am->num_tris > (uint32_t)MAX_INSTANCED_PRIMITIVES)
+	if (num_instances >= MAX_MODEL_INSTANCES ||
+	    *next_prim + (uint32_t)am->num_tris + reserve > (uint32_t)MAX_INSTANCED_PRIMITIVES)
 	{
 		model_frame.dropped++;
 		return;
@@ -596,11 +618,15 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	}
 	EndHistory (h, e);
 
-	/* the skin GL would bind; translucent ones are Quake II RTX's transparent models */
+	/* the skin GL would bind; translucent ones are Quake II RTX's
+	 * transparent models; the weapon's triangles are flagged, as Quake II
+	 * RTX's viewer weapon */
 	material = VK_SkinMaterial (e, hdr, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |
 		       (uint32_t)material;
+	if (e->kind == SCENE_ENT_VIEWMODEL)
+		mi->material |= MATERIAL_FLAG_WEAPON;
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;
 	mi->prim_count = (uint32_t)am->num_tris;
@@ -654,7 +680,19 @@ void VK_UpdateInstances (void)
 			AddBrushInstance (e);
 	}
 
-	/* the alias models, group by group; not the view model yet */
+	/* the alias models, group by group; the weapon in its own group, which
+	 * looks like the group it would be in otherwise, with room kept for it
+	 * when the others fill the instanced buffer */
+	weapon_reserve = 0;
+	for (i = 0; i < r_scene.num_entities; i++)
+	{
+		const scene_entity_t	*e = &r_scene.entities[i];
+		int			index;
+
+		if (e->kind == SCENE_ENT_VIEWMODEL && e->model->type == mod_alias &&
+		    (index = VK_AliasModelIndex (e->model)) >= 0)
+			weapon_reserve = (uint32_t)VK_GetAliasModel (index)->num_tris;
+	}
 	model_frame.first_instance = num_instances;
 	for (group = 0; group < NUM_MODEL_GROUPS; group++)
 	{
@@ -665,8 +703,17 @@ void VK_UpdateInstances (void)
 		{
 			const scene_entity_t	*e = &r_scene.entities[i];
 
-			if (e->model->type == mod_alias && e->kind != SCENE_ENT_VIEWMODEL && AliasGroup (e) == group)
+			if (e->model->type != mod_alias)
+				continue;
+			if (group == MODEL_GROUP_WEAPON && e->kind == SCENE_ENT_VIEWMODEL)
+			{
+				model_frame.weapon_look = AliasGroup (e);
+				AddAliasInstance (e, model_frame.weapon_look, &next_prim);
+			}
+			else if (group != MODEL_GROUP_WEAPON && e->kind != SCENE_ENT_VIEWMODEL && AliasGroup (e) == group)
+			{
 				AddAliasInstance (e, group, &next_prim);
+			}
 		}
 		range->count = next_prim - range->first;
 	}
@@ -718,6 +765,7 @@ void VK_ClearInstances (void)
 	memset (&model_frame, 0, sizeof(model_frame));
 	memset (history_dynamic, 0, sizeof(history_dynamic));
 	memset (history_static, 0, sizeof(history_static));
+	memset (&history_viewmodel, 0, sizeof(history_viewmodel));
 	memset (history_temp, 0, sizeof(history_temp));
 }
 

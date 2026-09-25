@@ -34,8 +34,9 @@
 
 COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 184);	/* the shaders' std430 layout */
 
-/* 1 albedo, 2 normals, 3 material kinds, 4 instances, 5 clusters (and the
- * camera's PVS), 6 motion since the last frame; 0 draws no 3D view */
+/* 1 albedo, 2 normals, 3 material kinds (cutouts yellow, the weapon cyan),
+ * 4 instances, 5 clusters (and the camera's PVS), 6 motion since the last
+ * frame; 0 draws no 3D view */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkDescriptorSetLayout	view_set_layout;	/* binding 0: the view image */

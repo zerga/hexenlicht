@@ -239,7 +239,7 @@ Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after
 | 2.5 | Sprites and particles as geometry: rebuilt every frame on the CPU as GL draws them (a camera-facing triangle per particle with GL's dot texture, a quad per sprite for all five orientation types), in their own effects TLAS as in Q2RTX (never blocking other rays); the debug view blends them in front of its hit | M | Visible in the debug view |
 | 2.6 | Acceleration structures: static world BLAS, per-frame dynamic BLAS, TLAS, instance masks | M | Rebuilt/refit per frame, stable |
 | 2.7 | Debug view: primary rays showing albedo / normals / material / instance IDs | S | `r_debugview` cvar works |
-| 2.8 | First-person weapon model (own FOV, masks) | S | Weapon renders correctly |
+| 2.8 | First-person weapon model as GL draws it: GL's fov compensation above 90 (no separate gun FOV), its own model group and BLAS with Q2RTX's `AS_FLAG_VIEWER_WEAPON` and `MATERIAL_FLAG_WEAPON`, traced first so it stays in front of walls like GL's depth hack; plus GL's light level on the weapon (`cl.light_level`), which the game sends to the server for monster awareness and the Assassin's cloak | S | Weapon renders correctly |
 | 2.9 | Smooth movement of walking monsters (`r_lerpmove`, QuakeSpasm's; needs the server's step bit kept in the client, an upstream hot spot) | S | Walking monsters move smoothly with 1, step like GL with 0 |
 | 2.10 | Beam segments (the client's stream entities, e.g. the sunstaff's `stsunsf1/2.mdl`) drawn as GL draws them: the reflected sunstaff beam is missing, the horizontal one looks different | S | Sunstaff, lightning and chain beams match `glhexen2` |
 
