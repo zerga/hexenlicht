@@ -229,5 +229,21 @@ void VK_ClearInstances (void);		/* on map change */
 void VK_UpdateInstances (void);
 int VK_NumInstances (void);
 const vk_buffer_t *VK_InstanceBuffer (void);	/* the current frame's */
+struct ModelInstance;
+struct scene_entity_s;
+const struct ModelInstance *VK_GetInstance (int i);
+const struct scene_entity_s *VK_InstanceEntity (int i);
+int VK_InstanceSubmodel (int i);		/* brush submodel number (*N), 0 = none */
+
+/* vk_accel.c: acceleration structures. Static BLASes for the world's and
+ * the submodels' primitive ranges are built on map load; the TLAS (world
+ * + model instances, shaders/hl_shared.h) is rebuilt every frame in the
+ * frame's command buffer, one per frame in flight. */
+void VK_InitAccel (void);
+void VK_ShutdownAccel (void);
+void VK_BuildWorldAccel (void);		/* after the world buffer is uploaded */
+void VK_FreeWorldAccel (void);
+void VK_BuildTLAS (void);		/* in R_RenderView, after VK_UpdateInstances */
+VkDeviceAddress VK_TLASAddress (void);	/* the current frame's */
 
 #endif	/* HEXENLICHT_VK_LOCAL_H */

@@ -41,7 +41,8 @@ COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 208);	/* the shaders
 /* this frame's instances */
 static int			num_instances;
 static ModelInstance		instances[MAX_MODEL_INSTANCES];
-static const scene_entity_t	*instance_entities[MAX_MODEL_INSTANCES];	/* for vk_instances */
+static const scene_entity_t	*instance_entities[MAX_MODEL_INSTANCES];	/* their sources */
+static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c */
 
 static vk_buffer_t		instance_buffers[VK_FRAMES_IN_FLIGHT];
 
@@ -170,6 +171,7 @@ static void AddBrushInstance (const scene_entity_t *e)
 
 	mi = &instances[num_instances];
 	instance_entities[num_instances] = e;
+	instance_submodels[num_instances] = submodel;
 	num_instances++;
 	memset (mi, 0, sizeof(*mi));
 
@@ -231,6 +233,21 @@ void VK_UpdateInstances (void)
 int VK_NumInstances (void)
 {
 	return num_instances;
+}
+
+const ModelInstance *VK_GetInstance (int i)
+{
+	return &instances[i];
+}
+
+const scene_entity_t *VK_InstanceEntity (int i)
+{
+	return instance_entities[i];
+}
+
+int VK_InstanceSubmodel (int i)
+{
+	return instance_submodels[i];
 }
 
 const vk_buffer_t *VK_InstanceBuffer (void)

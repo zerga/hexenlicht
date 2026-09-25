@@ -217,6 +217,7 @@ void R_RenderView (void)
 	R_SetupFrame ();
 	R_BuildScene ();
 	VK_UpdateInstances ();	/* the brush entities, for the GPU */
+	VK_BuildTLAS ();	/* in this frame's command buffer */
 
 	/* drawing the scene: epic E2 */
 }

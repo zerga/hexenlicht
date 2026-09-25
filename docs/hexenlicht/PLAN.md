@@ -227,13 +227,15 @@ Goal: `hexenlicht.exe` boots with Vulkan; menus, console and HUD work; maps load
 
 ### E2 — Scene on the GPU
 Goal: all geometry and animation correct in a ray-traced debug view.
+Order: 2.1–2.3, then 2.6 and 2.7 (so the debug view can check everything after them), then 2.4a, 2.4b, 2.5, 2.8.
 
 | # | Story | Size | Done when |
 |---|---|---|---|
 | 2.1 | BSP world → static GPU buffers (triangles, UVs, normals, tangents, material IDs, triangle→leaf), animated textures, surface flags (sky, water, lava) | M | World buffers built on map load |
 | 2.2 | Leaf clusters and decompressed PVS on the GPU | S | Visibility queryable from shaders |
 | 2.3 | Brush entities (doors, lifts, rotating) as instances with transforms | S | Moving brushes move |
-| 2.4 | MDL models incl. Hexen II/Praevus variants: frames on GPU, compute vertex lerp, skins, scale types/origins, draw flags, player class skins | L | Monsters, items, players animate correctly |
+| 2.4a | MDL geometry and animation on the GPU: both MDL formats, compact poses, compute pass writing the frame's model triangles, frame interpolation (`r_lerpmodels`, on by default; 0 = GL's look), scale types/origins, `EF_ROTATE`/`EF_FACE_VIEW` | M | Monsters, items, players animate correctly |
+| 2.4b | Model skins and draw state: skin groups, `gfx/skinN.lmp` skins, player class skins, model flags and draw flags as material kinds/alpha, lighting modes | M | Right skins, incl. Praevus models and class skins |
 | 2.5 | Sprites and particles as geometry | M | Visible in the debug view |
 | 2.6 | Acceleration structures: static world BLAS, per-frame dynamic BLAS, TLAS, instance masks | M | Rebuilt/refit per frame, stable |
 | 2.7 | Debug view: primary rays showing albedo / normals / material / instance IDs | S | `r_debugview` cvar works |
