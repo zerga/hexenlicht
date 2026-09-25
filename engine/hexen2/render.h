@@ -74,6 +74,9 @@ typedef struct entity_s
 	struct mnode_s		*topnode;	// for bmodels, first world node
 						// that splits bmodel, or NULL if
 						// not split
+#if defined(HEXENLICHT)
+	qboolean		movestep;	// the last update had U_NOLERP (MOVETYPE_STEP): r_lerpmove
+#endif
 } entity_t;
 
 
