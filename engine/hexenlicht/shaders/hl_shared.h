@@ -35,7 +35,7 @@
 
 #include <stdint.h>
 
-#define BEGIN_SHADER_STRUCT(NAME)	typedef struct
+#define BEGIN_SHADER_STRUCT(NAME)	typedef struct NAME	/* tagged, so C headers can declare pointers to it */
 #define END_SHADER_STRUCT(NAME)		NAME;
 
 typedef uint32_t	uint;
@@ -181,5 +181,30 @@ BEGIN_SHADER_STRUCT( ModelInstance )
 	uint pad;
 }
 END_SHADER_STRUCT( ModelInstance )
+
+
+/* ==========================================================================
+ * The top-level acceleration structure (vk_accel.c). Instance masks are
+ * Quake II RTX's; each TLAS instance has a TlasInstanceInfo at its index
+ * (rayQueryGetIntersectionInstanceIdEXT): the first primitive of its BLAS
+ * in the buffer named by its custom index (VERTEX_BUFFER_*), and its model
+ * instance, -1 for the world.
+ * ========================================================================== */
+
+#define MAX_TLAS_INSTANCES		4096
+
+#define AS_FLAG_OPAQUE			(1 << 0)
+#define AS_FLAG_TRANSPARENT		(1 << 1)
+#define AS_FLAG_VIEWER_MODELS		(1 << 2)
+#define AS_FLAG_VIEWER_WEAPON		(1 << 3)
+#define AS_FLAG_SKY			(1 << 4)
+#define AS_FLAG_CUSTOM_SKY		(1 << 5)
+
+BEGIN_SHADER_STRUCT( TlasInstanceInfo )
+{
+	uint prim_offset;
+	int model_instance;
+}
+END_SHADER_STRUCT( TlasInstanceInfo )
 
 #endif	/* HL_SHARED_H */

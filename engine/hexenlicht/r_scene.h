@@ -40,7 +40,7 @@ typedef enum
 	SCENE_ENT_VIEWMODEL	/* cl.viewent: the first-person weapon */
 } scene_entkind_t;
 
-typedef struct
+typedef struct scene_entity_s
 {
 	const entity_t	*ent;		/* source entity, for per-entity caches */
 	qmodel_t	*model;		/* never NULL */

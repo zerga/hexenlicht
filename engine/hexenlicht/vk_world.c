@@ -380,6 +380,7 @@ static void VK_FreeWorld (void)
 {
 	if (vk.device)
 		VK_DestroyBuffer (&vk_world.buffer);
+	VK_FreeWorldAccel ();
 	VK_FreePVS ();
 	free (vk_world.models);
 	free (texture_materials);
@@ -441,6 +442,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 
 	VK_FinishPVS ();
 	VK_UploadMaterials ();
+	VK_BuildWorldAccel ();
 	stats.build_time = Sys_DoubleTime () - start;
 }
 
