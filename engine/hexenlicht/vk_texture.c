@@ -210,7 +210,7 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	}
 
 	/* staging buffer with the pixels */
-	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_UPLOAD);
 	memcpy (staging.mapped, rgba, (size_t)size);
 	VK_CHECK (vmaFlushAllocation (vk.allocator, staging.allocation, 0, VK_WHOLE_SIZE));
 

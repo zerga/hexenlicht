@@ -97,6 +97,16 @@ typedef uint32_t	uvec4[4];
 
 
 /* ==========================================================================
+ * PVS buffer: a header of PVS_HEADER_UINTS uints ([0] number of clusters,
+ * [1] row size in uints, the rest unused), then one row of bits per
+ * cluster: bit c of row r is set when cluster r can see cluster c. A
+ * cluster is a vis leaf (leaf number - 1). See pvs.glsl.
+ * ========================================================================== */
+
+#define PVS_HEADER_UINTS		4
+
+
+/* ==========================================================================
  * One triangle, 128 bytes (Quake II RTX's VboPrimitive)
  * ========================================================================== */
 

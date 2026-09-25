@@ -34,7 +34,7 @@ file headers:
 
 | Project | License | Adapted in |
 |---|---|---|
-| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c` |
+| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c` |
 
 Used from the LunarG Vulkan SDK at build time, not vendored:
 

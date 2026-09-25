@@ -128,7 +128,7 @@ void VK_InitMaterials (void)
 {
 	VK_CreateBuffer (&vk_material_table, MAX_MATERIALS * MATERIAL_UINTS * sizeof(uint32_t),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-			 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, false);
+			 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
 	vk_num_materials = 0;
 	VK_ClearMaterials ();
 }

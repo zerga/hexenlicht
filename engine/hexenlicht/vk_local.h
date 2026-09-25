@@ -127,9 +127,16 @@ typedef struct
 	void		*mapped;	/* if host visible */
 } vk_buffer_t;
 
+typedef enum
+{
+	VK_MEMORY_DEVICE,	/* device local */
+	VK_MEMORY_UPLOAD,	/* mapped, written by the CPU (staging) */
+	VK_MEMORY_READBACK	/* mapped, written by the GPU and read by the CPU */
+} vk_memory_t;
+
 void VK_InitBuffers (void);
 void VK_ShutdownBuffers (void);
-void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usage, qboolean host_visible);
+void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usage, vk_memory_t memory);
 void VK_DestroyBuffer (vk_buffer_t *b);
 VkCommandBuffer VK_BeginUpload (void);
 void VK_EndUpload (void);
@@ -187,5 +194,30 @@ extern vk_world_t	vk_world;
 void VK_InitWorld (void);
 void VK_ShutdownWorld (void);
 void VK_LoadWorld (qmodel_t *worldmodel);	/* on map change, outside frames */
+
+/* vk_pvs.c: the world's potentially visible sets. A cluster is a vis leaf
+ * (leaf number - 1; -1 = none, e.g. the solid leaf). The matrix has one
+ * row of bits per cluster, padded to 32 bits; the GPU buffer holds a
+ * PVS_HEADER_UINTS header (shaders/hl_shared.h) and the same rows, which
+ * shaders/pvs.glsl queries. */
+typedef struct
+{
+	int		num_clusters;
+	int		row_bytes;	/* multiple of 4 */
+	byte		*matrix;	/* [num_clusters][row_bytes] */
+	vk_buffer_t	buffer;
+	int		one_way_pairs;	/* made symmetric */
+	int		patched;	/* transparent triangles whose sides were connected */
+} vk_pvs_t;
+
+extern vk_pvs_t		vk_pvs;
+
+void VK_InitPVS (void);
+void VK_BuildPVS (qmodel_t *worldmodel);	/* decompress; before the triangles */
+void VK_ConnectPVSAcross (int front, int back);	/* a transparent triangle's two sides */
+void VK_FinishPVS (void);			/* make symmetric, upload */
+void VK_FreePVS (void);
+const byte *VK_ClusterPVS (int cluster);	/* NULL for -1: everything visible */
+int VK_PointCluster (qmodel_t *worldmodel, const vec3_t point);
 
 #endif	/* HEXENLICHT_VK_LOCAL_H */
