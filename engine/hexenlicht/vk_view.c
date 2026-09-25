@@ -31,10 +31,10 @@
 
 #define VIEW_FORMAT	VK_FORMAT_R16G16B16A16_SFLOAT	/* linear, room for HDR later */
 
-COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 144);	/* the shaders' std430 layout */
+COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 152);	/* the shaders' std430 layout */
 
 /* 1 albedo, 2 normals, 3 material kinds, 4 instances, 5 clusters (and the
- * camera's PVS); 0 draws no 3D view */
+ * camera's PVS), 6 motion since the last frame; 0 draws no 3D view */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkDescriptorSetLayout	view_set_layout;	/* binding 0: the view image */
@@ -322,6 +322,7 @@ void VK_RenderView3D (void)
 	u->instances = VK_InstanceBuffer ()->address;
 	u->materials = vk_material_table.address;
 	u->pvs = vk_pvs.buffer.address;
+	u->instanced = VK_InstancedBuffer ()->address;
 	VK_CHECK (vmaFlushAllocation (vk.allocator, uniform_buffers[vk.frame_index].allocation, 0, sizeof(*u)));
 
 	if (!debug_pipeline)

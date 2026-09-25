@@ -150,20 +150,28 @@ END_SHADER_STRUCT( VboPrimitive )
 
 #define MAX_MODEL_INSTANCES		1024
 
-#define VERTEX_BUFFER_WORLD		0	/* source_buffer_idx: the world buffer (vk_world.c) */
+/* primitive buffers (source_buffer_idx, render_buffer_idx, the TLAS
+ * instances' custom index), numbered like Quake II RTX's */
+#define VERTEX_BUFFER_WORLD		0	/* the world buffer (vk_world.c) */
+#define VERTEX_BUFFER_INSTANCED		1	/* this frame's alias model triangles (vk_model.c) */
+#define VERTEX_BUFFER_FIRST_MODEL	2	/* alias model k (source only): VERTEX_BUFFER_FIRST_MODEL + k */
 
 BEGIN_SHADER_STRUCT( ModelInstance )
 {
 	mat4 transform;		/* model to world */
 	mat4 transform_prev;	/* the same, last frame */
 
-	uint material;		/* unused for brush models */
+	uint material;		/* alias models: material ID of every triangle; unused for brush models */
 	uint shell;		/* unused */
 	int cluster;		/* vis cluster the model is in, -1 = none */
-	uint source_buffer_idx;	/* VERTEX_BUFFER_* with the primitives */
+	uint source_buffer_idx;	/* VERTEX_BUFFER_* with the primitives, or the alias model */
 	uint prim_count;
 
-	uint prim_offset_curr_pose_curr_frame;	/* animated models only */
+	/* Alias models: the first vertex of each pose in the model's pose
+	 * data. The frame blends the current pose with the previous one by
+	 * pose_lerp_curr_frame (the previous pose's weight, Quake II's
+	 * backlerp); the _prev_frame fields are what the last frame showed. */
+	uint prim_offset_curr_pose_curr_frame;
 	uint prim_offset_prev_pose_curr_frame;
 	uint prim_offset_curr_pose_prev_frame;
 	uint prim_offset_prev_pose_prev_frame;
@@ -174,7 +182,8 @@ BEGIN_SHADER_STRUCT( ModelInstance )
 	int iqm_matrix_offset_prev_frame;
 
 	/* half float alpha (low 16 bits) | entity frame << 16; for brush
-	 * entities, a frame other than 0 shows the alternate animations */
+	 * entities, a frame other than 0 shows the alternate animations
+	 * (alias models: frame 0) */
 	uint alpha_and_frame;
 	uint render_buffer_idx;
 	uint render_prim_offset;	/* first primitive in render_buffer_idx */
@@ -189,11 +198,60 @@ END_SHADER_STRUCT( ModelInstance )
 
 
 /* ==========================================================================
+ * Alias models (vk_model.c). The model table has one AliasModel per model
+ * (index = source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL); each model's
+ * buffer holds its triangles and its poses. A pose vertex is Quake's
+ * trivertx_t in one uint: x | y << 8 | z << 16 | normal index << 24, the
+ * normal index into Quake's 162 vertex normals (anorms.h). Every frame,
+ * model_geometry.comp turns the alias instances into VboPrimitives in
+ * VERTEX_BUFFER_INSTANCED.
+ * ========================================================================== */
+
+#define MAX_ALIAS_MODELS		1024
+#define MAX_INSTANCED_PRIMITIVES	262144	/* model triangles per frame */
+#define NUM_VERTEX_NORMALS		162
+
+BEGIN_SHADER_STRUCT( AliasModel )
+{
+	vec3 scale;		/* pose vertex to model space: v * scale + scale_origin */
+	uint num_tris;
+	vec3 scale_origin;
+	uint num_pose_verts;	/* vertices per pose */
+	DeviceAddress triangles;	/* AliasTriangle[num_tris] */
+	DeviceAddress poses;		/* uint[poses * num_pose_verts] */
+}
+END_SHADER_STRUCT( AliasModel )
+
+BEGIN_SHADER_STRUCT( AliasTriangle )
+{
+	uvec2 verts;		/* pose vertices: x = v0 | v1 << 16, y = v2 */
+	vec2 uv0;
+	vec2 uv1;
+	vec2 uv2;
+}
+END_SHADER_STRUCT( AliasTriangle )
+
+/* model_geometry.comp's push constants */
+BEGIN_SHADER_STRUCT( ModelGeometryPush )
+{
+	DeviceAddress instances;	/* ModelInstance[] */
+	DeviceAddress models;		/* AliasModel[] */
+	DeviceAddress normals;		/* vec4[NUM_VERTEX_NORMALS] */
+	DeviceAddress primitives;	/* VboPrimitive[], the instanced buffer */
+	DeviceAddress positions;	/* float[9 per primitive], for the BLASes */
+	uint first_instance;		/* the first alias instance; one workgroup each */
+	uint pad;
+}
+END_SHADER_STRUCT( ModelGeometryPush )
+
+
+/* ==========================================================================
  * The top-level acceleration structure (vk_accel.c). Instance masks are
  * Quake II RTX's; each TLAS instance has a TlasInstanceInfo at its index
  * (rayQueryGetIntersectionInstanceIdEXT): the first primitive of its BLAS
  * in the buffer named by its custom index (VERTEX_BUFFER_*), and its model
- * instance, -1 for the world.
+ * instance, -1 for the world and for the alias model triangles of
+ * VERTEX_BUFFER_INSTANCED, whose VboPrimitive.instance names it.
  * ========================================================================== */
 
 #define MAX_TLAS_INSTANCES		4096
@@ -214,7 +272,7 @@ END_SHADER_STRUCT( TlasInstanceInfo )
 
 
 /* ==========================================================================
- * The 3D view (vk_view.c): what the view passes read, one per frame, 144
+ * The 3D view (vk_view.c): what the view passes read, one per frame, 152
  * bytes, found through the push constant's address
  * ========================================================================== */
 
@@ -225,7 +283,8 @@ END_SHADER_STRUCT( TlasInstanceInfo )
 #define DEBUGVIEW_MATERIAL		3
 #define DEBUGVIEW_INSTANCES		4
 #define DEBUGVIEW_CLUSTERS		5
-#define DEBUGVIEW_MAX			5
+#define DEBUGVIEW_MOTION		6
+#define DEBUGVIEW_MAX			6
 
 BEGIN_SHADER_STRUCT( ViewUniforms )
 {
@@ -246,6 +305,7 @@ BEGIN_SHADER_STRUCT( ViewUniforms )
 	DeviceAddress instances;	/* ModelInstance[] */
 	DeviceAddress materials;	/* the material table */
 	DeviceAddress pvs;		/* the PVS buffer */
+	DeviceAddress instanced;	/* this frame's VERTEX_BUFFER_INSTANCED VboPrimitives */
 }
 END_SHADER_STRUCT( ViewUniforms )
 

@@ -3,16 +3,20 @@
  * On map load, VK_BuildWorldAccel builds a static bottom-level structure
  * (BLAS) for each non-empty primitive range of the world and of every
  * brush submodel (vk_world.c: opaque, transparent, sky), from the world
- * buffer's packed positions. Every frame, VK_BuildTLAS rebuilds the top
- * level (TLAS) in the frame's command buffer: the world's BLASes and one
- * instance of a submodel's BLASes per brush entity (vk_instance.c), with
- * Quake II RTX's instance masks. Each TLAS instance has a TlasInstanceInfo
+ * buffer's packed positions. Every frame, VK_BuildTLAS builds the dynamic
+ * BLASes over this frame's alias model triangles (vk_model.c's instanced
+ * buffer, already in world space: one for the opaque models, one for the
+ * transparent ones) and then the top level (TLAS), in the frame's command
+ * buffer: the world's BLASes, one instance of a submodel's BLASes per
+ * brush entity (vk_instance.c) and the dynamic BLASes, with Quake II RTX's
+ * instance masks. Each TLAS instance has a TlasInstanceInfo
  * (shaders/hl_shared.h) so shaders can find the primitive they hit.
  *
  * vk_rtcheck casts a grid of rays from the camera through the last TLAS
  * (rt_check.comp) and compares the hits with the engine's own collision
  * traces: the world's hull and each brush entity's, rotated the way the
- * server does it (world.c's SV_ClipMoveToEntity).
+ * server does it (world.c's SV_ClipMoveToEntity). Alias models have no
+ * hulls, so the rays go through them.
  *
  * The structure follows Quake II RTX's path_tracer.c.
  *
@@ -56,6 +60,24 @@ static int		num_blases;
 static vk_buffer_t	blas_buffer;
 static VkDeviceSize	blas_scratch_size;
 
+/* dynamic BLASes, per frame in flight: the alias models' triangles */
+enum { DYN_OPAQUE, DYN_TRANSPARENT, NUM_DYN };
+static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent" };
+static const uint32_t dyn_masks[NUM_DYN] = { AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT };
+
+#define DYN_MIN_CAPACITY	4096u	/* triangles */
+#define DYN_GROWTH		2	/* Quake II RTX's bloat factor: room to grow before rebuilding */
+
+typedef struct
+{
+	VkAccelerationStructureKHR	as;
+	VkDeviceAddress			address;
+	vk_buffer_t			buffer;
+	uint32_t			capacity;	/* triangles it was created for */
+	VkDeviceSize			scratch_size;	/* a build's, at capacity */
+	uint32_t			first, count;	/* this frame's triangles in the instanced buffer */
+} vk_dynblas_t;
+
 typedef struct
 {
 	vk_buffer_t			instances;	/* VkAccelerationStructureInstanceKHR[], mapped */
@@ -67,20 +89,25 @@ typedef struct
 	VkDeviceAddress			address;
 	uint32_t			num_instances;
 	qboolean			timed;		/* has timestamps to read */
+
+	vk_dynblas_t			dyn[NUM_DYN];
+	vk_buffer_t			dyn_scratch;
+	VkDeviceSize			dyn_scratch_size;
 } vk_tlas_t;
 
 static vk_tlas_t	tlas[VK_FRAMES_IN_FLIGHT];
 static int		last_tlas = -1;		/* the slot built last, -1 = none since the map loaded */
 static uint64_t		last_tlas_frame;	/* vk.frame_count it was built in */
 static uint32_t		scratch_alignment;
-static VkQueryPool	query_pool;		/* 2 timestamps per slot */
-static double		tlas_build_ms;
+static VkQueryPool	query_pool;		/* 3 timestamps per slot: start, dynamic BLASes built, TLAS built */
+static double		tlas_build_ms, dyn_build_ms;
 
 /* the last TLAS's instances: range and model instance, for vk_rtcheck */
 static struct
 {
-	int	range;
-	int	model_instance;
+	int		range;		/* RANGE_* or, for the dynamic BLASes, DYN_* */
+	qboolean	models;		/* a dynamic BLAS */
+	int		model_instance;
 } tlas_sources[MAX_TLAS_INSTANCES];
 
 
@@ -275,8 +302,10 @@ void VK_BuildWorldAccel (void)
  * The TLAS, every frame
  * ========================================================================== */
 
-static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, const vk_blas_t *b, uint32_t mask,
-			     int range, int model_instance)
+/* one TLAS instance of a BLAS: transform NULL = identity; its primitives
+ * start at prim_offset in the buffer custom_index names */
+static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, VkDeviceAddress blas, uint32_t prim_offset,
+			     uint32_t custom_index, uint32_t mask, int range, qboolean models, int model_instance)
 {
 	VkAccelerationStructureInstanceKHR	*ai;
 	TlasInstanceInfo			*info;
@@ -292,19 +321,129 @@ static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, const vk_blas_t
 		for (c = 0; c < 4; c++)		/* row-major 3x4 from our column-major 4x4 */
 			ai->transform.matrix[r][c] = transform ? transform[c][r] : (r == c ? 1.0f : 0.0f);
 	}
-	ai->instanceCustomIndex = VERTEX_BUFFER_WORLD;
+	ai->instanceCustomIndex = custom_index;
 	ai->mask = mask;
 	ai->instanceShaderBindingTableRecordOffset = 0;
 	ai->flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
-	ai->accelerationStructureReference = b->address;
+	ai->accelerationStructureReference = blas;
 
 	info = (TlasInstanceInfo *) t->info.mapped + t->num_instances;
-	info->prim_offset = b->first;
+	info->prim_offset = prim_offset;
 	info->model_instance = model_instance;
 
 	tlas_sources[t->num_instances].range = range;
+	tlas_sources[t->num_instances].models = models;
 	tlas_sources[t->num_instances].model_instance = model_instance;
 	t->num_instances++;
+}
+
+static void DestroyDynamicBLAS (vk_dynblas_t *d)
+{
+	if (d->as)
+		vkDestroyAccelerationStructureKHR (vk.device, d->as, NULL);
+	VK_DestroyBuffer (&d->buffer);
+	memset (d, 0, sizeof(*d));
+}
+
+/* Builds this frame's dynamic BLASes over the instanced buffer's opaque
+ * and transparent model triangles (world space), as Quake II RTX's
+ * vkpt_pt_create_all_dynamic does: rebuilt every frame for a fast build,
+ * each created with room to grow. The slot's fence was waited for, so
+ * its old structures can be replaced. */
+static void BuildDynamicBLASes (vk_tlas_t *t, VkCommandBuffer cmd)
+{
+	VkAccelerationStructureGeometryKHR		geoms[NUM_DYN];
+	VkAccelerationStructureBuildGeometryInfoKHR	infos[NUM_DYN];
+	VkAccelerationStructureBuildRangeInfoKHR	ranges[NUM_DYN];
+	const VkAccelerationStructureBuildRangeInfoKHR	*range_ptrs[NUM_DYN];
+	VkAccelerationStructureBuildSizesInfoKHR	size;
+	const vk_modelframe_t	*mf = VK_ModelFrame ();
+	qboolean		built = VK_ModelGeometryBuiltThisFrame ();
+	VkDeviceSize		scratch_total = 0, scratch_offset = 0;
+	uint32_t		capacity;
+	int			d, n = 0;
+
+	for (d = 0; d < NUM_DYN; d++)
+	{
+		vk_dynblas_t					*b = &t->dyn[d];
+		const vk_primrange_t				*r = (d == DYN_OPAQUE) ? &mf->opaque : &mf->transparent;
+		VkAccelerationStructureGeometryTrianglesDataKHR	*tri;
+
+		b->first = r->first;
+		b->count = built ? r->count : 0;
+		if (!b->count)
+			continue;
+
+		memset (&geoms[n], 0, sizeof(geoms[n]));
+		geoms[n].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+		geoms[n].geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+		geoms[n].flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		tri = &geoms[n].geometry.triangles;
+		tri->sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+		tri->vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		tri->vertexData.deviceAddress = VK_InstancedPositionsAddress () + (VkDeviceSize)b->first * 9 * sizeof(float);
+		tri->vertexStride = 3 * sizeof(float);
+		tri->maxVertex = b->count * 3 - 1;
+		tri->indexType = VK_INDEX_TYPE_NONE_KHR;
+
+		memset (&infos[n], 0, sizeof(infos[n]));
+		infos[n].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		infos[n].type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		infos[n].flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
+		infos[n].mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+		infos[n].geometryCount = 1;
+		infos[n].pGeometries = &geoms[n];
+
+		if (b->count > b->capacity)
+		{
+			/* sizes for the most triangles and vertices it will hold */
+			capacity = q_min (q_max (b->count * DYN_GROWTH, DYN_MIN_CAPACITY), (uint32_t)MAX_INSTANCED_PRIMITIVES);
+			DestroyDynamicBLAS (b);
+			tri->maxVertex = capacity * 3 - 1;
+			memset (&size, 0, sizeof(size));
+			size.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+			vkGetAccelerationStructureBuildSizesKHR (vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+								 &infos[n], &capacity, &size);
+			tri->maxVertex = r->count * 3 - 1;
+			VK_CreateBuffer (&b->buffer, size.accelerationStructureSize,
+					 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+					 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
+			b->as = CreateAS (VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, &b->buffer, 0,
+					  size.accelerationStructureSize, &b->address);
+			b->capacity = capacity;
+			b->scratch_size = size.buildScratchSize;
+			b->first = r->first;	/* DestroyDynamicBLAS cleared them */
+			b->count = r->count;
+		}
+		infos[n].dstAccelerationStructure = b->as;
+		scratch_total += AlignSize (b->scratch_size, scratch_alignment);
+
+		memset (&ranges[n], 0, sizeof(ranges[n]));
+		ranges[n].primitiveCount = b->count;
+		range_ptrs[n] = &ranges[n];
+		n++;
+	}
+	if (!n)
+		return;
+
+	if (scratch_total > t->dyn_scratch_size)
+	{
+		VK_DestroyBuffer (&t->dyn_scratch);
+		VK_CreateBuffer (&t->dyn_scratch, scratch_total + scratch_alignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+				 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
+		t->dyn_scratch_size = scratch_total;
+	}
+	for (d = n = 0; d < NUM_DYN; d++)
+	{
+		if (!t->dyn[d].count)
+			continue;
+		infos[n].scratchData.deviceAddress = AlignSize (t->dyn_scratch.address, scratch_alignment) + scratch_offset;
+		scratch_offset += AlignSize (t->dyn[d].scratch_size, scratch_alignment);
+		n++;
+	}
+
+	vkCmdBuildAccelerationStructuresKHR (cmd, (uint32_t)n, infos, range_ptrs);
+	AccelBarrier (cmd);
 }
 
 void VK_BuildTLAS (void)
@@ -327,18 +466,31 @@ void VK_BuildTLAS (void)
 	/* this slot's fence was waited for, so its last build's timestamps are ready */
 	if (query_pool && t->timed)
 	{
-		uint64_t	ts[2];
+		uint64_t	ts[3];
 
-		if (vkGetQueryPoolResults (vk.device, query_pool, slot * 2, 2, sizeof(ts), ts, sizeof(uint64_t),
+		if (vkGetQueryPoolResults (vk.device, query_pool, slot * 3, 3, sizeof(ts), ts, sizeof(uint64_t),
 					   VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
-			tlas_build_ms = (double)(ts[1] - ts[0]) * vk.props.limits.timestampPeriod / 1.0e6;
+		{
+			dyn_build_ms = (double)(ts[1] - ts[0]) * vk.props.limits.timestampPeriod / 1.0e6;
+			tlas_build_ms = (double)(ts[2] - ts[1]) * vk.props.limits.timestampPeriod / 1.0e6;
+		}
 	}
+
+	if (query_pool)
+	{
+		vkCmdResetQueryPool (cmd, query_pool, slot * 3, 3);
+		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, query_pool, slot * 3);
+	}
+	BuildDynamicBLASes (t, cmd);
+	if (query_pool)
+		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, query_pool, slot * 3 + 1);
 
 	t->num_instances = 0;
 	for (r = 0; r < NUM_RANGES; r++)
 	{
 		if (blases[r].as)
-			AddTLASInstance (t, NULL, &blases[r], range_masks[r], r, -1);
+			AddTLASInstance (t, NULL, blases[r].address, blases[r].first, VERTEX_BUFFER_WORLD,
+					 range_masks[r], r, false, -1);
 	}
 	for (i = 0; i < VK_NumInstances (); i++)
 	{
@@ -353,8 +505,18 @@ void VK_BuildTLAS (void)
 			const vk_blas_t	*b = &blases[sub * NUM_RANGES + r];
 
 			if (b->as)
-				AddTLASInstance (t, mi->transform, b, translucent ? AS_FLAG_TRANSPARENT : range_masks[r], r, i);
+				AddTLASInstance (t, mi->transform, b->address, b->first, VERTEX_BUFFER_WORLD,
+						 translucent ? AS_FLAG_TRANSPARENT : range_masks[r], r, false, i);
 		}
+	}
+	/* the model triangles are in world space; their VboPrimitive.instance
+	 * names the model instance */
+	for (r = 0; r < NUM_DYN; r++)
+	{
+		const vk_dynblas_t	*d = &t->dyn[r];
+
+		if (d->count)
+			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], r, true, -1);
 	}
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->instances.allocation, 0, VK_WHOLE_SIZE));
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->info.allocation, 0, VK_WHOLE_SIZE));
@@ -376,16 +538,11 @@ void VK_BuildTLAS (void)
 	memset (&range, 0, sizeof(range));
 	range.primitiveCount = t->num_instances;
 
-	if (query_pool)
-	{
-		vkCmdResetQueryPool (cmd, query_pool, slot * 2, 2);
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, query_pool, slot * 2);
-	}
 	vkCmdBuildAccelerationStructuresKHR (cmd, 1, &info, &range_ptr);
 	AccelBarrier (cmd);
 	if (query_pool)
 	{
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, query_pool, slot * 2 + 1);
+		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, query_pool, slot * 3 + 2);
 		t->timed = true;
 	}
 	last_tlas = slot;
@@ -422,8 +579,16 @@ static void VK_Accel_f (void)
 			vk_world.num_models, blas_buffer.size / (1024.0 * 1024.0), blas_scratch_size / (1024.0 * 1024.0));
 	if (last_tlas >= 0)
 	{
-		Con_Printf ("TLAS: %u instances, %.2f MB per frame in flight, build %.3f ms on the GPU\n",
-				tlas[last_tlas].num_instances, tlas[last_tlas].buffer.size / (1024.0 * 1024.0), tlas_build_ms);
+		const vk_tlas_t	*t = &tlas[last_tlas];
+		int		d;
+
+		for (d = 0; d < NUM_DYN; d++)
+		{
+			Con_Printf ("dynamic BLAS %-11s: %u model triangles, room for %u, %.2f MB per frame in flight\n", dyn_names[d],
+					t->dyn[d].count, t->dyn[d].capacity, t->dyn[d].buffer.size / (1024.0 * 1024.0));
+		}
+		Con_Printf ("TLAS: %u instances, %.2f MB per frame in flight\n", t->num_instances, t->buffer.size / (1024.0 * 1024.0));
+		Con_Printf ("builds on the GPU: dynamic BLASes %.3f ms, TLAS %.3f ms\n", dyn_build_ms, tlas_build_ms);
 	}
 	else
 	{
@@ -517,6 +682,8 @@ static float CpuTrace (qmodel_t *world, const vec3_t start, const vec3_t dir, fl
 	*entity_hit = false;
 	for (i = 0; i < VK_NumInstances (); i++)
 	{
+		if (VK_InstanceSubmodel (i) <= 0)
+			continue;	/* an alias model: no hull */
 		f = EntityTrace (VK_InstanceEntity (i), start, end, &in_entity, &c);
 		if (!in_entity && f < frac)	/* not entities the camera is inside */
 		{
@@ -554,6 +721,8 @@ static void DescribeTLASInstance (uint32_t instance, char *buf, size_t size)
 {
 	if (instance >= MAX_TLAS_INSTANCES)
 		q_snprintf (buf, size, "nothing");
+	else if (tlas_sources[instance].models)
+		q_snprintf (buf, size, "models %s", dyn_names[tlas_sources[instance].range]);
 	else if (tlas_sources[instance].model_instance < 0)
 		q_snprintf (buf, size, "world %s", range_names[tlas_sources[instance].range]);
 	else
@@ -782,7 +951,7 @@ void VK_InitAccel (void)
 		memset (&query_info, 0, sizeof(query_info));
 		query_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-		query_info.queryCount = VK_FRAMES_IN_FLIGHT * 2;
+		query_info.queryCount = VK_FRAMES_IN_FLIGHT * 3;
 		VK_CHECK (vkCreateQueryPool (vk.device, &query_info, NULL, &query_pool));
 	}
 
@@ -798,7 +967,11 @@ void VK_ShutdownAccel (void)
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
 	{
 		vk_tlas_t	*t = &tlas[i];
+		int		d;
 
+		for (d = 0; d < NUM_DYN; d++)
+			DestroyDynamicBLAS (&t->dyn[d]);
+		VK_DestroyBuffer (&t->dyn_scratch);
 		if (t->as)
 			vkDestroyAccelerationStructureKHR (vk.device, t->as, NULL);
 		VK_DestroyBuffer (&t->instances);

@@ -559,6 +559,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 	VK_InitTextures ();
 	VK_InitMaterials ();
 	VK_InitWorld ();
+	VK_InitModels ();
 	VK_InitInstances ();
 	VK_InitAccel ();
 	VK_InitView ();
@@ -579,6 +580,7 @@ void VK_Shutdown (void)
 		VK_ShutdownView ();
 		VK_ShutdownAccel ();
 		VK_ShutdownInstances ();
+		VK_ShutdownModels ();
 		VK_ShutdownWorld ();
 		VK_ShutdownMaterials ();
 		VK_ShutdownTextures ();

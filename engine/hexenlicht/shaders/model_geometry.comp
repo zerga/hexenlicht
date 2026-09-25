@@ -1,0 +1,152 @@
+/* model_geometry.comp -- the frame's alias model triangles
+ *
+ * One workgroup per alias instance (vk_instance.c): decodes the two poses
+ * the instance blends (vk_model.c's compact model data), blends positions
+ * and normals, applies the model-to-world transform, computes tangents,
+ * and last frame's positions for the motion, and writes VboPrimitives and
+ * their packed positions into this frame's instanced buffer
+ * (VERTEX_BUFFER_INSTANCED), where the dynamic BLASes are built from.
+ *
+ * The vertex animation half of Quake II RTX's instance_geometry.comp
+ * (src/refresh/vkpt/shader/instance_geometry.comp), with Hexen II's
+ * compact poses and normals transformed by the inverse transpose (scale
+ * types can scale x and y only, or z only). vk_model.c's check repeats
+ * this on the CPU; keep the two the same.
+ *
+ * Copyright (C) 2018 Christoph Schied
+ * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+
+#include "hl_shared.h"
+#include "normal.glsl"
+
+#define LOCAL_SIZE_X	256
+
+layout(local_size_x = LOCAL_SIZE_X) in;
+
+layout(buffer_reference, std430) readonly buffer InstanceBuffer { ModelInstance m[]; };
+layout(buffer_reference, std430) readonly buffer ModelTable { AliasModel m[]; };
+layout(buffer_reference, std430) readonly buffer TriangleBuffer { AliasTriangle t[]; };
+layout(buffer_reference, std430) readonly buffer UintBuffer { uint d[]; };
+layout(buffer_reference, std430) readonly buffer NormalTable { vec4 n[]; };
+layout(buffer_reference, std430) writeonly buffer PrimitiveBuffer { VboPrimitive p[]; };
+layout(buffer_reference, std430) writeonly buffer FloatBuffer { float d[]; };
+
+layout(push_constant) uniform Push
+{
+	ModelGeometryPush p;
+} push;
+
+vec3
+pose_position(AliasModel m, uint v)
+{
+	return vec3(uvec3(v, v >> 8, v >> 16) & 0xffu) * m.scale + m.scale_origin;
+}
+
+vec3
+pose_normal(uint v)
+{
+	return NormalTable(push.p.normals).n[min(v >> 24, uint(NUM_VERTEX_NORMALS - 1))].xyz;
+}
+
+/* a direction in the plane of n, like vk_world.c's fallback tangent */
+vec3
+any_tangent(vec3 n)
+{
+	vec3 axis = (abs(n.z) < 0.9) ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+	return normalize(cross(axis, n));
+}
+
+void
+main()
+{
+	uint instance_index = push.p.first_instance + gl_WorkGroupID.x;
+	ModelInstance mi = InstanceBuffer(push.p.instances).m[instance_index];
+	AliasModel m = ModelTable(push.p.models).m[mi.source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL];
+	mat3 normal_matrix = transpose(inverse(mat3(mi.transform)));
+	float alpha = unpackHalf2x16(mi.alpha_and_frame).x;
+
+	for (uint idx = gl_LocalInvocationID.x; idx < mi.prim_count; idx += LOCAL_SIZE_X)
+	{
+		AliasTriangle tri = TriangleBuffer(m.triangles).t[idx];
+		uint verts[3] = uint[3](tri.verts.x & 0xffffu, tri.verts.x >> 16, tri.verts.y);
+		vec3 pos[3], pos_prev[3], nrm[3];
+
+		for (int k = 0; k < 3; k++)
+		{
+			uint a = UintBuffer(m.poses).d[mi.prim_offset_curr_pose_curr_frame + verts[k]];
+			uint b = UintBuffer(m.poses).d[mi.prim_offset_prev_pose_curr_frame + verts[k]];
+			uint pa = UintBuffer(m.poses).d[mi.prim_offset_curr_pose_prev_frame + verts[k]];
+			uint pb = UintBuffer(m.poses).d[mi.prim_offset_prev_pose_prev_frame + verts[k]];
+
+			vec3 p = mix(pose_position(m, a), pose_position(m, b), mi.pose_lerp_curr_frame);
+			vec3 pp = mix(pose_position(m, pa), pose_position(m, pb), mi.pose_lerp_prev_frame);
+			vec3 n = mix(pose_normal(a), pose_normal(b), mi.pose_lerp_curr_frame);
+			if (dot(n, n) < 1e-12)
+				n = pose_normal(a);	/* opposite normals */
+
+			pos[k] = vec3(mi.transform * vec4(p, 1.0));
+			pos_prev[k] = vec3(mi.transform_prev * vec4(pp, 1.0));
+			nrm[k] = normalize(normal_matrix * n);
+		}
+
+		/* the triangle's texture axes: tangent = dP/du, bitangent = dP/dv */
+		vec3 e1 = pos[1] - pos[0];
+		vec3 e2 = pos[2] - pos[0];
+		vec2 d1 = tri.uv1 - tri.uv0;
+		vec2 d2 = tri.uv2 - tri.uv0;
+		float det_sign = (d1.x * d2.y - d2.x * d1.y < 0.0) ? -1.0 : 1.0;
+		vec3 tangent = (e1 * d2.y - e2 * d1.y) * det_sign;
+		vec3 bitangent = (e2 * d1.x - e1 * d2.x) * det_sign;
+		bool flip = dot(cross(cross(e1, e2), tangent), bitangent) < 0.0;
+
+		VboPrimitive prim;
+		prim.pos0 = pos[0];
+		prim.pos1 = pos[1];
+		prim.pos2 = pos[2];
+		prim.material_id = mi.material | (flip ? MATERIAL_FLAG_HANDEDNESS : 0u);
+		prim.cluster = mi.cluster;
+		prim.shell = mi.shell;
+		prim.normals = uvec3(encode_normal(nrm[0]), encode_normal(nrm[1]), encode_normal(nrm[2]));
+		prim.instance = instance_index;
+		for (int k = 0; k < 3; k++)
+		{
+			vec3 t = tangent - nrm[k] * dot(nrm[k], tangent);
+			t = (dot(t, t) > 1e-12) ? normalize(t) : any_tangent(nrm[k]);
+			prim.tangents[k] = encode_normal(t);
+		}
+		prim.emissive_and_alpha = packHalf2x16(vec2(1.0, alpha));
+		prim.uv0 = tri.uv0;
+		prim.uv1 = tri.uv1;
+		prim.uv2 = tri.uv2;
+		prim.custom0 = packHalf4x16(vec4(pos_prev[0] - pos[0], 0.0));
+		prim.custom1 = packHalf4x16(vec4(pos_prev[1] - pos[1], 0.0));
+		prim.custom2 = packHalf4x16(vec4(pos_prev[2] - pos[2], 0.0));
+
+		uint out_index = mi.render_prim_offset + idx;
+		PrimitiveBuffer(push.p.primitives).p[out_index] = prim;
+		for (int k = 0; k < 3; k++)
+		{
+			FloatBuffer(push.p.positions).d[out_index * 9 + k * 3 + 0] = pos[k].x;
+			FloatBuffer(push.p.positions).d[out_index * 9 + k * 3 + 1] = pos[k].y;
+			FloatBuffer(push.p.positions).d[out_index * 9 + k * 3 + 2] = pos[k].z;
+		}
+	}
+}
