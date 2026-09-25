@@ -275,7 +275,75 @@ END_SHADER_STRUCT( TlasInstanceInfo )
 
 
 /* ==========================================================================
- * The 3D view (vk_view.c): what the view passes read, one per frame, 152
+ * Effects (vk_effects.c): the frame's particles and sprites, written by the
+ * CPU into one buffer per frame in flight, laid out like Quake II RTX's
+ * transparency.c: the vertex positions (vec3: 3 per particle, one
+ * triangle as GL draws it; then 4 per sprite, a quad whose two triangles
+ * are vertices 0 1 2 and 2 3 0 of a shared uint16 index buffer), an
+ * EffectParticle per particle and an EffectSprite per sprite. They are
+ * ray traced through a second, effects-only TLAS (Quake II RTX's
+ * TLAS_INDEX_EFFECTS), whose instance masks are their own namespace; the
+ * custom index tells particles from sprites. Particle i is primitive i of
+ * its BLAS, sprite i primitives 2i and 2i + 1 of its own.
+ * ========================================================================== */
+
+#define MAX_EFFECT_PARTICLES		32768	/* r_part.c has 7000 unless -particles N */
+#define MAX_EFFECT_SPRITES		1024	/* over r_scene.h's MAX_SCENE_ENTITIES */
+
+#define AS_FLAG_EFFECTS			(1 << 0)	/* the effects TLAS's instances */
+
+#define EFFECTS_PARTICLES		0	/* the effects TLAS instances' custom index */
+#define EFFECTS_SPRITES			1
+
+BEGIN_SHADER_STRUCT( EffectParticle )
+{
+	vec3 color;		/* linear; GL's glColor */
+	uint alpha_and_uvs;	/* half float alpha | GL's texture coordinate set (ptex_coord) << 16 */
+}
+END_SHADER_STRUCT( EffectParticle )
+
+BEGIN_SHADER_STRUCT( EffectSprite )
+{
+	uint texture;		/* texture slot of the frame */
+	float alpha;		/* multiplies the texture's */
+}
+END_SHADER_STRUCT( EffectSprite )
+
+
+/* effects_check.comp (vk_effects check): one ray from the camera towards a
+ * point inside an effect triangle, which the effects TLAS should report */
+BEGIN_SHADER_STRUCT( EffectsCheckRay )
+{
+	vec3 dir;
+	float tmax;		/* a little beyond the point */
+	uint custom;		/* the triangle: EFFECTS_* */
+	uint primitive;		/* in its BLAS */
+	uint pad0;
+	uint pad1;
+}
+END_SHADER_STRUCT( EffectsCheckRay )
+
+BEGIN_SHADER_STRUCT( EffectsCheckResult )
+{
+	float t;		/* where the ray met the triangle, < 0: not reported */
+	uint candidates;	/* all candidates the ray met */
+}
+END_SHADER_STRUCT( EffectsCheckResult )
+
+BEGIN_SHADER_STRUCT( EffectsCheckPush )
+{
+	DeviceAddress tlas;
+	DeviceAddress rays;	/* EffectsCheckRay[] */
+	DeviceAddress results;	/* EffectsCheckResult[] */
+	uint num_rays;
+	uint pad;
+	vec4 origin;		/* the camera */
+}
+END_SHADER_STRUCT( EffectsCheckPush )
+
+
+/* ==========================================================================
+ * The 3D view (vk_view.c): what the view passes read, one per frame, 184
  * bytes, found through the push constant's address
  * ========================================================================== */
 
@@ -309,6 +377,12 @@ BEGIN_SHADER_STRUCT( ViewUniforms )
 	DeviceAddress materials;	/* the material table */
 	DeviceAddress pvs;		/* the PVS buffer */
 	DeviceAddress instanced;	/* this frame's VERTEX_BUFFER_INSTANCED VboPrimitives */
+
+	DeviceAddress effects_tlas;	/* 0 = no particles or sprites this frame */
+	DeviceAddress particles;	/* EffectParticle[] */
+	DeviceAddress sprites;		/* EffectSprite[] */
+	uint particle_texture;		/* texture slot of GL's particle dot */
+	uint pad;
 }
 END_SHADER_STRUCT( ViewUniforms )
 

@@ -219,7 +219,8 @@ void R_RenderView (void)
 	R_BuildScene ();
 	VK_UpdateInstances ();		/* the brush and alias model entities, for the GPU */
 	VK_UpdateModelGeometry ();	/* the alias models' triangles, in this frame's command buffer */
-	VK_BuildTLAS ();		/* the dynamic BLASes and the TLAS, the same */
+	VK_UpdateEffects ();		/* the particles' and sprites' triangles */
+	VK_BuildTLAS ();		/* the dynamic BLASes, the TLAS and the effects TLAS, in the command buffer */
 	VK_RenderView3D ();		/* the view pass into the view image */
 
 	/* r_debugview's pass for now; the path tracer comes with epic E3 */
@@ -255,6 +256,7 @@ void R_NewMap (void)
 	VK_LoadWorld (cl.worldmodel);	/* the world and its submodels on the GPU */
 	VK_LoadModels ();		/* the alias models the map precaches */
 	VK_ClearInstances ();
+	VK_ClearEffects ();
 }
 
 

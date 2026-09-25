@@ -561,6 +561,7 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 	VK_InitWorld ();
 	VK_InitModels ();
 	VK_InitInstances ();
+	VK_InitEffects ();
 	VK_InitAccel ();
 	VK_InitView ();
 	VK_InitSwapchain ();
@@ -579,6 +580,7 @@ void VK_Shutdown (void)
 		VK_ShutdownSwapchain ();
 		VK_ShutdownView ();
 		VK_ShutdownAccel ();
+		VK_ShutdownEffects ();
 		VK_ShutdownInstances ();
 		VK_ShutdownModels ();
 		VK_ShutdownWorld ();

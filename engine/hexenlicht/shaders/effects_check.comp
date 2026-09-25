@@ -1,0 +1,64 @@
+/* effects_check.comp -- vk_effects check: casts each ray through the
+ * effects TLAS, walks every candidate and records where the ray met the
+ * triangle it was cast at (vk_effects.c compares that with the distance
+ * of the point it aimed at).
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+
+#include "hl_shared.h"
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430) readonly buffer RayBuffer { EffectsCheckRay r[]; };
+layout(buffer_reference, std430) writeonly buffer ResultBuffer { EffectsCheckResult r[]; };
+
+layout(push_constant) uniform Push
+{
+	EffectsCheckPush data;
+} push;
+
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+
+	if (i >= push.data.num_rays)
+		return;
+
+	EffectsCheckRay ray = RayBuffer(push.data.rays).r[i];
+	EffectsCheckResult res;
+	res.t = -1.0;
+	res.candidates = 0u;
+
+	/* as the view pass walks them: every candidate, none confirmed */
+	rayQueryEXT rq;
+	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.data.tlas), gl_RayFlagsNoneEXT, 0xff,
+			      push.data.origin.xyz, 0.0, ray.dir, ray.tmax);
+	while (rayQueryProceedEXT(rq))
+	{
+		if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT)
+			continue;
+		res.candidates++;
+		if (uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false)) == ray.custom &&
+		    uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)) == ray.primitive)
+			res.t = rayQueryGetIntersectionTEXT(rq, false);
+	}
+	ResultBuffer(push.data.results).r[i] = res;
+}
