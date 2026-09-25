@@ -133,6 +133,15 @@ static cachepic_t	menu_cachepics[MAX_CACHED_PICS];
 static int		menu_numcachepics;
 static hashindex_t	hash_cachepics;
 
+/* D_ClearOpenGLTextures purged textures that cached pics may use: forget
+ * them, as gl_rmisc.c's version does, so they load again */
+void Draw_ClearCachedPics (void)
+{
+	memset (menu_cachepics, 0, menu_numcachepics * sizeof(cachepic_t));
+	menu_numcachepics = 0;
+	Hash_Clear (&hash_cachepics);
+}
+
 /* Geometry for the player/skin selection screen image. */
 #define	PLAYER_PIC_WIDTH	68
 #define	PLAYER_PIC_HEIGHT	114
@@ -458,8 +467,9 @@ void GL_EndRendering (void)
 
 	if (draw_frame)
 	{
-		/* nothing draws a 3D view yet (epic E2): clear to black */
+		/* the 3D view (black where there is none), then the 2D */
 		VK_BeginSwapchainRendering (VK_ATTACHMENT_LOAD_OP_CLEAR);
+		VK_DrawView3D ();
 		if (num_quads)
 			Draw_Flush ();
 		VK_EndSwapchainRendering ();

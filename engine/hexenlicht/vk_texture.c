@@ -491,6 +491,7 @@ void D_ClearOpenGLTextures (int last_tex)
 		VK_DestroyTexture (i);
 	}
 	numgltextures = last_tex;
+	Draw_ClearCachedPics ();	/* some were in the purged slots */
 
 	Con_DPrintf ("Purged textures\n");
 }

@@ -31,6 +31,10 @@
 #define BEGIN_SHADER_STRUCT(NAME)	struct NAME
 #define END_SHADER_STRUCT(NAME)		;
 
+/* a buffer device address: uvec2 needs no 64-bit integers in shaders
+ * (GL_EXT_buffer_reference_uvec2 turns it into a buffer reference) */
+#define DeviceAddress			uvec2
+
 #else	/* C */
 
 #include <stdint.h>
@@ -46,6 +50,7 @@ typedef uint32_t	uvec2[2];
 typedef uint32_t	uvec3[3];
 typedef uint32_t	uvec4[4];
 typedef float		mat4[4][4];	/* [column][row], as GLSL stores it */
+typedef uint64_t	DeviceAddress;
 
 #endif	/* VULKAN */
 
@@ -206,5 +211,42 @@ BEGIN_SHADER_STRUCT( TlasInstanceInfo )
 	int model_instance;
 }
 END_SHADER_STRUCT( TlasInstanceInfo )
+
+
+/* ==========================================================================
+ * The 3D view (vk_view.c): what the view passes read, one per frame, 144
+ * bytes, found through the push constant's address
+ * ========================================================================== */
+
+/* r_debugview */
+#define DEBUGVIEW_OFF			0
+#define DEBUGVIEW_ALBEDO		1
+#define DEBUGVIEW_NORMALS		2
+#define DEBUGVIEW_MATERIAL		3
+#define DEBUGVIEW_INSTANCES		4
+#define DEBUGVIEW_CLUSTERS		5
+#define DEBUGVIEW_MAX			5
+
+BEGIN_SHADER_STRUCT( ViewUniforms )
+{
+	vec4 origin;		/* camera position, w unused */
+	vec4 forward;
+	vec4 right;
+	vec4 up;
+	vec2 tan_half_fov;	/* x, y */
+	uvec2 size;		/* view image, pixels */
+	float time;		/* cl.time */
+	int anim_frame;		/* int(cl.time * 5), for animate_material */
+	uint debug_mode;	/* DEBUGVIEW_* */
+	int view_cluster;	/* the camera's cluster, -1 = none */
+
+	DeviceAddress tlas;
+	DeviceAddress primitives;	/* the world buffer's VboPrimitives */
+	DeviceAddress tlas_info;	/* TlasInstanceInfo[] */
+	DeviceAddress instances;	/* ModelInstance[] */
+	DeviceAddress materials;	/* the material table */
+	DeviceAddress pvs;		/* the PVS buffer */
+}
+END_SHADER_STRUCT( ViewUniforms )
 
 #endif	/* HL_SHARED_H */

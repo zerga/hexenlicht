@@ -1,0 +1,174 @@
+/* debug_view.comp -- the r_debugview pass: one primary ray per pixel of
+ * the 3D view through the TLAS, showing albedo, normals, material kinds,
+ * instances or vis clusters of what it hits.
+ *
+ * decode_normal is Quake II RTX's (src/refresh/vkpt/shader/utils.glsl).
+ *
+ * Copyright (C) 2018 Christoph Schied
+ * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "hl_shared.h"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D textures[];	/* vk_texture.c's bindless array */
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2D view_image;
+
+layout(buffer_reference, std430) readonly buffer ViewBuffer { ViewUniforms data; };
+layout(buffer_reference, std430) readonly buffer PrimitiveBuffer { VboPrimitive p[]; };
+layout(buffer_reference, std430) readonly buffer TlasInfoBuffer { TlasInstanceInfo i[]; };
+layout(buffer_reference, std430) readonly buffer InstanceBuffer { ModelInstance m[]; };
+layout(buffer_reference, std430) readonly buffer UintBuffer { uint d[]; };
+
+layout(push_constant) uniform Push
+{
+	DeviceAddress view;	/* ViewUniforms */
+} push;
+
+ViewUniforms view;
+
+#define material_table	UintBuffer(view.materials).d
+#define pvs_table	UintBuffer(view.pvs).d
+#include "material.glsl"
+#include "pvs.glsl"
+
+vec3
+decode_normal(uint enc)
+{
+	vec2 p = vec2(uvec2(enc & 0xffffu, enc >> 16)) / float(0xffff) * 2.0 - 1.0;
+	vec3 n = vec3(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
+	float t = max(0.0, -n.z);
+	n.xy += mix(vec2(t), vec2(-t), greaterThanEqual(n.xy, vec2(0.0)));
+	return normalize(n);
+}
+
+vec3
+hash_color(uint x)
+{
+	x = x * 747796405u + 2891336453u;
+	x = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+	x = (x >> 22u) ^ x;
+	return vec3((x >> 16) & 0xffu, (x >> 8) & 0xffu, x & 0xffu) / 255.0 * 0.8 + 0.2;
+}
+
+vec3
+kind_color(uint material_id)
+{
+	switch (material_id & MATERIAL_KIND_MASK)
+	{
+	case MATERIAL_KIND_WATER:	return vec3(0.2, 0.4, 1.0);
+	case MATERIAL_KIND_SLIME:	return vec3(0.2, 1.0, 0.2);
+	case MATERIAL_KIND_LAVA:	return vec3(1.0, 0.4, 0.0);
+	case MATERIAL_KIND_SKY:		return vec3(0.5, 0.8, 1.0);
+	case MATERIAL_KIND_TRANSPARENT:	return vec3(0.8, 0.3, 1.0);
+	default:			return vec3(0.7);
+	}
+}
+
+void
+main()
+{
+	view = ViewBuffer(push.view).data;
+
+	ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(uvec2(px), view.size)))
+		return;
+
+	vec2 uv = (vec2(px) + 0.5) / vec2(view.size) * 2.0 - 1.0;
+	vec3 dir = normalize(view.forward.xyz + view.right.xyz * uv.x * view.tan_half_fov.x
+			     - view.up.xyz * uv.y * view.tan_half_fov.y);
+
+	rayQueryEXT rq;
+	rayQueryInitializeEXT(rq, accelerationStructureEXT(view.tlas), gl_RayFlagsOpaqueEXT, 0xff,
+			      view.origin.xyz, 0.0, dir, 65536.0);
+	while (rayQueryProceedEXT(rq))
+	{
+	}
+
+	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
+	{
+		imageStore(view_image, px, vec4(0.0, 0.0, 0.0, 1.0));
+		return;
+	}
+
+	float t = rayQueryGetIntersectionTEXT(rq, true);
+	uint tlas_instance = uint(rayQueryGetIntersectionInstanceIdEXT(rq, true));
+	uint prim_index = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));
+	vec2 bary2 = rayQueryGetIntersectionBarycentricsEXT(rq, true);
+	mat4x3 to_world = rayQueryGetIntersectionObjectToWorldEXT(rq, true);
+	vec3 bary = vec3(1.0 - bary2.x - bary2.y, bary2.x, bary2.y);
+
+	TlasInstanceInfo info = TlasInfoBuffer(view.tlas_info).i[tlas_instance];
+	VboPrimitive prim = PrimitiveBuffer(view.primitives).p[info.prim_offset + prim_index];
+
+	/* flat normal and world positions, through the instance's transform */
+	mat3 rot = mat3(to_world);
+	vec3 normal = normalize(rot * decode_normal(prim.normals.x));
+	vec3 p0 = to_world * vec4(prim.pos0, 1.0);
+	vec3 p1 = to_world * vec4(prim.pos1, 1.0);
+	vec3 p2 = to_world * vec4(prim.pos2, 1.0);
+	vec2 tc = prim.uv0 * bary.x + prim.uv1 * bary.y + prim.uv2 * bary.z;
+	float facing = abs(dot(normal, dir));
+
+	/* the texture frame: time, and the alternate animation for brush
+	 * entities whose frame is not 0 */
+	bool alternate = false;
+	if (info.model_instance >= 0)
+		alternate = (InstanceBuffer(view.instances).m[info.model_instance].alpha_and_frame >> 16) != 0u;
+	uint material = animate_material(prim.material_id, view.anim_frame, alternate);
+	MaterialInfo minfo = get_material_info(material);
+
+	/* mip level from a ray cone: the pixel's footprint at the hit against
+	 * the triangle's texel density */
+	vec2 tex_size = vec2(textureSize(textures[nonuniformEXT(minfo.base_texture)], 0));
+	float texel_area = abs(determinant(mat2(prim.uv1 - prim.uv0, prim.uv2 - prim.uv0))) * tex_size.x * tex_size.y;
+	float world_area = length(cross(p1 - p0, p2 - p0));
+	float cone_width = t * 2.0 * view.tan_half_fov.y / float(view.size.y);
+	float lod = 0.5 * log2(max(texel_area, 1e-8) / max(world_area, 1e-8)) + log2(cone_width / max(facing, 0.05));
+	vec3 albedo = textureLod(textures[nonuniformEXT(minfo.base_texture)], tc, max(lod, 0.0)).rgb;
+
+	float shade = 0.5 + 0.5 * facing;
+	vec3 color;
+	switch (view.debug_mode)
+	{
+	case DEBUGVIEW_NORMALS:
+		color = normal * 0.5 + 0.5;
+		break;
+	case DEBUGVIEW_MATERIAL:
+		color = kind_color(material) * (0.4 + 0.6 * dot(albedo, vec3(0.299, 0.587, 0.114))) * shade;
+		break;
+	case DEBUGVIEW_INSTANCES:
+		color = ((info.model_instance < 0) ? vec3(0.5) : hash_color(uint(info.model_instance))) * shade;
+		break;
+	case DEBUGVIEW_CLUSTERS:
+		color = ((prim.cluster < 0) ? vec3(0.5) : hash_color(uint(prim.cluster))) * shade;
+		if (!pvs_visible(view.view_cluster, prim.cluster))
+			color *= 0.25;	/* not in the camera's PVS */
+		break;
+	default:
+		color = albedo;
+		break;
+	}
+
+	imageStore(view_image, px, vec4(color, 1.0));
+}
