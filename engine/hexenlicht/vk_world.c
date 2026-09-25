@@ -7,7 +7,8 @@
  * the world, the vis leaf the triangle is in. Each model's triangles are
  * grouped into opaque, transparent and sky ranges, for the acceleration
  * structures. The world's textures become materials, with their animation
- * sequences (+0..+9) and alternate sequences (+a..+j).
+ * sequences (+0..+9) and alternate sequences (+a..+j). Transparent world
+ * triangles connect the PVS of the leaves on their two sides (vk_pvs.c).
  *
  * The structure follows Quake II RTX's bsp_mesh.c; encode_normal and
  * get_triangle_off_center are ported from it.
@@ -227,18 +228,19 @@ static const float *SurfaceVertex (const qmodel_t *m, const msurface_t *surf, in
 }
 
 /* the vis leaf of a world triangle, Quake II RTX's way: the leaf just in
- * front of its center */
-static int TriangleLeaf (qmodel_t *world, const VboPrimitive *p)
+ * front of its center (side 1) or, for transparent surfaces, just behind
+ * it (side -1) */
+static int TriangleLeaf (qmodel_t *world, const VboPrimitive *p, float side)
 {
 	vec3_t	center;
 	int	leaf;
 
-	get_triangle_off_center (p, center, 0.01f);
-	leaf = (int)(Mod_PointInLeaf (center, world) - world->leafs) - 1;
+	get_triangle_off_center (p, center, 0.01f * side);
+	leaf = VK_PointCluster (world, center);
 	if (leaf < 0)
 	{	/* the offset was too small to leave the plane: try a larger one */
-		get_triangle_off_center (p, center, 1.0f);
-		leaf = (int)(Mod_PointInLeaf (center, world) - world->leafs) - 1;
+		get_triangle_off_center (p, center, 1.0f * side);
+		leaf = VK_PointCluster (world, center);
 	}
 	return q_max (leaf, -1);
 }
@@ -311,12 +313,14 @@ static uint32_t EmitSurface (qmodel_t *m, msurface_t *surf, uint32_t material_id
 
 		out->material_id = material_id;
 		out->emissive_and_alpha = emissive_and_alpha;
-		out->cluster = world ? TriangleLeaf (m, out) : -1;
+		out->cluster = world ? TriangleLeaf (m, out, 1.0f) : -1;
 		if (world && out->cluster < 0)
 		{
 			stats.into_solid++;
 			continue;	/* overwritten by the next one */
 		}
+		if (world && SurfacePass (material_id) == PASS_TRANSPARENT)
+			VK_ConnectPVSAcross (out->cluster, TriangleLeaf (m, out, -1.0f));
 		stats.kinds[(material_id & MATERIAL_KIND_MASK) >> 28]++;
 		out++;
 		n++;
@@ -376,6 +380,7 @@ static void VK_FreeWorld (void)
 {
 	if (vk.device)
 		VK_DestroyBuffer (&vk_world.buffer);
+	VK_FreePVS ();
 	free (vk_world.models);
 	free (texture_materials);
 	texture_materials = NULL;
@@ -403,6 +408,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 		Sys_Error ("%s: out of memory", __thisfunc__);
 
 	AddWorldMaterials (worldmodel);
+	VK_BuildPVS (worldmodel);	/* the triangles connect it across water */
 
 	/* count, then fill: [VboPrimitive x n][positions x n] */
 	i = EmitModels (worldmodel, NULL);	/* at most */
@@ -427,12 +433,13 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 		VK_CreateBuffer (&vk_world.buffer, size,
 				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 				 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-				 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, false);
+				 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_DEVICE);
 		VK_UploadBuffer (&vk_world.buffer, 0, data, size);
 	}
 	vk_world.positions_offset = prims_size;
 	free (data);
 
+	VK_FinishPVS ();
 	VK_UploadMaterials ();
 	stats.build_time = Sys_DoubleTime () - start;
 }
@@ -602,6 +609,7 @@ static void VK_World_f (void)
 void VK_InitWorld (void)
 {
 	Cmd_AddCommand ("vk_world", VK_World_f);
+	VK_InitPVS ();
 }
 
 void VK_ShutdownWorld (void)

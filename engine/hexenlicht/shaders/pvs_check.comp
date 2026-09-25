@@ -1,0 +1,57 @@
+/* pvs_check.comp -- rebuilds the PVS matrix through pvs_visible, one
+ * 32-cluster word per invocation, for the vk_pvs command to compare with
+ * the CPU's matrix.
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+
+#include "hl_shared.h"
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430) readonly buffer PvsBuffer { uint data[]; };
+layout(buffer_reference, std430) writeonly buffer ResultBuffer { uint data[]; };
+
+layout(push_constant) uniform Push
+{
+	PvsBuffer pvs;
+	ResultBuffer result;	/* [clusters][row size] */
+} push;
+
+#define pvs_table push.pvs.data
+#include "pvs.glsl"
+
+void main()
+{
+	uint num_clusters = pvs_table[0];
+	uint row = pvs_table[1];
+	uint i = gl_GlobalInvocationID.x;
+
+	if (i >= num_clusters * row)
+		return;
+
+	int from_cluster = int(i / row);
+	uint first = (i % row) * 32u;
+	uint word = 0u;
+	for (uint b = 0u; b < 32u; b++)
+	{
+		if (first + b < num_clusters && pvs_visible(from_cluster, int(first + b)))
+			word |= 1u << b;
+	}
+	push.result.data[i] = word;
+}

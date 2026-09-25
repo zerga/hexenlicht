@@ -27,7 +27,7 @@ static VkCommandBuffer	upload_cmd;
 static VkFence		upload_fence;
 
 
-void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usage, qboolean host_visible)
+void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usage, vk_memory_t memory)
 {
 	VkBufferCreateInfo		buffer_info;
 	VmaAllocationCreateInfo		alloc_info;
@@ -41,14 +41,19 @@ void VK_CreateBuffer (vk_buffer_t *b, VkDeviceSize size, VkBufferUsageFlags usag
 	buffer_info.size = size;
 	buffer_info.usage = usage;
 	memset (&alloc_info, 0, sizeof(alloc_info));
-	if (host_visible)
+	switch (memory)
 	{
+	case VK_MEMORY_UPLOAD:		/* written by the CPU, e.g. staging */
 		alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
 		alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-	}
-	else
-	{
+		break;
+	case VK_MEMORY_READBACK:	/* written by the GPU, read by the CPU */
+		alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+		alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		break;
+	default:
 		alloc_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		break;
 	}
 	VK_CHECK (vmaCreateBuffer (vk.allocator, &buffer_info, &alloc_info, &b->buffer, &b->allocation, &info));
 
@@ -119,7 +124,7 @@ void VK_UploadBuffer (vk_buffer_t *dst, VkDeviceSize offset, const void *data, V
 	if (!size)
 		return;
 
-	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_UPLOAD);
 	memcpy (staging.mapped, data, (size_t)size);
 	VK_CHECK (vmaFlushAllocation (vk.allocator, staging.allocation, 0, VK_WHOLE_SIZE));
 

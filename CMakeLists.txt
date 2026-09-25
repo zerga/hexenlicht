@@ -184,6 +184,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/fullscreen.vert
 	${HEXENLICHT_SHADER_DIR}/draw2d.vert
 	${HEXENLICHT_SHADER_DIR}/draw2d.frag
+	${HEXENLICHT_SHADER_DIR}/pvs_check.comp
 )
 
 add_executable(hexenlicht WIN32
@@ -199,6 +200,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_buffer.c
 	${HEXENLICHT_DIR}/vk_material.c
 	${HEXENLICHT_DIR}/vk_world.c
+	${HEXENLICHT_DIR}/vk_pvs.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
