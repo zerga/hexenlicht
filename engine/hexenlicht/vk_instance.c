@@ -891,6 +891,57 @@ static void VK_Instances_f (void)
 		qboolean		has_moved = memcmp (mi->transform, mi->transform_prev, sizeof(mat4)) != 0;
 		char			state[160], extra[96];
 
+		if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "box"))
+		{
+			/* "vk_instances box": the alias instances' current pose, its
+			 * bounds in model space and in the world, and where the
+			 * world box's center is in the view (depth, degrees right
+			 * and up of the view center) */
+			const vk_aliasmodel_t	*am;
+			const aliashdr_t	*hdr;
+			const trivertx_t	*v;
+			vec3_t			mmin, mmax, wmin, wmax, p, w;
+			int			k, c, pose;
+
+			if (mi->render_buffer_idx != VERTEX_BUFFER_INSTANCED)
+				continue;
+			am = VK_GetAliasModel ((int)mi->source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL);
+			hdr = (const aliashdr_t *) Mod_Extradata (am->model);
+			pose = (int)(mi->prim_offset_curr_pose_curr_frame / am->num_pose_verts);
+			v = (const trivertx_t *)((const byte *)hdr + hdr->posedata) + pose * hdr->poseverts;
+			for (c = 0; c < 3; c++)
+			{
+				mmin[c] = wmin[c] = 1e9f;
+				mmax[c] = wmax[c] = -1e9f;
+			}
+			for (k = 0; k < hdr->poseverts; k++)
+			{
+				for (c = 0; c < 3; c++)
+					p[c] = v[k].v[c] * hdr->scale[c] + hdr->scale_origin[c];
+				TransformPoint (mi->transform, p, w);
+				for (c = 0; c < 3; c++)
+				{
+					mmin[c] = q_min (mmin[c], p[c]);	mmax[c] = q_max (mmax[c], p[c]);
+					wmin[c] = q_min (wmin[c], w[c]);	wmax[c] = q_max (wmax[c], w[c]);
+				}
+			}
+			{
+				vec3_t	d;
+				float	depth, sx, sy;
+
+				for (c = 0; c < 3; c++)
+					d[c] = (wmin[c] + wmax[c]) * 0.5f - r_scene.vieworg[c];
+				depth = DotProduct (d, r_scene.forward);
+				sx = (float)(atan2 (DotProduct (d, r_scene.right), depth) * 180 / M_PI);
+				sy = (float)(atan2 (DotProduct (d, r_scene.up), depth) * 180 / M_PI);
+				Con_Printf ("%3d %-20s org %.0f %.0f %.0f ang %.0f %.0f %.0f pose %d: model %.0f %.0f %.0f .. %.0f %.0f %.0f, "
+					    "world %.0f %.0f %.0f .. %.0f %.0f %.0f; center depth %.1f at %.1f right %.1f up\n",
+						i, e->model->name, e->origin[0], e->origin[1], e->origin[2], e->angles[0], e->angles[1],
+						e->angles[2], pose, mmin[0], mmin[1], mmin[2], mmax[0], mmax[1], mmax[2],
+						wmin[0], wmin[1], wmin[2], wmax[0], wmax[1], wmax[2], depth, sx, sy);
+			}
+			continue;
+		}
 		if (step_only)
 		{
 			/* "vk_instances step": the stepping entities, where they are
