@@ -11,7 +11,8 @@
  * (vk_world.c). The alias model entities follow, in three groups (opaque,
  * transparent, masked = cutouts): their primitives are written every frame
  * by vk_model.c's geometry pass into the instanced buffer, from two poses
- * of the model that the instance blends (r_lerpmodels). The instance
+ * of the model that the instance blends (r_lerpmodels); stepping monsters
+ * glide between their moves (r_lerpmove). The instance
  * carries the material of the skin (vk_skin.c), the fixed light level and
  * the colorshade tint GL uses. The first-person weapon (cl.viewent) comes
  * last, in a group of its own as Quake II RTX's viewer weapon, with GL's
@@ -57,6 +58,8 @@ COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 224);	/* the shaders
 
 /* blend alias model poses between animation frames; 0 = GL's look */
 static cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
+/* glide stepping entities (walking monsters) between their moves; 0 = GL's steps */
+static cvar_t	r_lerpmove = {"r_lerpmove", "1", CVAR_ARCHIVE};
 
 /* this frame's instances */
 static int			num_instances;
@@ -76,7 +79,7 @@ typedef struct
 	qmodel_t	*model;
 	int		framecount;	/* r_scene.framecount it was set in, 0 = never */
 	mat4		transform;
-	vec3_t		origin;
+	vec3_t		origin, angles;	/* where it was shown */
 
 	/* blending from prev_pose to pose, which became the pose at
 	 * lerp_start; measured: lerp_start was a frame change */
@@ -88,6 +91,15 @@ typedef struct
 	/* the poses and backlerp last frame showed */
 	int		shown_pose, shown_prev_pose;
 	float		shown_backlerp;
+
+	/* r_lerpmove: the entity's last move, from where it was to where it
+	 * is now, which began at move_start; measured: move_start was a move */
+	vec3_t		move_from_origin, move_from_angles;
+	vec3_t		move_to_origin, move_to_angles;
+	double		move_start;
+	float		move_time;
+	qboolean	move_measured;
+	float		move_blend;	/* how far this frame's glide got, for vk_instances; -1 = not gliding */
 } entity_history_t;
 
 /* Temporary entities (the client's effects, beams) have no number: their
@@ -403,6 +415,7 @@ static void EndHistory (entity_history_t *h, const scene_entity_t *e)
 		h->model = e->model;
 		h->framecount = r_scene.framecount;
 		VectorCopy (e->origin, h->origin);
+		VectorCopy (e->angles, h->angles);
 	}
 }
 
@@ -545,13 +558,96 @@ static float AliasBlend (entity_history_t *h, qboolean continues, int pose, floa
 	return (float) q_min (q_max ((time - h->lerp_start) / h->lerp_time, 0.0), 1.0);
 }
 
+/* QuakeSpasm's movement blending (R_SetupEntityTransform): a stepping
+ * entity (MOVETYPE_STEP, the walking monsters; the server marks them
+ * U_NOLERP) moves only when it thinks, and GL shows it jumping from place
+ * to place. When its origin or angles change, it glides from the old ones
+ * to the new. QuakeSpasm glides for 0.1 s, but Hexen II's monsters step
+ * at 20 Hz or 10 Hz, so the time is the interval between the entity's
+ * last two moves, as for the frame blending. A move that arrives before
+ * the glide is over (moves come on whole server frames) glides on from
+ * where the entity is shown, where QuakeSpasm jumps to the old target
+ * first. A move of over 100 units on an axis is a teleport, as
+ * CL_RelinkEntities assumes: no glide, and true is returned. Leaves the
+ * origin and angles to show in shown. */
+static float GlideBlend (const entity_history_t *h, double time)
+{
+	return (h->move_time > 0.0f) ? (float) q_min (q_max ((time - h->move_start) / h->move_time, 0.0), 1.0) : 1.0f;
+}
+
+static void GlidePlace (const entity_history_t *h, float blend, vec3_t origin, vec3_t angles)
+{
+	float	d;
+	int	i;
+
+	for (i = 0; i < 3; i++)
+	{
+		origin[i] = h->move_from_origin[i] + (h->move_to_origin[i] - h->move_from_origin[i]) * blend;
+		d = h->move_to_angles[i] - h->move_from_angles[i];
+		if (d > 180)
+			d -= 360;
+		else if (d < -180)
+			d += 360;
+		angles[i] = h->move_from_angles[i] + d * blend;
+	}
+}
+
+static qboolean MoveBlend (entity_history_t *h, qboolean continues, const scene_entity_t *e, scene_entity_t *shown)
+{
+	double		time = r_scene.time, since;
+	qboolean	jumped;
+
+	if (!h)
+		return false;
+	h->move_blend = -1.0f;
+
+	jumped = continues && (fabsf (e->origin[0] - h->move_to_origin[0]) > 100.0f ||
+			       fabsf (e->origin[1] - h->move_to_origin[1]) > 100.0f ||
+			       fabsf (e->origin[2] - h->move_to_origin[2]) > 100.0f);
+	if (!continues || time < h->move_start || jumped)
+	{
+		VectorCopy (e->origin, h->move_from_origin);
+		VectorCopy (e->origin, h->move_to_origin);
+		VectorCopy (e->angles, h->move_from_angles);
+		VectorCopy (e->angles, h->move_to_angles);
+		h->move_start = time;
+		h->move_time = 0.0f;
+		h->move_measured = false;
+	}
+	else if (!VectorCompare (e->origin, h->move_to_origin) || !VectorCompare (e->angles, h->move_to_angles))
+	{
+		vec3_t	origin, angles;
+
+		/* on from where the last glide has got to */
+		GlidePlace (h, GlideBlend (h, time), origin, angles);
+		since = time - h->move_start;
+		if (h->move_measured && since > 0.0 && since <= LERP_MAX_INTERVAL)
+			h->move_time = (float)since;
+		else
+			h->move_time = LERP_DEFAULT_TIME;
+		VectorCopy (origin, h->move_from_origin);
+		VectorCopy (angles, h->move_from_angles);
+		VectorCopy (e->origin, h->move_to_origin);
+		VectorCopy (e->angles, h->move_to_angles);
+		h->move_start = time;
+		h->move_measured = true;
+	}
+
+	if (!r_lerpmove.integer || !e->movestep || h->move_time <= 0.0f)
+		return jumped;
+	h->move_blend = GlideBlend (h, time);
+	GlidePlace (h, h->move_blend, shown->origin, shown->angles);
+	return jumped;
+}
+
 static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_prim)
 {
 	ModelInstance		*mi;
 	const vk_aliasmodel_t	*am;
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
-	qboolean		continues, bad_skin;
+	scene_entity_t		shown;		/* e where r_lerpmove shows it */
+	qboolean		continues, jumped, bad_skin;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
@@ -574,12 +670,14 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	num_instances++;
 	memset (mi, 0, sizeof(*mi));
 
-	AliasRotation (e, rot);
-	AliasScale (e, hdr, scale, offset);
-	BuildTransform (mi->transform, e->origin, rot, scale, offset);
 	h = EntityHistory (e);
 	continues = HistoryContinues (h, e);
-	UpdateTransformHistory (mi, h, continues, e);
+	shown = *e;
+	jumped = MoveBlend (h, continues, e, &shown);
+	AliasRotation (&shown, rot);
+	AliasScale (&shown, hdr, scale, offset);
+	BuildTransform (mi->transform, shown.origin, rot, scale, offset);
+	UpdateTransformHistory (mi, h, continues && !jumped, &shown);	/* a teleport: no motion */
 
 	/* the poses: blending from prev to curr, or GL's pose */
 	pose = AliasPose (e, hdr, &group_interval);
@@ -616,7 +714,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 		h->shown_prev_pose = prev;
 		h->shown_backlerp = backlerp;
 	}
-	EndHistory (h, e);
+	EndHistory (h, &shown);
 
 	/* the skin GL would bind; translucent ones are Quake II RTX's
 	 * transparent models; the weapon's triangles are flagged, as Quake II
@@ -640,7 +738,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha);
 	mi->drawflags = (uint32_t)e->drawflags;
-	mi->light = AliasLight (e);
+	mi->light = AliasLight (&shown);
 	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
 	mi->colorshade = (uint32_t)(e->colorshade & 0xff);
 	if (mi->colorshade)
@@ -777,7 +875,8 @@ void VK_ClearInstances (void)
 static void VK_Instances_f (void)
 {
 	static const char *const kinds[] = { "dyn", "static", "temp", "view" };
-	int	i, moved = 0;
+	qboolean	step_only = Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "step");
+	int		i, moved = 0, steps = 0;
 
 	if (!r_scene.worldmodel || cls.signon != SIGNONS)
 	{
@@ -792,6 +891,20 @@ static void VK_Instances_f (void)
 		qboolean		has_moved = memcmp (mi->transform, mi->transform_prev, sizeof(mat4)) != 0;
 		char			state[160], extra[96];
 
+		if (step_only)
+		{
+			/* "vk_instances step": the stepping entities, where they are
+			 * and where r_lerpmove shows them */
+			const entity_history_t	*h = (e->num >= 0 && e->num < MAX_EDICTS) ? &history_dynamic[e->num] : NULL;
+
+			if (!e->movestep || e->kind != SCENE_ENT_DYNAMIC || !h || mi->render_buffer_idx != VERTEX_BUFFER_INSTANCED)
+				continue;
+			steps++;
+			Con_Printf ("%4d %-20s at %.1f %.1f %.1f yaw %.1f, shown %.1f %.1f %.1f yaw %.1f, glide %.2f of %.3f s\n",
+					e->num, e->model->name, e->origin[0], e->origin[1], e->origin[2], e->angles[1],
+					h->origin[0], h->origin[1], h->origin[2], h->angles[1], h->move_blend, h->move_time);
+			continue;
+		}
 		moved += has_moved;
 		extra[0] = '\0';
 		if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED)
@@ -824,8 +937,12 @@ static void VK_Instances_f (void)
 				(mi->alpha_and_frame & 0xffff) == VK_FloatToHalf (1.0f) ? 1.0f : TRANSLUCENT_ALPHA,
 				state, extra, has_moved ? " moved" : "");
 	}
-	Con_Printf ("%d instances in frame %d (%d alias models), %d moved since the last frame\n", num_instances,
-			r_scene.framecount, model_frame.num_instances, moved);
+	if (step_only)
+		Con_Printf ("%d stepping entities in frame %d, time %.3f (r_lerpmove %d)\n", steps, r_scene.framecount,
+				r_scene.time, r_lerpmove.integer);
+	else
+		Con_Printf ("%d instances in frame %d (%d alias models), %d moved since the last frame\n", num_instances,
+				r_scene.framecount, model_frame.num_instances, moved);
 }
 
 
@@ -844,6 +961,7 @@ void VK_InitInstances (void)
 				 VK_MEMORY_UPLOAD);
 	}
 	Cvar_RegisterVariable (&r_lerpmodels);
+	Cvar_RegisterVariable (&r_lerpmove);
 	Cmd_AddCommand ("vk_instances", VK_Instances_f);
 }
 

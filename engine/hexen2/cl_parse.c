@@ -634,6 +634,11 @@ static void CL_ParseUpdate (int bits)
 
 	if (bits & U_NOLERP)
 		ent->forcelink = true;
+#if defined(HEXENLICHT)
+	/* CL_RelinkEntities clears forcelink before the renderer runs: keep
+	 * the step bit for r_lerpmove */
+	ent->movestep = (bits & U_NOLERP) != 0;
+#endif
 
 	if (forcelink)
 	{	// didn't have an update last message

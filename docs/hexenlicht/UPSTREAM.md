@@ -103,6 +103,12 @@ changes one, with a line on what we changed:
 - `engine/h2shared/cmd.c` — `Cmd_Exec_f` takes the file name into a local
   `name`; under `#if defined(HEXENLICHT)`, `exec config.cfg` runs
   `hexenlicht.cfg` when that file exists (story 1.8), so `hexen.rc` loads it.
+- `engine/hexen2/render.h` — `entity_t` ends with an `#if defined(HEXENLICHT)`
+  field `movestep` (story 2.9), after all upstream fields.
+- `engine/hexen2/cl_parse.c` — in `CL_ParseUpdate`, after the `U_NOLERP`
+  check, `#if defined(HEXENLICHT)` sets `ent->movestep` from `U_NOLERP`
+  (story 2.9): `CL_RelinkEntities` clears `forcelink` before the renderer
+  runs, and Hexenlicht's `r_lerpmove` needs to know which entities step.
 
 To check: `git diff --name-status upstream/master main | grep -v "^A"`
 prints every upstream file that differs on `main`.

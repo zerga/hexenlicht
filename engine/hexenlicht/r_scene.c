@@ -124,6 +124,7 @@ static void R_AddSceneEntity (entity_t *e, scene_entkind_t kind, int num)
 	s->abslight = e->abslight;
 	s->colorshade = e->colorshade;
 	s->effects = e->effects;
+	s->movestep = (kind == SCENE_ENT_DYNAMIC) && e->movestep;
 
 	/* chase-cam pitch adj. by FrikaC, as in the GL renderer */
 	if (kind == SCENE_ENT_DYNAMIC && num == cl.viewentity)
@@ -328,6 +329,8 @@ static void DumpEntity (const scene_entity_t *s)
 		q_strlcat (extra, " colormap", sizeof(extra));
 	if (s->colorshade)
 		q_strlcat (extra, va(" colorshade %d", s->colorshade), sizeof(extra));
+	if (s->movestep)
+		q_strlcat (extra, " step", sizeof(extra));
 
 	Con_Printf ("%-6s %4d %-24s frame %3d skin %3d org %.0f %.0f %.0f ang %.0f %.0f %.0f%s\n",
 			kind_names[s->kind], s->num, s->model->name, s->frame, s->skinnum,

@@ -57,6 +57,7 @@ typedef struct scene_entity_s
 	int		abslight;	/* light level for MLS_ABSLIGHT */
 	int		colorshade;	/* tint (the entity's colormap field), 0 = none */
 	int		effects;	/* EF_* */
+	qboolean	movestep;	/* dynamic entity that moves in steps (MOVETYPE_STEP): r_lerpmove */
 } scene_entity_t;
 
 typedef struct
