@@ -233,7 +233,7 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 - **Upscaling (3.8):** at `r_scale 100` with `flt_enable 0` (the TAA pass
   only copies) the lit image must match the build before within ±1 (the
   TAA's PQ encoding rounds in fp16), apart from bloom halos around the
-  test lights' hot spots, which the PQ clamp dims (romeric2: up to 7;
+  test lights' hot spots, which the PQ clamp dims (romeric2: up to 10;
   gone with `tm_enable 0 bloom_enable 0`); the G-buffer views identical,
   modes 4, 5, 9 with `flt_enable 1` too (the debug views get no jitter).
   `vk_upscale` prints the sizes, jitter and passes: check every

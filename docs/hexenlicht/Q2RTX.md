@@ -225,7 +225,7 @@ this repository) or one at a time with
 - **Hot spots and the TAA's PQ clamp (4.9).** The TAA pass stores the lit
   image PQ-encoded, which clamps at 10000 cd/m²: 78 in linear units before
   the ×128 storage scale. Walls next to the test lights exceed it, and the
-  bloom around them is then up to 7/255 weaker than before 3.8. The
+  bloom around them is then up to 10/255 weaker than before 3.8. The
   calibration (4.9) decides whether real lights stay below it.
 - **Reference shots by accumulation (4.9).** Q2RTX's reference mode
   (`pt_accumulation_rendering`: `temporal_blend_factor`, the

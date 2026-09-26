@@ -928,7 +928,7 @@ one small interface, which DLSS (3.10) joins in the TAA pass's place.
   jitter and output size decide.
 - **PQ clamps the lit image** at 10000 cd/m², 78 in linear units before the
   storage scale (Q2RTX's): hot spots above lose energy before the bloom.
-  The test lights' hottest walls (romeric2) have up to 7/255 dimmer bloom
+  The test lights' hottest walls (romeric2) have up to 10/255 dimmer bloom
   halos than before 3.8; elsewhere the image matches within ±1 (PQ's fp16
   rounding).
 - **FSR** (`VK_UpscaleDisplay`, Q2RTX's `fsr.c`): `fsr_easu_fp32.comp` and

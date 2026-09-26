@@ -109,7 +109,7 @@ story settles something a later session must not undo; mark a line
 | R48 | The debug views skip the upscaler: no jitter or TAA, at the render size, scaled to the view nearest | 3.8 |
 | R49 | The composite (`view_composite.frag`) scales as Q2RTX's final blit: 1:1 at the view's size, nearest at exactly half (a texel fetch; Q2RTX's samples its linear sampler), otherwise Q2RTX's Lanczos 3 with its taps clamped to the input; it takes the storage scale out of a lit image without tone mapping | 3.8 |
 | R50 | FSR 1 from AMD's v1.0.2 headers (`libs/fsr1`, MIT; Q2RTX ships an older `ffx_fsr1.h`), SDR and FP32 only; EASU and RCAS read clamped to the rendered part and the view (our images hold older frames past them) | 3.8 |
-| R51 | The TAA's PQ encoding clamps the lit image at 10000 cd/m² (78 linear before the storage scale), as Q2RTX's: hot spots above lose energy before the bloom (up to 7/255 dimmer halos around the test lights' hottest walls); the calibration (4.9) keeps real lights below it or accepts it | 3.8 |
+| R51 | The TAA's PQ encoding clamps the lit image at 10000 cd/m² (78 linear before the storage scale), as Q2RTX's: hot spots above lose energy before the bloom (up to 10/255 dimmer halos around the test lights' hottest walls); the calibration (4.9) keeps real lights below it or accepts it | 3.8 |
 
 ## Open questions carried forward
 
