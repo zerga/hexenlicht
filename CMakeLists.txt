@@ -188,10 +188,32 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/rt_check.comp
 	${HEXENLICHT_SHADER_DIR}/effects_check.comp
 	${HEXENLICHT_SHADER_DIR}/ray_probe.comp
+	${HEXENLICHT_SHADER_DIR}/primary_rays.rgen
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
 )
+
+# The blue noise textures (libs/bluenoise) next to the executable, in
+# blue_noise\, where vk_images.c loads them.
+file(GLOB HEXENLICHT_BLUE_NOISE CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/libs/bluenoise/64_64/HDR_RGBA_*.png)
+if(NOT HEXENLICHT_BLUE_NOISE)
+	message(FATAL_ERROR "The blue noise textures are missing from libs/bluenoise/64_64")
+endif()
+set(HEXENLICHT_BLUE_NOISE_OUT)
+foreach(f IN LISTS HEXENLICHT_BLUE_NOISE)
+	get_filename_component(name ${f} NAME)
+	list(APPEND HEXENLICHT_BLUE_NOISE_OUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blue_noise/${name})
+endforeach()
+add_custom_command(
+	OUTPUT ${HEXENLICHT_BLUE_NOISE_OUT}
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blue_noise
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HEXENLICHT_BLUE_NOISE} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blue_noise
+	DEPENDS ${HEXENLICHT_BLUE_NOISE}
+	COMMENT "Copying the blue noise textures"
+	VERBATIM
+)
+add_custom_target(hexenlicht_blue_noise ALL DEPENDS ${HEXENLICHT_BLUE_NOISE_OUT})
 
 add_executable(hexenlicht WIN32
 	${H2_COMMON_SOURCES}
@@ -224,8 +246,8 @@ add_executable(hexenlicht WIN32
 )
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
-target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma)
-add_dependencies(hexenlicht hexenlicht_shaders)	# building the exe also builds its shaders
+target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
+add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise)	# building the exe also builds its shaders and data
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

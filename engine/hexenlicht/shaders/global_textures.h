@@ -28,8 +28,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    vk_texture.c's set (GLOBAL_TEXTURES_TEX_ARR_DESC_SET_IDX);
  *  - the lists hold only the images of the passes imported so far: each
  *    pass brings its rows, with Quake II RTX's names and formats, numbered
- *    from 0 (blue noise, environment and sky textures come with their
- *    passes too);
+ *    from 0 (environment and sky textures come with their passes too);
+ *  - the blue noise (vk_images.c) is the set's last binding: 64 x 64
+ *    texels, 256 layers (constants.h);
+ *  - PT_VIEW_DEPTH is declared r16f, its format (Quake II RTX declares
+ *    r32f, which the validation layer reports as undefined behaviour);
  *  - one GPU, so the _MGPU sizes are the full ones;
  *  - a shader that defines GLOBAL_TEXTURES_SAMPLED_ONLY gets only the
  *    sampled TEX_* images (the composite: a fragment shader);
@@ -40,7 +43,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "constants.h"
 
-/* the images' size (vk_images.c): the swapchain's */
+/* the images' size (vk_images.c): the swapchain's, the width rounded up to even */
 #define IMG_WIDTH  (vk_image_extent.width)
 #define IMG_HEIGHT (vk_image_extent.height)
 #define IMG_WIDTH_MGPU IMG_WIDTH
@@ -57,23 +60,66 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 /* These are images that are to be used as render targets and buffers, but not textures. */
 #define LIST_IMAGES \
 	IMG_DO(TAA_OUTPUT,                 0, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA,       IMG_HEIGHT_TAA ) \
+	IMG_DO(PT_MOTION,                  1, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(PT_TRANSPARENT,             2, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_SHADING_POSITION,        3, R32G32B32A32_SFLOAT, rgba32f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VIEW_DIRECTION,          4, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_THROUGHPUT,              5, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_BOUNCE_THROUGHPUT,       6, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 
-#define NUM_IMAGES_BASE     1
+#define NUM_IMAGES_BASE     7
 
 /* images that exist twice: the _A names are this frame's, the _B names the
  * last frame's (vk_images.c's even and odd descriptor sets swap them) */
-#define LIST_IMAGES_A_B
+#define LIST_IMAGES_A_B \
+	IMG_DO(PT_VISBUF_PRIM_A,          NUM_IMAGES_BASE + 0,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_PRIM_B,          NUM_IMAGES_BASE + 1,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 2,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 3,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_CLUSTER_A,              NUM_IMAGES_BASE + 4,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_CLUSTER_B,              NUM_IMAGES_BASE + 5,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_BASE_COLOR_A,           NUM_IMAGES_BASE + 6,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_BASE_COLOR_B,           NUM_IMAGES_BASE + 7,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_METALLIC_A,             NUM_IMAGES_BASE + 8,  R8G8_UNORM,          rg8,     IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_METALLIC_B,             NUM_IMAGES_BASE + 9,  R8G8_UNORM,          rg8,     IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VIEW_DEPTH_A,           NUM_IMAGES_BASE + 10, R16_SFLOAT,          r16f,    IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(PT_VIEW_DEPTH_B,           NUM_IMAGES_BASE + 11, R16_SFLOAT,          r16f,    IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(PT_NORMAL_A,               NUM_IMAGES_BASE + 12, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_NORMAL_B,               NUM_IMAGES_BASE + 13, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_GEO_NORMAL_A,           NUM_IMAGES_BASE + 14, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_GEO_NORMAL_B,           NUM_IMAGES_BASE + 15, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(ASVGF_RNG_SEED_A,          NUM_IMAGES_BASE + 16, R32_UINT,            r32ui,   IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(ASVGF_RNG_SEED_B,          NUM_IMAGES_BASE + 17, R32_UINT,            r32ui,   IMG_WIDTH,           IMG_HEIGHT     ) \
 
-#define LIST_IMAGES_B_A
+#define LIST_IMAGES_B_A \
+	IMG_DO(PT_VISBUF_PRIM_B,          NUM_IMAGES_BASE + 0,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_PRIM_A,          NUM_IMAGES_BASE + 1,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 2,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 3,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_CLUSTER_B,              NUM_IMAGES_BASE + 4,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_CLUSTER_A,              NUM_IMAGES_BASE + 5,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_BASE_COLOR_B,           NUM_IMAGES_BASE + 6,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_BASE_COLOR_A,           NUM_IMAGES_BASE + 7,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_METALLIC_B,             NUM_IMAGES_BASE + 8,  R8G8_UNORM,          rg8,     IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_METALLIC_A,             NUM_IMAGES_BASE + 9,  R8G8_UNORM,          rg8,     IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VIEW_DEPTH_B,           NUM_IMAGES_BASE + 10, R16_SFLOAT,          r16f,    IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(PT_VIEW_DEPTH_A,           NUM_IMAGES_BASE + 11, R16_SFLOAT,          r16f,    IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(PT_NORMAL_B,               NUM_IMAGES_BASE + 12, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_NORMAL_A,               NUM_IMAGES_BASE + 13, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_GEO_NORMAL_B,           NUM_IMAGES_BASE + 14, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_GEO_NORMAL_A,           NUM_IMAGES_BASE + 15, R32_UINT,            r32ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(ASVGF_RNG_SEED_B,          NUM_IMAGES_BASE + 16, R32_UINT,            r32ui,   IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(ASVGF_RNG_SEED_A,          NUM_IMAGES_BASE + 17, R32_UINT,            r32ui,   IMG_WIDTH,           IMG_HEIGHT     ) \
 
-#define NUM_IMAGES (NUM_IMAGES_BASE + 0) /* this really sucks but I don't know how to fix it
+#define NUM_IMAGES (NUM_IMAGES_BASE + 18) /* this really sucks but I don't know how to fix it
                                              counting with enum does not work in GLSL */
 
 // todo: make naming consistent!
 #define GLOBAL_TEXTURES_TEX_ARR_BINDING_IDX  0
 #define BINDING_OFFSET_IMAGES     0
 #define BINDING_OFFSET_TEXTURES   (BINDING_OFFSET_IMAGES + NUM_IMAGES)
-#define NUM_IMAGE_BINDINGS        (BINDING_OFFSET_TEXTURES + NUM_IMAGES)
+#define BINDING_OFFSET_BLUE_NOISE (BINDING_OFFSET_TEXTURES + NUM_IMAGES)
+#define NUM_IMAGE_BINDINGS        (BINDING_OFFSET_BLUE_NOISE + 1)
 
 /* the set of vk_texture.c's bindless array (vk_pathtracer.c's layout) */
 #define GLOBAL_TEXTURES_TEX_ARR_DESC_SET_IDX 2
@@ -118,6 +164,7 @@ layout(
 #define SAMPLER_rg32ui  usampler2D
 #define SAMPLER_r32i    isampler2D
 #define SAMPLER_r32f    sampler2D
+#define SAMPLER_r16f    sampler2D	// Hexenlicht: PT_VIEW_DEPTH
 #define SAMPLER_rg32f   sampler2D
 #define SAMPLER_rg16f   sampler2D
 #define SAMPLER_rgba32f sampler2D
@@ -131,6 +178,7 @@ layout(
 #define IMAGE_rg32ui  uimage2D
 #define IMAGE_r32i    iimage2D
 #define IMAGE_r32f    image2D
+#define IMAGE_r16f    image2D	// Hexenlicht: PT_VIEW_DEPTH
 #define IMAGE_rg32f   image2D
 #define IMAGE_rg16f   image2D
 #define IMAGE_rgba32f image2D
@@ -158,6 +206,11 @@ LIST_IMAGES_A_B
 LIST_IMAGES
 LIST_IMAGES_A_B
 #undef IMG_DO
+
+layout(
+	set = GLOBAL_TEXTURES_DESC_SET_IDX,
+	binding = BINDING_OFFSET_BLUE_NOISE
+) uniform sampler2DArray TEX_BLUE_NOISE;
 
 vec4
 global_texture(uint idx, vec2 tex_coord)

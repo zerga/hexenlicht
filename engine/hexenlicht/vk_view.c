@@ -3,14 +3,14 @@
  *
  * R_RenderView calls VK_RenderView3D after the TLAS is built: it fills
  * this frame's global UBO (vk_ubo.c) for the 3D view's size in pixels and
- * dispatches the view pass, which writes the TAA_OUTPUT render target
- * (vk_images.c), the image Quake II RTX's post-processing ends in. For
- * now the pass is debug_view.comp, selected by r_debugview, which also
- * walks the effects TLAS for the particles and sprites; the path tracer
- * of epic E3 replaces it. GL_EndRendering then calls VK_DrawView3D, which
- * copies the image into the swapchain's 3D view rectangle
- * (view_composite.frag, Quake II RTX's final blit) before the 2D is drawn
- * on top.
+ * dispatches the view passes, which end in the TAA_OUTPUT render target
+ * (vk_images.c), the image Quake II RTX's post-processing ends in:
+ * primary_rays.rgen writes the G-buffer (Quake II RTX's primary rays, in
+ * its two checkerboard fields), then, for now, debug_view.comp shows its
+ * channels, selected by r_debugview; the lighting passes of epic E3 come
+ * between them. GL_EndRendering then calls VK_DrawView3D, which copies the
+ * image into the swapchain's 3D view rectangle (view_composite.frag,
+ * Quake II RTX's final blit) before the 2D is drawn on top.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -33,12 +33,16 @@
 #include "shaders/hl_shared.h"
 #include "shaders/global_textures.h"
 
-/* 1 albedo, 2 normals, 3 material kinds (cutouts yellow, the weapon cyan),
- * 4 instances, 5 clusters (and the camera's PVS), 6 motion since the last
- * frame; 0 draws no 3D view */
+/* the G-buffer's channels: 1 base color with the effects over it, 2
+ * normals, 3 material kinds (cutouts yellow, the weapon cyan), 4 instances,
+ * 5 clusters (and the camera's PVS), 6 motion vectors, 7 motion check, 8
+ * geometric normals, 9 depth, 10 roughness/metallic/specular factor, 11
+ * diffuse and 12 specular albedo, 13 effects, 14 blue noise
+ * (shaders/hl_shared.h's DEBUGVIEW_*); 0 draws no 3D view */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
-static VkPipeline		debug_pipeline;		/* VK_PathTracerLayout () */
+static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
+static VkPipeline		debug_pipeline;		/* the same */
 static VkPipelineLayout		composite_layout;	/* the pass sets, gamma */
 static VkPipeline		composite_pipeline;
 static VkFormat			composite_format;
@@ -137,11 +141,13 @@ static void CreateCompositePipeline (void)
 
 void VK_DestroyViewPipelines (void)
 {
+	if (primary_pipeline)
+		vkDestroyPipeline (vk.device, primary_pipeline, NULL);
 	if (debug_pipeline)
 		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
 	if (composite_pipeline)
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
-	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
+	primary_pipeline = debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
 }
 
 
@@ -175,6 +181,7 @@ void VK_RenderView3D (void)
 	VkCommandBuffer		cmd;
 	VkImage			output;
 	pt_push_constants_t	push;
+	uint32_t		width;
 	int			mode = r_debugview.integer;
 
 	view_drawn = false;
@@ -182,22 +189,31 @@ void VK_RenderView3D (void)
 		return;
 	if (!ViewRect (&view_rect) || !VK_ImagesReady ())
 		return;
-	/* the render targets have the swapchain's size, the view fits in them */
-	if (view_rect.extent.width > vk_image_extent.width || view_rect.extent.height > vk_image_extent.height)
+	/* the render targets have the swapchain's size (the width rounded up
+	 * to even, as the view's for rendering), the view fits in them */
+	width = (view_rect.extent.width + 1) & ~1u;
+	if (width > vk_image_extent.width || view_rect.extent.height > vk_image_extent.height)
 		return;
 
 	VK_PrepareUBO (view_rect.extent.width, view_rect.extent.height, q_min (mode, DEBUGVIEW_MAX));
 
+	if (!primary_pipeline)
+		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
 	if (!debug_pipeline)
 		debug_pipeline = VK_CreateComputePipeline ("debug_view.comp", VK_PathTracerLayout ());
 
 	cmd = vk.frames[vk.frame_index].cmd;
 	output = VK_Image (VKPT_IMG_TAA_OUTPUT);
-	/* the last frame's composite has read the image */
+	/* the last frame's passes have read the images, its composite TAA_OUTPUT */
+	VK_ComputeBarrier (cmd);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
 			 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 	push.gpu_index = -1;
 	push.bounce = 0;
+	/* the G-buffer: each checkerboard field is half the width (Quake II
+	 * RTX's vkpt_pt_trace_primary_rays) */
+	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, view_rect.extent.height, 2);
+	VK_ComputeBarrier (cmd);
 	VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);

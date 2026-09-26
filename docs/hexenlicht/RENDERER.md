@@ -95,7 +95,9 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 
 ## Shaders
 
-- GLSL sources in `engine/hexenlicht/shaders/`, stage from the extension;
+- GLSL sources in `engine/hexenlicht/shaders/`, stage from the extension,
+  except that Quake II RTX's ray generation shaders (`.rgen`) are compiled as
+  compute shaders with `-DKHR_RAY_QUERY` (ray queries only);
   `#include` needs `#extension GL_GOOGLE_include_directive : require`. List
   each new shader in `hexenlicht_add_shaders(hexenlicht_shaders ...)` in
   `CMakeLists.txt` (include files are not listed; glslang's depfile tracks
@@ -376,12 +378,15 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
 
 ## Path tracer framework
 
-Story 3.1; the import rules and the Q2RTX module map are in [Q2RTX.md](Q2RTX.md).
-Ray queries only; Q2RTX's shader names over our bindings.
+Stories 3.1 and 3.2; the import rules and the Q2RTX module map are in
+[Q2RTX.md](Q2RTX.md). Ray queries only; Q2RTX's shader names over our
+bindings.
 
-- **Shader headers** from Q2RTX: `constants.h`, `shader_structs.h`,
-  `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl` (the last
-  three unchanged); adapted: `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
+- **Shader headers** from Q2RTX: `constants.h` (blue noise
+  `BLUE_NOISE_RES 64`, `NUM_BLUE_NOISE_TEX 256`), `shader_structs.h`,
+  `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl`,
+  `brdf.glsl`, `water.glsl`, `asvgf.glsl` (the last six unchanged); adapted:
+  `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
   instanced primitives, materials, PVS, particles, sprites — the particle
@@ -390,14 +395,26 @@ Ray queries only; Q2RTX's shader names over our bindings.
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
   buffer-reference macros), `global_textures.h` (render-target lists; set 1:
   storage images at `BINDING_OFFSET_IMAGES + n`, sampled `TEX_*` at
-  `BINDING_OFFSET_TEXTURES + n`; the bindless `global_texture*()` array in
-  set 2), `vertex_buffer.h` (`VboPrimitive`, `MATERIAL_UINTS`,
+  `BINDING_OFFSET_TEXTURES + n`, `TEX_BLUE_NOISE` last; the bindless
+  `global_texture*()` array in set 2; `PT_VIEW_DEPTH` declared `r16f`, its
+  format, where Q2RTX's `r32f` is a validation warning), `vertex_buffer.h` (`VboPrimitive`, `MATERIAL_UINTS`,
   `get_primitive`/`load_triangle`/`load_and_transform_triangle`/`get_material_info`/`animate_material`
   over the UBO's addresses; world and brush triangles animate with
   `anim_frame`, brush entities with a frame show alternates),
   `path_tracer.h` (UBO in set 0), `path_tracer_hit_shaders.h`
   (`pt_logic_rchit`, `pt_logic_masked` testing alpha, `pt_logic_particle` and
-  `pt_logic_sprite` with GL's look; beams and explosions come with 6.3).
+  `pt_logic_sprite` with GL's look; beams and explosions come with 6.3),
+  `path_tracer_rgen.h` (3.2: the passes' common code — `trace_geometry_ray`,
+  `trace_effects_ray`, `get_material`, `get_rng`, `env_map` — with the TLASes
+  by device address; `env_map` is black until 4.6; `get_material` tints a
+  model's base color with its `colorshade` hue; the lighting functions come
+  with 3.3, the gradient samples with 3.6).
+- **Random numbers:** Q2RTX's `get_rng` over blue noise: Christoph Peters'
+  CC0 textures (`libs/bluenoise`, 64 of 64x64, 16-bit RGBA; copied next to
+  the exe as `blue_noise\`), each channel one layer of a 256-layer
+  `R16_UNORM` array that `vk_images.c` loads at startup; per pixel and frame
+  the seed image `ASVGF_RNG_SEED_A` (x, y, field, frame) picks the texel and
+  the first layer, dimension `n` adds `n` layers.
 - **Descriptor sets** of every view pass: 0 = global UBO, 1 = render targets
   (even/odd), 2 = bindless textures.
 - `vk_ubo.c` (Q2RTX's `uniform_buffer.c` + `prepare_ubo`): one UBO per frame in
@@ -407,43 +424,87 @@ Ray queries only; Q2RTX's shader names over our bindings.
   frames (= `current_frame_idx`, picks the even/odd image set). Three offset
   asserts guard the C struct's layout; after changing the list, compare every
   member (`tools/hexenlicht/ubo_layout_check.ps1`).
-- `vk_images.c`: `VK_CreateImages` makes the render targets at the swapchain's size (recreated with it),
-  GENERAL layout, even/odd sets swapping `LIST_IMAGES_A_B`; the 3D view
-  renders into their top left `width x height`. Images come with their passes;
-  3.1 has only `TAA_OUTPUT`. `vk_images` lists them.
+- `vk_images.c`: `VK_CreateImages` makes the render targets at the swapchain's size,
+  the width rounded up to even (recreated with it), GENERAL layout, cleared
+  to 0 when created, even/odd sets swapping `LIST_IMAGES_A_B`; the 3D view
+  renders into their top left `width x height`. Images come with their
+  passes: `TAA_OUTPUT` (3.1) and the G-buffer (3.2, see
+  [3D view](#3d-view-vk_viewc)): 140 bytes per pixel by their formats;
+  `vk_images` reports 82 MB allocated at 960x540 (about 160 bytes per
+  pixel, 1.3 GB at 3840x2160). It also loads the blue noise. `vk_images`
+  lists them.
 - `vk_matrix.c`: Q2RTX's `matrix.c` (view space x right, y up, z forward; clip
   y down); `vk_ubo.c` uses GL's near 4 / far 4096.
 - `vk_pathtracer.c`: `VK_CreatePassLayout` (the three sets + push constants),
   `VK_PathTracerLayout` (Q2RTX's `pt_push_constants_t`),
   `VK_CreateComputePipeline`, `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
-  `dispatch_rays` in ray-query mode), `VK_RenderTargetBarrier`.
+  `dispatch_rays` in ray-query mode), `VK_RenderTargetBarrier`,
+  `VK_ComputeBarrier` (between the compute passes, which share the images).
 
 ## 3D view (`vk_view.c`)
 
 - `VK_RenderView3D` fills the UBO for the 3D view in pixels (`r_refdef.vrect`
-  × UI scale, centered like the 2D) and dispatches the view pass into
-  `TAA_OUTPUT`; `GL_EndRendering` calls `VK_DrawView3D` after beginning
+  × UI scale, centered like the 2D; rendered at the width rounded up to even,
+  the output `taa_output_width x taa_output_height` is the view's) and
+  dispatches the view passes into `TAA_OUTPUT`, with `VK_ComputeBarrier`
+  between them; `GL_EndRendering` calls `VK_DrawView3D` after beginning
   swapchain rendering: `fullscreen.vert` + `view_composite.frag` (reads
   `TEX_TAA_OUTPUT`, Q2RTX's final blit; sRGB encode + `gamma` like the 2D)
   into the 3D rectangle, then restores the full viewport for the 2D.
-- For now the view pass is **`debug_view.comp`** (`r_debugview`, default 1
-  until the path tracer shows a lit image, 3.3): 1 albedo (models times their tint's hue), 2 normals, 3 material
-  kinds (cutouts yellow, the weapon cyan), 4 instances, 5 clusters with the
-  camera's PVS (a brush entity's triangles show its instance's cluster), 6
-  motion since the last frame; 0 off.
-  - Primary ray from `projection.glsl` and `invV` (Q2RTX's
-    `get_primary_ray`); loops like its `trace_geometry_ray`/`trace_effects_ray`
-    in ray-query mode (masked candidates by `SBTO_MASKED` → `pt_logic_masked`,
-    alpha 0.5).
-  - The weapon is traced first, with its mask only, from GL's near plane 4
-    units in front of the eye; where that hits, the weapon is the pixel with
-    no effects over it (as GL's depth range hack keeps it in front of walls);
-    then everything else.
-  - Hit via `pt_logic_rchit` → `load_and_transform_triangle`; interpolated
-    vertex normals; ray-cone texture LOD.
-  - Albedo mode walks the effects TLAS up to the hit (every candidate, none
-    confirmed), blends `pt_logic_particle`/`pt_logic_sprite` with
-    `update_payload_transparency`, then `effects + (1 - alpha) * geometry`.
+- **`primary_rays.rgen`** (3.2): Q2RTX's primary rays, dispatched as its
+  are (width / 2 × height × 2 checkerboard fields: the left half of each
+  image holds the pixels where x and y have the same parity, the right half
+  the others), write the G-buffer:
+
+  | Image | Contents |
+  |---|---|
+  | `PT_VISBUF_PRIM_A`, `PT_VISBUF_BARY_A` | instance (~0 = world) and primitive, barycentrics |
+  | `PT_BASE_COLOR_A` | base color (textures, a model's tint hue), `.a` specular factor |
+  | `PT_METALLIC_A` | metallic, roughness (0 and 1 until E5) |
+  | `PT_NORMAL_A`, `PT_GEO_NORMAL_A` | shading and geometric normal (octahedral), facing the ray |
+  | `PT_VIEW_DEPTH_A` | view depth (fp16; the sky 10000) |
+  | `PT_MOTION` | `.xy` where the point was last frame minus where it is, in UV units, jitter-free; `.z` depth change, `.w` depth derivative |
+  | `PT_CLUSTER_A` | vis cluster (a brush entity's triangles its instance's; 0xffff = none) |
+  | `PT_SHADING_POSITION` | world position, `.w` material ID (light style bits replaced by the medium; 0 = no surface) |
+  | `PT_VIEW_DIRECTION`, `PT_THROUGHPUT`, `PT_BOUNCE_THROUGHPUT` | ray direction and checkerboard flags, throughput and depth, ray cone for the lighting passes |
+  | `PT_TRANSPARENT` | effects in front of the surface (premultiplied) and its emission |
+  | `ASVGF_RNG_SEED_A` | the pixel's random number seed |
+
+  The `_B` images are last frame's. Hexenlicht's changes: the weapon is
+  traced first, from GL's near plane 4 units in front of the eye, and where
+  it is hit it is the pixel's surface with no effects over it (GL's depth
+  range hack); no back-face culling (GL draws `EF_SPECIAL_TRANS` models
+  two-sided); threads past the fields' size return (the dispatch is rounded
+  up to 8x8 groups); no readback, god rays or light-buffer PVS overlay; water keeps
+  its geometric normal while there is no water normal map. The sky (and
+  nothing) is an empty surface: black until 4.6 (`pt_show_sky 1` shows the
+  sky polygons). Translucent surfaces (alpha < 1) split the fields as in
+  Q2RTX: the even field stays on the surface, the odd one goes through it
+  (their material kind), which the refraction pass (3.5) uses.
+  Textures are sampled with Q2RTX's anisotropic ray-cone gradients; liquids
+  warp as Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's
+  turbulence (`d_scan.c`), with game time.
+- **DLSS Ray Reconstruction's inputs** (PLAN §5) from the G-buffer: diffuse
+  albedo = `get_reflectivity`'s albedo, specular albedo = Karis's
+  environment-BRDF approximation of its reflectivity × the specular factor,
+  normals `PT_NORMAL`, roughness `PT_METALLIC.g`, depth `PT_VIEW_DEPTH`,
+  motion `PT_MOTION.xy` (× the size in pixels); the specular hit distance or
+  motion vectors come with the reflections (3.5). RR needs the fields
+  interleaved; at translucent surfaces they differ pixel by pixel (3.9).
+- For now **`debug_view.comp`** shows the G-buffer (`r_debugview`, default 1
+  until the path tracer shows a lit image, 3.3), reading each screen pixel
+  from its field (`checkerboard_interleave.comp`'s mapping); it traces no
+  rays: 1 base color with the effects over it, 2 shading normals, 3 material
+  kinds (cutouts yellow, the weapon cyan; translucent surfaces alternate
+  between regular and their kind), 4 instances, 5 clusters with the camera's
+  PVS, 6 motion vectors (gray still, hue = direction, brightness = length up
+  to 16 pixels), 7 motion check (this frame's base color minus last frame's
+  at the motion vector, ×4, bilinear: black where the vectors are right
+  except texture detail, disocclusions and changing textures; dark blue
+  where the point was off the screen), 8 geometric normals, 9 depth (log
+  scale), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
+  specular albedo (as RR would get them), 13 effects and emission, 14 the
+  pixel's first random number; 0 off.
 
 ## Other
 
@@ -462,7 +523,7 @@ Ray queries only; Q2RTX's shader names over our bindings.
 
 | Command | What |
 |---|---|
-| `r_debugview 0-6` | debug view mode (see [3D view](#3d-view-vk_viewc)) |
+| `r_debugview 0-14` | debug view mode: the G-buffer's channels (see [3D view](#3d-view-vk_viewc)) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |
@@ -475,5 +536,5 @@ Ray queries only; Q2RTX's shader names over our bindings.
 | `vk_accel` | acceleration structure sizes, build times |
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |
-| `vk_images` | render targets |
+| `vk_images` | render targets and the blue noise |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

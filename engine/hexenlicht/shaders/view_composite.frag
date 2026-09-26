@@ -1,5 +1,5 @@
 /* view_composite.frag -- copies the 3D view (TEX_TAA_OUTPUT's top left
- * global_ubo.width x global_ubo.height, the image Quake II RTX's final
+ * global_ubo.taa_output_width x taa_output_height, the image Quake II RTX's final
  * blit shows) into its part of the swapchain (drawn with fullscreen.vert
  * and a viewport on the 3D view), encoding to sRGB and applying the gamma
  * cvar like draw2d.frag.
@@ -39,7 +39,7 @@ layout(push_constant) uniform Push
 
 void main()
 {
-	ivec2 size = ivec2(global_ubo.width, global_ubo.height);
+	ivec2 size = ivec2(global_ubo.taa_output_width, global_ubo.taa_output_height);
 	ivec2 p = min(ivec2(in_uv * vec2(size)), size - 1);
 	vec3 c = linear_to_srgb(texelFetch(TEX_TAA_OUTPUT, p, 0).rgb);
 

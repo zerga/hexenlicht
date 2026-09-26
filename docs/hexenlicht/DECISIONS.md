@@ -67,9 +67,18 @@ story settles something a later session must not undo; mark a line
 | R6 | Triangles of brush entities take their instance's cluster (Q2RTX's `load_and_transform_triangle`) | 3.1 |
 | R7 | `r_debugview` defaults to 1 (albedo) until the path tracer shows a lit image | 2.7 |
 | R8 | Open: the weapon's light never goes below 24 in GL — a path-traced weapon in the dark needs a decision (3.3/E4) | 2.8 |
+| R9 | The G-buffer is Q2RTX's primary rays' (`primary_rays.rgen`) in its two checkerboard fields, the render width rounded up to even (at an odd view width the view shows one column less of it: under a pixel); the debug view only shows its channels (it traces no rays of its own) | 3.2 (#32) |
+| R10 | Random numbers: Q2RTX's `get_rng` over Christoph Peters' CC0 blue noise (`libs/bluenoise`: 64 textures of 64x64 16-bit RGBA = 256 layers); Q2RTX's own 128 textures have no license note | 3.2 |
+| R11 | Primary rays don't cull back faces (GL draws `EF_SPECIAL_TRANS` models two-sided, one TLAS instance holds all alias models); normals face the ray, as in Q2RTX | 3.2 |
+| R12 | The sky is an empty surface in the G-buffer, black until the sky (4.6) | 3.2 |
+| R13 | Liquids warp per pixel with Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's turbulence (AMP 8, SPEED 20, CYCLE 128, game time); GL's per-vertex warp of subdivided polygons is not reproduced | 3.2 |
+| R14 | A model's `colorshade` tint: its hue, scaled to at most 1, multiplies the base color (`get_material`); what GL's tints above 1 brighten is left to the lighting (E4) | 3.2 |
+| R15 | No images only for DLSS Ray Reconstruction: its inputs come from the G-buffer (RENDERER.md, 3D view); the specular hit distance comes with the reflections (3.5) | 3.2 |
+| R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
 
 ## Open questions carried forward
 
-See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): blue noise source
-(3.2), `path_tracer_rgen.h` adaptation (3.2), instance history for A-SVGF
-(3.6), effects brightness (3.3).
+See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
+(3.5, 6.5), specular hit distance (3.5), checkerboard fields and RR (3.9),
+model tint brightness (E4), instance history for A-SVGF (3.6), effects
+brightness (3.3).

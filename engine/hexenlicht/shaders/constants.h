@@ -19,7 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 /* Hexenlicht: Quake II RTX's constants, shared by C and GLSL, with
  * Hexenlicht's limits (NUM_GLOBAL_TEXTURES, MAX_MODEL_INSTANCES,
- * MAX_TLAS_INSTANCES). */
+ * MAX_TLAS_INSTANCES) and blue noise (NUM_BLUE_NOISE_TEX, BLUE_NOISE_RES). */
 
 #ifndef  _CONSTANTS_H_
 #define  _CONSTANTS_H_
@@ -36,8 +36,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define NUM_GLOBAL_TEXTURES 4096	// Hexenlicht: VK_MAX_TEXTURES, the bindless array's slots
 
-#define NUM_BLUE_NOISE_TEX (128 * 4)
-#define BLUE_NOISE_RES     (256)
+#define NUM_BLUE_NOISE_TEX (64 * 4)	// Hexenlicht: Christoph Peters' CC0 set (libs/bluenoise), 128 * 4 in Quake II RTX
+#define BLUE_NOISE_RES     (64)	// Hexenlicht: 256 in Quake II RTX
 
 #define NUM_LIGHT_STATS_BUFFERS 3
 

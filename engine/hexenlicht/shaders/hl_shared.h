@@ -162,16 +162,24 @@ END_SHADER_STRUCT( EffectsCheckPush )
 
 /* ==========================================================================
  * The debug view (vk_view.c, debug_view.comp): r_debugview's modes, in the
- * global UBO's debug_view
+ * global UBO's debug_view; each shows G-buffer channels (primary_rays.rgen)
  * ========================================================================== */
 
 #define DEBUGVIEW_OFF			0
-#define DEBUGVIEW_ALBEDO		1
-#define DEBUGVIEW_NORMALS		2
-#define DEBUGVIEW_MATERIAL		3
+#define DEBUGVIEW_ALBEDO		1	/* base color, the effects over it */
+#define DEBUGVIEW_NORMALS		2	/* shading normal */
+#define DEBUGVIEW_MATERIAL		3	/* material kinds */
 #define DEBUGVIEW_INSTANCES		4
-#define DEBUGVIEW_CLUSTERS		5
-#define DEBUGVIEW_MOTION		6
-#define DEBUGVIEW_MAX			6
+#define DEBUGVIEW_CLUSTERS		5	/* and the camera's PVS */
+#define DEBUGVIEW_MOTION		6	/* screen-space motion vectors */
+#define DEBUGVIEW_MOTION_CHECK		7	/* base color minus last frame's at the motion vector */
+#define DEBUGVIEW_GEO_NORMALS		8
+#define DEBUGVIEW_DEPTH			9	/* view depth */
+#define DEBUGVIEW_ROUGHNESS		10	/* roughness, metallic, specular factor as R, G, B */
+#define DEBUGVIEW_DIFFUSE_ALBEDO	11	/* DLSS Ray Reconstruction's, from the G-buffer */
+#define DEBUGVIEW_SPECULAR_ALBEDO	12	/* the same */
+#define DEBUGVIEW_EFFECTS		13	/* effects and emissive (PT_TRANSPARENT) */
+#define DEBUGVIEW_BLUE_NOISE		14	/* the first random number of the pixel */
+#define DEBUGVIEW_MAX			14
 
 #endif	/* HL_SHARED_H */

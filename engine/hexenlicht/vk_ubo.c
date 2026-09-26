@@ -89,10 +89,12 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.cam_pos[3] = 0.0f;
 
 	ubo.current_frame_idx = (int)++vk_render_frame;
-	ubo.width = (int)width;
+	/* rendered at the width rounded up to even, for the two checkerboard
+	 * fields (Quake II RTX's get_render_extent); the output is the view's */
+	ubo.width = (int)((width + 1) & ~1u);
 	ubo.height = (int)height;
-	ubo.current_gpu_slice_width = (int)width;
-	ubo.inv_width = 1.0f / (float)width;
+	ubo.current_gpu_slice_width = ubo.width;
+	ubo.inv_width = 1.0f / (float)ubo.width;
 	ubo.inv_height = 1.0f / (float)height;
 	ubo.unscaled_width = (int)width;	/* no resolution scale until 3.8 */
 	ubo.unscaled_height = (int)height;
@@ -119,6 +121,13 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 #define UBO_CVAR_DO(name, default_value) ubo.name = cvar_##name.value;
 	UBO_CVAR_LIST
 #undef UBO_CVAR_DO
+
+	/* as Quake II RTX's prepare_ubo in its real-time mode: no depth of field
+	 * (only when accumulating a reference image), whole aperture polygon
+	 * sides; no temporal AA until 3.8 (sub_pixel_jitter stays 0) */
+	ubo.pt_aperture = 0.0f;
+	ubo.pt_aperture_type = roundf (ubo.pt_aperture_type);
+	ubo.flt_taa = AA_MODE_OFF;
 
 	/* Hexenlicht */
 	ubo.tlas = VK_TLASAddress ();

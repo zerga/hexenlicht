@@ -128,6 +128,16 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 - **Global UBO layout:** `ubo_layout_check.ps1` after changing
   `GLOBAL_UBO_VAR_LIST`.
 - `vk_rtcheck` must report 0 differing rays; `vk_models check` "all agree".
+- **Motion vectors:** `r_debugview 7` (motion check) while walking and
+  turning (`+forward`, `+right`), on moving brush entities (romeric2) and
+  walking monsters (village3): black except texture detail (bilinear
+  resampling), disocclusions (bands along the weapon and near objects),
+  animated textures and liquids; dark blue where the point was off the
+  screen. A wrong vector shows the texture shifted (double edges).
+- **Liquids near a start:** romeric1 (`*skulls`, look down), meso9 (lava).
+- In a bash script generator, a helper that loops must use a `local`
+  counter, or it overwrites the caller's (story 3.2 chained every
+  regression script to the same one that way).
 - If the desktop is at 1024x768 (monitor off), Hexenlicht refuses 1280x720
   windows (falls back to 640x480) and vsync crawls: use 960x540 and
   `vid_vsync 0`. Check the desktop size with

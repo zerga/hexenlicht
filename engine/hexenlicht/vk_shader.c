@@ -2,7 +2,8 @@
  *
  * Shaders are compiled at build time (cmake/HexenlichtShaders.cmake) into
  * a "shaders" folder next to the executable and loaded from there, so a
- * rebuilt shader only needs the program restarted, not relinked.
+ * rebuilt shader only needs the program restarted, not relinked. VK_ExePath
+ * gives the path of other files there (the blue noise, vk_images.c).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -24,8 +25,8 @@
 
 #define SPIRV_MAGIC	0x07230203u
 
-/* <folder of hexenlicht.exe>\shaders\<name>.spv */
-static void VK_ShaderPath (const char *name, char *path, size_t size)
+/* <folder of hexenlicht.exe>\<file> */
+void VK_ExePath (const char *file, char *path, size_t size)
 {
 	char	*slash;
 	DWORD	len;
@@ -38,7 +39,13 @@ static void VK_ShaderPath (const char *name, char *path, size_t size)
 		slash[1] = '\0';
 	else
 		path[0] = '\0';
-	q_strlcat (path, "shaders\\", size);
+	q_strlcat (path, file, size);
+}
+
+/* <folder of hexenlicht.exe>\shaders\<name>.spv */
+static void VK_ShaderPath (const char *name, char *path, size_t size)
+{
+	VK_ExePath ("shaders\\", path, size);
 	q_strlcat (path, name, size);
 	q_strlcat (path, ".spv", size);
 }
