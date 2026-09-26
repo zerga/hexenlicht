@@ -8,6 +8,11 @@
  * pipelines, shader execution reordering and position fetch are enabled
  * when present.
  *
+ * The renderer's modules are initialized and shut down from one table,
+ * after Quake II RTX's vkpt_initialize_all (src/refresh/vkpt/main.c).
+ *
+ * Copyright (C) 2018 Christoph Schied
+ * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
  * Copyright (C) 2026  Hexenlicht contributors
  *
  * This program is free software; you can redistribute it and/or modify
@@ -316,6 +321,7 @@ static void VK_CheckDevice (VkPhysicalDevice dev, vk_candidate_t *c)
 	if (!f->v13.shaderDemoteToHelperInvocation)	VK_AddMissing (c, "shaderDemoteToHelperInvocation");
 	if (!f->as.accelerationStructure)	VK_AddMissing (c, "accelerationStructure");
 	if (!f->rq.rayQuery)			VK_AddMissing (c, "rayQuery");
+	if (!f->core.features.shaderStorageImageExtendedFormats)	VK_AddMissing (c, "shaderStorageImageExtendedFormats");
 	c->has_rtp = c->has_rtp && f->rtp.rayTracingPipeline;
 	c->has_ser = c->has_ser && f->ser.rayTracingInvocationReorder;
 	c->has_pf = c->has_pf && f->pf.rayTracingPositionFetch;
@@ -424,6 +430,8 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	VK_ChainFeatures (&enable, c->has_rtp, c->has_ser, c->has_pf);
 	enable.core.features.samplerAnisotropy = c->supported.core.features.samplerAnisotropy;
 	enable.core.features.shaderInt64 = c->supported.core.features.shaderInt64;
+	/* storage images in Quake II RTX's render-target formats (rg16f, r16ui, ...) */
+	enable.core.features.shaderStorageImageExtendedFormats = VK_TRUE;
 	enable.v12.bufferDeviceAddress = VK_TRUE;
 	enable.v12.descriptorIndexing = VK_TRUE;
 	enable.v12.runtimeDescriptorArray = VK_TRUE;
@@ -525,6 +533,112 @@ static void VK_Info_f (void)
 
 
 /* ==========================================================================
+ * The modules (Quake II RTX's vkpt_initialize_all)
+ * ========================================================================== */
+
+typedef enum
+{
+	VK_INIT_DEFAULT		= 0,		/* at startup only */
+	VK_INIT_SWAPCHAIN	= (1 << 1),	/* also when the swapchain is recreated */
+	VK_INIT_RELOAD_SHADER	= (1 << 2)	/* also on vk_reload_shaders */
+} vk_init_flags_t;
+
+typedef struct
+{
+	const char	*name;
+	void		(*init) (void);		/* NULL: nothing to do (created when used) */
+	void		(*shutdown) (void);
+	int		flags;
+	qboolean	initialized;
+} vk_module_t;
+
+/* in init order, shut down in reverse; an entry ending in "|" holds what
+ * the module before it recreates: its pipelines, or its images at the
+ * swapchain's size */
+static vk_module_t	vk_modules[] =
+{
+	{ "buffers",	VK_InitBuffers,		VK_ShutdownBuffers,		VK_INIT_DEFAULT },
+	{ "swapchain",	VK_InitSwapchain,	VK_ShutdownSwapchain,		VK_INIT_DEFAULT },
+	{ "textures",	VK_InitTextures,	VK_ShutdownTextures,		VK_INIT_DEFAULT },
+	{ "materials",	VK_InitMaterials,	VK_ShutdownMaterials,		VK_INIT_DEFAULT },
+	{ "world",	VK_InitWorld,		VK_ShutdownWorld,		VK_INIT_DEFAULT },
+	{ "models",	VK_InitModels,		VK_ShutdownModels,		VK_INIT_DEFAULT },
+	{ "models|",	VK_CreateModelPipelines, VK_DestroyModelPipelines,	VK_INIT_RELOAD_SHADER },
+	{ "instances",	VK_InitInstances,	VK_ShutdownInstances,		VK_INIT_DEFAULT },
+	{ "effects",	VK_InitEffects,		VK_ShutdownEffects,		VK_INIT_DEFAULT },
+	{ "accel",	VK_InitAccel,		VK_ShutdownAccel,		VK_INIT_DEFAULT },
+	{ "ubo",	VK_InitUBO,		VK_ShutdownUBO,			VK_INIT_DEFAULT },
+	{ "images",	VK_InitImages,		VK_ShutdownImages,		VK_INIT_DEFAULT },
+	{ "images|",	VK_CreateImages,	VK_DestroyImages,		VK_INIT_SWAPCHAIN },
+	{ "pt",		VK_InitPathTracer,	VK_ShutdownPathTracer,		VK_INIT_DEFAULT },
+	{ "view",	VK_InitView,		VK_ShutdownView,		VK_INIT_DEFAULT },
+	{ "view|",	NULL,			VK_DestroyViewPipelines,	VK_INIT_RELOAD_SHADER },
+	{ "draw",	VK_InitDraw,		VK_ShutdownDraw,		VK_INIT_DEFAULT },
+	{ "draw|",	NULL,			VK_DestroyDrawPipeline,		VK_INIT_RELOAD_SHADER },
+};
+
+static qboolean	vk_modules_ready;	/* all initialized */
+
+/* initializes the modules flagged with all of flags (VK_INIT_DEFAULT: all
+ * of them) that aren't initialized */
+static void VK_InitModules (int flags)
+{
+	int	i;
+
+	vkDeviceWaitIdle (vk.device);
+	for (i = 0; i < (int)Q_COUNTOF(vk_modules); i++)
+	{
+		vk_module_t	*m = &vk_modules[i];
+
+		if ((m->flags & flags) != flags || m->initialized)
+			continue;
+		if (m->init)
+			m->init ();
+		m->initialized = true;
+	}
+}
+
+static void VK_ShutdownModules (int flags)
+{
+	int	i;
+
+	vkDeviceWaitIdle (vk.device);
+	for (i = (int)Q_COUNTOF(vk_modules) - 1; i >= 0; i--)
+	{
+		vk_module_t	*m = &vk_modules[i];
+
+		if ((m->flags & flags) != flags || !m->initialized)
+			continue;
+		if (m->shutdown)
+			m->shutdown ();
+		m->initialized = false;
+	}
+}
+
+/* vk_swapchain.c, after a new swapchain was created (outside frames) */
+void VK_SwapchainRecreated (void)
+{
+	if (!vk_modules_ready)
+		return;		/* startup: VK_Init initializes them in order */
+	VK_ShutdownModules (VK_INIT_SWAPCHAIN);
+	VK_InitModules (VK_INIT_SWAPCHAIN);
+}
+
+/* rebuilds the pipelines from the SPIR-V in the shaders folder: build the
+ * hexenlicht_shaders target, then run this */
+static void VK_ReloadShaders_f (void)
+{
+	/* console commands run between frames; inside one it couldn't even
+	 * print (SCR_UpdateScreen would re-enter) */
+	if (vk.frame_active)
+		return;
+	VK_ShutdownModules (VK_INIT_RELOAD_SHADER);
+	VK_InitModules (VK_INIT_RELOAD_SHADER);
+	Con_Printf ("Shaders reloaded\n");
+}
+
+
+/* ==========================================================================
  * Init / shutdown
  * ========================================================================== */
 
@@ -554,18 +668,10 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 			vk.have_rt_pipeline ? "yes" : "no", vk.have_ser ? "yes" : "no");
 
 	Cmd_AddCommand ("vk_info", VK_Info_f);
+	Cmd_AddCommand ("vk_reload_shaders", VK_ReloadShaders_f);
 
-	VK_InitBuffers ();
-	VK_InitTextures ();
-	VK_InitMaterials ();
-	VK_InitWorld ();
-	VK_InitModels ();
-	VK_InitInstances ();
-	VK_InitEffects ();
-	VK_InitAccel ();
-	VK_InitView ();
-	VK_InitSwapchain ();
-	VK_InitDraw ();
+	VK_InitModules (VK_INIT_DEFAULT);
+	vk_modules_ready = true;
 }
 
 void VK_Shutdown (void)
@@ -575,18 +681,8 @@ void VK_Shutdown (void)
 
 	if (vk.device)
 	{
-		vkDeviceWaitIdle (vk.device);
-		VK_ShutdownDraw ();
-		VK_ShutdownSwapchain ();
-		VK_ShutdownView ();
-		VK_ShutdownAccel ();
-		VK_ShutdownEffects ();
-		VK_ShutdownInstances ();
-		VK_ShutdownModels ();
-		VK_ShutdownWorld ();
-		VK_ShutdownMaterials ();
-		VK_ShutdownTextures ();
-		VK_ShutdownBuffers ();
+		vk_modules_ready = false;
+		VK_ShutdownModules (VK_INIT_DEFAULT);
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
 		vkDestroyDevice (vk.device, NULL);

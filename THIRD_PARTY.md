@@ -34,7 +34,7 @@ file headers:
 
 | Project | License | Adapted in |
 |---|---|---|
-| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11) | GPL-2.0-or-later | `engine/hexenlicht/shaders/hl_shared.h`, `engine/hexenlicht/shaders/material.glsl`, `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/vk_effects.c`, `engine/hexenlicht/shaders/debug_view.comp`, `engine/hexenlicht/shaders/model_geometry.comp`, `engine/hexenlicht/shaders/normal.glsl` |
+| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11; commit `f2526e9a1`) | GPL-2.0-or-later | `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/vk_effects.c`, `engine/hexenlicht/vk_core.c` (the module table), `engine/hexenlicht/vk_matrix.c`, `engine/hexenlicht/vk_ubo.c`, `engine/hexenlicht/vk_images.c`, `engine/hexenlicht/vk_pathtracer.c`; shaders in `engine/hexenlicht/shaders/`: `hl_shared.h`, `constants.h`, `shader_structs.h`, `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h`, `debug_view.comp`, `model_geometry.comp`; copied unchanged: `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl`. How modules come in: [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
 | [QuakeSpasm](https://sourceforge.net/projects/quakespasm/) | GPL-2.0-or-later | `engine/hexenlicht/vk_instance.c` (alias model frame blending, after `R_SetupAliasFrame`) |
 
 Used from the LunarG Vulkan SDK at build time, not vendored:

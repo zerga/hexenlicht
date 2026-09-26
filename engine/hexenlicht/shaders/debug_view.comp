@@ -1,9 +1,17 @@
 /* debug_view.comp -- the r_debugview pass: one primary ray per pixel of
  * the 3D view through the TLAS, showing albedo, normals, material kinds,
  * instances, vis clusters or the motion since the last frame of what it
- * hits. In albedo mode, a second ray query walks the effects TLAS up to
- * that hit and blends the particles and sprites in front of it over it,
- * as Quake II RTX's path tracer does.
+ * hits, into IMG_TAA_OUTPUT (the image the composite shows). In albedo
+ * mode, a second ray query walks the effects TLAS up to that hit and
+ * blends the particles and sprites in front of it over it.
+ *
+ * Built on Quake II RTX's path tracer framework: the camera from the
+ * global UBO (projection.glsl), candidates handled by the instances' shader
+ * binding table offsets with its hit logic (path_tracer_hit_shaders.h), the
+ * hit's triangle from load_and_transform_triangle, the effects blended by
+ * update_payload_transparency; the ray loops are its trace_geometry_ray's
+ * and trace_effects_ray's in ray query mode (path_tracer_rgen.h, imported
+ * with the primary rays in 3.2).
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019-2021, NVIDIA CORPORATION. All rights reserved.
@@ -24,50 +32,30 @@
 
 #version 460
 #extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_ray_query : require
-#extension GL_EXT_buffer_reference : require
-#extension GL_EXT_buffer_reference_uvec2 : require
-#extension GL_EXT_nonuniform_qualifier : require
 
-#include "hl_shared.h"
+#define KHR_RAY_QUERY
+#define GLOBAL_UBO_DESC_SET_IDX 0
+#define GLOBAL_TEXTURES_DESC_SET_IDX 1
+#define VERTEX_BUFFER_DESC_SET_IDX 2
+#define VERTEX_READONLY 1
 
-layout(local_size_x = 8, local_size_y = 8) in;
+#include "path_tracer.h"
+#include "utils.glsl"
+#include "path_tracer_transparency.glsl"
+#include "global_textures.h"
+#include "vertex_buffer.h"
+#include "path_tracer_hit_shaders.h"
+#include "projection.glsl"
 
-layout(set = 0, binding = 0) uniform sampler2D textures[];	/* vk_texture.c's bindless array */
-layout(set = 1, binding = 0, rgba16f) uniform writeonly image2D view_image;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(buffer_reference, std430) readonly buffer ViewBuffer { ViewUniforms data; };
-layout(buffer_reference, std430) readonly buffer PrimitiveBuffer { VboPrimitive p[]; };
-layout(buffer_reference, std430) readonly buffer TlasInfoBuffer { TlasInstanceInfo i[]; };
-layout(buffer_reference, std430) readonly buffer InstanceBuffer { ModelInstance m[]; };
-layout(buffer_reference, std430) readonly buffer UintBuffer { uint d[]; };
-layout(buffer_reference, std430) readonly buffer ParticleBuffer { EffectParticle p[]; };
-layout(buffer_reference, std430) readonly buffer SpriteBuffer { EffectSprite s[]; };
-
-layout(push_constant) uniform Push
-{
-	DeviceAddress view;	/* ViewUniforms */
-} push;
-
-ViewUniforms view;
-
-#define material_table	UintBuffer(view.materials).d
-#define pvs_table	UintBuffer(view.pvs).d
-#include "material.glsl"
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer UintBufferRef { uint d[]; };
+#define pvs_table UintBufferRef(global_ubo.pvs).d
 #include "pvs.glsl"
-#include "normal.glsl"
 
-/* the alpha of a triangle's cutout mask at barycentrics (b.x, b.y) of
- * vertices 1 and 2; 1 without a mask */
-float
-mask_alpha(VboPrimitive p, vec2 b)
-{
-	MaterialInfo minfo = get_material_info(p.material_id);
-	if (minfo.mask_texture == 0u)
-		return 1.0;
-	vec2 tc = p.uv0 * (1.0 - b.x - b.y) + p.uv1 * b.x + p.uv2 * b.y;
-	return textureLod(textures[nonuniformEXT(minfo.mask_texture)], tc, 0.0).a;
-}
+// Just global variables in RQ mode.
+RayPayloadGeometry ray_payload_geometry;
+RayPayloadEffects ray_payload_effects;
 
 vec3
 hash_color(uint x)
@@ -78,116 +66,100 @@ hash_color(uint x)
 	return vec3((x >> 16) & 0xffu, (x >> 8) & 0xffu, x & 0xffu) / 255.0 * 0.8 + 0.2;
 }
 
-/* ==========================================================================
- * Effects
- * ========================================================================== */
-
-/* GL's texture coordinates of a particle's triangle (r_part.c's ptex_coord) */
-const vec2 particle_uvs[12] = vec2[](
-	vec2(1.000, 0.000), vec2(1.000, 0.500), vec2(0.500, 0.000),	/* any, or snow count < 30 */
-	vec2(0.000, 1.000), vec2(0.500, 1.000), vec2(0.000, 0.500),	/* snow count >= 30 */
-	vec2(0.000, 0.000), vec2(0.815, 0.000), vec2(0.000, 0.815),	/* snow count >= 40 */
-	vec2(1.000, 1.000), vec2(1.000, 0.180), vec2(0.180, 1.000));	/* snow count >= 69: happy snow! */
-
-/* a particle's premultiplied color where the ray met it: GL's color times
- * its dot texture (after Quake II RTX's pt_logic_particle) */
+/* The particles and sprites along the ray up to t_max, premultiplied:
+ * trace_effects_ray's ray query loop without beams and fog. The
+ * candidates come in no particular order: update_payload_transparency
+ * puts a hit nearer than all before in front of them, any other behind. */
 vec4
-particle_color(uint prim, vec2 b)
+trace_effects(vec3 origin, vec3 dir, float t_max)
 {
-	EffectParticle p = ParticleBuffer(view.particles).p[prim];
-	uint set = (p.alpha_and_uvs >> 16) * 3u;
-	vec2 tc = particle_uvs[set] * (1.0 - b.x - b.y) + particle_uvs[set + 1u] * b.x + particle_uvs[set + 2u] * b.y;
-	float a = unpackHalf2x16(p.alpha_and_uvs).x *
-		  textureLod(textures[nonuniformEXT(view.particle_texture)], tc, 0.0).a;
-	return vec4(p.color * a, a);
-}
+	ray_payload_effects.transparency = uvec2(0);
+	ray_payload_effects.distances = 0;
+	ray_payload_effects.fog1 = uvec4(0);
+	ray_payload_effects.fog2 = uvec4(0);
 
-/* a sprite's premultiplied color where the ray met its quad: the texture,
- * unlit (Quake II RTX's pt_logic_sprite without its tone curve), at the mip
- * level of the pixel's footprint (sprite frames have a texel per unit) and
- * clamped at the edges as GL does */
-vec4
-sprite_color(uint prim, vec2 b, float t)
-{
-	vec3 bary = vec3(1.0 - b.x - b.y, b.x, b.y);
-	vec2 tc;
-	if ((prim & 1u) == 0u)
-		tc = vec2(0.0, 1.0) * bary.x + vec2(0.0, 0.0) * bary.y + vec2(1.0, 0.0) * bary.z;
-	else
-		tc = vec2(1.0, 0.0) * bary.x + vec2(1.0, 1.0) * bary.y + vec2(0.0, 1.0) * bary.z;
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, accelerationStructureEXT(global_ubo.effects_tlas), gl_RayFlagsNoneEXT,
+			      AS_FLAG_EFFECTS, origin, 0.0, dir, t_max);
 
-	EffectSprite s = SpriteBuffer(view.sprites).s[prim >> 1];
-	float lod = max(log2(t * 2.0 * view.tan_half_fov.y / float(view.size.y)), 0.0);
-	/* half a texel of the coarser of the two levels trilinear filtering
-	 * reads, so neither wraps around (the sampler repeats) */
-	int level = min(int(ceil(lod)), textureQueryLevels(textures[nonuniformEXT(s.texture)]) - 1);
-	vec2 half_texel = min(0.5 / vec2(textureSize(textures[nonuniformEXT(s.texture)], level)), vec2(0.5));
-	vec4 c = textureLod(textures[nonuniformEXT(s.texture)], clamp(tc, half_texel, 1.0 - half_texel), lod);
-	c.a *= s.alpha;
-	return vec4(c.rgb * c.a, c.a);
-}
-
-/* Quake II RTX's alpha_blend_premultiplied: top over bottom */
-vec4
-blend_over(vec4 top, vec4 bottom)
-{
-	return vec4(top.rgb + bottom.rgb * (1.0 - top.a), 1.0 - (1.0 - top.a) * (1.0 - bottom.a));
-}
-
-/* The particles and sprites along the ray up to t_max, premultiplied. The
- * candidates come in no particular order: as Quake II RTX's
- * update_payload_transparency (without its fog), a hit nearer than all
- * before goes in front of them, any other behind them. */
-vec4
-trace_effects(vec3 dir, float t_max)
-{
-	vec4 acc = vec4(0.0);
-	float nearest = 0.0;
-
-	rayQueryEXT rq;
-	rayQueryInitializeEXT(rq, accelerationStructureEXT(view.effects_tlas), gl_RayFlagsNoneEXT, AS_FLAG_EFFECTS,
-			      view.origin.xyz, 0.0, dir, t_max);
-	while (rayQueryProceedEXT(rq))
+	while (rayQueryProceedEXT(rayQuery))
 	{
-		if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT)
-			continue;
-		uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false));
-		vec2 b = rayQueryGetIntersectionBarycentricsEXT(rq, false);
-		float t = rayQueryGetIntersectionTEXT(rq, false);
-		vec4 c = (uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false)) == EFFECTS_PARTICLES) ?
-			 particle_color(prim, b) : sprite_color(prim, b, t);
-		if (c.a <= 0.0)
-			continue;
-		if (nearest == 0.0 || t < nearest)
+		uint sbtOffset = rayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetEXT(rayQuery, false);
+		int primitiveID = rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, false);
+		float hitT = rayQueryGetIntersectionTEXT(rayQuery, false);
+		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rayQuery, false);
+
+		vec4 transparent = vec4(0);
+		switch (sbtOffset)
 		{
-			acc = blend_over(c, acc);
-			nearest = t;
+		case SBTO_PARTICLE:
+			transparent = pt_logic_particle(primitiveID, bary);
+			break;
+		case SBTO_SPRITE:
+			transparent = pt_logic_sprite(primitiveID, bary, hitT);
+			break;
 		}
-		else
-		{
-			acc = blend_over(acc, c);
-		}
+
+		if (transparent.a > 0)
+			update_payload_transparency(ray_payload_effects, transparent, hitT);
 	}
-	return acc;
+
+	return get_payload_transparency(ray_payload_effects);
+}
+
+/* Traces the geometry: trace_geometry_ray's loop, where masked candidates
+ * are kept by pt_logic_masked; true if something was hit */
+bool
+trace_geometry(vec3 origin, vec3 dir, float t_min, int instance_mask)
+{
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.primitive_id = ~0u;
+	ray_payload_geometry.buffer_and_instance_idx = 0;
+	ray_payload_geometry.hit_distance = 0;
+
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, accelerationStructureEXT(global_ubo.tlas), gl_RayFlagsNoneEXT, instance_mask,
+			      origin, t_min, dir, 65536.0);
+
+	while (rayQueryProceedEXT(rayQuery))
+	{
+		uint sbtOffset = rayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetEXT(rayQuery, false);
+		int primitiveID = rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, false);
+		int instanceID = rayQueryGetIntersectionInstanceIdEXT(rayQuery, false);
+		int geometryIndex = rayQueryGetIntersectionGeometryIndexEXT(rayQuery, false);
+		uint instanceCustomIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, false);
+		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rayQuery, false);
+
+		if (sbtOffset == SBTO_MASKED &&
+		    pt_logic_masked(primitiveID, instanceID, geometryIndex, instanceCustomIndex, bary))
+			rayQueryConfirmIntersectionEXT(rayQuery);
+	}
+
+	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
+		return false;
+
+	pt_logic_rchit(ray_payload_geometry,
+		rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
+		rayQueryGetIntersectionInstanceIdEXT(rayQuery, true),
+		rayQueryGetIntersectionGeometryIndexEXT(rayQuery, true),
+		rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
+		rayQueryGetIntersectionTEXT(rayQuery, true),
+		rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
+	return true;
 }
 
 /* writes the pixel: what the ray hit (color, at t_max) and, in albedo
  * mode, the effects in front of it over it */
 void
-store_pixel(ivec2 px, vec3 color, vec3 dir, float t_max, bool effects_over)
+store_pixel(ivec2 px, vec3 color, vec3 origin, vec3 dir, float t_max, bool effects_over)
 {
-	if (effects_over && view.debug_mode == DEBUGVIEW_ALBEDO && view.effects_tlas != uvec2(0u))
+	if (effects_over && global_ubo.debug_view == DEBUGVIEW_ALBEDO && global_ubo.effects_tlas != uvec2(0u))
 	{
-		vec4 effects = trace_effects(dir, t_max);
+		vec4 effects = trace_effects(origin, dir, t_max);
 		color = effects.rgb + (1.0 - effects.a) * color;
 	}
-	imageStore(view_image, px, vec4(color, 1.0));
+	imageStore(IMG_TAA_OUTPUT, px, vec4(color, 1.0));
 }
-
-
-/* ==========================================================================
- * Geometry
- * ========================================================================== */
 
 vec3
 kind_color(uint material_id)
@@ -207,15 +179,16 @@ kind_color(uint material_id)
 void
 main()
 {
-	view = ViewBuffer(push.view).data;
-
-	ivec2 px = ivec2(gl_GlobalInvocationID.xy);
-	if (any(greaterThanEqual(uvec2(px), view.size)))
+	ivec2 px = ivec2(rt_LaunchID.xy);
+	if (px.x >= global_ubo.width || px.y >= global_ubo.height)
 		return;
 
-	vec2 uv = (vec2(px) + 0.5) / vec2(view.size) * 2.0 - 1.0;
-	vec3 dir = normalize(view.forward.xyz + view.right.xyz * uv.x * view.tan_half_fov.x
-			     - view.up.xyz * uv.y * view.tan_half_fov.y);
+	/* the primary ray, as primary_rays.rgen's get_primary_ray */
+	vec2 screen_pos = (vec2(px) + 0.5) / vec2(global_ubo.width, global_ubo.height);
+	vec3 view_dir = projection_screen_to_view(screen_pos, 1.0, false);
+	vec3 dir = normalize((global_ubo.invV * vec4(view_dir, 0)).xyz);
+	vec3 origin = global_ubo.cam_pos.xyz;
+	vec3 forward = global_ubo.invV[2].xyz;
 
 	/* The first-person weapon first: GL draws it over everything (its
 	 * depth range hack keeps it out of walls), so where a ray meets it, it
@@ -225,89 +198,53 @@ main()
 	 * Everything is opaque but cutouts (masked models, a weapon with
 	 * them), whose hits are candidates: kept where the mask's alpha is at
 	 * least 0.5. */
-	rayQueryEXT rq;
-	bool weapon = false;
-	for (int pass = 0; pass < 2; pass++)
+	bool weapon = trace_geometry(origin, dir, 4.0 / max(dot(dir, forward), 1e-3), AS_FLAG_VIEWER_WEAPON);
+	if (!weapon && !trace_geometry(origin, dir, 0.0, 0xff & ~AS_FLAG_VIEWER_WEAPON))
 	{
-		rayQueryInitializeEXT(rq, accelerationStructureEXT(view.tlas), gl_RayFlagsNoneEXT,
-				      (pass == 0) ? AS_FLAG_VIEWER_WEAPON : (0xff & ~AS_FLAG_VIEWER_WEAPON), view.origin.xyz,
-				      (pass == 0) ? 4.0 / max(dot(dir, view.forward.xyz), 1e-3) : 0.0, dir, 65536.0);
-		while (rayQueryProceedEXT(rq))
-		{
-			if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT)
-				continue;
-			TlasInstanceInfo cinfo = TlasInfoBuffer(view.tlas_info).i[uint(rayQueryGetIntersectionInstanceIdEXT(rq, false))];
-			VboPrimitive cprim = PrimitiveBuffer(view.instanced).p[cinfo.prim_offset +
-									      uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false))];
-			if (mask_alpha(cprim, rayQueryGetIntersectionBarycentricsEXT(rq, false)) >= 0.5)
-				rayQueryConfirmIntersectionEXT(rq);
-		}
-		if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
-		{
-			weapon = (pass == 0);
-			break;
-		}
-	}
-
-	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
-	{
-		store_pixel(px, vec3(0.0), dir, 65536.0, true);
+		store_pixel(px, vec3(0.0), origin, dir, 65536.0, true);
 		return;
 	}
 
-	float t = rayQueryGetIntersectionTEXT(rq, true);
-	uint tlas_instance = uint(rayQueryGetIntersectionInstanceIdEXT(rq, true));
-	uint prim_index = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));
-	bool instanced = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true)) == VERTEX_BUFFER_INSTANCED;
-	vec2 bary2 = rayQueryGetIntersectionBarycentricsEXT(rq, true);
-	mat4x3 to_world = rayQueryGetIntersectionObjectToWorldEXT(rq, true);
-	vec3 bary = vec3(1.0 - bary2.x - bary2.y, bary2.x, bary2.y);
+	float t = ray_payload_geometry.hit_distance;
+	Triangle tri = load_and_transform_triangle(ray_payload_geometry.buffer_and_instance_idx >> 16,
+						   uint(ray_payload_geometry.buffer_and_instance_idx & 0xffff),
+						   ray_payload_geometry.primitive_id);
+	vec3 bary;
+	bary.yz = ray_payload_geometry.barycentric;
+	bary.x = 1.0 - bary.y - bary.z;
 
-	/* the world's and brush models' triangles are in the world buffer, the
-	 * alias models' (already in world space) in this frame's instanced
-	 * buffer, where each triangle names its model instance */
-	TlasInstanceInfo info = TlasInfoBuffer(view.tlas_info).i[tlas_instance];
-	VboPrimitive prim = PrimitiveBuffer(instanced ? view.instanced : view.primitives).p[info.prim_offset + prim_index];
-	int model_instance = instanced ? int(prim.instance) : info.model_instance;
+	/* the world's triangles have no instance, the brush and alias models'
+	 * name theirs */
+	int model_instance = (tri.instance_index == ~0u) ? -1 : int(tri.instance_index);
 
-	/* vertex normals and world positions, through the instance's transform */
-	mat3 rot = mat3(to_world);
-	vec3 normal = normalize(rot * (decode_normal(prim.normals.x) * bary.x + decode_normal(prim.normals.y) * bary.y +
-				       decode_normal(prim.normals.z) * bary.z));
-	vec3 p0 = to_world * vec4(prim.pos0, 1.0);
-	vec3 p1 = to_world * vec4(prim.pos1, 1.0);
-	vec3 p2 = to_world * vec4(prim.pos2, 1.0);
-	vec2 tc = prim.uv0 * bary.x + prim.uv1 * bary.y + prim.uv2 * bary.z;
+	vec3 normal = normalize(tri.normals * bary);
+	vec2 tc = tri.tex_coords * bary;
 	float facing = abs(dot(normal, dir));
 
-	/* the texture frame: time, and the alternate animation for brush
-	 * entities whose frame is not 0 */
-	bool alternate = false;
-	if (model_instance >= 0)
-		alternate = (InstanceBuffer(view.instances).m[model_instance].alpha_and_frame >> 16) != 0u;
-	uint material = animate_material(prim.material_id, view.anim_frame, alternate);
+	uint material = tri.material_id;	/* animated, incl. alternate frames */
 	MaterialInfo minfo = get_material_info(material);
 
 	/* mip level from a ray cone: the pixel's footprint at the hit against
-	 * the triangle's texel density */
-	vec2 tex_size = vec2(textureSize(textures[nonuniformEXT(minfo.base_texture)], 0));
-	float texel_area = abs(determinant(mat2(prim.uv1 - prim.uv0, prim.uv2 - prim.uv0))) * tex_size.x * tex_size.y;
-	float world_area = length(cross(p1 - p0, p2 - p0));
-	float cone_width = t * 2.0 * view.tan_half_fov.y / float(view.size.y);
+	 * the triangle's texel density; P[1][1] is 1 / tan(fov_y / 2), negated */
+	vec2 tex_size = vec2(global_textureSize(minfo.base_texture, 0));
+	float texel_area = abs(determinant(mat2(tri.tex_coords[1] - tri.tex_coords[0], tri.tex_coords[2] - tri.tex_coords[0]))) *
+			   tex_size.x * tex_size.y;
+	float world_area = length(cross(tri.positions[1] - tri.positions[0], tri.positions[2] - tri.positions[0]));
+	float cone_width = t * 2.0 / (abs(global_ubo.P[1][1]) * float(global_ubo.height));
 	float lod = 0.5 * log2(max(texel_area, 1e-8) / max(world_area, 1e-8)) + log2(cone_width / max(facing, 0.05));
-	vec3 albedo = textureLod(textures[nonuniformEXT(minfo.base_texture)], tc, max(lod, 0.0)).rgb;
+	vec3 albedo = global_textureLod(minfo.base_texture, tc, max(lod, 0.0)).rgb;
 
 	/* a model's colorshade tint multiplies GL's vertex light (then clamped
 	 * to 1); its values reach 10, so show its hue, scaled to at most 1 */
 	if (model_instance >= 0)
 	{
-		vec3 tint = InstanceBuffer(view.instances).m[model_instance].tint;
+		vec3 tint = instance_buffer.model_instances[model_instance].tint;
 		albedo *= tint / max(max(tint.r, max(tint.g, tint.b)), 1.0);
 	}
 
 	float shade = 0.5 + 0.5 * facing;
 	vec3 color;
-	switch (view.debug_mode)
+	switch (global_ubo.debug_view)
 	{
 	case DEBUGVIEW_NORMALS:
 		color = normal * 0.5 + 0.5;
@@ -321,28 +258,17 @@ main()
 		color = ((model_instance < 0) ? vec3(0.5) : hash_color(uint(model_instance))) * shade;
 		break;
 	case DEBUGVIEW_CLUSTERS:
-		color = ((prim.cluster < 0) ? vec3(0.5) : hash_color(uint(prim.cluster))) * shade;
-		if (!pvs_visible(view.view_cluster, prim.cluster))
+		/* a brush entity's triangles are in its instance's cluster */
+		color = ((tri.cluster < 0) ? vec3(0.5) : hash_color(uint(tri.cluster))) * shade;
+		if (!pvs_visible(global_ubo.view_cluster, tri.cluster))
 			color *= 0.25;	/* not in the camera's PVS */
 		break;
 	case DEBUGVIEW_MOTION:
 	{
-		/* how far the point moved since the last frame: the model
+		/* how far the point moved since the last frame (the model
 		 * triangles carry it per vertex, brush entities have last frame's
-		 * transform; gray = still, blue to yellow = up to 4 units */
-		vec3 motion = vec3(0.0);
-		if (instanced)
-		{
-			motion = unpackHalf4x16(prim.custom0).xyz * bary.x + unpackHalf4x16(prim.custom1).xyz * bary.y +
-				 unpackHalf4x16(prim.custom2).xyz * bary.z;
-		}
-		else if (model_instance >= 0)
-		{
-			ModelInstance mi = InstanceBuffer(view.instances).m[model_instance];
-			vec3 p = view.origin.xyz + dir * t;
-			motion = vec3(mi.transform_prev * (inverse(mi.transform) * vec4(p, 1.0))) - p;
-		}
-		float len = length(motion);
+		 * transform); gray = still, blue to yellow = up to 4 units */
+		float len = length(tri.positions_prev * bary - tri.positions * bary);
 		color = (len < 0.001) ? vec3(0.3) : mix(vec3(0.1, 0.2, 1.0), vec3(1.0, 1.0, 0.0), clamp(len / 4.0, 0.0, 1.0));
 		color *= shade;
 		break;
@@ -352,5 +278,5 @@ main()
 		break;
 	}
 
-	store_pixel(px, color, dir, t, !weapon);
+	store_pixel(px, color, origin, dir, t, !weapon);
 }

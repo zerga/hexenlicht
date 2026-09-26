@@ -16,7 +16,7 @@ see [Tracking](#tracking).
 | Topic | Decision |
 |---|---|
 | Base engine | Hammer of Thyrion (uHexen2), tracking upstream `sezero/uhexen2` |
-| Renderer | Own Vulkan path tracer, reusing code from NVIDIA's Quake II RTX (`src/refresh/vkpt`, GPLv2-or-later). Q2RTX was archived on 2025-12-11: we take code from it, we do not track it |
+| Renderer | Own Vulkan path tracer, reusing code from NVIDIA's Quake II RTX (`src/refresh/vkpt`, GPLv2-or-later). Q2RTX was archived on 2025-12-11: we take code from it, we do not track it. Ray queries only (Q2RTX's ray-query path, no ray-tracing pipelines); its module map and the import rules are in [Q2RTX.md](Q2RTX.md) |
 | RTX Remix | Not used |
 | Platform | Windows, x64 only, Win32 window/input layer (no SDL for now) |
 | Toolchain | CMake + MSVC, developed in CLion. Existing Makefiles stay untouched |

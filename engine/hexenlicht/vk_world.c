@@ -2,7 +2,7 @@
  *
  * On map load, every surface of the world and of its brush submodels (*1,
  * *2, ...) becomes triangles in Quake II RTX's VboPrimitive format (see
- * shaders/hl_shared.h): positions, texture coordinates, flat normals,
+ * shaders/vertex_buffer.h): positions, texture coordinates, flat normals,
  * tangents, a material ID (kind, flags, material table index) and, for
  * the world, the vis leaf the triangle is in. Each model's triangles are
  * grouped into opaque, transparent and sky ranges, for the acceleration
@@ -471,7 +471,7 @@ static texture_t *GL_TextureAnimation (texture_t *base, qboolean alternate, doub
 	return base;
 }
 
-/* the table walk of material.glsl's animate_material */
+/* the table walk of vertex_buffer.h's animate_material */
 static int AnimateMaterial (int material, int frame, qboolean alternate)
 {
 	const vk_material_t	*m = VK_GetMaterial (material);

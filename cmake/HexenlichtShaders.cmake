@@ -9,6 +9,8 @@
 # .rgen, .rchit, .rmiss, ...). Files included with #include are tracked
 # through glslang's depfile, so editing an include rebuilds its users.
 # Debug builds embed debug information (-g) for RenderDoc / Nsight.
+# VKPT_SHADER is defined in every shader, as in Quake II RTX's build: the
+# headers shared with C use it to tell shaders from C.
 
 set(HEXENLICHT_SHADER_DIR ${CMAKE_SOURCE_DIR}/engine/hexenlicht/shaders)
 
@@ -23,6 +25,7 @@ function(hexenlicht_add_shaders target)
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}
 			COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}
 				-V --target-env vulkan1.3
+				-DVKPT_SHADER
 				$<$<CONFIG:Debug>:-g>
 				-I${HEXENLICHT_SHADER_DIR}
 				--depfile ${out}.d

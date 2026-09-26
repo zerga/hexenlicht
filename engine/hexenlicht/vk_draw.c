@@ -370,12 +370,18 @@ void VK_InitDraw (void)
 	Draw_CreateBuffers ();
 }
 
+void VK_DestroyDrawPipeline (void)
+{
+	if (draw_pipeline)
+		vkDestroyPipeline (vk.device, draw_pipeline, NULL);
+	draw_pipeline = VK_NULL_HANDLE;
+}
+
 void VK_ShutdownDraw (void)
 {
 	int	i;
 
-	if (draw_pipeline)
-		vkDestroyPipeline (vk.device, draw_pipeline, NULL);
+	VK_DestroyDrawPipeline ();
 	if (draw_layout)
 		vkDestroyPipelineLayout (vk.device, draw_layout, NULL);
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)

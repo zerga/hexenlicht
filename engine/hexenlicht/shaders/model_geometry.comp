@@ -35,7 +35,7 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 
 #include "hl_shared.h"
-#include "normal.glsl"
+#include "utils.glsl"
 
 #define LOCAL_SIZE_X	256
 
