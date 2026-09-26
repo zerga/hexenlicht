@@ -71,6 +71,13 @@ float VK_NumBounceRays (void)
 	return (n == 0.5f) ? 0.5f : q_max (0.0f, q_min (2.0f, roundf (n)));
 }
 
+/* pt_reflect_refract as Quake II RTX's evaluate_reference_mode takes it:
+ * the reflection and refraction passes, 0 to 10 */
+int VK_ReflectRefractPasses (void)
+{
+	return q_min (10, q_max (0, cvar_pt_reflect_refract.integer));
+}
+
 /* the camera and size become last frame's, as Quake II RTX's prepare_ubo keeps them */
 static void KeepAsPrevious (void)
 {
@@ -142,6 +149,7 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	/* the bounces vk_view.c dispatches (indirect_lighting.rgen); no MIS
 	 * with the specular bounce without specular rays */
 	ubo.pt_num_bounce_rays = VK_NumBounceRays ();
+	ubo.pt_reflect_refract = (float)VK_ReflectRefractPasses ();	/* the passes vk_view.c dispatches */
 	if (ubo.pt_num_bounce_rays < 1.0f)
 		ubo.pt_specular_mis = 0.0f;
 

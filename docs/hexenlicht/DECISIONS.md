@@ -52,7 +52,7 @@ story settles something a later session must not undo; mark a line
 | G9 | `cl.light_level` (sent to the server: monster awareness, Assassin cloak) is computed as GL's `R_DrawViewModel` does | 2.8 |
 | G10 | Particles are GL's camera-facing triangles with its dot texture and colors; sprites all five orientation types, unlit; `SPR_FACING_UPRIGHT` uses the sprite's own direction (GL's stale `modelorg`; unused by the game) | 2.5 (#27, PR #112) |
 | G11 | Effects live in a second, effects-only TLAS and never block rays through the main TLAS | 2.5 |
-| G12 | Translucent models and surfaces are opaque in the debug view until 6.4 (the main TLAS is force-opaque except cutouts, so water and translucent surfaces hide the effects behind them); a translucent weapon will need effects blended behind it | 2.4b, 2.8 |
+| G12 | Translucent models and surfaces are opaque in the debug view until 6.4 (the main TLAS is force-opaque except cutouts, so water and translucent surfaces hide the effects behind them); a translucent weapon will need effects blended behind it; *since 3.5b translucent surfaces and models are seen through, effects behind them show (R33); water stays opaque (R31)* | 2.4b, 2.8 |
 | G13 | The sunstaff beam report (2.10) was not a bug: the engines' `screenshot` capture different frames; compare paused | 2.10 (#111, PR #115) |
 
 ## Path tracer
@@ -89,11 +89,14 @@ story settles something a later session must not undo; mark a line
 | R28 | The first bounce stores the specular ray's hit distance for DLSS Ray Reconstruction (`PT_SPECULAR_HIT_DIST`, r16f, 0 without a specular ray: a diffuse bounce, no surface, lava, the rows half resolution skips); 3.9 decides whether RR needs more | 3.5a |
 | R29 | `debug_view.comp` runs before the bounces for the G-buffer's modes (with two bounces the first stores its hit into the shading position), after compositing for the lighting's | 3.5a |
 | R30 | 3.5 is split: 3.5a bounces, 3.5b the reflection and refraction pass (#121) with the water decision (GL draws water opaque; lean: GL's until 6.5) | 3.5 proposal |
+| R31 | Water and slime stay opaque and textured as GL draws them: the reflection and refraction pass skips them, and vertical ones stay water (Q2RTX makes vertical water glass for its force fields; Hexen II's vertical turbulent surfaces are walls); Q2RTX's physical water waits for 6.5 | 3.5b (#121) |
+| R32 | The weapon is in no reflection or refraction ray (as R20, R27); a ray through a translucent weapon sees the world | 3.5b |
+| R33 | Translucent surfaces and models (alpha < 1) are seen through by Q2RTX's `reflect_refract.rgen` (`pt_reflect_refract` 2), whose rays cull back faces as Q2RTX's (the inside faces of turbulent volumes; two-sided `EF_SPECIAL_TRANS` models lose their back faces behind a translucent surface) and keep the translucent group in the last pass too (it holds water, slime and alpha-1 models); a ray through a translucent weapon starts at the eye; a ray leaves a liquid through a translucent turbulent surface; 6.4 checks each translucency type against GL | 3.5b |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
-(3.5b, 6.5), specular hit distance (3.9), checkerboard fields and RR (3.9),
+and physical water (6.5), specular hit distance (3.9), checkerboard fields and RR (3.9),
 model tint brightness (E4), instance history for A-SVGF (3.6), effects
 brightness (3.7), lights inside solid (4.1), dynamic lights in the light
 lists (4.4), smooth surfaces and sphere lights (E5, 4.5), dark albedo (E4,

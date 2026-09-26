@@ -40,7 +40,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - no readback (3.7), no god rays (not planned), no PVS overlay (it
  *    needs the light buffer; r_debugview 5 shows the PVS);
  *  - the water keeps its geometric normal while there is no water normal
- *    map (Quake II RTX's comes with its media). */
+ *    map (Quake II RTX's comes with its media);
+ *  - vertical water and slime stay water (3.5b): Quake II RTX makes them
+ *    glass for its force fields, but Hexen II's vertical turbulent surfaces
+ *    are walls (egypt1's skull and rune walls), which reflect_refract.rgen
+ *    would make see-through. */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -410,8 +414,8 @@ main()
 		if(global_ubo.water_normal_texture != 0)
 			normal = get_water_normal(material_id, geo_normal, triangle.tangents[0], position, false);
 
-		if(abs(geo_normal.z) < 0.1)  // hack to detect actual water vs. vertical force fields
-			material_id = (material_id & ~MATERIAL_KIND_MASK) | MATERIAL_KIND_GLASS;
+		// Hexenlicht: a vertical one stays water (see the top); Quake II RTX makes it
+		// glass: "hack to detect actual water vs. vertical force fields"
 	}
 		
 	// Store the surface parameters into the G-buffer for the lighting shaders
