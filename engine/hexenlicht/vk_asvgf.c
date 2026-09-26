@@ -172,6 +172,7 @@ void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, q
 	CreatePipelines ();
 
 	/* the gradients: made at the gradient samples, then blurred */
+	VK_ProfilerStart (cmd, PROF_DENOISE_GRADIENTS);
 	VK_DispatchCompute (cmd, gradient_pipeline, width / GRAD_DWN, height / GRAD_DWN, 16);
 	VK_ComputeBarrier (cmd);
 	for (i = 0; i < GRADIENT_ATROUS_ITERATIONS; i++)
@@ -179,13 +180,17 @@ void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, q
 		DispatchIteration (cmd, gradient_atrous_pipeline, i, width, height);
 		VK_ComputeBarrier (cmd);
 	}
+	VK_ProfilerStop (cmd, PROF_DENOISE_GRADIENTS);
 
 	/* the temporal filter */
+	VK_ProfilerStart (cmd, PROF_DENOISE_TEMPORAL);
 	VK_DispatchCompute (cmd, temporal_pipeline, width, height, TEMPORAL_GROUP_SIZE);
 	VK_ComputeBarrier (cmd);
+	VK_ProfilerStop (cmd, PROF_DENOISE_TEMPORAL);
 
 	/* the spatial filter; an LF iteration and the HF/specular one of the
 	 * same number don't share images, until the last, which composites */
+	VK_ProfilerStart (cmd, PROF_DENOISE_ATROUS);
 	for (i = 0; i < ATROUS_ITERATIONS; i++)
 	{
 		if (enable_lf)
@@ -197,6 +202,7 @@ void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, q
 		VK_DispatchCompute (cmd, atrous_pipelines[i], width, height, 16);
 		VK_ComputeBarrier (cmd);
 	}
+	VK_ProfilerStop (cmd, PROF_DENOISE_ATROUS);
 }
 
 /* no history for the next frame's filters */

@@ -97,7 +97,7 @@ this repository) or one at a time with
 | `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); `vkpt_taa` in `vk_upscale.c` (3.8) | 3.6, 3.8 |
 | `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | `vk_tonemap.c`, `vk_bloom.c` (3.7: SDR only; no under-water bloom or menu blur; the effects scaled by the exposure with one factor for particles and sprites, `pt_particle_brightness` 15) | 3.7 |
 | `fsr.c`, `fsr/` | AMD FSR 1 | `vk_upscale.c` (3.8: SDR and FP32 pipelines only; AMD's v1.0.2 headers in `libs/fsr1` instead of Q2RTX's `fsr/`, whose `ffx_fsr1.h` predates v1.0.2's RCAS fix) | 3.8 |
-| `profiler.c` | GPU timers | 3.11 | 3.11 |
+| `profiler.c` | GPU timers | `vk_profiler.c` (3.11: our pass list; both timestamps after all earlier commands; a ring of 1000 samples per entry; the overlay with the game's font at `vid_uiscale`, no `profiler_scale`; `vk_profiler` prints, `vk_benchmark` lifts the frame cap) | 3.11 |
 | `physical_sky.c`, `precomputed_sky.c` | physical sky, sun | 4.6 | 4.6 |
 | `conversion.c/.h`, `dds.h` | half floats, DDS | as needed; DDS 5.2 | 5.2 |
 | `shadow_map.c`, `god_rays.c` | sun shadow map, volumetric light | not planned; reconsider at 4.6 | — |

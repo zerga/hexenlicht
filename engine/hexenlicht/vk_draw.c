@@ -468,17 +468,21 @@ void GL_EndRendering (void)
 {
 	if (draw_depth <= 0)
 		return;
+	if (draw_depth == 1 && draw_frame)
+		VK_DrawProfiler ();	/* over the 2D (profiler 1) */
 	if (--draw_depth > 0)
 		return;		/* nested */
 
 	if (draw_frame)
 	{
 		/* the 3D view (black where there is none), then the 2D */
+		VK_ProfilerStart (vk.frames[vk.frame_index].cmd, PROF_COMPOSITE);
 		VK_BeginSwapchainRendering (VK_ATTACHMENT_LOAD_OP_CLEAR);
 		VK_DrawView3D ();
 		if (num_quads)
 			Draw_Flush ();
 		VK_EndSwapchainRendering ();
+		VK_ProfilerStop (vk.frames[vk.frame_index].cmd, PROF_COMPOSITE);
 		draw_frame = false;
 		VK_EndFrame ();
 	}
@@ -1057,6 +1061,12 @@ void Draw_TileClear (int x, int y, int w, int h)
 void Draw_Fill (int x, int y, int w, int h, int c)
 {
 	Draw_Quad (x, y, x+w, y+h, 0, 0, 1, 1, 0, Draw_PaletteColor (c, 255), false);
+}
+
+/* a translucent black box behind text (vk_profiler.c's table) */
+void VK_DrawShade (int x, int y, int w, int h, float alpha)
+{
+	Draw_Quad (x, y, x+w, y+h, 0, 0, 1, 1, 0, Draw_PackColor (0, 0, 0, (int)(alpha * 255.0f)), false);
 }
 
 void Draw_FadeScreen (void)

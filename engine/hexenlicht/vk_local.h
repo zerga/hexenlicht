@@ -117,6 +117,59 @@ void VK_InitDraw (void);
 void Draw_ClearCachedPics (void);	/* after texture slots were purged */
 void VK_ShutdownDraw (void);
 void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
+void VK_DrawShade (int x, int y, int w, int h, float alpha);	/* a translucent black box, 2D coordinates */
+
+/* vk_profiler.c: GPU timers (Quake II RTX's profiler.c). A pass is
+ * bracketed by VK_ProfilerStart and VK_ProfilerStop with its PROF_* entry
+ * (nested in the list's order; a debug label each with the validation layer);
+ * VK_BeginFrame and VK_EndFrame bracket the frame, and read the timings of
+ * the frame in flight's last run. profiler 1 draws them (VK_DrawProfiler,
+ * from GL_EndRendering), vk_profiler prints them; vk_benchmark 1 lifts the
+ * 72 fps cap, the unfocused window's sleep and the throttle for measuring. */
+#define PROFILER_LIST \
+	PROF_DO(FRAME,			"frame",		0) \
+	PROF_DO(MODELS,			"model geometry",	1) \
+	PROF_DO(BLAS,			"dynamic BLASes",	1) \
+	PROF_DO(TLAS,			"TLAS",			1) \
+	PROF_DO(VIEW,			"3D view",		1) \
+	PROF_DO(PRIMARY,		"primary rays",		2) \
+	PROF_DO(REFLECT,		"reflect/refract",	2) \
+	PROF_DO(GRADIENT,		"gradient reproject",	2) \
+	PROF_DO(DIRECT,			"direct lighting",	2) \
+	PROF_DO(DEBUG,			"debug view",		2) \
+	PROF_DO(BOUNCE1,		"bounce 1",		2) \
+	PROF_DO(BOUNCE2,		"bounce 2",		2) \
+	PROF_DO(DENOISER,		"denoiser",		2) \
+	PROF_DO(DENOISE_GRADIENTS,	"gradients",		3) \
+	PROF_DO(DENOISE_TEMPORAL,	"temporal",		3) \
+	PROF_DO(DENOISE_ATROUS,		"a-trous",		3) \
+	PROF_DO(COMPOSITING,		"compositing",		2) \
+	PROF_DO(INTERLEAVE,		"interleave",		2) \
+	PROF_DO(UPSCALE,		"TAA",			2) \
+	PROF_DO(BLOOM,			"bloom",		2) \
+	PROF_DO(TONEMAP,		"tone mapping",		2) \
+	PROF_DO(FSR,			"FSR",			2) \
+	PROF_DO(COMPOSITE,		"composite and 2D",	1)
+
+enum
+{
+#define PROF_DO(id, name, indent) PROF_##id,
+	PROFILER_LIST
+#undef PROF_DO
+	NUM_PROF_ENTRIES
+};
+
+void VK_InitProfiler (void);
+void VK_ShutdownProfiler (void);
+void VK_ProfilerBeginFrame (VkCommandBuffer cmd);	/* VK_BeginFrame */
+void VK_ProfilerEndFrame (VkCommandBuffer cmd);		/* VK_EndFrame */
+void VK_ProfilerStart (VkCommandBuffer cmd, int entry);
+void VK_ProfilerStartNamed (VkCommandBuffer cmd, int entry, const char *name);	/* name: a string that lasts */
+void VK_ProfilerLabel (int entry, const char *name);	/* renames a running entry for this frame */
+void VK_ProfilerStop (VkCommandBuffer cmd, int entry);
+qboolean VK_ProfilerTime (int entry, double *last, double *average);	/* ms; false: not in the latest frame read */
+void VK_DrawProfiler (void);		/* GL_EndRendering, before the 2D batch is drawn */
+qboolean VK_Benchmark (void);		/* vk_benchmark: also host.c and sys_win.c */
 
 /* vk_swapchain.c: capture the next presented frame into a TGA file
  * (gl_screen.c's "screenshot" command) */
