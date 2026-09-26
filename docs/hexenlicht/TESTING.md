@@ -73,7 +73,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
    changing anything.
 2. Run the same script (every `r_debugview` mode on the regression maps,
    paused) on both builds, twice on the old one (`hl_run.ps1 -Bin
-   ..\hexenlicht-main\build\windows-debug\bin` runs the old build).
+   ..\hexenlicht-main\build\windows-debug\bin` runs the old build). Set
+   `flt_enable 0` unless the denoiser is what is compared: with it the
+   G-buffer modes hold the gradient samples' last-frame values in up to
+   one pixel per 3x3, and mode 14 changes every frame.
 3. `tga_diff.ps1 -A old -B new -MaxY 470` compares above the HUD rows;
    `-Noise old2` skips pixels that differ between two old runs; `-DiffDir`
    writes images with differing pixels in red. Expect "identical" or ±1
@@ -140,8 +143,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   (180° with `cl_yawspeed 100`): the light's shadows face the camera
   (demo1: tombstones, tree, statue). A quad lights only what is in front of
   it: after `+back` the camera is behind it. Modes 15 and 16 show the
-  direct diffuse and specular lighting. The image is noisy (one sample per
-  pixel, no denoiser until 3.6) and low-poly models show grainy
+  direct diffuse and specular lighting. With `flt_enable 0` the image is
+  noisy (one sample per pixel), and low-poly models show grainy
   self-shadowing at grazing angles.
 - **Many lights and the light lists:** `vk_testlight entities` puts a
   sphere at every light entity; `vk_lights` prints the lists (demo1: 8270
@@ -188,6 +191,28 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   as water (blue) instead of glass. romeric2's centre isn't repeatable
   between runs (its rotating brushes): mask it with a second run
   (`tga_diff.ps1 -Noise`).
+- **Denoiser (3.6):** `flt_enable 0` must match the build before it
+  (3.6: demo1, cath, romeric2 × modes 0 1 2 3 9 15 16 18, paused, `vk_testlight
+  entities`: the G-buffer modes identical everywhere, demo1 in all modes;
+  cath's and romeric2's lighting modes differ between runs of the same
+  build in a few dozen to a few hundred pixels, in `main` too, and
+  `-Noise` can't mask it: compare several runs of each). Checks, paused
+  with test lights, `r_debugview 0`: a denoised shot against the average
+  of 16–24 `flt_enable 0` shots (`tga_mean.ps1`), **at a sixteenth of the
+  lights' intensity** (`vk_testlight entities 62.5`): at full intensity the
+  raw frames clip at 1 before the screenshot and their average reads
+  4–10 % dark; and with `pt_fake_roughness_threshold 1` or
+  `pt_num_bounce_rays 0`, because only the denoiser gives rough surfaces
+  indirect specular (3.6: +2 % demo1, +5 % the cathedral's font). Paused,
+  `flt_show_gradients 1` must show no gradients and `r_debugview 20` full
+  history (yellow); after adding a light (`vk_testlight sphere 8 2000` at
+  the eye) the image follows within a frame or two. Moving: `+right`,
+  `+forward` (demo1, romeric2), village3's sheep: `r_debugview 20` keeps
+  history on moving surfaces, drops it at disocclusions and on the bobbing
+  weapon; `viewsize` changes and `vid_mode`/`vid_restart` (the history
+  starts over: dark, then yellow within 30 frames) show no stale image.
+  egypt5's start walks into a mural whose close-up texture looks blurred
+  in `r_debugview 1` too: not the denoiser.
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

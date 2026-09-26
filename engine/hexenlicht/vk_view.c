@@ -9,11 +9,12 @@
  * its two checkerboard fields), reflect_refract.rgen follows the paths
  * through translucent surfaces and off mirrors and glass pt_reflect_refract
  * times (the G-buffer then holds what is seen through or in them),
- * direct_lighting.rgen lights it,
- * indirect_lighting.rgen adds pt_num_bounce_rays bounces (0, 0.5 = half
- * resolution, 1, 2), compositing.comp combines the lighting with the
- * surfaces and checkerboard_interleave.comp puts the fields into the
- * screen layout; for now debug_view.comp shows the lit image or a G-buffer
+ * direct_lighting.rgen lights it (after the denoiser's gradient samples
+ * are placed, vk_asvgf.c), indirect_lighting.rgen adds pt_num_bounce_rays
+ * bounces (0, 0.5 = half resolution, 1, 2), the denoiser (flt_enable 1)
+ * or compositing.comp combines the lighting with the surfaces and
+ * checkerboard_interleave.comp puts the fields into the screen layout;
+ * for now debug_view.comp shows the lit image or a G-buffer
  * or lighting channel, selected by r_debugview (the G-buffer's before the
  * bounces: with two, the first stores its hit into the shading position;
  * the rest of epic E3's passes come between them). GL_EndRendering then
@@ -50,8 +51,8 @@
  * roughness/metallic/specular factor, 11 diffuse and 12 specular albedo, 13
  * effects, 14 blue noise, 15 direct diffuse and 16 specular lighting
  * (direct and bounced), 17 light list lengths, 18 indirect diffuse
- * lighting, 19 specular hit distances (shaders/hl_shared.h's
- * DEBUGVIEW_*); 1 until the maps have lights (4.1) */
+ * lighting, 19 specular hit distances, 20 the denoiser's history length
+ * (shaders/hl_shared.h's DEBUGVIEW_*); 1 until the maps have lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
@@ -212,6 +213,20 @@ static qboolean ViewRect (VkRect2D *r)
 	return true;
 }
 
+/* whether the 3D view can be drawn this frame, into view_rect, rendered
+ * *width pixels wide */
+static qboolean ViewReady (uint32_t *width)
+{
+	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
+		return false;
+	if (!ViewRect (&view_rect) || !VK_ImagesReady ())
+		return false;
+	/* the render targets have the swapchain's size (the width rounded up
+	 * to even, as the view's for rendering), the view fits in them */
+	*width = (view_rect.extent.width + 1) & ~1u;
+	return *width <= vk_image_extent.width && view_rect.extent.height <= vk_image_extent.height;
+}
+
 void VK_RenderView3D (void)
 {
 	VkCommandBuffer		cmd;
@@ -220,17 +235,16 @@ void VK_RenderView3D (void)
 	uint32_t		width;
 	float			num_bounces;
 	int			num_reflect, i, mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
+	qboolean		denoise = VK_DenoiserEnabled ();
 
 	view_drawn = false;
-	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
+	if (!ViewReady (&width))
+	{
+		/* the images fall behind the entities' history (vk_instance.c),
+		 * which the denoiser's history must keep in step with */
+		VK_ResetDenoiserHistory ();
 		return;
-	if (!ViewRect (&view_rect) || !VK_ImagesReady ())
-		return;
-	/* the render targets have the swapchain's size (the width rounded up
-	 * to even, as the view's for rendering), the view fits in them */
-	width = (view_rect.extent.width + 1) & ~1u;
-	if (width > vk_image_extent.width || view_rect.extent.height > vk_image_extent.height)
-		return;
+	}
 
 	VK_PrepareUBO (view_rect.extent.width, view_rect.extent.height, q_min (mode, DEBUGVIEW_MAX));
 
@@ -279,6 +293,10 @@ void VK_RenderView3D (void)
 		VK_ComputeBarrier (cmd);
 	}
 	push.bounce = 0;
+	/* the denoiser's gradient samples: surfaces seen last frame, which the
+	 * lighting passes shade as last frame did (vk_asvgf.c) */
+	if (denoise)
+		VK_GradientReproject (cmd, width, view_rect.extent.height);
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
 	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, view_rect.extent.height, 2);
 	VK_ComputeBarrier (cmd);
@@ -300,16 +318,27 @@ void VK_RenderView3D (void)
 				 (num_bounces == 0.5f) ? (view_rect.extent.height + 1) / 2 : view_rect.extent.height, 2);
 		VK_ComputeBarrier (cmd);
 	}
-	/* the lighting times the surfaces, with the effects over them (no
-	 * denoiser until 3.6), then the fields interleaved into FLAT_COLOR */
-	VK_DispatchCompute (cmd, compositing_pipeline, width, view_rect.extent.height, 16);
-	VK_ComputeBarrier (cmd);
+	/* the lighting times the surfaces, with the effects over them, into
+	 * ASVGF_COLOR: denoised (the denoiser's last filter composites) or as
+	 * it is (compositing.comp); then the fields interleaved into
+	 * FLAT_COLOR, the checkerboard of translucent surfaces blurred when
+	 * denoised */
+	if (denoise)
+	{
+		VK_DenoiseLighting (cmd, width, view_rect.extent.height, num_bounces >= 0.5f);
+	}
+	else
+	{
+		VK_DispatchCompute (cmd, compositing_pipeline, width, view_rect.extent.height, 16);
+		VK_ComputeBarrier (cmd);
+	}
 	VK_DispatchCompute (cmd, interleave_pipeline, width, view_rect.extent.height, 16);
 	VK_ComputeBarrier (cmd);
 	if (DEBUGVIEW_READS_LIGHTING (mode))
 		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	VK_EndDenoiserFrame (denoise);
 	view_drawn = true;
 }
 

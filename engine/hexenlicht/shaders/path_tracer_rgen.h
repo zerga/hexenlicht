@@ -29,9 +29,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    explosions come with their story (6.3), no effects TLAS = no effects;
  *  - get_direct_illumination: the light statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
- *    without a light (Quake II RTX's has t_max < t_min); left out until
- *    their passes: sunlight (get_sunlight, 4.6) and the gradient samples of
- *    the denoiser (get_is_gradient is false until 3.6);
+ *    without a light (Quake II RTX's has t_max < t_min); no sunlight until
+ *    the sky and sun (get_sunlight, 4.6);
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -902,10 +901,19 @@ vec3 get_emissive_shell(uint material_id, uint shell)
     return c;
 }
 
-// Hexenlicht: no gradient samples until the denoiser (3.6) brings Quake II RTX's
-// get_is_gradient (which reads TEX_ASVGF_GRAD_SMPL_POS_A)
 bool get_is_gradient(ivec2 ipos)
 {
+	if(global_ubo.flt_enable != 0)
+	{
+		uint u = texelFetch(TEX_ASVGF_GRAD_SMPL_POS_A, ipos / GRAD_DWN, 0).r;
+
+		ivec2 grad_strata_pos = ivec2(
+				u >> (STRATUM_OFFSET_SHIFT * 0),
+				u >> (STRATUM_OFFSET_SHIFT * 1)) & STRATUM_OFFSET_MASK;
+
+		return (u > 0 && all(equal(grad_strata_pos, ipos % GRAD_DWN)));
+	}
+
 	return false;
 }
 

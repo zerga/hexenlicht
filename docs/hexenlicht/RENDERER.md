@@ -13,8 +13,8 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
-[Path tracer framework](#path-tracer-framework) · [3D view](#3d-view-vk_viewc) ·
-[Other](#other) · [Console commands](#console-commands)
+[Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
+[3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) · [Other](#other) · [Console commands](#console-commands)
 
 ## Build target
 
@@ -254,8 +254,15 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   (frame groups by `cl.time / interval`, no syncbase).
 - **Entity history** (dynamic entities by number, static by index, temporary
   entities by address in a small hash table; reset when the model changes or
-  the entity wasn't in the last frame) holds last frame's transform and the
-  animation.
+  the entity wasn't in the last frame) holds last frame's transform, the
+  animation and the entity's instance index.
+- **Instance map** (3.6, for the denoiser's gradient samples): after the
+  `MAX_MODEL_INSTANCES` instances the instance buffer holds, for each of
+  last frame's instances, its index this frame (~0 = gone; Q2RTX's
+  `model_prev_to_current`, read as `instance_buffer.model_prev_to_current`):
+  an entity continues when its history does (drawn last frame, same model;
+  a teleport too). Temporary entities map as approximately as their
+  history (beam segments are made anew every frame).
 - **`r_lerpmodels 1`** (default, archived): the instance blends the previous
   pose into the current one (Q2RTX's `prim_offset_*_pose_*_frame` as pose
   vertex offsets, `pose_lerp_*` = the previous pose's weight) over the
@@ -411,10 +418,12 @@ bindings.
   by device address; `env_map` is black until 4.6; `get_material` tints a
   model's base color with its `colorshade` hue; 3.3: shadow and caustic rays
   and `get_direct_illumination`, since 3.4 with the light statistics per
-  list entry; no sunlight until 4.6, `get_is_gradient` is false until 3.6),
+  list entry; no sunlight until 4.6; 3.6: Q2RTX's `get_is_gradient`, the
+  denoiser's gradient samples),
   `light_lists.h` (3.3: Q2RTX's polygon and sphere light sampling; 3.4:
   spheres in the light lists, the statistics per list entry; a list's
-  current light count instead of the gradient history, no sky lights),
+  current light count instead of Q2RTX's light-count history, which only
+  lists that change every frame need, no sky lights),
   `brdf.glsl` (GGX, `get_reflectivity`, `composite_color`).
 - **Random numbers:** Q2RTX's `get_rng` over blue noise: Christoph Peters'
   CC0 textures (`libs/bluenoise`, 64 of 64x64, 16-bit RGBA; copied next to
@@ -439,9 +448,14 @@ bindings.
   [3D view](#3d-view-vk_viewc)) and the lighting's (3.3: `PT_COLOR_LF_SH`,
   `PT_COLOR_LF_COCG`, `PT_COLOR_HF`, `PT_COLOR_SPEC`, `ASVGF_COLOR`,
   `FLAT_COLOR`, `FLAT_MOTION`; 3.5a: `PT_VIEW_DIRECTION2`,
-  `PT_GEO_NORMAL2` and our `PT_SPECULAR_HIT_DIST`): 198 bytes per pixel by
-  their formats. It also loads the blue noise. `vk_images` lists them with their allocated
-  sizes.
+  `PT_GEO_NORMAL2` and our `PT_SPECULAR_HIT_DIST`) and the denoiser's
+  (3.6: Q2RTX's 25 `ASVGF_*` images, some at 1/3 resolution): about 287
+  bytes per pixel by their formats, 89 of them the denoiser's; 1078 MB
+  allocated at 2560x1440. New images mean no denoiser history
+  (`VK_ResetDenoiserHistory`) and no last frame in the UBO
+  (`VK_ResetUBOHistory`: the `_prev` sizes would point past smaller
+  images). It also loads the blue noise. `vk_images` lists them with their
+  allocated sizes.
 - `vk_matrix.c`: Q2RTX's `matrix.c` (view space x right, y up, z forward; clip
   y down); `vk_ubo.c` uses GL's near 4 / far 4096.
 - `vk_pathtracer.c`: `VK_CreatePassLayout` (the three sets + push constants),
@@ -512,7 +526,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   CDF weighs each light by its unshadowed share (at least 0.1;
   `pt_light_stats`). Three device-local buffers take turns per 3D frame
   (`global_ubo.light_stats` counted this frame, `light_stats_prev` read,
-  `light_stats_prev2` for the denoiser's gradient samples, 3.6), sized to
+  `light_stats_prev2` for the denoiser's gradient samples, which replay
+  last frame's light choice), sized to
   the lists (grown after `vkDeviceWaitIdle`); `VK_ClearLightStats` fills
   this frame's before the passes, and all three after the lists changed
   (their entries moved). The UBO's sphere lights have none, as in Q2RTX.
@@ -655,17 +670,18 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
   `PT_COLOR_HF`, specular into `PT_COLOR_SPEC`, RGBE-packed; it clears `LF`
   and `PT_SPECULAR_HIT_DIST`), `indirect_lighting.rgen` (3.5a, see below),
-  `compositing.comp` (Q2RTX's path without the denoiser,
-  `flt_enable` 0 until 3.6: lighting × albedo + specular, × throughput, the
-  effects and emission over it, into `ASVGF_COLOR`),
-  `checkerboard_interleave.comp` (the fields into the screen layout:
-  `FLAT_COLOR`, `FLAT_MOTION`; its blur of checkerboarded surfaces needs
-  the denoiser). Unchanged from Q2RTX apart from `direct_lighting.rgen`'s
-  launch check, weapon shadows, no sunlight and the hit-distance clear.
-  The lit image is noisy at one sample per pixel until the denoiser (3.6);
-  translucent surfaces show a fine checkerboard of the surface and what is
-  behind it (the blend on average) until the denoiser's blur (3.6);
-  there is no exposure or tone curve until 3.7 (the composite clamps).
+  then the denoiser (3.6, `flt_enable 1`, see
+  [Denoiser](#denoiser-vk_asvgfc)), whose last filter composites, or
+  `compositing.comp` (Q2RTX's path without the denoiser, `flt_enable 0`:
+  lighting × albedo + specular, × throughput, the effects and emission over
+  it, into `ASVGF_COLOR`), then `checkerboard_interleave.comp` (the fields
+  into the screen layout: `FLAT_COLOR`, `FLAT_MOTION`; with the denoiser it
+  blurs checkerboarded surfaces, so translucent surfaces show their blend
+  instead of a fine checkerboard of the surface and what is behind it).
+  Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
+  weapon shadows, no sunlight and the hit-distance clear. Without the
+  denoiser the lit image is noisy at one sample per pixel; there is no
+  exposure or tone curve until 3.7 (the composite clamps).
 - **Bounces** (3.5a): `indirect_lighting.rgen`, Q2RTX's, as two pipelines
   of one shader (specialization constant 0: the first and the second
   bounce), dispatched after direct lighting by `pt_num_bounce_rays`
@@ -675,12 +691,14 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
     probability 0.5 (1 for metals), else diffuse (cosine); at its hit the
     base color and one light sample through the hit's light list
     (`get_direct_illumination`, bounce 1: spheres with Q2RTX's solid-angle
-    limit), plus the hit's emission. Diffuse into `PT_COLOR_LF_SH` (plain
-    color: the spherical harmonics come with the denoiser, 3.6), specular
-    into `PT_COLOR_SPEC` (demodulated). Specular rays of surfaces rougher
-    than `pt_fake_roughness_threshold` (0.2, fading out by 0.3) count for
-    nothing: Q2RTX leaves their indirect specular to the denoiser's
-    spherical harmonics (3.6).
+    limit), plus the hit's emission. Diffuse into `PT_COLOR_LF_SH` and
+    `PT_COLOR_LF_COCG` (spherical harmonics with the denoiser, whose diffuse
+    rays sample the hemisphere of the geometric normal more evenly; plain
+    color without), specular into `PT_COLOR_SPEC` (demodulated). Specular
+    rays of surfaces rougher than `pt_fake_roughness_threshold` (0.2, fading
+    out by 0.3) count for nothing: the denoiser makes their indirect
+    specular from the spherical harmonics (Q2RTX's; without the denoiser
+    they have none).
   - 2: the second bounce continues from the first one's hit (which
     overwrites `PT_SHADING_POSITION` and `PT_BOUNCE_THROUGHPUT`, with
     `PT_VIEW_DIRECTION2` and `PT_GEO_NORMAL2`); as in Q2RTX it gathers only
@@ -715,7 +733,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   (3.9).
 - For now **`debug_view.comp`** writes `TAA_OUTPUT` (`r_debugview`, default
   1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR` /
-  `STORAGE_SCALE_HDR`, until TAA and tone mapping take over, 3.7–3.8), or
+  `STORAGE_SCALE_HDR`, denoised with `flt_enable 1`, until TAA and tone
+  mapping take over, 3.7–3.8), or
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
@@ -734,11 +753,95 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   pixel's first random number, 15 direct diffuse (without the albedo),
   16 specular lighting (direct and bounced), 17 the length of the pixel's
   light list (see [Lights](#lights-vk_lightc)), 18 indirect diffuse
-  (without the albedo) and 19 the specular hit distance (log scale as the
-  depth, black without a specular ray). `vk_view.c` runs it before the
-  bounces for the G-buffer's modes (with two bounces the first stores its
-  hit into the shading position) and after compositing for the lighting's (0, 15, 16,
-  18, 19: `DEBUGVIEW_READS_LIGHTING`).
+  (without the albedo; with the denoiser its spherical harmonics projected
+  on the normal), 19 the specular hit distance (log scale as the
+  depth, black without a specular ray) and 20 the denoiser's history
+  length (red the direct diffuse's, green the indirect's, full at 32
+  frames: yellow both, black none or no denoiser). 15, 16 and 18 show the
+  lighting passes' output, before the denoiser (16 multiplied back by the
+  base reflectivity, which the passes divide the specular by for the
+  denoiser); with the denoiser up to one pixel in nine is a gradient
+  sample, a replay of last frame's brightest sample of its 3x3 square, so
+  their average reads brighter than with `flt_enable 0` (16: +15 % on
+  demo1 with test lights; most likely this, not isolated). With the
+  denoiser the G-buffer modes show the gradient
+  samples' last-frame normal, base color, metallic and random seed in up
+  to one pixel per 3x3 (the same values while paused, but mode 14's seed):
+  compare G-buffers with `flt_enable 0`. `vk_view.c` runs it before
+  the bounces for the G-buffer's modes (with two bounces the first stores
+  its hit into the shading position) and after compositing for the
+  lighting's (0, 15, 16, 18, 19, 20: `DEBUGVIEW_READS_LIGHTING`).
+
+## Denoiser (`vk_asvgf.c`)
+
+Story 3.6: Quake II RTX's A-SVGF (adaptive spatiotemporal variance-guided
+filtering; `shaders/asvgf.glsl` explains it), `flt_enable 1` (Q2RTX's
+default; 0 = the undenoised composite, as before). Its TAA pass
+(`asvgf_taau.comp`) comes with 3.8. The shaders are Q2RTX's, unchanged but
+`asvgf_temporal.comp` (below); they work in the G-buffer's two fields.
+
+- **Gradient samples** (`VK_GradientReproject`, after the reflection and
+  refraction passes, before direct lighting;
+  `asvgf_gradient_reproject.comp`): in every 3x3 square the brightest pixel
+  whose surface was seen last frame (motion vector, same cluster, depth
+  within 10 %, geometric normals within ~25°; never last frame's gradient
+  pixel) gets last frame's random number seed, normal, base color and
+  metallic, and its position becomes that surface's position now, found
+  through the visibility buffer and `model_prev_to_current` (the instance
+  map, [Instances](#instances-vk_instancec)). The lighting passes shade it
+  as last frame did (`get_is_gradient`: last frame's light style scale,
+  the light statistics of two frames ago), with this frame's lights.
+  Only with history: without, the last frame's visibility buffer and
+  instance map may belong to another map or instance list, whose
+  primitives the shader would read by device address unchecked (Q2RTX
+  reprojects every frame); this frame's `ASVGF_GRAD_SMPL_POS_A` is cleared
+  instead, and the unused gradients cost nothing (no history to drop).
+- **The filters** (`VK_DenoiseLighting`, after the bounces, instead of
+  `compositing.comp`): `asvgf_gradient_img.comp` makes the gradients (how
+  much the lighting changed at each gradient sample, at 1/3 resolution),
+  seven passes of `asvgf_gradient_atrous.comp` blur them;
+  `asvgf_temporal.comp` blends each pixel's lighting (direct diffuse,
+  indirect diffuse as spherical harmonics, specular) with its history at
+  the motion vector where the surface matches, and drops history as far
+  as the gradients show the lighting changed (anti-lag;
+  `flt_antilag_*`, `flt_temporal_*`); four iterations of the spatial
+  a-trous filter follow, the indirect diffuse at 1/3 resolution
+  (`asvgf_lf.comp`, only with bounces) and the direct diffuse and specular
+  at full resolution (`asvgf_atrous.comp`, specialization constant 0 =
+  iteration), whose last iteration composites into `ASVGF_COLOR` (and adds
+  rough surfaces' indirect specular from the spherical harmonics). All
+  passes use the path tracer's layout; the gradient a-trous and LF passes
+  read their iteration from the first push constant.
+- **Hexenlicht's change** (`asvgf_temporal.comp`): a gradient sample
+  blends into its pixel's history only as far as the anti-lag drops that
+  history. It replays the brightest of its square's samples of last frame,
+  which the history already holds; Q2RTX blends it in like a new sample,
+  which brightened the image by as much as the lighting is noisy (demo1
+  with test lights: +18 % at full intensity, +8 % at a sixteenth where the
+  raw frames don't clip; up to 30 % in places). Left: +2 % (demo1) to +5 %
+  (the cathedral), measured with direct lighting only against the average
+  of 20 raw frames at a sixteenth of the intensity (Q2RTX.md open
+  questions).
+- **History** is the last 3D frame's images. `VK_EndDenoiserFrame` marks
+  them valid after a frame with the denoiser; `VK_ResetDenoiserHistory`
+  drops them on a new map (`R_NewMap`), with new images (`VK_CreateImages`),
+  when `flt_enable` or `flt_temporal_*` change (`vk_ubo.c`), and when
+  `VK_RenderView3D` skips the view or `VK_UpdateInstances` has no world
+  (the entities' history moved on without the images). Without history `VK_PrepareUBO` sets `flt_temporal_*` to 0
+  for the frame (Q2RTX's `temporal_frame_valid`).
+- Not in Q2RTX's filters: the effects (particles, sprites) and emission,
+  composited over the denoised lighting as before. The light-count history
+  (Q2RTX's `light_counts_history`) is left out: our light lists change
+  only with the lights, and a change costs one frame of gradients where it
+  happened (4.4 needs it if moving lights join the lists).
+  `prev_style_scale` is 1 until light styles (4.2).
+- `flt_show_gradients 1` adds the gradients to the image (red indirect
+  diffuse, green direct diffuse, blue specular); `r_debugview 20` shows
+  the history length.
+- Measured (2560x1440, Release, test entity lights, temporary GPU
+  timestamps): gradient reprojection 0.47 ms, the filters 2.8 ms
+  (`compositing.comp`: 0.3 ms); the 3D view 6.6 ms instead of 3.9 (demo1's
+  start), 7.1 instead of 4.2 (the cathedral's font).
 
 ## Other
 
@@ -757,7 +860,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 
 | Command | What |
 |---|---|
-| `r_debugview 0-19` | 0 the lit image, 1-19 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
+| `r_debugview 0-20` | 0 the lit image, 1-20 the G-buffer's, lighting and denoiser channels (see [3D view](#3d-view-vk_viewc)) |
+| `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |

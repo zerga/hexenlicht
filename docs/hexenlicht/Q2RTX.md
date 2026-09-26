@@ -67,7 +67,8 @@ this repository) or one at a time with
   with Q2RTX's defaults; each does something once the pass that reads it
   is imported. `VK_PrepareUBO` overrides those Q2RTX's host code sets per
   mode until their passes exist: `pt_aperture` 0 (no accumulation mode),
-  `flt_taa` off (3.8), `flt_enable` 0 (no denoiser, 3.6).
+  `flt_taa` off (3.8); since 3.6 it sets `flt_temporal_*` to 0 when the
+  denoiser has no history, as Q2RTX's `temporal_frame_valid` does.
 - Copyright lines stay; ours is added to files we change. `THIRD_PARTY.md`
   lists the files.
 - New modules join `vk_core.c`'s init table: `VK_INIT_DEFAULT` at
@@ -90,7 +91,7 @@ this repository) or one at a time with
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
-| `asvgf.c` | A-SVGF denoiser, TAA | 3.6; TAAU 3.8 | 3.6, 3.8 |
+| `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); TAAU 3.8 | 3.6, 3.8 |
 | `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | 3.7 | 3.7 |
 | `fsr.c`, `fsr/` | AMD FSR 1 | 3.8 | 3.8 |
 | `profiler.c` | GPU timers | 3.11 | 3.11 |
@@ -109,12 +110,12 @@ this repository) or one at a time with
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
-| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, the gradient samples come with 3.6) | 3.2, 3.3, 3.5b |
+| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6) | 3.2, 3.3, 3.5b, 3.6 |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
-| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the gradient light-count history (3.6) and sky lights (4.6) | 3.3, 3.4 |
+| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6) | 3.3, 3.4 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
-| `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
+| `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
 | `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | 4.6 |
@@ -168,9 +169,22 @@ this repository) or one at a time with
   alternates between the two surfaces pixel by pixel there.
 - **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
   the vertex light, then clamps); the G-buffer takes only the hue.
-- **Instance history (3.6).** A-SVGF's gradient reprojection maps last
-  frame's instances to this frame's (`model_prev_to_current`); our entity
-  history in `vk_instance.c` has to provide it.
+- **Light styles and the gradients (4.2).** A gradient sample weighs the
+  lights with last frame's light style (`prev_style_scale`, light_lists.h),
+  so it picks the light last frame picked. `vk_light.c` writes 1 for both
+  until light styles exist; 4.2 must fill `prev_style_scale` from last
+  frame's styles (Q2RTX's `prev_lightstyles`), or flickering lights make
+  needless gradients (the denoiser drops history and is noisier near them).
+- **Denoiser brightness (4.9).** With noisy lighting the denoised image is
+  2–5 % brighter than the average of the raw frames (3.6, direct lighting
+  at a sixteenth of the test lights' intensity: demo1 +2 %, the cathedral
+  +5 %): the gradient sample is the brightest of its 3x3 square, so that
+  pixel keeps a bright history one frame longer. Q2RTX's full blend of the
+  replayed sample made it 8–18 % (3.6 blends it in only as far as the
+  anti-lag drops the history, `asvgf_temporal.comp`). The calibration
+  against GL (4.9) measures the
+  denoised image; a random pick (the A-SVGF paper's) would remove the rest
+  but lose Q2RTX's anti-lag for moving lights.
 - **Effects brightness (3.7).** Q2RTX scales particles and sprites by the
   exposure; ours keep GL's colors, added as they are to the lit image
   (3.3), until exposure and tone mapping settle how bright they are.
@@ -186,4 +200,7 @@ this repository) or one at a time with
   stay the UBO's up to 32 dynamic spheres, picked uniformly with no
   culling; Q2RTX injects its moving model lights into the lists every frame
   (`inject_model_lights`), which would move the light statistics' entries:
-  a second range of entries per list would keep them in place.
+  a second range of entries per list would keep them in place. Lists that
+  change every frame also need Q2RTX's light-count history
+  (`light_counts_history`, left out in 3.6), so a gradient sample picks
+  from the count its replayed frame had.
