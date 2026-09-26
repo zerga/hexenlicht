@@ -182,6 +182,7 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_BLUE_NOISE		14	/* the first random number of the pixel */
 #define DEBUGVIEW_DIRECT_DIFFUSE	15	/* direct lighting, diffuse (PT_COLOR_HF, demodulated) */
 #define DEBUGVIEW_DIRECT_SPECULAR	16	/* direct lighting, specular (PT_COLOR_SPEC) */
-#define DEBUGVIEW_MAX			16
+#define DEBUGVIEW_LIGHT_LISTS		17	/* the length of the pixel's cluster's light list */
+#define DEBUGVIEW_MAX			17
 
 #endif	/* HL_SHARED_H */

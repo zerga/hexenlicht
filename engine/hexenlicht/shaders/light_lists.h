@@ -20,11 +20,22 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 /* Hexenlicht: Quake II RTX's light sampling (included by path_tracer_rgen.h),
  * with these changes:
- *  - polygon lights: the light count of a list is its current one (the
- *    history that keeps gradient samples consistent comes with the
- *    denoiser, 3.6); no light statistics (3.4); no sky lights until the
- *    sky (4.6);
- *  - no polygon lights for clusters past MAX_LIGHT_LISTS - 1;
+ *  - the light lists hold spheres too (3.4): Hexen II's point lights, with
+ *    an optional range at which their light fades to 0 (vk_light.c leaves
+ *    them out of the lists of the clusters beyond it); a sphere's share of
+ *    the CDF is its solid angle, like a triangle's, and its contribution
+ *    its radiance times its solid angle, as a polygon's; spheres have the
+ *    solid angle limit Quake II RTX gives its sphere lights on bounces, and
+ *    theirs and compute_dynlight_sphere's solid angle keeps its precision
+ *    far away;
+ *  - the light statistics are counted per list entry (vk_light.c), not per
+ *    cluster and light, and sample_polygonal_lights returns the entry;
+ *  - a light without mass is never picked (Quake II RTX's picks one when
+ *    rng.x is 0: pdf 0, NaN);
+ *  - the light count of a list is its current one (the history that keeps
+ *    gradient samples consistent comes with the denoiser, 3.6); no sky
+ *    lights until the sky (4.6);
+ *  - no list lights for clusters past MAX_LIGHT_LISTS - 1;
  *  - the light buffer is read by device address (vertex_buffer.h). */
 
 #ifndef _LIGHT_LISTS_
@@ -163,13 +174,63 @@ sample_projected_triangle(vec3 pt, mat3 positions, vec2 rnd, out vec3 light_norm
 	return pt + lo;
 }
 
-uint get_light_stats_addr(uint cluster, uint light, uint side)
+/* Hexenlicht: per light list entry (node), not per cluster and light */
+uint get_light_stats_addr(uint node, uint side)
 {
-	uint addr = cluster;
-	addr = addr * global_ubo.num_static_lights + light;
-	addr = addr * 6 + side;
-	addr = addr * 2;
-	return addr;
+	return node * LIGHT_STATS_UINTS + side * 2;
+}
+
+/* Hexenlicht: sphere lights (see the top). The window takes a sphere's
+ * light to 0 at its range (0 = unlimited): saturate(1 - (d / range)^4)^2 */
+float
+sphere_light_window(float dist, float range)
+{
+	if(range <= 0)
+		return 1;
+	return square(clamp(1 - square(square(dist / range)), 0, 1));
+}
+
+/* the solid angle of a sphere seen from dist (from inside it the hemisphere):
+ * 2 pi (1 - sqrt(1 - x^2)), x = radius / dist, in a form that keeps its
+ * precision far away; limited as sample_dynamic_lights limits its sphere
+ * lights' (on bounces): Quake II RTX limits the solid angle / pi */
+float
+sphere_light_solid_angle(float dist, float radius, float max_solid_angle)
+{
+	float x2 = min(square(radius / dist), 1);
+	return min(2 * M_PI * x2 / (1 + sqrt(1 - x2)), M_PI * max_solid_angle);
+}
+
+/* the sphere's weight in the light CDF, as spherical_tri_area's for a triangle */
+float
+sphere_light_mass(LightPolygon light, vec3 p, vec3 n, vec3 V, float phong_exp, float phong_scale, float phong_weight, float max_solid_angle)
+{
+	vec3 c = light.positions[0] - p;
+	float radius = light.positions[1].x;
+	float dist = max(length(c), 1e-3);
+
+	if(dot(n, c) <= -radius)
+		return 0; // entirely below the horizon
+
+	float window = sphere_light_window(dist, light.positions[1].y);
+	if(window <= 0)
+		return 0;
+
+	float specular = phong(n, c / dist, V, phong_exp) * phong_scale;
+	float brdf = mix(1.0, specular, phong_weight);
+	return sphere_light_solid_angle(dist, radius, max_solid_angle) * window * brdf;
+}
+
+/* a point on the sphere for the shadow ray, as compute_dynlight_sphere picks one */
+vec3
+sample_sphere_light(vec3 center, float radius, vec3 p, vec2 rnd)
+{
+	vec3 L = normalize(center - p);
+	mat3 onb = construct_ONB_frisvad(L);
+	vec3 diskpt;
+	diskpt.xy = sample_disk(rnd);
+	diskpt.z = sqrt(max(0, 1 - diskpt.x * diskpt.x - diskpt.y * diskpt.y));
+	return center + (onb[0] * diskpt.x + onb[2] * diskpt.y - L * diskpt.z) * radius;
 }
 
 void
@@ -178,20 +239,23 @@ sample_polygonal_lights(
 		vec3 p,
 		vec3 n,
 		vec3 gn,
-		vec3 V, 
-		float phong_exp, 
+		vec3 V,
+		float phong_exp,
 		float phong_scale,
 		float phong_weight,
 		bool is_gradient,
+		float max_solid_angle,	// Hexenlicht: for spheres, as sample_dynamic_lights'
 		out vec3 position_light,
 		out vec3 light_color,
 		out int light_index,
+		out uint light_node,	// Hexenlicht: the list entry, ~0u = none
 		out float pdfw,
 		out bool is_sky_light,
 		vec3 rng)
 {
 	position_light = vec3(0);
 	light_index = -1;
+	light_node = ~0u;
 	light_color = vec3(0);
 	pdfw = 0;
 	is_sky_light = false;
@@ -242,7 +306,10 @@ sample_polygonal_lights(
 
 		LightPolygon light = get_light_polygon(current_idx);
 
-		float m = spherical_tri_area(light.positions, p, n, V, phong_exp, phong_scale, phong_weight);
+		// Hexenlicht: or a sphere
+		float m = (light.type == LIGHT_TYPE_SPHERE)
+			? sphere_light_mass(light, p, n, V, phong_exp, phong_scale, phong_weight, max_solid_angle)
+			: spherical_tri_area(light.positions, p, n, V, phong_exp, phong_scale, phong_weight);
 
 		float light_lum = luminance(light.color);
 
@@ -257,8 +324,31 @@ sample_polygonal_lights(
 		// limits come with the sky (4.6)
 		m *= abs(light_lum); // abs because sky lights have negative color
 
-		// Hexenlicht: the CDF adjustment by light shadowing statistics comes with the
-		// light lists (3.4)
+		// Apply CDF adjustment based on light shadowing statistics from one of the previous frames.
+		// See comments in function `get_direct_illumination` in `path_tracer_rgen.h`
+		// Hexenlicht: per list entry, from buffers by device address; all entries are
+		// the map's lights (Quake II RTX: current_idx < num_static_lights)
+		DeviceAddress stats_buffer = is_gradient ? global_ubo.light_stats_prev2 : global_ubo.light_stats_prev;
+		if(global_ubo.pt_light_stats != 0
+			&& m > 0
+			&& stats_buffer != uvec2(0u))
+		{
+			// Regular pixels get shadowing stats from the previous frame;
+			// Gradient pixels get the stats from two frames ago because they need to match
+			// the light sampling from the previous frame.
+			uint addr = get_light_stats_addr(n_idx, get_primary_direction(n));
+
+			uint num_hits = LightStatsRef(stats_buffer).stats[addr];
+			uint num_misses = LightStatsRef(stats_buffer).stats[addr + 1];
+			uint num_total = num_hits + num_misses;
+
+			if(num_total > 0)
+			{
+				// Adjust the mass, but set a lower limit on the factor to avoid
+				// extreme changes in the sampling.
+				m *= max(float(num_hits) / float(num_total), 0.1);
+			}
+		}
 
 		mass += m;
 		light_masses[i] = m;
@@ -284,16 +374,43 @@ sample_polygonal_lights(
 			break;
 	}
 
-	if(rng.x > 0)
+	// Hexenlicht: nor a light without mass, which rng.x == 0 picks (a blue noise value of
+	// 0, or rng.x * partitions an integer): its pdf is 0 (light_color would be NaN, and
+	// clamp_output would drop the pixel's whole direct light); it contributes nothing
+	if(rng.x > 0 || pdf <= 0)
 		return;
 
 	pdf /= mass;
 
 	// assert: current_idx >= 0?
 	if (current_idx >= 0) {
+		light_node = uint(current_idx);	// Hexenlicht
 		current_idx = int(light_buffer.light_list_lights[current_idx]);
 
 		LightPolygon light = get_light_polygon(current_idx);
+
+		if(light.type == LIGHT_TYPE_SPHERE)
+		{
+			// Hexenlicht: a sphere, its radiance times its solid angle (as a polygon's
+			// color times 1 / pdfw), faded by its range
+			vec3 c = light.positions[0] - p;
+			float dist = max(length(c), 1e-3);
+			float radius = light.positions[1].x;
+			float solid_angle = sphere_light_solid_angle(dist, radius, max_solid_angle);
+
+			position_light = sample_sphere_light(light.positions[0], radius, p, rng.yz);
+			pdfw = (solid_angle > 0) ? 1 / solid_angle : 0;
+
+			if(dot(position_light - p, gn) <= 0)
+				pdfw = 0;
+
+			if(pdfw > 0)
+				light_color = light.color * (solid_angle * sphere_light_window(dist, light.positions[1].y) * light.light_style_scale);
+
+			light_index = current_idx;
+			light_color /= pdf;
+			return;
+		}
 
 		vec3 light_normal;
 		position_light = sample_projected_triangle(p, light.positions, rng.yz, light_normal, pdfw);
@@ -335,7 +452,10 @@ compute_dynlight_sphere(uint light_idx, vec3 light_center, vec3 p, out vec3 posi
 	vec3 L = c * rdist;
 
 	float sphere_radius = global_ubo.dyn_light_data[light_idx].radius;
-	float irradiance = 2 * (1 - sqrt(max(0, 1 - square(sphere_radius * rdist))));
+	// Hexenlicht: 2 (1 - sqrt(1 - x^2)) in a form that keeps its precision far away,
+	// as the light lists' spheres have it (sphere_light_solid_angle)
+	float x2 = min(square(sphere_radius * rdist), 1);
+	float irradiance = 2 * x2 / (1 + sqrt(1 - x2));
 
 	mat3 onb = construct_ONB_frisvad(L);
 	vec3 diskpt;

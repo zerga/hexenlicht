@@ -35,8 +35,8 @@
  * (glslangValidator -q --reflect-all-block-variables of a shader that
  * includes the UBO) and update these. */
 COMPILE_TIME_ASSERT(ubo_tlas, offsetof(QVKUniformBuffer_t, tlas) == 3640);
-COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3740);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3744);
+COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3764);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3768);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 

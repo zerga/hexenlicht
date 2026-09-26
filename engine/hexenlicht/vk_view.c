@@ -43,8 +43,8 @@
  * 7 motion check, 8 geometric normals, 9 depth, 10
  * roughness/metallic/specular factor, 11 diffuse and 12 specular albedo, 13
  * effects, 14 blue noise, 15 direct diffuse and 16 direct specular
- * lighting (shaders/hl_shared.h's DEBUGVIEW_*); 1 until the maps have
- * lights (4.1) */
+ * lighting, 17 light list lengths (shaders/hl_shared.h's DEBUGVIEW_*); 1
+ * until the maps have lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
@@ -230,6 +230,7 @@ void VK_RenderView3D (void)
 	VK_ComputeBarrier (cmd);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
 			 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	VK_ClearLightStats (cmd);	/* the buffer direct lighting counts into */
 	push.gpu_index = -1;
 	push.bounce = 0;
 	/* the G-buffer: each checkerboard field is half the width (Quake II

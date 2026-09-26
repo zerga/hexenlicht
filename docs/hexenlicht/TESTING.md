@@ -143,6 +143,20 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   direct diffuse and specular lighting. The image is noisy (one sample per
   pixel, no denoiser until 3.6) and low-poly models show grainy
   self-shadowing at grazing angles.
+- **Many lights and the light lists:** `vk_testlight entities` puts a
+  sphere at every light entity; `vk_lights` prints the lists (demo1: 8270
+  entries, mean 10.4, longest 62, 43 lights inside solid; keep2 16472;
+  romeric6 the longest list, 249), `r_debugview 17` shows the list lengths.
+  Checks, paused, averaging 8–16 screenshots per case: `vk_testlight dlight
+  8 2000` and `vk_testlight sphere 8 2000` at the same spot give the same
+  image (a dynamic and a list sphere); `vk_lights cull 0` (no range
+  culling) gives the same image, only noisier (demo1's start: +1.4 %, noise
+  ×1.6). `vk_lights stats` shows the shadow rays the last frame counted
+  (0 with `pt_light_stats 0`).
+- **Comparing noisy shots:** average them in linear light (sRGB → linear
+  before averaging): averaged sRGB values make a noisier image look darker
+  (a false 27 % in 3.4's first check). The frames of a paused scene still
+  get new random numbers, so averaging shots reduces the noise.
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

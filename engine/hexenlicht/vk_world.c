@@ -439,9 +439,10 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 		VK_UploadBuffer (&vk_world.buffer, 0, data, size);
 	}
 	vk_world.positions_offset = prims_size;
-	free (data);
 
 	VK_FinishPVS ();
+	VK_LoadLightClusters (worldmodel, prims, vk_world.num_primitives);	/* the lists need the final PVS */
+	free (data);
 	VK_UploadMaterials ();
 	VK_BuildWorldAccel ();
 	stats.build_time = Sys_DoubleTime () - start;
