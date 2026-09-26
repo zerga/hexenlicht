@@ -145,6 +145,18 @@ void VK_DispatchCompute (VkCommandBuffer cmd, VkPipeline pipeline, uint32_t widt
 	vkCmdDispatch (cmd, (width + local_size - 1) / local_size, (height + local_size - 1) / local_size, 1);
 }
 
+/* the same with a module's own layout and push constants (push_size bytes
+ * from offset 0; none if push is NULL) */
+void VK_DispatchComputeLayout (VkCommandBuffer cmd, VkPipeline pipeline, VkPipelineLayout layout, const void *push,
+			       uint32_t push_size, uint32_t width, uint32_t height, uint32_t local_size)
+{
+	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+	VK_BindPassSets (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout);
+	if (push)
+		vkCmdPushConstants (cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, push_size, push);
+	vkCmdDispatch (cmd, (width + local_size - 1) / local_size, (height + local_size - 1) / local_size, 1);
+}
+
 /* a barrier on a render target (they stay in the GENERAL layout) */
 void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,

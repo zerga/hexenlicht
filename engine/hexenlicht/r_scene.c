@@ -260,6 +260,7 @@ void R_NewMap (void)
 	VK_ClearInstances ();
 	VK_ClearEffects ();
 	VK_ResetDenoiserHistory ();	/* the images show the old map */
+	VK_ResetToneMapping ();		/* and its exposure */
 }
 
 

@@ -197,7 +197,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   cath's and romeric2's lighting modes differ between runs of the same
   build in a few dozen to a few hundred pixels, in `main` too, and
   `-Noise` can't mask it: compare several runs of each). Checks, paused
-  with test lights, `r_debugview 0`: a denoised shot against the average
+  with test lights, `r_debugview 0`, `tm_enable 0`, `bloom_enable 0`
+  (linear light; since 3.7): a denoised shot against the average
   of 16–24 `flt_enable 0` shots (`tga_mean.ps1`), **at a sixteenth of the
   lights' intensity** (`vk_testlight entities 62.5`): at full intensity the
   raw frames clip at 1 before the screenshot and their average reads
@@ -213,6 +214,25 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   starts over: dark, then yellow within 30 frames) show no stale image.
   egypt5's start walks into a mural whose close-up texture looks blurred
   in `r_debugview 1` too: not the denoiser.
+- **Tone mapping and bloom (3.7):** `tm_enable 0` and `bloom_enable 0`
+  must match the build before, and the G-buffer and effects views (1 2 3
+  9 13) with them on too (3.7: the same maps and modes as the denoiser's,
+  `flt_enable 0`; `con_notifytime 0`, or the old build's "Unknown
+  command" lines for new cvars differ in the top rows). Exposure: paused
+  at demo1's start with `vk_testlight entities`, then `vk_testlight
+  entities 62.5`: `vk_exposure` and the image mean (`tga_mean.ps1 -A n`)
+  come back over ~6 s to 1/16 and ~75 % of before; `vk_testlight entities
+  1`: the exposure stops at `tm_min_luminance` 0.0002, dark. Effects:
+  Crusader (`playerclass 2`), `impulse 9`, ~120 waits, `impulse 3`, face
+  the wall (`+right` 45 frames), `+attack` 24 frames, `pause`; compare
+  `r_debugview 13` (the effects in GL's colors over black) with
+  `r_debugview 0` at `pt_particle_brightness` 0 (the background) and at
+  the value tried, over the effect pixels below the console rows: their
+  mean luminance should match. `tm_debug 1/2`, `bloom_debug 1-3` show the
+  stages.
+- **`screenshot` captures the next frame:** a command in the same frame
+  after it (e.g. `vk_testlight` changing the lights) is already in the
+  shot; put waits after every `screenshot`.
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

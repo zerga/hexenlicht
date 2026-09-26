@@ -35,8 +35,8 @@
  * (glslangValidator -q --reflect-all-block-variables of a shader that
  * includes the UBO) and update these. */
 COMPILE_TIME_ASSERT(ubo_tlas, offsetof(QVKUniformBuffer_t, tlas) == 3640);
-COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3764);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3768);
+COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3780);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3784);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -50,7 +50,7 @@ UBO_CVAR_LIST
 
 uint32_t		vk_render_frame;	/* 3D frames rendered: the UBO's current_frame_idx */
 
-static QVKUniformBuffer_t	ubo;		/* the last frame's, for the _prev fields */
+static QVKUniformBuffer_t	ubo;		/* this frame's after VK_PrepareUBO (VK_CurrentUBO); the last frame's before, for the _prev fields */
 static qboolean		ubo_valid;		/* ubo has a frame */
 static vk_buffer_t	ubo_buffers[VK_FRAMES_IN_FLIGHT];
 static VkDescriptorPool	ubo_pool;
@@ -76,6 +76,16 @@ float VK_NumBounceRays (void)
 int VK_ReflectRefractPasses (void)
 {
 	return q_min (10, q_max (0, cvar_pt_reflect_refract.integer));
+}
+
+const QVKUniformBuffer_t *VK_CurrentUBO (void)
+{
+	return &ubo;
+}
+
+qboolean VK_ToneMappingEnabled (void)
+{
+	return cvar_tm_enable.integer != 0;
 }
 
 /* flt_enable as Quake II RTX's evaluate_reference_mode takes it */
@@ -177,6 +187,7 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	/* the denoiser (vk_asvgf.c); its temporal filters use no history when
 	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid) */
 	ubo.flt_enable = VK_DenoiserEnabled () ? 1.0f : 0.0f;
+	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
 	if (DenoiserCvarsChanged ())
 		VK_ResetDenoiserHistory ();
 	if (!VK_DenoiserHistoryValid ())
@@ -204,6 +215,12 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.particles = ef->particles;
 	ubo.sprites = ef->sprites;
 	VK_PrepareLights (&ubo);	/* light_buffer, the sphere lights, num_static_lights */
+	/* the tone mapper's buffers (vk_tonemap.c), the adapted luminance read
+	 * back and the bloom's intensity (vk_bloom.c; Quake II RTX's
+	 * vkpt_bloom_update without its under-water and menu variants) */
+	ubo.tonemap = VK_ToneMapBufferAddress ();
+	ubo.readback = VK_ReadbackAddress (&ubo.prev_adapted_luminance);
+	ubo.bloom_intensity = VK_BloomIntensity ();
 	ubo.particle_texture = (uint32_t)VK_ParticleTexture ();
 	ubo.anim_frame = (int)(r_scene.time * 5.0);	/* R_TextureAnimation's frame */
 	ubo.debug_view = (uint32_t)debug_view;

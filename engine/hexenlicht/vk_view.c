@@ -14,10 +14,11 @@
  * bounces (0, 0.5 = half resolution, 1, 2), the denoiser (flt_enable 1)
  * or compositing.comp combines the lighting with the surfaces and
  * checkerboard_interleave.comp puts the fields into the screen layout;
- * for now debug_view.comp shows the lit image or a G-buffer
- * or lighting channel, selected by r_debugview (the G-buffer's before the
- * bounces: with two, the first stores its hit into the shading position;
- * the rest of epic E3's passes come between them). GL_EndRendering then
+ * for now debug_view.comp copies the lit image into TAA_OUTPUT (until TAA,
+ * 3.8) or shows a G-buffer or lighting channel, selected by r_debugview
+ * (the G-buffer's before the bounces: with two, the first stores its hit
+ * into the shading position); the lit image then gets the bloom
+ * (vk_bloom.c) and the tone mapping (vk_tonemap.c). GL_EndRendering then
  * calls VK_DrawView3D, which copies the image into the swapchain's 3D
  * view rectangle (view_composite.frag, Quake II RTX's final blit) before
  * the 2D is drawn on top.
@@ -43,8 +44,8 @@
 #include "shaders/hl_shared.h"
 #include "shaders/global_textures.h"
 
-/* 0 the path tracer's image (the lighting passes, no tone mapping until
- * 3.7), or the G-buffer's and lighting channels: 1 base color with the
+/* 0 the path tracer's image (the lighting passes, bloom and tone mapping),
+ * or the G-buffer's and lighting channels: 1 base color with the
  * effects over it, 2 normals, 3 material kinds (cutouts yellow, the weapon
  * cyan), 4 instances, 5 clusters (and the camera's PVS), 6 motion vectors,
  * 7 motion check, 8 geometric normals, 9 depth, 10
@@ -213,6 +214,20 @@ static qboolean ViewRect (VkRect2D *r)
 	return true;
 }
 
+/* the time since the last 3D frame for the eye adaptation, as Quake II
+ * RTX's: game time, at most a second, the real time while it stands still
+ * (paused) */
+static float FrameTime (void)
+{
+	static double	last_time, last_realtime;
+	float		t = (float) q_min (1.0, q_max (0.0, r_scene.time - last_time));
+	float		wall = (float) q_min (1.0, q_max (0.0, realtime - last_realtime));
+
+	last_time = r_scene.time;
+	last_realtime = realtime;
+	return (t > 0.0f) ? t : wall;
+}
+
 /* whether the 3D view can be drawn this frame, into view_rect, rendered
  * *width pixels wide */
 static qboolean ViewReady (uint32_t *width)
@@ -336,6 +351,16 @@ void VK_RenderView3D (void)
 	VK_ComputeBarrier (cmd);
 	if (DEBUGVIEW_READS_LIGHTING (mode))
 		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
+	/* the lit image in TAA_OUTPUT: bloom, then tone mapping and exposure
+	 * (Quake II RTX's order after its TAA); the debug views stay as they are */
+	if (mode == DEBUGVIEW_LIT && (VK_BloomEnabled () || VK_ToneMappingEnabled ()))
+	{
+		VK_ComputeBarrier (cmd);
+		if (VK_BloomEnabled ())
+			VK_Bloom (cmd, view_rect.extent.width, view_rect.extent.height);
+		if (VK_ToneMappingEnabled ())
+			VK_ToneMap (cmd, view_rect.extent.width, view_rect.extent.height, FrameTime ());
+	}
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 	VK_EndDenoiserFrame (denoise);

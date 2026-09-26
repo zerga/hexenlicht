@@ -39,9 +39,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    cluster debug mask and the sky visibility come with their stories;
  *  - the light statistics are counted per light list entry (3.4), by
  *    device address; Quake II RTX's per cluster and light;
- *  - left out until their passes: the light count history, the IQM
- *    matrices, the tone mapping, readback and sun color buffers,
- *    store_triangle (model_geometry.comp writes the instanced buffer). */
+ *  - the tone mapping and readback buffers (3.7) by device address;
+ *  - left out: the light count history (3.6), the IQM matrices, the sun
+ *    color buffers (4.6), store_triangle (model_geometry.comp writes the
+ *    instanced buffer). */
 
 #ifndef _VERTEX_BUFFER_H_
 #define _VERTEX_BUFFER_H_
@@ -133,6 +134,33 @@ BEGIN_SHADER_STRUCT( LightBuffer )
 END_SHADER_STRUCT( LightBuffer )
 
 
+BEGIN_SHADER_STRUCT( ToneMappingBuffer )
+{
+	int accumulator[HISTOGRAM_BINS];
+	float curve[HISTOGRAM_BINS];
+	float normalized[HISTOGRAM_BINS];
+	float adapted_luminance;
+	float tonecurve;
+}
+END_SHADER_STRUCT( ToneMappingBuffer )
+
+
+/* Hexenlicht: only adapted_luminance is written (3.7); Quake II RTX's
+ * sun and sky luminance may come with the sky (4.6), hdr_color with its
+ * TAA (3.8); the material and cluster under the crosshair aren't needed */
+BEGIN_SHADER_STRUCT( ReadbackBuffer )
+{
+	uint material;
+	uint cluster;
+	float sun_luminance;
+	float sky_luminance;
+
+	vec3 hdr_color;
+	float adapted_luminance;
+}
+END_SHADER_STRUCT( ReadbackBuffer )
+
+
 #if defined(VKPT_SHADER) && defined(VERTEX_BUFFER_DESC_SET_IDX)
 
 #ifdef VERTEX_READONLY
@@ -180,6 +208,19 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Li
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer LightStatsRef {
 	uint stats[];
 };
+
+/* Hexenlicht: the tone mapper's buffer and this frame's readback buffer
+ * (vk_tonemap.c) by device address, read as Quake II RTX's tonemap_buffer
+ * and readback */
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer ToneMappingBufferRef {
+	ToneMappingBuffer tonemap_buffer_data;
+};
+#define tonemap_buffer ToneMappingBufferRef(global_ubo.tonemap).tonemap_buffer_data
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer ReadbackBufferRef {
+	ReadbackBuffer readback_data;
+};
+#define readback ReadbackBufferRef(global_ubo.readback).readback_data
 
 struct LightPolygon
 {

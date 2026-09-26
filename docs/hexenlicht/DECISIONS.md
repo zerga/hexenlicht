@@ -50,7 +50,7 @@ story settles something a later session must not undo; mark a line
 | G7 | Translated player skins are translated in 8 bits and keep their cutouts (GL loses the Demoness's); `TEX_SPECIAL_TRANS` alpha is stored as opacity | 2.4b (#105) |
 | G8 | The first-person weapon: GL's fov compensation above 90 (no separate gun FOV), its own model group and BLAS, traced first from GL's 4-unit near plane so it stays in front of walls | 2.8 (#30, PR #113) |
 | G9 | `cl.light_level` (sent to the server: monster awareness, Assassin cloak) is computed as GL's `R_DrawViewModel` does | 2.8 |
-| G10 | Particles are GL's camera-facing triangles with its dot texture and colors; sprites all five orientation types, unlit; `SPR_FACING_UPRIGHT` uses the sprite's own direction (GL's stale `modelorg`; unused by the game) | 2.5 (#27, PR #112) |
+| G10 | Particles are GL's camera-facing triangles with its dot texture and colors; sprites all five orientation types, unlit; `SPR_FACING_UPRIGHT` uses the sprite's own direction (GL's stale `modelorg`; unused by the game); *scaled by the exposure since 3.7 (R41)* | 2.5 (#27, PR #112) |
 | G11 | Effects live in a second, effects-only TLAS and never block rays through the main TLAS | 2.5 |
 | G12 | Translucent models and surfaces are opaque in the debug view until 6.4 (the main TLAS is force-opaque except cutouts, so water and translucent surfaces hide the effects behind them); a translucent weapon will need effects blended behind it; *since 3.5b translucent surfaces and models are seen through, effects behind them show (R33); water stays opaque (R31)* | 2.4b, 2.8 |
 | G13 | The sunstaff beam report (2.10) was not a bug: the engines' `screenshot` capture different frames; compare paused | 2.10 (#111, PR #115) |
@@ -77,7 +77,7 @@ story settles something a later session must not undo; mark a line
 | R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
 | R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them; *partly superseded by R21 (spheres in the lists)* | 3.3 (#33) |
 | R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS; *the lists: superseded by R22* | 3.3 |
-| R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1); *denoised since 3.6 (R34)* | 3.3 |
+| R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1); *denoised since 3.6 (R34), tone mapped since 3.7 (R39)* | 3.3 |
 | R20 | The weapon only shadows itself; the first-person player casts no shadow (it has no model; GL draws no weapon shadow) | 3.3 |
 | R21 | Hexen II's point lights are spheres in the per-cluster light lists, next to polygons (Q2RTX's lists hold only polygons): weighed by solid angle like a triangle, contributing radiance × solid angle; the UBO's 32 uniformly picked spheres stay for moving lights (4.4); a test sphere's intensity is π × its radiance in both | 3.4 (#34) |
 | R22 | The light lists are built on the CPU when the lights change: a light goes into every cluster in the PVS of the open leafs its emitter touches (Q2RTX: its one cluster), minus clusters behind a polygon and beyond a sphere's range; cluster bounds are the leaf's plus its world triangles'; lights inside solid are in no list; a light that doesn't fit is left out whole | 3.4 |
@@ -97,12 +97,18 @@ story settles something a later session must not undo; mark a line
 | R36 | Last frame's model instances map to this frame's (`model_prev_to_current`, after the instances in the instance buffer) through the entity history: an entity continues when it was drawn last frame with the same model, a teleport too | 3.6 |
 | R37 | The denoiser's history is dropped (Q2RTX's `temporal_frame_valid`: `flt_temporal_*` 0 for a frame) in the first frame, on a new map, with new images, after a frame without the denoiser, when `flt_enable` or `flt_temporal_*` change, and after a skipped 3D view; without history there are no gradient samples (Q2RTX reprojects every frame, which here would read another map's primitives by device address, unchecked); new images also reset the UBO's last frame | 3.6 |
 | R38 | No light-count history (Q2RTX's `light_counts_history`): the lists change only with the lights, and a change costs one frame of gradients where it happened; needed if moving lights join the lists (4.4). `prev_style_scale` is 1 until light styles (4.2) | 3.6 |
+| R39 | Tone mapping, auto exposure and bloom are Q2RTX's (`tone_mapping_*.comp`, `bloom_*.comp`, unchanged; `vk_tonemap.c`, `vk_bloom.c`), on by default with its defaults, only for `r_debugview 0` (the debug views stay raw); SDR only (HDR 7.3); `tm_enable 0` and `bloom_enable 0` give the image as before 3.7 | 3.7 (#37) |
+| R40 | Left out of Q2RTX's: the stronger under-water bloom (Hexen II's underwater look is GL's warp and tint, 6.6), the blur behind menus (GL draws menus over the plain view), the full screen blend in the tone mapper (strongest at the screen's edges; GL's `v_blend` comes with 6.6) | 3.7 |
+| R41 | Particles and sprites are scaled by the exposure (`prev_adapted_luminance × pt_particle_brightness`, Q2RTX's for particles) so they show at GL's colors whatever the exposure; one factor for both, `pt_particle_brightness` 15 (Q2RTX 100), measured against their GL colors; 1 in the debug views and with `tm_enable 0` | 3.7 |
+| R42 | The adapted luminance reaches the CPU through Q2RTX's readback buffer, one mapped per frame in flight, read when the slot comes round (two frames old; a host barrier after the curve pass); Q2RTX's filter of readbacks of exactly 1 is dropped (1 is `tm_max_luminance`'s clamp), only non-positive and non-finite values are ignored; the exposure starts over on a new map, with new pipelines and when the last rendered 3D frame wasn't tone mapped (a debug view, `tm_enable 0`); it adapts on game time, real time while paused | 3.7 |
+| R43 | `tone_mapping_curve.comp` has no launch check against the view's size: its single workgroup of 128 threads (one per histogram bin) must all reach its barriers, and Q2RTX's check returned some of them early in a view under 128 pixels wide | 3.7 |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
 and physical water (6.5), specular hit distance (3.9), checkerboard fields and RR (3.9),
 model tint brightness (E4), light styles and the gradients (4.2), denoiser
-brightness (4.9), effects brightness (3.7), lights inside solid (4.1),
+brightness (4.9), exposure and the mood (4.9, 4.10, 4.7), effects
+brightness (6.3, 6.2), lights inside solid (4.1),
 dynamic lights in the light lists (4.4), smooth surfaces and sphere lights
 (E5, 4.5), dark albedo (E4, E5).

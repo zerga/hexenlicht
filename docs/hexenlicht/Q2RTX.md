@@ -64,8 +64,9 @@ this repository) or one at a time with
   formats. They are created at the swapchain's size; the 3D view renders
   into their top left `global_ubo.width x global_ubo.height`.
 - **Q2RTX's cvars** (`UBO_CVAR_LIST`: `pt_*`, `flt_*`, `tm_*`) are registered
-  with Q2RTX's defaults; each does something once the pass that reads it
-  is imported. `VK_PrepareUBO` overrides those Q2RTX's host code sets per
+  with Q2RTX's defaults (but `pt_particle_brightness`, 15 since 3.7); each
+  does something once the pass that reads it is imported. `VK_PrepareUBO`
+  overrides those Q2RTX's host code sets per
   mode until their passes exist: `pt_aperture` 0 (no accumulation mode),
   `flt_taa` off (3.8); since 3.6 it sets `flt_temporal_*` to 0 when the
   denoiser has no history, as Q2RTX's `temporal_frame_valid` does.
@@ -79,7 +80,7 @@ this repository) or one at a time with
 
 | Q2RTX | What it does | Hexenlicht | Story |
 |---|---|---|---|
-| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback 3.7; dynamic resolution 3.8 | E1, E2, 3.1, … |
+| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); dynamic resolution 3.8 | E1, E2, 3.1, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
 | `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1; specialization constants 3.5a); the passes 3.2–3.5b (`vk_view.c`: the bounces 3.5a) | 2.6, 3.1, … |
@@ -92,7 +93,7 @@ this repository) or one at a time with
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
 | `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); TAAU 3.8 | 3.6, 3.8 |
-| `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | 3.7 | 3.7 |
+| `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | `vk_tonemap.c`, `vk_bloom.c` (3.7: SDR only; no under-water bloom or menu blur; the effects scaled by the exposure with one factor for particles and sprites, `pt_particle_brightness` 15) | 3.7 |
 | `fsr.c`, `fsr/` | AMD FSR 1 | 3.8 | 3.8 |
 | `profiler.c` | GPU timers | 3.11 | 3.11 |
 | `physical_sky.c`, `precomputed_sky.c` | physical sky, sun | 4.6 | 4.6 |
@@ -116,7 +117,7 @@ this repository) or one at a time with
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
-| `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
+| `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom (3.7: unchanged but `tone_mapping_curve.comp`'s launch check, removed; the tone mapping and readback buffers by device address, `vertex_buffer.h`; the apply shader's HDR variant and full screen blend unused) | 3.7 |
 | `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | 4.6 |
 | `normalize_normal_map.comp` | PBR materials | 5.3 |
@@ -185,9 +186,18 @@ this repository) or one at a time with
   against GL (4.9) measures the
   denoised image; a random pick (the A-SVGF paper's) would remove the rest
   but lose Q2RTX's anti-lag for moving lights.
-- **Effects brightness (3.7).** Q2RTX scales particles and sprites by the
-  exposure; ours keep GL's colors, added as they are to the lit image
-  (3.3), until exposure and tone mapping settle how bright they are.
+- **Exposure and the mood (4.9, 4.10, 4.7).** Since 3.7 Q2RTX's tone
+  mapper and auto exposure run with its defaults: its curve lifts the
+  shadows of Hexen II's dark scenes, and the exposure brightens a dark
+  place over a few seconds down to `tm_min_luminance` (0.0002; the test
+  lights' demo1 start adapts to ~0.04–0.07). The calibration against GL
+  (4.9) picks `tm_exposure_bias`, `tm_reinhard` and the rest; the
+  darkness mechanics (4.10) need a `tm_min_luminance` that keeps dark
+  puzzle areas dark; per-map exposure is 4.7's.
+- **Effects brightness (6.3, 6.2).** Since 3.7 particles and sprites share
+  one exposure factor (`pt_particle_brightness` 15, measured on meteor
+  staff particles); Q2RTX has separate ones for sprites, beams and
+  explosions. Beams (6.3) and the effect groups (6.2) check it against GL.
 - **Lights inside solid (4.1).** Some light entities have their origin
   inside a wall: demo1 43 of 332, demo3 26, village1 26, village2 11, a few
   elsewhere; nearly all plain `light` entities (a `light_torch_meso`,
