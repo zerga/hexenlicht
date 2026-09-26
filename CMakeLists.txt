@@ -242,6 +242,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/stubs.c
 	${HEXENLICHT_DIR}/vid_vk.c
 	${HEXENLICHT_DIR}/vk_core.c
+	${HEXENLICHT_DIR}/vk_profiler.c
 	${HEXENLICHT_DIR}/vk_swapchain.c
 	${HEXENLICHT_DIR}/vk_shader.c
 	${HEXENLICHT_DIR}/vk_texture.c

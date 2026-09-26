@@ -136,7 +136,6 @@ typedef struct
 	VkAccelerationStructureKHR	as;
 	VkDeviceAddress			address;
 	uint32_t			num_instances;
-	qboolean			timed;		/* has timestamps to read */
 
 	vk_dynblas_t			dyn[NUM_DYN];
 	vk_buffer_t			dyn_scratch;
@@ -156,8 +155,6 @@ static vk_tlas_t	tlas[VK_FRAMES_IN_FLIGHT];
 static int		last_tlas = -1;		/* the slot built last, -1 = none since the map loaded */
 static uint64_t		last_tlas_frame;	/* vk.frame_count it was built in */
 static uint32_t		scratch_alignment;
-static VkQueryPool	query_pool;		/* 3 timestamps per slot: start, dynamic BLASes built, TLAS built */
-static double		tlas_build_ms, dyn_build_ms;
 
 /* the last TLAS's instances: range and model instance, for vk_rtcheck */
 static struct
@@ -592,27 +589,10 @@ void VK_BuildTLAS (void)
 	t = &tlas[slot];
 	cmd = vk.frames[slot].cmd;
 
-	/* this slot's fence was waited for, so its last build's timestamps are ready */
-	if (query_pool && t->timed)
-	{
-		uint64_t	ts[3];
-
-		if (vkGetQueryPoolResults (vk.device, query_pool, slot * 3, 3, sizeof(ts), ts, sizeof(uint64_t),
-					   VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
-		{
-			dyn_build_ms = (double)(ts[1] - ts[0]) * vk.props.limits.timestampPeriod / 1.0e6;
-			tlas_build_ms = (double)(ts[2] - ts[1]) * vk.props.limits.timestampPeriod / 1.0e6;
-		}
-	}
-
-	if (query_pool)
-	{
-		vkCmdResetQueryPool (cmd, query_pool, slot * 3, 3);
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, query_pool, slot * 3);
-	}
+	VK_ProfilerStart (cmd, PROF_BLAS);
 	BuildDynamicBLASes (t, cmd);
-	if (query_pool)
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, query_pool, slot * 3 + 1);
+	VK_ProfilerStop (cmd, PROF_BLAS);
+	VK_ProfilerStart (cmd, PROF_TLAS);
 
 	t->num_instances = 0;
 	for (r = 0; r < NUM_RANGES; r++)
@@ -672,11 +652,7 @@ void VK_BuildTLAS (void)
 		       t->effects_scratch_address);
 	vkCmdBuildAccelerationStructuresKHR (cmd, t->num_effects ? 2 : 1, infos, range_ptrs);
 	AccelBarrier (cmd);
-	if (query_pool)
-	{
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, query_pool, slot * 3 + 2);
-		t->timed = true;
-	}
+	VK_ProfilerStop (cmd, PROF_TLAS);
 	last_tlas = slot;
 	last_tlas_frame = vk.frame_count;
 }
@@ -712,6 +688,7 @@ void VK_PrintEffectsAccel (void)
 {
 	const vk_tlas_t	*t;
 	int		d;
+	double		dyn_build_ms, tlas_build_ms, average;
 
 	if (last_tlas < 0)
 	{
@@ -724,6 +701,8 @@ void VK_PrintEffectsAccel (void)
 		Con_Printf ("%s BLAS: %u triangles, room for %u, %.2f MB per frame in flight\n", dyn_names[d],
 				t->dyn[d].count, t->dyn[d].capacity, t->dyn[d].buffer.size / (1024.0 * 1024.0));
 	}
+	VK_ProfilerTime (PROF_BLAS, &dyn_build_ms, &average);
+	VK_ProfilerTime (PROF_TLAS, &tlas_build_ms, &average);
 	Con_Printf ("effects TLAS: %u instances, %.1f KB per frame in flight; built with the dynamic BLASes "
 		    "(%.3f ms on the GPU) and the TLAS (%.3f ms)\n", t->num_effects,
 			t->effects_buffer.size / 1024.0, dyn_build_ms, tlas_build_ms);
@@ -746,6 +725,7 @@ static void VK_Accel_f (void)
 	{
 		const vk_tlas_t	*t = &tlas[last_tlas];
 		int		d;
+		double		dyn_build_ms, tlas_build_ms, dyn_average, tlas_average;
 
 		for (d = 0; d < NUM_DYN; d++)
 		{
@@ -755,7 +735,10 @@ static void VK_Accel_f (void)
 		Con_Printf ("TLAS: %u instances, %.2f MB per frame in flight\n", t->num_instances, t->buffer.size / (1024.0 * 1024.0));
 		Con_Printf ("effects TLAS: %u instances, %.1f KB per frame in flight\n", t->num_effects,
 				t->effects_buffer.size / 1024.0);
-		Con_Printf ("builds on the GPU: dynamic BLASes %.3f ms, TLAS %.3f ms\n", dyn_build_ms, tlas_build_ms);
+		VK_ProfilerTime (PROF_BLAS, &dyn_build_ms, &dyn_average);
+		VK_ProfilerTime (PROF_TLAS, &tlas_build_ms, &tlas_average);
+		Con_Printf ("builds on the GPU: dynamic BLASes %.3f ms (average %.3f), TLAS %.3f ms (average %.3f)\n",
+			    dyn_build_ms, dyn_average, tlas_build_ms, tlas_average);
 	}
 	else
 	{
@@ -1198,7 +1181,6 @@ void VK_InitAccel (void)
 	VkAccelerationStructureGeometryKHR			geom;
 	VkAccelerationStructureBuildGeometryInfoKHR		info;
 	VkAccelerationStructureBuildSizesInfoKHR		size, effects_size;
-	VkQueryPoolCreateInfo					query_info;
 	uint32_t						max_instances = MAX_TLAS_INSTANCES;
 	uint32_t						max_effects = NUM_EFFECT_INSTANCES;
 	int							i;
@@ -1263,15 +1245,6 @@ void VK_InitAccel (void)
 					  effects_size.accelerationStructureSize, &t->effects_address);
 	}
 
-	if (vk.props.limits.timestampComputeAndGraphics)
-	{
-		memset (&query_info, 0, sizeof(query_info));
-		query_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-		query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-		query_info.queryCount = VK_FRAMES_IN_FLIGHT * 3;
-		VK_CHECK (vkCreateQueryPool (vk.device, &query_info, NULL, &query_pool));
-	}
-
 	Cmd_AddCommand ("vk_accel", VK_Accel_f);
 	Cmd_AddCommand ("vk_rtcheck", VK_RTCheck_f);
 	Cmd_AddCommand ("vk_rayprobe", VK_RayProbe_f);
@@ -1303,7 +1276,4 @@ void VK_ShutdownAccel (void)
 		VK_DestroyBuffer (&t->effects_scratch);
 		memset (t, 0, sizeof(*t));
 	}
-	if (query_pool)
-		vkDestroyQueryPool (vk.device, query_pool, NULL);
-	query_pool = VK_NULL_HANDLE;
 }

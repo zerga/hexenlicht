@@ -306,6 +306,7 @@ void VK_UpscaleDisplay (VkCommandBuffer cmd)
 	if (!up.fsr_easu && !up.fsr_rcas)
 		return;
 	CreatePipelines ();
+	VK_ProfilerStart (cmd, PROF_FSR);
 	/* 16x16 pixels per group of 64 threads (4 each), as AMD's integration
 	 * guide dispatches them */
 	if (up.fsr_easu)
@@ -318,6 +319,7 @@ void VK_UpscaleDisplay (VkCommandBuffer cmd)
 		VK_DispatchCompute (cmd, rcas_pipelines[up.fsr_easu ? 0 : 1], up.unscaled.width, up.unscaled.height, 16);
 		VK_ComputeBarrier (cmd);
 	}
+	VK_ProfilerStop (cmd, PROF_FSR);
 }
 
 /* after VK_RenderView3D's passes: whether the next frame has TAA history */

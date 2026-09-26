@@ -265,6 +265,16 @@ static qboolean ViewReady (void)
 	       view_rect.extent.height <= vk_image_extent.height;
 }
 
+/* the upscaler's row in the profiler */
+static const char *UpscalerName (const vk_upscale_t *up)
+{
+	if (up->dlss)
+		return (up->dlss == VK_SL_RR) ? "DLSS RR" : "DLSS SR";
+	if (up->taa_mode == AA_MODE_OFF)
+		return "TAA copy";
+	return (up->taa_output.width > up->render.width || up->jitter[0] != 0.0f || up->jitter[1] != 0.0f) ? "TAAU" : "TAA";
+}
+
 void VK_RenderView3D (void)
 {
 	VkCommandBuffer		cmd;
@@ -322,38 +332,53 @@ void VK_RenderView3D (void)
 		VK_RenderTargetBarrier (cmd, VK_Image (display_images[i]), VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
 					VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 					VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	VK_ProfilerStart (cmd, PROF_VIEW);	/* the passes' GPU times (vk_profiler.c) */
 	VK_ClearLightStats (cmd);	/* the buffer the lighting passes count into */
 	push.gpu_index = -1;
 	push.bounce = 0;
 	/* the G-buffer: each checkerboard field is half the width (Quake II
 	 * RTX's vkpt_pt_trace_primary_rays) */
+	VK_ProfilerStart (cmd, PROF_PRIMARY);
 	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, height, 2);
 	VK_ComputeBarrier (cmd);
+	VK_ProfilerStop (cmd, PROF_PRIMARY);
 	/* reflections and refractions (Quake II RTX's vkpt_pt_trace_reflections):
 	 * pt_reflect_refract passes, each following the path one surface
 	 * further; the first pass has its own pipeline */
 	num_reflect = VK_ReflectRefractPasses ();
+	if (num_reflect)
+		VK_ProfilerStart (cmd, PROF_REFLECT);
 	for (i = 0; i < num_reflect; i++)
 	{
 		push.bounce = i;
 		VK_DispatchRays (cmd, reflect_pipelines[i ? 1 : 0], &push, width / 2, height, 2);
 		VK_ComputeBarrier (cmd);
 	}
+	if (num_reflect)
+		VK_ProfilerStop (cmd, PROF_REFLECT);
 	push.bounce = 0;
 	/* the denoiser's gradient samples: surfaces seen last frame, which the
 	 * lighting passes shade as last frame did (vk_asvgf.c) */
 	if (denoise)
+	{
+		VK_ProfilerStart (cmd, PROF_GRADIENT);
 		VK_GradientReproject (cmd, width, height);
+		VK_ProfilerStop (cmd, PROF_GRADIENT);
+	}
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
+	VK_ProfilerStart (cmd, PROF_DIRECT);
 	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, height, 2);
 	VK_ComputeBarrier (cmd);
+	VK_ProfilerStop (cmd, PROF_DIRECT);
 	/* the G-buffer's debug views before the bounces: with two, the first
 	 * stores its hit into the shading position for the second; at the
 	 * render size, which the composite scales */
 	if (!DEBUGVIEW_READS_LIGHTING (mode))
 	{
+		VK_ProfilerStart (cmd, PROF_DEBUG);
 		VK_DispatchRays (cmd, debug_pipeline, &push, width, height, 1);
 		VK_ComputeBarrier (cmd);
+		VK_ProfilerStop (cmd, PROF_DEBUG);
 	}
 	/* the bounces (Quake II RTX's vkpt_pt_trace_lighting): 0.5 traces
 	 * every other row, alternating per frame, (h + 1) / 2 rows so an odd
@@ -361,8 +386,10 @@ void VK_RenderView3D (void)
 	num_bounces = VK_NumBounceRays ();
 	for (i = 0; i < (int)ceilf (num_bounces); i++)
 	{
+		VK_ProfilerStart (cmd, i ? PROF_BOUNCE2 : PROF_BOUNCE1);
 		VK_DispatchRays (cmd, indirect_pipelines[i], &push, width / 2, (num_bounces == 0.5f) ? (height + 1) / 2 : height, 2);
 		VK_ComputeBarrier (cmd);
+		VK_ProfilerStop (cmd, i ? PROF_BOUNCE2 : PROF_BOUNCE1);
 	}
 	/* the lighting times the surfaces, with the effects over them, into
 	 * ASVGF_COLOR: denoised (the denoiser's last filter composites) or as
@@ -371,15 +398,21 @@ void VK_RenderView3D (void)
 	 * denoised or for DLSS RR, with DLSS's inputs (vk_dlss.c) */
 	if (denoise)
 	{
+		VK_ProfilerStart (cmd, PROF_DENOISER);
 		VK_DenoiseLighting (cmd, width, height, num_bounces >= 0.5f);
+		VK_ProfilerStop (cmd, PROF_DENOISER);
 	}
 	else
 	{
+		VK_ProfilerStart (cmd, PROF_COMPOSITING);
 		VK_DispatchCompute (cmd, compositing_pipeline, width, height, 16);
 		VK_ComputeBarrier (cmd);
+		VK_ProfilerStop (cmd, PROF_COMPOSITING);
 	}
+	VK_ProfilerStart (cmd, PROF_INTERLEAVE);
 	VK_DispatchCompute (cmd, interleave_pipelines[up->dlss], width, height, 16);
 	VK_ComputeBarrier (cmd);
+	VK_ProfilerStop (cmd, PROF_INTERLEAVE);
 	if (mode == DEBUGVIEW_LIT)
 	{
 		/* the lit image into TAA_OUTPUT (TAA, TAAU; a copy without the
@@ -388,19 +421,33 @@ void VK_RenderView3D (void)
 		 * exposure on the TAA output, and FSR (Quake II RTX's order) */
 		const uint32_t	w = up->taa_output.width, h = up->taa_output.height;
 
+		VK_ProfilerStartNamed (cmd, PROF_UPSCALE, UpscalerName (up));
 		if (up->dlss)
 			dlss_ran = VK_DLSSRun (cmd, up);
 		if (!dlss_ran)
 			VK_UpscaleHDR (cmd);
+		if (up->dlss && !dlss_ran)
+			VK_ProfilerLabel (PROF_UPSCALE, "TAA copy");	/* DLSS failed */
+		VK_ProfilerStop (cmd, PROF_UPSCALE);
 		if (VK_BloomEnabled ())
+		{
+			VK_ProfilerStart (cmd, PROF_BLOOM);
 			VK_Bloom (cmd, w, h);
+			VK_ProfilerStop (cmd, PROF_BLOOM);
+		}
 		if (VK_ToneMappingEnabled ())
+		{
+			VK_ProfilerStart (cmd, PROF_TONEMAP);
 			VK_ToneMap (cmd, w, h, FrameTime ());
+			VK_ProfilerStop (cmd, PROF_TONEMAP);
+		}
 		VK_UpscaleDisplay (cmd);
 	}
 	else if (DEBUGVIEW_READS_LIGHTING (mode))
 	{
+		VK_ProfilerStart (cmd, PROF_DEBUG);
 		VK_DispatchRays (cmd, debug_pipeline, &push, width, height, 1);	/* the debug views stay as they are */
+		VK_ProfilerStop (cmd, PROF_DEBUG);
 	}
 	/* the composite shows one of them, but its shader has all three */
 	for (i = 0; i < (int)Q_COUNTOF(display_images); i++)
@@ -410,6 +457,7 @@ void VK_RenderView3D (void)
 	/* the lit image without tone mapping is still scaled by
 	 * STORAGE_SCALE_HDR (asvgf_atrous.comp, compositing.comp) */
 	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
+	VK_ProfilerStop (cmd, PROF_VIEW);
 	VK_EndDenoiserFrame (denoise);
 	VK_EndUpscaleFrame ();
 	VK_EndDLSSFrame (dlss_ran);

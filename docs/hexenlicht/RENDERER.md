@@ -16,7 +16,8 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
-[Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Other](#other) · [Console commands](#console-commands)
+[Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
+[Other](#other) · [Console commands](#console-commands)
 
 ## Build target
 
@@ -313,7 +314,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `custom0-2`) writes VboPrimitives and packed positions into this frame's
   instanced buffer (`VERTEX_BUFFER_INSTANCED`, `MAX_INSTANCED_PRIMITIVES`, one
   per frame in flight; overflow is counted, never printed inside a frame).
-- `vk_models [list|check]`; `check` compares every triangle of the last frame
+- `vk_models [list|check]` (the geometry pass's GPU time from the profiler);
+  `check` compares every triangle of the last frame
   with the same computation on the CPU (`CpuTriangle` — keep it in step with
   the shader).
 
@@ -383,7 +385,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   pick the hit logic by, and each has a `TlasInstanceInfo` (first primitive,
   model instance; -1 for the world and for model triangles, whose
   `VboPrimitive.instance` names it). One TLAS per frame in flight
-  (`VK_TLASAddress`), GPU timestamps.
+  (`VK_TLASAddress`); the builds are timed by the profiler (`dynamic
+  BLASes`, `TLAS`; see [Profiler](#profiler-vk_profilerc)).
 - AS size queries use the capacity's `maxVertex`; `gl_RayFlagsOpaqueEXT`
   overrides instance flags.
 - Checks: `vk_accel` (sizes, build times); `vk_rayprobe x y z` (one ray from
@@ -1207,6 +1210,97 @@ mapper takes out; with `tm_enable 0` the composite takes it out and clamps
   calibration against GL (4.9) and keeping dark places dark (4.10:
   `tm_min_luminance`, per-map exposure 4.7) decide the settings.
 
+## Profiler (`vk_profiler.c`)
+
+Story 3.11: Quake II RTX's `profiler.c`, GPU timers for every pass, their
+overlay, and a measuring mode.
+
+- **Markers:** a pass is bracketed by `VK_ProfilerStart` and
+  `VK_ProfilerStop` with its entry of `vk_local.h`'s `PROFILER_LIST` (name
+  and indent; entries nest in the list's order), which write a timestamp
+  each into the frame in flight's range of one query pool. `VK_BeginFrame`
+  calls `VK_ProfilerBeginFrame`, which reads the range the frame in flight
+  used last time (its fence has made it ready: nothing waits on the GPU,
+  the timings are two frames old), resets it and starts `frame`;
+  `VK_EndFrame` stops it. Always on, as in Q2RTX: about 40 timestamps per
+  frame. With the validation layer (Debug builds, or `-validation`; it
+  loads the debug-utils extension) each marker also sets a debug label for
+  RenderDoc and Nsight; Release captures without it have none.
+- **Entries:** `frame` (the whole command buffer); `model geometry`,
+  `dynamic BLASes`, `TLAS`; `3D view` with `primary rays`,
+  `reflect/refract`, `gradient reproject`, `direct lighting`, `debug view`,
+  `bounce 1`, `bounce 2`, `denoiser` (`gradients`, `temporal`, `a-trous`)
+  or `compositing`, `interleave`, the upscaler (named by what ran: `TAA`,
+  `TAAU`, `TAA copy`, `DLSS SR`, `DLSS RR`), `bloom`, `tone mapping`,
+  `FSR`; `composite and 2D` (the swapchain pass). An entry that didn't run
+  in a frame drops its samples and its row. `vk_accel` and `vk_models` read
+  their build times from it (3.10 and earlier kept query pools of their
+  own).
+- **Changes from Q2RTX:** both timestamps are taken after all earlier
+  commands (Q2RTX starts at the top of the pipe), so an entry's time is its
+  own passes'; the samples are a ring of 1000 per entry, of which
+  `profiler_samples` (60) are averaged (Q2RTX reallocates); the upscaler
+  names itself; the overlay follows `vid_uiscale` (no `profiler_scale`).
+- **`profiler 1`** draws the table (name, last frame, average) over the top
+  left of the screen, below the notify lines, on a translucent box
+  (`VK_DrawShade`), with the game's font (`VK_DrawProfiler`, from
+  `GL_EndRendering` before the 2D batch is drawn); **`vk_profiler`**
+  prints it.
+- **`vk_benchmark 1`** (not archived) lifts the 72 fps cap (`host.c`), the
+  sleep of an unfocused or paused window and the per-frame throttle
+  (`sys_throttle`; `sys_win.c`), guarded upstream edits (UPSTREAM.md), so
+  the GPU runs at full load. Without it the
+  times depend on the GPU's clocks, which follow the load: with the cap and
+  the sleeps the clocks swing between idle and bursts, and the same scene
+  measures anywhere from 7.6 to 13.6 ms (the cathedral at 100 %,
+  2560x1440); with it they hold steady (on this machine at its 100 W power
+  cap, about 1 GHz). For measuring only: Hexen II's physics isn't meant for
+  more than 72 frames a second.
+- **Baseline:** `tools/hexenlicht/perf_baseline.ps1` runs demo1's and the
+  cathedral's starts with test lights, paused, `vk_benchmark 1`,
+  `viewsize 100`, `fov 90`, at each window size, and prints the averages
+  as markdown (TESTING.md's "GPU cost"). Runs agree within 5–10 %.
+  Recorded 2026-09-26 (after the throttle fix of the review), Release,
+  RTX 4070 Ti (driver 616.92) at a 100 W power limit (about 1 GHz; an
+  unlimited card runs roughly 2.5 times as fast), 120-frame averages, ms:
+
+  | 2560x1440 | demo1 TAAU 100 % | demo1 TAAU 67 % | demo1 DLSS RR 67 % | cath TAAU 100 % | cath TAAU 67 % | cath DLSS RR 67 % |
+  |---|---|---|---|---|---|---|
+  | frame | 15.67 | 7.14 | 12.37 | 13.67 | 6.49 | 12.31 |
+  | model geometry | 0.05 | 0.05 | 0.04 | 0.03 | 0.03 | 0.03 |
+  | dynamic BLASes | 0.98 | 0.83 | 0.87 | 0.82 | 0.68 | 0.87 |
+  | TLAS | 0.13 | 0.11 | 0.11 | 0.09 | 0.11 | 0.09 |
+  | 3D view | 14.43 | 6.08 | 11.28 | 12.66 | 5.61 | 11.25 |
+  | – primary rays | 2.08 | 0.94 | 0.97 | 1.67 | 0.80 | 0.96 |
+  | – reflect/refract | 0.27 | 0.09 | 0.10 | 0.27 | 0.08 | 0.09 |
+  | – gradient reproject | 0.52 | 0.25 | | 0.52 | 0.24 | |
+  | – direct lighting | 1.33 | 0.49 | 0.58 | 1.26 | 0.55 | 0.58 |
+  | – bounce 1 | 3.06 | 1.13 | 1.28 | 2.47 | 0.97 | 1.20 |
+  | – compositing | | | 0.08 | | | 0.10 |
+  | – denoiser | 5.89 | 2.24 | | 5.29 | 2.09 | |
+  | – – gradients | 0.39 | 0.17 | | 0.41 | 0.18 | |
+  | – – temporal | 1.57 | 0.59 | | 1.36 | 0.54 | |
+  | – – a-trous | 3.94 | 1.48 | | 3.53 | 1.37 | |
+  | – interleave | 0.14 | 0.05 | 0.21 | 0.12 | 0.04 | 0.19 |
+  | – TAAU / DLSS RR | 0.46 | 0.33 | 7.47 | 0.49 | 0.36 | 7.54 |
+  | – bloom | 0.37 | 0.31 | 0.32 | 0.31 | 0.26 | 0.32 |
+  | – tone mapping | 0.29 | 0.25 | 0.26 | 0.25 | 0.21 | 0.26 |
+  | composite and 2D | 0.09 | 0.07 | 0.08 | 0.08 | 0.06 | 0.08 |
+
+  | 1920x1080 | demo1 TAAU 100 % | demo1 TAAU 67 % | demo1 DLSS RR 67 % | cath TAAU 100 % | cath TAAU 67 % | cath DLSS RR 67 % |
+  |---|---|---|---|---|---|---|
+  | frame | 8.12 | 3.72 | 6.94 | 7.61 | 3.56 | 6.71 |
+  | 3D view | 7.23 | 2.96 | 6.15 | 6.80 | 2.91 | 6.00 |
+  | – bounce 1 | 1.45 | 0.73 | 0.81 | 1.17 | 0.56 | 0.64 |
+  | – denoiser | 2.83 | 1.03 | | 2.79 | 1.07 | |
+  | – TAAU / DLSS RR | 0.22 | 0.15 | 4.06 | 0.25 | 0.15 | 4.03 |
+
+  The dynamic BLASes (the models' and the effects' triangles, rebuilt every
+  frame) take about 1 ms at any size; the denoiser's à-trous filter is the
+  largest single pass.
+- Left out: dynamic resolution (7.2), CPU timings (upstream's `showfps`),
+  graphs.
+
 ## Other
 
 - **Settings:** `hexenlicht.exe` saves to `hexenlicht.cfg` instead of
@@ -1228,6 +1322,7 @@ mapper takes out; with `tm_enable 0` the composite takes it out and clamps
 | `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
 | `tm_enable 0/1`, `tm_debug 0-2`, `bloom_enable 0/1`, `bloom_debug 0-3` | tone mapping and auto exposure (Q2RTX's `tm_*` cvars tune them), their histogram or curve over the view; bloom (`bloom_sigma`, `bloom_intensity`) and its stages (see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)) |
 | `vk_exposure` | the adapted luminance read back (two frames old) |
+| `profiler 0/1`, `profiler_samples`, `vk_profiler`, `vk_benchmark 0/1` | the GPU timers over the screen, the frames they average (60); printed; full load for measuring (no 72 fps cap, no sleep when unfocused) (see [Profiler](#profiler-vk_profilerc)) |
 | `r_scale 25-100`, `r_upscaler 0-4`, `vk_upscale` | the render size in percent of the view's; 0 TAA, 1 TAAU, 2 FSR 1 (`flt_fsr_easu`, `flt_fsr_rcas`, `flt_fsr_sharpness`), 3 DLSS SR, 4 DLSS RR; the last frame's sizes, jitter and passes (see [Upscaling](#upscaling-vk_upscalec)) |
 | `vk_dlss`, `r_dlss_preset` | Streamline's state (DLL, signature, support, versions, driver, evaluations, its log's warnings and errors), DLSS's images, mode and render sizes; DLSS's model: 0 its default, or a preset letter (see [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)) |
 | `pt_particle_brightness` | the effects' brightness under the exposure (15) |

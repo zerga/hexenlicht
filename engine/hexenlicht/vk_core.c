@@ -585,6 +585,7 @@ typedef struct
  * creates through vk_asvgf.c) */
 static vk_module_t	vk_modules[] =
 {
+	{ "profiler",	VK_InitProfiler,	VK_ShutdownProfiler,		VK_INIT_DEFAULT },
 	{ "buffers",	VK_InitBuffers,		VK_ShutdownBuffers,		VK_INIT_DEFAULT },
 	{ "swapchain",	VK_InitSwapchain,	VK_ShutdownSwapchain,		VK_INIT_DEFAULT },
 	{ "textures",	VK_InitTextures,	VK_ShutdownTextures,		VK_INIT_DEFAULT },

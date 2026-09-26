@@ -266,20 +266,24 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   found 19 hazards, all between NGX's own commands on its RR resources
   (`nv.ngx.dlssd.resource`), none on ours; `main` has none. Remove the
   DLLs afterwards.
-- **GPU cost:** until 3.11's timers, temporary timestamps
-  (`vkCmdWriteTimestamp2` between the passes, read back when the frame's
-  slot comes round, averaged over 100 frames by a console command; not
-  committed). Measure the baseline build the same way on the same day:
-  the GPU's clocks follow its load and power limit (3.8 found the machine
-  at a ~100 W cap, the 100 % view at 0.8 GHz; watch with `nvidia-smi
-  --query-gpu=clocks.gr,power.draw,clocks_throttle_reasons.active
-  --format=csv -lms 250`). uHexen2 caps frames at 72 fps outside timedemo,
-  so a light setting runs partly idle at other clocks: lift the cap
-  temporarily (`host.c`'s `1.0/72.0` check) so every setting runs at full
-  load. Lift `sys_win.c`'s sleep for an unfocused window too (20 ms per
-  frame, 50 when paused): a game `hl_run.ps1` starts often isn't in front,
-  and then the GPU idles at 0.3–0.6 GHz (throttle reason 0x1) and a lower
-  render scale even measures slower (3.10's first run).
+- **GPU cost** (since 3.11): the profiler (RENDERER.md's Profiler section)
+  with **`vk_benchmark 1`**, which lifts the 72 fps cap, the frame
+  throttle and the sleep of an unfocused or paused window (a game
+  `hl_run.ps1` starts often isn't in front), so the GPU runs at full load
+  and steady clocks. Without it the
+  clocks swing between idle and bursts and the times scatter both ways
+  (3.11: the cathedral at 100 % measured 7.6 ms unfocused at the cap, 13.6
+  with `vk_benchmark 1`; 3.10's first run measured an idling GPU at
+  0.3–0.6 GHz). Set `profiler_samples` (e.g. 120), wait longer than that
+  after a change, then `vk_profiler` prints the averages.
+  `tools/hexenlicht/perf_baseline.ps1` does this for demo1's and the
+  cathedral's starts at 1920x1080 and 2560x1440 (`-Sizes`), TAAU at 100 %
+  and 67 % and DLSS RR at 67 % when the DLLs are in the build folder, and
+  prints markdown tables (`-Out` writes them); it backs up and restores the
+  configs. Compare with a baseline measured the same day: this machine's GPU
+  runs at a ~100 W power limit (about 1 GHz at full load; watch with
+  `nvidia-smi --query-gpu=clocks.gr,power.draw,clocks_throttle_reasons.active
+  --format=csv -lms 250`: 0x4 the power cap, 0x1 idle).
 - **`screenshot` captures the next frame:** a command in the same frame
   after it (e.g. `vk_testlight` changing the lights) is already in the
   shot; put waits after every `screenshot`.

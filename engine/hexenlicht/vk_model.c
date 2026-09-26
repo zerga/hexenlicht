@@ -69,9 +69,6 @@ static vk_buffer_t	instanced[VK_FRAMES_IN_FLIGHT];
 
 static VkPipelineLayout	geometry_layout;
 static VkPipeline	geometry_pipeline;
-static VkQueryPool	query_pool;		/* 2 timestamps per frame in flight */
-static qboolean		timed[VK_FRAMES_IN_FLIGHT];
-static double		geometry_ms;
 
 /* the last geometry pass, for vk_models check */
 static struct
@@ -307,18 +304,6 @@ void VK_UpdateModelGeometry (void)
 
 	if (!vk.frame_active)
 		return;
-
-	/* this slot's fence was waited for, so its last pass's timestamps are ready */
-	if (query_pool && timed[slot])
-	{
-		uint64_t	ts[2];
-
-		if (vkGetQueryPoolResults (vk.device, query_pool, slot * 2, 2, sizeof(ts), ts, sizeof(uint64_t),
-					   VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
-			geometry_ms = (double)(ts[1] - ts[0]) * vk.props.limits.timestampPeriod / 1.0e6;
-		timed[slot] = false;
-	}
-
 	if (!mf->num_instances)
 		return;
 
@@ -331,11 +316,7 @@ void VK_UpdateModelGeometry (void)
 	push.positions = instanced[slot].address + POSITIONS_OFFSET;
 	push.first_instance = (uint32_t)mf->first_instance;
 
-	if (query_pool)
-	{
-		vkCmdResetQueryPool (cmd, query_pool, slot * 2, 2);
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, query_pool, slot * 2);
-	}
+	VK_ProfilerStart (cmd, PROF_MODELS);
 	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, geometry_pipeline);
 	vkCmdPushConstants (cmd, geometry_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
 	vkCmdDispatch (cmd, (uint32_t)mf->num_instances, 1, 1);
@@ -352,12 +333,7 @@ void VK_UpdateModelGeometry (void)
 	dep.memoryBarrierCount = 1;
 	dep.pMemoryBarriers = &barrier;
 	vkCmdPipelineBarrier2 (cmd, &dep);
-
-	if (query_pool)
-	{
-		vkCmdWriteTimestamp2 (cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, query_pool, slot * 2 + 1);
-		timed[slot] = true;
-	}
+	VK_ProfilerStop (cmd, PROF_MODELS);
 
 	last_pass.slot = slot;
 	last_pass.framecount = r_scene.framecount;
@@ -812,6 +788,7 @@ static void VK_Models_f (void)
 	const vk_modelframe_t	*mf = VK_ModelFrame ();
 	VkDeviceSize		bytes = 0;
 	int			i, tris = 0, poses = 0;
+	double			geometry_ms, geometry_avg;
 
 	if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "check"))
 	{
@@ -841,10 +818,11 @@ static void VK_Models_f (void)
 			too_many_models ? va(" (%d found no room)", too_many_models) : "");
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
+	VK_ProfilerTime (PROF_MODELS, &geometry_ms, &geometry_avg);
 	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u weapon triangles, "
-		    "geometry pass %.3f ms on the GPU\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
+		    "geometry pass %.3f ms on the GPU (average %.3f)\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
 			mf->groups[MODEL_GROUP_TRANSPARENT].count, mf->groups[MODEL_GROUP_MASKED].count,
-			mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms);
+			mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 }
@@ -858,7 +836,6 @@ void VK_InitModels (void)
 {
 	VkPushConstantRange		push_range;
 	VkPipelineLayoutCreateInfo	layout_info;
-	VkQueryPoolCreateInfo		query_info;
 	float				normals[NUM_VERTEX_NORMALS][4];
 	int				i;
 
@@ -891,15 +868,6 @@ void VK_InitModels (void)
 	layout_info.pPushConstantRanges = &push_range;
 	VK_CHECK (vkCreatePipelineLayout (vk.device, &layout_info, NULL, &geometry_layout));
 
-	if (vk.props.limits.timestampComputeAndGraphics)
-	{
-		memset (&query_info, 0, sizeof(query_info));
-		query_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-		query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-		query_info.queryCount = VK_FRAMES_IN_FLIGHT * 2;
-		VK_CHECK (vkCreateQueryPool (vk.device, &query_info, NULL, &query_pool));
-	}
-
 	Cmd_AddCommand ("vk_models", VK_Models_f);
 }
 
@@ -927,8 +895,5 @@ void VK_ShutdownModels (void)
 	VK_DestroyModelPipelines ();
 	if (geometry_layout)
 		vkDestroyPipelineLayout (vk.device, geometry_layout, NULL);
-	if (query_pool)
-		vkDestroyQueryPool (vk.device, query_pool, NULL);
 	geometry_layout = VK_NULL_HANDLE;
-	query_pool = VK_NULL_HANDLE;
 }

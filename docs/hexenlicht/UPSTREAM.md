@@ -99,7 +99,16 @@ changes one, with a line on what we changed:
   (story 1.8): a `CONFIG_NAME` define after the `Host_WriteConfiguration`
   prototype, used by `Host_Shutdown`; in `Host_Init` an
   `#if defined(HEXENLICHT)` branch opens it for the early cvar reads,
-  falling back to `config.cfg`.
+  falling back to `config.cfg`. `Host_FilterTime` (story 3.11): before its
+  72 fps check, an `#if defined(HEXENLICHT)` `if (VK_Benchmark ()) { } else`
+  skips the check (`vk_benchmark 1`, `vk_profiler.c`), with the prototype
+  above the function.
+- `engine/hexen2/sys_win.c` — in `WinMain`'s loop, before the sleep for a
+  paused, minimized or unfocused window, an `#if defined(HEXENLICHT)`
+  `if (VK_Benchmark () && !Minimized && !block_drawing) { } else` skips it,
+  and before the `sys_throttle` sleep after `Host_Frame` an
+  `if (VK_Benchmark ()) { } else` skips that (story 3.11); the prototype
+  after the `ActiveApp` globals.
 - `engine/h2shared/cmd.c` — `Cmd_Exec_f` takes the file name into a local
   `name`; under `#if defined(HEXENLICHT)`, `exec config.cfg` runs
   `hexenlicht.cfg` when that file exists (story 1.8), so `hexen.rc` loads it.

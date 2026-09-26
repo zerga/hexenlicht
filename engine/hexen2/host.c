@@ -665,6 +665,10 @@ void Host_ClearMemory (void)
 //============================================================================
 
 
+#if defined(HEXENLICHT)
+qboolean VK_Benchmark (void);	/* engine/hexenlicht/vk_profiler.c */
+#endif
+
 /*
 ===================
 Host_FilterTime
@@ -676,6 +680,13 @@ static qboolean Host_FilterTime (float time)
 {
 	realtime += time;
 
+#if defined(HEXENLICHT)
+	/* vk_benchmark 1: measuring the renderer at full load, no cap */
+	if (VK_Benchmark ())
+	{
+	}
+	else
+#endif
 	if (!cls.timedemo && realtime - oldrealtime < 1.0/72.0)
 		return false;		// framerate is too high
 

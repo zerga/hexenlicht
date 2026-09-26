@@ -450,6 +450,7 @@ qboolean VK_BeginFrame (void)
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	VK_CHECK (vkBeginCommandBuffer (f->cmd, &begin));
+	VK_ProfilerBeginFrame (f->cmd);	/* this frame in flight's last timings, then its timer starts */
 
 	vk.image_layout = VK_IMAGE_LAYOUT_UNDEFINED;	/* previous contents don't matter */
 	vk.frame_active = true;
@@ -560,6 +561,7 @@ void VK_EndFrame (void)
 	VK_TransitionImage (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
 			VK_PIPELINE_STAGE_2_NONE, 0);
+	VK_ProfilerEndFrame (f->cmd);
 	VK_CHECK (vkEndCommandBuffer (f->cmd));
 
 	memset (&wait_info, 0, sizeof(wait_info));

@@ -38,6 +38,10 @@ cvar_t		sys_throttle = {"sys_throttle", "0.02", CVAR_ARCHIVE};
 qboolean	ActiveApp, Minimized;
 qboolean	Win95, Win95old, WinNT, WinVista;
 
+#if defined(HEXENLICHT)
+qboolean VK_Benchmark (void);	/* engine/hexenlicht/vk_profiler.c */
+#endif
+
 qboolean		isDedicated;
 
 #define	TIME_WRAP_VALUE	(~(DWORD)0)
@@ -821,6 +825,13 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	    else
 	    {
 		/* yield the CPU for a little while when paused, minimized or not focused */
+#if defined(HEXENLICHT)
+		/* vk_benchmark 1: measuring the renderer at full load, focused or not */
+		if (VK_Benchmark () && !Minimized && !block_drawing)
+		{
+		}
+		else
+#endif
 		if ((cl.paused && !ActiveApp) || Minimized || block_drawing)
 		{
 			SleepUntilInput (PAUSE_SLEEP);
@@ -837,6 +848,12 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 
 		Host_Frame (time);
 
+#if defined(HEXENLICHT)
+		if (VK_Benchmark ())	/* measuring: no throttle either */
+		{
+		}
+		else
+#endif
 		if (time < sys_throttle.value)
 			Sleep (1);
 
