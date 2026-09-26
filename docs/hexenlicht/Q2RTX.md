@@ -109,11 +109,11 @@ this repository) or one at a time with
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
-| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields; `path_tracer_rgen.h` (its lighting functions since 3.3, the gradient samples come with 3.6) | 3.2, 3.3 |
+| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, the gradient samples come with 3.6) | 3.2, 3.3, 3.5b |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
 | `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the gradient light-count history (3.6) and sky lights (4.6) | 3.3, 3.4 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
-| `reflect_refract.rgen` | reflections and refraction of mirrors, glass, water, translucent surfaces | 3.5b |
+| `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
 | `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
@@ -127,9 +127,18 @@ this repository) or one at a time with
 
 ## Open questions for later stories
 
-- **Water normal map (3.5b, 6.5).** Q2RTX's water waves (`get_water_normal`)
+- **Water normal map (6.5).** Q2RTX's water waves (`get_water_normal`)
   sample `textures/water_n.tga` from its media package; we need our own
   (generated or CC0). Until then the water keeps its geometric normal.
+- **Physical water (6.5).** Since 3.5b water and slime stay opaque and
+  textured as GL draws them; Q2RTX's physical water (Fresnel reflection and
+  refraction, extinction, its textures replaced) is in `reflect_refract.rgen`
+  behind that skip. 6.5 decides, and must keep Hexen II's vertical
+  turbulent surfaces opaque whatever it picks: most of its "water" is walls
+  (egypt1's 48 water faces are all vertical `*rtex386` and `*skullwarp`),
+  real pools are rare (demo1 2 faces, demo3 8). The caustics trace
+  (`path_tracer_rgen.h`, off until then) still treats vertical water as
+  glass.
 - **Specular hit distance (3.9).** DLSS Ray Reconstruction wants the
   specular hit distance (or specular motion vectors). Since 3.5a the first
   bounce stores it where it traced a specular ray (`PT_SPECULAR_HIT_DIST`,

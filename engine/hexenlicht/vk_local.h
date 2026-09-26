@@ -373,6 +373,7 @@ void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
+int VK_ReflectRefractPasses (void);	/* pt_reflect_refract: 0 to 10 */
 
 /* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now)
  * and their per-cluster lists, built when the lights change (VK_UpdateLights);

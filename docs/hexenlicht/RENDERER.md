@@ -580,15 +580,15 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 
   | Image | Contents |
   |---|---|
-  | `PT_VISBUF_PRIM_A`, `PT_VISBUF_BARY_A` | instance (~0 = world) and primitive, barycentrics |
+  | `PT_VISBUF_PRIM_A`, `PT_VISBUF_BARY_A` | instance (~0 = world) and primitive, barycentrics (after 3.5b's passes: of the last surface hit) |
   | `PT_BASE_COLOR_A` | base color (textures, a model's tint hue), `.a` specular factor |
   | `PT_METALLIC_A` | metallic, roughness (0 and 1 until E5) |
   | `PT_NORMAL_A`, `PT_GEO_NORMAL_A` | shading and geometric normal (octahedral), facing the ray |
-  | `PT_VIEW_DEPTH_A` | view depth (fp16; the sky 10000) |
-  | `PT_MOTION` | `.xy` where the point was last frame minus where it is, in UV units, jitter-free; `.z` depth change, `.w` depth derivative |
+  | `PT_VIEW_DEPTH_A` | view depth (fp16; the sky 10000; negative behind a reflection or refraction, 3.5b: −10000 for the sky there) |
+  | `PT_MOTION` | `.xy` where the point was last frame minus where it is, in UV units, jitter-free; `.z` depth change (negated behind a reflection or refraction, 3.5b), `.w` depth derivative |
   | `PT_CLUSTER_A` | vis cluster (a brush entity's triangles its instance's; 0xffff = none) |
   | `PT_SHADING_POSITION` | world position, `.w` material ID (light style bits replaced by the medium; 0 = no surface) |
-  | `PT_VIEW_DIRECTION`, `PT_THROUGHPUT`, `PT_BOUNCE_THROUGHPUT` | ray direction and checkerboard flags, throughput and depth, ray cone for the lighting passes |
+  | `PT_VIEW_DIRECTION`, `PT_THROUGHPUT`, `PT_BOUNCE_THROUGHPUT` | ray direction and checkerboard flags, throughput (`.a` the optical path length) and depth, ray cone for the lighting passes |
   | `PT_TRANSPARENT` | effects in front of the surface (premultiplied) and its emission |
   | `ASVGF_RNG_SEED_A` | the pixel's random number seed |
 
@@ -598,14 +598,58 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   range hack); no back-face culling (GL draws `EF_SPECIAL_TRANS` models
   two-sided); threads past the fields' size return (the dispatch is rounded
   up to 8x8 groups); no readback, god rays or light-buffer PVS overlay; water keeps
-  its geometric normal while there is no water normal map. The sky (and
+  its geometric normal while there is no water normal map; vertical water
+  and slime stay water (3.5b: Q2RTX makes them glass for its force fields;
+  Hexen II's vertical turbulent surfaces are walls). The sky (and
   nothing) is an empty surface: black until 4.6 (`pt_show_sky 1` shows the
   sky polygons). Translucent surfaces (alpha < 1) split the fields as in
   Q2RTX: the even field stays on the surface, the odd one goes through it
-  (their material kind), which the refraction pass (3.5) uses.
+  (their material kind), which `reflect_refract.rgen` follows (3.5b, below).
   Textures are sampled with Q2RTX's anisotropic ray-cone gradients; liquids
   warp as Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's
   turbulence (`d_scan.c`), with game time.
+- **Reflections and refractions** (3.5b): `reflect_refract.rgen`, Q2RTX's,
+  dispatched after the primary rays `pt_reflect_refract` times (Q2RTX's
+  default 2; `VK_ReflectRefractPasses`: at least 0), the first pass and the
+  others two pipelines of one shader (specialization constant 0; the push
+  constant's bounce is the pass). Only pixels on a mirror, glass or
+  translucent surface do work: each pass follows the path one surface
+  further and puts that surface into the G-buffer (with its apparent
+  position's motion vector and a negative depth), so the lighting passes
+  light what is seen through or in it; effects along the way are blended
+  over it (particles and sprites behind a translucent surface show).
+  - Translucent surfaces and models (alpha < 1: Hexen II's `*rtex078` and
+    `*lowlight` at 0.33, 2.1; translucent entities, 2.4b): the odd field
+    continues through them (Q2RTX's slight distortion needs a normal map:
+    none until E5). The next pass continues through a translucent layer
+    behind it only on the same instance (Q2RTX's rule against showing a
+    model's inside; all world triangles are one instance, so a world
+    layer behind a world layer is passed through), else the path ends on
+    that layer. The rays cull back faces as in Q2RTX, which skips the
+    inside faces of turbulent volumes; the primary rays don't (R11), so a
+    two-sided `EF_SPECIAL_TRANS` model seen from behind through a
+    translucent surface loses its back faces (6.4). A ray from inside a
+    liquid leaves it through a translucent turbulent surface (they bound
+    liquid volumes).
+  - Mirrors and glass (Q2RTX's `chrome` and `glass` kinds) come with the
+    code for E5's materials; screens and security cameras are Quake II's.
+  - Water and slime stay opaque and textured as GL draws them (only
+    `SURF_TRANSLUCENT` surfaces and translucent entities blend there):
+    they are skipped, and vertical ones stay water; Q2RTX's physical water
+    (Fresnel reflection and refraction, extinction, a waves normal map) is
+    in the shader for 6.5.
+
+  Hexenlicht's changes: the launch check; water and slime skipped, no
+  vertical water as glass; the weapon is in no reflection or refraction
+  ray (as R20, R27), and the ray through a translucent weapon starts at the
+  eye from GL's near plane (the weapon can reach into a wall); the
+  translucent group is in every pass's rays, the last too (it also holds
+  water, slime and alpha-1 models; Q2RTX leaves it out of the last); the
+  liquid is left through translucent turbulent surfaces; the water normal
+  only with a water normal map; no god rays; at most 10 passes, as Q2RTX.
+  Measured
+  (3.5b, the cathedral's holy water font filling much of the view,
+  2560x1440, Release): 0.30 ms for one pass, 0.35 ms for two.
 - **The lighting passes** (3.3), after the primary rays:
   `direct_lighting.rgen` (the same fields; one light sample and shadow ray
   per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
@@ -619,8 +663,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   the denoiser). Unchanged from Q2RTX apart from `direct_lighting.rgen`'s
   launch check, weapon shadows, no sunlight and the hit-distance clear.
   The lit image is noisy at one sample per pixel until the denoiser (3.6);
-  translucent surfaces show
-  their two fields' brightnesses as a checkerboard until refraction (3.5b);
+  translucent surfaces show a fine checkerboard of the surface and what is
+  behind it (the blend on average) until the denoiser's blur (3.6);
   there is no exposure or tone curve until 3.7 (the composite clamps).
 - **Bounces** (3.5a): `indirect_lighting.rgen`, Q2RTX's, as two pipelines
   of one shader (specialization constant 0: the first and the second
@@ -675,14 +719,17 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
-  kinds (cutouts yellow, the weapon cyan; translucent surfaces alternate
-  between regular and their kind), 4 instances, 5 clusters with the camera's
+  kinds (cutouts yellow, the weapon cyan; with `pt_reflect_refract 0`
+  translucent surfaces alternate between regular and their kind, else the
+  odd field shows what is behind them: the debug view reads the G-buffer
+  after the reflection and refraction passes), 4 instances, 5 clusters with the camera's
   PVS, 6 motion vectors (gray still, hue = direction, brightness = length up
   to 16 pixels), 7 motion check (this frame's base color minus last frame's
   at the motion vector, ×4, bilinear: black where the vectors are right
-  except texture detail, disocclusions and changing textures; dark blue
+  except texture detail, disocclusions, changing textures and translucent
+  surfaces, whose two fields differ since 3.5b; dark blue
   where the point was off the screen), 8 geometric normals, 9 depth (log
-  scale), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
+  scale, its absolute value: negative behind reflections and refractions), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
   specular albedo (as RR would get them), 13 effects and emission, 14 the
   pixel's first random number, 15 direct diffuse (without the albedo),
   16 specular lighting (direct and bounced), 17 the length of the pixel's
@@ -712,6 +759,7 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 |---|---|
 | `r_debugview 0-19` | 0 the lit image, 1-19 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
+| `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |

@@ -172,6 +172,22 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   reflected in the floor), 0.15 (glossy, blurred); `r_debugview 16` shows
   the specular alone, 19 the specular rays' hit distances. Reset the
   overrides to −1 afterwards.
+- **Translucency (3.5b):** no translucent surface (`*lowlight`, `*rtex078`)
+  is visible from a map start. The cathedral's holy water font is one:
+  `showpause 0`, `cl_yawspeed 100`, `cl_pitchspeed 100`, `noclip`, then
+  `+right` 48 frames, `+forward` 143, `+moveup` 9, `+lookdown` 22 (at
+  `host_framerate 0.02`). Compare `pt_reflect_refract 0` and 2 (Q2RTX's
+  default): with 2 the odd field of `r_debugview 1` shows the stone floor
+  under the font; mode 3 at 0 shows the purple translucent kind in a
+  checkerboard. The lit image averages to the surface blended with what is
+  behind it.
+- **Water stays opaque (3.5b):** with `pt_reflect_refract 2`, romeric1's
+  pool (look down at the start) and egypt4's vertical water walls (`+right`
+  69 frames) must match the build before 3.5b pixel for pixel in the
+  G-buffer modes (1, 3, 9, 2), except that mode 3 now shows vertical water
+  as water (blue) instead of glass. romeric2's centre isn't repeatable
+  between runs (its rotating brushes): mask it with a second run
+  (`tga_diff.ps1 -Noise`).
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

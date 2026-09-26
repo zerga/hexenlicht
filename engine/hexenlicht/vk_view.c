@@ -6,7 +6,10 @@
  * dispatches the view passes, which end in the TAA_OUTPUT render target
  * (vk_images.c), the image Quake II RTX's post-processing ends in:
  * primary_rays.rgen writes the G-buffer (Quake II RTX's primary rays, in
- * its two checkerboard fields), direct_lighting.rgen lights it,
+ * its two checkerboard fields), reflect_refract.rgen follows the paths
+ * through translucent surfaces and off mirrors and glass pt_reflect_refract
+ * times (the G-buffer then holds what is seen through or in them),
+ * direct_lighting.rgen lights it,
  * indirect_lighting.rgen adds pt_num_bounce_rays bounces (0, 0.5 = half
  * resolution, 1, 2), compositing.comp combines the lighting with the
  * surfaces and checkerboard_interleave.comp puts the fields into the
@@ -52,6 +55,7 @@
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
+static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction pass, the others */
 static VkPipeline		direct_pipeline;	/* the same */
 static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
@@ -163,6 +167,9 @@ void VK_DestroyViewPipelines (void)
 		vkDestroyPipeline (vk.device, direct_pipeline, NULL);
 	for (i = 0; i < 2; i++)
 	{
+		if (reflect_pipelines[i])
+			vkDestroyPipeline (vk.device, reflect_pipelines[i], NULL);
+		reflect_pipelines[i] = VK_NULL_HANDLE;
 		if (indirect_pipelines[i])
 			vkDestroyPipeline (vk.device, indirect_pipelines[i], NULL);
 		indirect_pipelines[i] = VK_NULL_HANDLE;
@@ -212,7 +219,7 @@ void VK_RenderView3D (void)
 	pt_push_constants_t	push;
 	uint32_t		width;
 	float			num_bounces;
-	int			i, mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
+	int			num_reflect, i, mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
 
 	view_drawn = false;
 	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
@@ -229,6 +236,11 @@ void VK_RenderView3D (void)
 
 	if (!primary_pipeline)
 		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
+	for (i = 0; i < 2; i++)
+	{
+		if (!reflect_pipelines[i])
+			reflect_pipelines[i] = VK_CreateComputePipelineSpec ("reflect_refract.rgen", VK_PathTracerLayout (), (uint32_t)i);
+	}
 	if (!direct_pipeline)
 		direct_pipeline = VK_CreateComputePipeline ("direct_lighting.rgen", VK_PathTracerLayout ());
 	for (i = 0; i < 2; i++)
@@ -256,6 +268,17 @@ void VK_RenderView3D (void)
 	 * RTX's vkpt_pt_trace_primary_rays) */
 	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, view_rect.extent.height, 2);
 	VK_ComputeBarrier (cmd);
+	/* reflections and refractions (Quake II RTX's vkpt_pt_trace_reflections):
+	 * pt_reflect_refract passes, each following the path one surface
+	 * further; the first pass has its own pipeline */
+	num_reflect = VK_ReflectRefractPasses ();
+	for (i = 0; i < num_reflect; i++)
+	{
+		push.bounce = i;
+		VK_DispatchRays (cmd, reflect_pipelines[i ? 1 : 0], &push, width / 2, view_rect.extent.height, 2);
+		VK_ComputeBarrier (cmd);
+	}
+	push.bounce = 0;
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
 	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, view_rect.extent.height, 2);
 	VK_ComputeBarrier (cmd);
