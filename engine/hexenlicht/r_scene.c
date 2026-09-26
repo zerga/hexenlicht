@@ -259,6 +259,7 @@ void R_NewMap (void)
 	VK_LoadModels ();		/* the alias models the map precaches */
 	VK_ClearInstances ();
 	VK_ClearEffects ();
+	VK_ResetDenoiserHistory ();	/* the images show the old map */
 }
 
 

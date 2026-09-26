@@ -554,7 +554,8 @@ typedef struct
 
 /* in init order, shut down in reverse; an entry ending in "|" holds what
  * the module before it recreates: its pipelines, or its images at the
- * swapchain's size */
+ * swapchain's size ("asvgf|": the denoiser's pipelines, which the view
+ * creates through vk_asvgf.c) */
 static vk_module_t	vk_modules[] =
 {
 	{ "buffers",	VK_InitBuffers,		VK_ShutdownBuffers,		VK_INIT_DEFAULT },
@@ -574,6 +575,7 @@ static vk_module_t	vk_modules[] =
 	{ "pt",		VK_InitPathTracer,	VK_ShutdownPathTracer,		VK_INIT_DEFAULT },
 	{ "view",	VK_InitView,		VK_ShutdownView,		VK_INIT_DEFAULT },
 	{ "view|",	NULL,			VK_DestroyViewPipelines,	VK_INIT_RELOAD_SHADER },
+	{ "asvgf|",	NULL,			VK_DestroyASVGFPipelines,	VK_INIT_RELOAD_SHADER },
 	{ "draw",	VK_InitDraw,		VK_ShutdownDraw,		VK_INIT_DEFAULT },
 	{ "draw|",	NULL,			VK_DestroyDrawPipeline,		VK_INIT_RELOAD_SHADER },
 };

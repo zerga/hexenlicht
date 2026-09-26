@@ -24,8 +24,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    address, which Quake II RTX binds as descriptors (the instance buffer,
  *    the TLASes, shaders/vertex_buffer.h's buffers), and debug view values;
  *  - ModelInstance has Hexen II's fields at the end; Quake II RTX's
- *    InstanceBuffer is our instance buffer (instance_buffer.model_instances)
- *    and the TLAS's TlasInstanceInfo (its tlas_instance_* arrays);
+ *    InstanceBuffer is our instance buffer (instance_buffer.model_instances,
+ *    .model_prev_to_current) and the TLAS's TlasInstanceInfo (its
+ *    tlas_instance_* arrays);
  *  - the shader part is only declared when the shader defines
  *    GLOBAL_UBO_DESC_SET_IDX, so shaders without the UBO can include the
  *    structs (define it before including any of these headers). */
@@ -384,10 +385,13 @@ layout(set = GLOBAL_UBO_DESC_SET_IDX, binding = GLOBAL_UBO_BINDING_IDX, std140) 
 };
 
 /* Hexenlicht: the instance buffer and the TLAS instances' info by device
- * address, read as Quake II RTX's instance_buffer.model_instances[] and
- * tlas_instance_info[] */
+ * address, read as Quake II RTX's instance_buffer.model_instances[],
+ * instance_buffer.model_prev_to_current[] and tlas_instance_info[]; the
+ * instance buffer (vk_instance.c) holds MAX_MODEL_INSTANCES instances, then
+ * for each of last frame's instances its index this frame (~0u = gone) */
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer ModelInstanceBufferRef {
-	ModelInstance model_instances[];
+	ModelInstance model_instances[MAX_MODEL_INSTANCES];
+	uint model_prev_to_current[MAX_MODEL_INSTANCES];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer TlasInstanceInfoBufferRef {

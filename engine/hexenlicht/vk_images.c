@@ -118,6 +118,8 @@ void VK_CreateImages (void)
 	VkDeviceSize			total = 0;
 	int				i;
 
+	VK_ResetDenoiserHistory ();	/* new images hold no history, */
+	VK_ResetUBOHistory ();		/* nor a last frame of another size */
 	vk_image_extent = vk.extent;
 	vk_image_extent.width = (vk_image_extent.width + 1) & ~1u;	/* two checkerboard fields */
 	if (!vk.swapchain || !vk_image_extent.width || !vk_image_extent.height)

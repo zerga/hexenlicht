@@ -371,8 +371,10 @@ extern uint32_t			vk_render_frame;
 void VK_InitUBO (void);
 void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
+void VK_ResetUBOHistory (void);	/* the next frame's _prev values are its own */
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
+qboolean VK_DenoiserEnabled (void);	/* flt_enable */
 int VK_ReflectRefractPasses (void);	/* pt_reflect_refract: 0 to 10 */
 
 /* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now)
@@ -427,6 +429,17 @@ void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 void VK_ComputeBarrier (VkCommandBuffer cmd);	/* between compute passes */
 void VK_DispatchCompute (VkCommandBuffer cmd, VkPipeline pipeline, uint32_t width, uint32_t height, uint32_t local_size);
+
+/* vk_asvgf.c: the denoiser (Quake II RTX's A-SVGF), for a view rendered
+ * width x height: the gradient samples before the lighting passes, the
+ * filters after them (instead of compositing.comp); its history is the
+ * last 3D frame's images, unless reset */
+void VK_DestroyASVGFPipelines (void);	/* rebuilt when next used */
+void VK_GradientReproject (VkCommandBuffer cmd, uint32_t width, uint32_t height);
+void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, qboolean enable_lf);
+void VK_ResetDenoiserHistory (void);	/* a new map, new images, a skipped view, changed cvars */
+qboolean VK_DenoiserHistoryValid (void);	/* for VK_PrepareUBO */
+void VK_EndDenoiserFrame (qboolean denoised);	/* the frame's images are the next one's history */
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
  * TLAS: it fills the UBO and runs the view passes (primary_rays.rgen, the

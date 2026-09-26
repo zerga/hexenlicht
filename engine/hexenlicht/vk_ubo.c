@@ -78,6 +78,36 @@ int VK_ReflectRefractPasses (void)
 	return q_min (10, q_max (0, cvar_pt_reflect_refract.integer));
 }
 
+/* flt_enable as Quake II RTX's evaluate_reference_mode takes it */
+qboolean VK_DenoiserEnabled (void)
+{
+	return cvar_flt_enable.integer != 0;
+}
+
+/* Quake II RTX's temporal_cvar_changed: a change of these leaves the
+ * denoiser without history */
+static qboolean DenoiserCvarsChanged (void)
+{
+	static float	last[4];
+	float		now[4];
+
+	now[0] = cvar_flt_enable.value;
+	now[1] = cvar_flt_temporal_lf.value;
+	now[2] = cvar_flt_temporal_hf.value;
+	now[3] = cvar_flt_temporal_spec.value;
+	if (!memcmp (now, last, sizeof(now)))
+		return false;
+	memcpy (last, now, sizeof(now));
+	return true;
+}
+
+/* the next frame has no last frame: new images (vk_images.c), which the
+ * passes would otherwise read at last frame's size */
+void VK_ResetUBOHistory (void)
+{
+	ubo_valid = false;
+}
+
 /* the camera and size become last frame's, as Quake II RTX's prepare_ubo keeps them */
 static void KeepAsPrevious (void)
 {
@@ -144,8 +174,17 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.pt_aperture = 0.0f;
 	ubo.pt_aperture_type = roundf (ubo.pt_aperture_type);
 	ubo.flt_taa = AA_MODE_OFF;
-	/* no denoiser until 3.6: the lighting is composited as it is (compositing.comp) */
-	ubo.flt_enable = 0.0f;
+	/* the denoiser (vk_asvgf.c); its temporal filters use no history when
+	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid) */
+	ubo.flt_enable = VK_DenoiserEnabled () ? 1.0f : 0.0f;
+	if (DenoiserCvarsChanged ())
+		VK_ResetDenoiserHistory ();
+	if (!VK_DenoiserHistoryValid ())
+	{
+		ubo.flt_temporal_lf = 0.0f;
+		ubo.flt_temporal_hf = 0.0f;
+		ubo.flt_temporal_spec = 0.0f;
+	}
 	/* the bounces vk_view.c dispatches (indirect_lighting.rgen); no MIS
 	 * with the specular bounce without specular rays */
 	ubo.pt_num_bounce_rays = VK_NumBounceRays ();

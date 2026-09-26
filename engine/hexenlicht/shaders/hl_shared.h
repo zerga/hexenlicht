@@ -185,13 +185,15 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_LIGHT_LISTS		17	/* the length of the pixel's cluster's light list */
 #define DEBUGVIEW_INDIRECT_DIFFUSE	18	/* indirect lighting, diffuse (PT_COLOR_LF_SH, demodulated) */
 #define DEBUGVIEW_SPECULAR_HIT_DIST	19	/* the specular bounce's hit distance (PT_SPECULAR_HIT_DIST) */
-#define DEBUGVIEW_MAX			19
+#define DEBUGVIEW_HISTORY		20	/* the denoiser's history length (ASVGF_HIST_MOMENTS_HF) */
+#define DEBUGVIEW_MAX			20
 
 /* the modes that read the lighting: debug_view.comp runs after the indirect
- * passes for them, before for the others (vk_view.c: with two bounces, the
- * first stores its hit into the G-buffer's shading position for the second) */
+ * passes (and the denoiser) for them, before for the others (vk_view.c:
+ * with two bounces, the first stores its hit into the G-buffer's shading
+ * position for the second) */
 #define DEBUGVIEW_READS_LIGHTING(m)	((m) == DEBUGVIEW_LIT || (m) == DEBUGVIEW_DIRECT_DIFFUSE || \
 					 (m) == DEBUGVIEW_DIRECT_SPECULAR || (m) == DEBUGVIEW_INDIRECT_DIFFUSE || \
-					 (m) == DEBUGVIEW_SPECULAR_HIT_DIST)
+					 (m) == DEBUGVIEW_SPECULAR_HIT_DIST || (m) == DEBUGVIEW_HISTORY)
 
 #endif	/* HL_SHARED_H */

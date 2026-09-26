@@ -77,7 +77,7 @@ story settles something a later session must not undo; mark a line
 | R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
 | R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them; *partly superseded by R21 (spheres in the lists)* | 3.3 (#33) |
 | R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS; *the lists: superseded by R22* | 3.3 |
-| R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1) | 3.3 |
+| R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1); *denoised since 3.6 (R34)* | 3.3 |
 | R20 | The weapon only shadows itself; the first-person player casts no shadow (it has no model; GL draws no weapon shadow) | 3.3 |
 | R21 | Hexen II's point lights are spheres in the per-cluster light lists, next to polygons (Q2RTX's lists hold only polygons): weighed by solid angle like a triangle, contributing radiance × solid angle; the UBO's 32 uniformly picked spheres stay for moving lights (4.4); a test sphere's intensity is π × its radiance in both | 3.4 (#34) |
 | R22 | The light lists are built on the CPU when the lights change: a light goes into every cluster in the PVS of the open leafs its emitter touches (Q2RTX: its one cluster), minus clusters behind a polygon and beyond a sphere's range; cluster bounds are the leaf's plus its world triangles'; lights inside solid are in no list; a light that doesn't fit is left out whole | 3.4 |
@@ -92,12 +92,17 @@ story settles something a later session must not undo; mark a line
 | R31 | Water and slime stay opaque and textured as GL draws them: the reflection and refraction pass skips them, and vertical ones stay water (Q2RTX makes vertical water glass for its force fields; Hexen II's vertical turbulent surfaces are walls); Q2RTX's physical water waits for 6.5 | 3.5b (#121) |
 | R32 | The weapon is in no reflection or refraction ray (as R20, R27); a ray through a translucent weapon sees the world | 3.5b |
 | R33 | Translucent surfaces and models (alpha < 1) are seen through by Q2RTX's `reflect_refract.rgen` (`pt_reflect_refract` 2), whose rays cull back faces as Q2RTX's (the inside faces of turbulent volumes; two-sided `EF_SPECIAL_TRANS` models lose their back faces behind a translucent surface) and keep the translucent group in the last pass too (it holds water, slime and alpha-1 models); a ray through a translucent weapon starts at the eye; a ray leaves a liquid through a translucent turbulent surface; 6.4 checks each translucency type against GL | 3.5b |
+| R34 | The denoiser is Q2RTX's A-SVGF (`asvgf_*.comp`, `vk_asvgf.c`) without its TAA (3.8), on by default with Q2RTX's `flt_*` defaults; `flt_enable 0` is the undenoised composite, as before 3.6 | 3.6 (#36) |
+| R35 | A gradient sample blends into its pixel's history only as far as the anti-lag drops that history (`asvgf_temporal.comp`): it replays the brightest of its 3x3 square's last samples, which Q2RTX blends in again as new, brightening noisy lighting by 8–18 % (demo1, test lights) and up to 30 % in places; left: +2–5 % (Q2RTX.md open questions). Q2RTX's brightest pick stays, for its anti-lag with moving lights | 3.6 |
+| R36 | Last frame's model instances map to this frame's (`model_prev_to_current`, after the instances in the instance buffer) through the entity history: an entity continues when it was drawn last frame with the same model, a teleport too | 3.6 |
+| R37 | The denoiser's history is dropped (Q2RTX's `temporal_frame_valid`: `flt_temporal_*` 0 for a frame) in the first frame, on a new map, with new images, after a frame without the denoiser, when `flt_enable` or `flt_temporal_*` change, and after a skipped 3D view; without history there are no gradient samples (Q2RTX reprojects every frame, which here would read another map's primitives by device address, unchecked); new images also reset the UBO's last frame | 3.6 |
+| R38 | No light-count history (Q2RTX's `light_counts_history`): the lists change only with the lights, and a change costs one frame of gradients where it happened; needed if moving lights join the lists (4.4). `prev_style_scale` is 1 until light styles (4.2) | 3.6 |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
 and physical water (6.5), specular hit distance (3.9), checkerboard fields and RR (3.9),
-model tint brightness (E4), instance history for A-SVGF (3.6), effects
-brightness (3.7), lights inside solid (4.1), dynamic lights in the light
-lists (4.4), smooth surfaces and sphere lights (E5, 4.5), dark albedo (E4,
-E5).
+model tint brightness (E4), light styles and the gradients (4.2), denoiser
+brightness (4.9), effects brightness (3.7), lights inside solid (4.1),
+dynamic lights in the light lists (4.4), smooth surfaces and sphere lights
+(E5, 4.5), dark albedo (E4, E5).

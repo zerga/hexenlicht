@@ -32,9 +32,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    cluster and light, and sample_polygonal_lights returns the entry;
  *  - a light without mass is never picked (Quake II RTX's picks one when
  *    rng.x is 0: pdf 0, NaN);
- *  - the light count of a list is its current one (the history that keeps
- *    gradient samples consistent comes with the denoiser, 3.6); no sky
- *    lights until the sky (4.6);
+ *  - the light count of a list is its current one: the lists change only
+ *    when the lights do (vk_light.c), so Quake II RTX's history of the
+ *    counts, which keeps a gradient sample on last frame's count while its
+ *    moving model lights change the lists every frame, is left out (3.6;
+ *    needed if moving lights join the lists, 4.4); no sky lights until the
+ *    sky (4.6);
  *  - no list lights for clusters past MAX_LIGHT_LISTS - 1;
  *  - the light buffer is read by device address (vertex_buffer.h). */
 
@@ -268,8 +271,8 @@ sample_polygonal_lights(
 	uint list_start = light_buffer.light_list_offsets[list_idx];
 	uint list_end   = light_buffer.light_list_offsets[list_idx + 1];
 	/* Hexenlicht: the current count; Quake II RTX takes the count of the frame
-	 * whose RNG seed a gradient sample reuses (light_counts_history, with the
-	 * denoiser, 3.6) */
+	 * whose RNG seed a gradient sample reuses (light_counts_history, see the
+	 * top) */
 	uint light_count = list_end - list_start;
 
 	float partitions = ceil(float(light_count) / float(MAX_BRUTEFORCE_SAMPLING));

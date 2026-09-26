@@ -4,7 +4,9 @@
  * into ModelInstances (shaders/global_ubo.h): a model-to-world transform
  * and last frame's, the vis cluster the model is in, where its primitives
  * are and the entity's Hexen II draw state. They go to a mapped buffer
- * per frame in flight, for the acceleration structures and the shaders.
+ * per frame in flight, for the acceleration structures and the shaders,
+ * followed by the index each of last frame's instances has now (through
+ * the entities' history), for the denoiser.
  *
  * Brush entities (doors, lifts, trains, rotating brushes; dynamic and
  * static ones) come first; their primitives are in the world buffer
@@ -69,7 +71,15 @@ static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c; 0 =
 static vk_modelframe_t		model_frame;
 static uint32_t			weapon_reserve;	/* the weapon's triangles, kept free: it comes last */
 
+/* for each of last frame's instances its index in this frame's, ~0u =
+ * gone: Quake II RTX's model_prev_to_current, by which the denoiser's
+ * gradient samples find last frame's surfaces (asvgf_gradient_reproject.comp) */
+static uint32_t			prev_to_current[MAX_MODEL_INSTANCES];
+
+/* the instances, then prev_to_current (global_ubo.h's ModelInstanceBufferRef) */
 static vk_buffer_t		instance_buffers[VK_FRAMES_IN_FLIGHT];
+#define PREV_TO_CURRENT_OFFSET	(MAX_MODEL_INSTANCES * sizeof(ModelInstance))
+#define INSTANCE_BUFFER_SIZE	(PREV_TO_CURRENT_OFFSET + sizeof(prev_to_current))
 
 /* what an entity showed last frame: its transform (for the motion) and,
  * for alias models, the animation */
@@ -78,6 +88,7 @@ typedef struct
 	const entity_t	*ent;		/* temporary entities: the entity it belongs to */
 	qmodel_t	*model;
 	int		framecount;	/* r_scene.framecount it was set in, 0 = never */
+	int		instance;	/* its index in that frame's instances */
 	mat4		transform;
 	vec3_t		origin, angles;	/* where it was shown */
 
@@ -408,6 +419,16 @@ static void UpdateTransformHistory (ModelInstance *mi, entity_history_t *h, qboo
 		memcpy (h->transform, mi->transform, sizeof(mat4));
 }
 
+/* the entity's instance last frame is instance index now */
+static void MapInstance (entity_history_t *h, qboolean continues, int index)
+{
+	if (!h)
+		return;
+	if (continues && h->instance >= 0 && h->instance < MAX_MODEL_INSTANCES)
+		prev_to_current[h->instance] = (uint32_t)index;
+	h->instance = index;
+}
+
 static void EndHistory (entity_history_t *h, const scene_entity_t *e)
 {
 	if (h)
@@ -430,21 +451,25 @@ static void AddBrushInstance (const scene_entity_t *e)
 	const vk_bspmodel_t	*bsp;
 	entity_history_t	*h;
 	int			submodel = atoi (e->model->name + 1);	/* "*N" */
+	int			index = num_instances;
+	qboolean		continues;
 	float			alpha;
 
 	if (submodel <= 0 || submodel >= vk_world.num_models || num_instances >= MAX_MODEL_INSTANCES)
 		return;
 	bsp = &vk_world.models[submodel];
 
-	mi = &instances[num_instances];
-	instance_entities[num_instances] = e;
-	instance_submodels[num_instances] = submodel;
+	mi = &instances[index];
+	instance_entities[index] = e;
+	instance_submodels[index] = submodel;
 	num_instances++;
 	memset (mi, 0, sizeof(*mi));
 
 	BrushTransform (mi->transform, e->origin, e->angles);
 	h = EntityHistory (e);
-	UpdateTransformHistory (mi, h, HistoryContinues (h, e), e);
+	continues = HistoryContinues (h, e);
+	UpdateTransformHistory (mi, h, continues, e);
+	MapInstance (h, continues, index);
 	EndHistory (h, e);
 
 	/* the model's opaque, transparent and sky ranges follow each other */
@@ -651,6 +676,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
+	int			instance = num_instances;
 	uint32_t		reserve = (e->kind == SCENE_ENT_VIEWMODEL) ? 0 : weapon_reserve;
 
 	if (index < 0)
@@ -664,14 +690,15 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	}
 	hdr = (const aliashdr_t *) Mod_Extradata (e->model);
 
-	mi = &instances[num_instances];
-	instance_entities[num_instances] = e;
-	instance_submodels[num_instances] = 0;
+	mi = &instances[instance];
+	instance_entities[instance] = e;
+	instance_submodels[instance] = 0;
 	num_instances++;
 	memset (mi, 0, sizeof(*mi));
 
 	h = EntityHistory (e);
 	continues = HistoryContinues (h, e);
+	MapInstance (h, continues, instance);
 	shown = *e;
 	jumped = MoveBlend (h, continues, e, &shown);
 	AliasRotation (&shown, rot);
@@ -767,8 +794,12 @@ void VK_UpdateInstances (void)
 	num_instances = 0;
 	memset (&model_frame, 0, sizeof(model_frame));
 	model_frame.dropped_total = dropped_total;
+	memset (prev_to_current, 0xff, sizeof(prev_to_current));
 	if (!vk_world.worldmodel || vk_world.worldmodel != r_scene.worldmodel)
+	{
+		VK_ResetDenoiserHistory ();	/* this frame's instance buffer keeps an old map */
 		return;
+	}
 
 	for (i = 0; i < r_scene.num_entities; i++)
 	{
@@ -818,12 +849,17 @@ void VK_UpdateInstances (void)
 	model_frame.num_instances = num_instances - model_frame.first_instance;
 	model_frame.dropped_total += model_frame.dropped;
 
-	if (vk.frame_active && num_instances)
+	if (vk.frame_active)
 	{
 		vk_buffer_t	*b = &instance_buffers[vk.frame_index];
 
-		memcpy (b->mapped, instances, num_instances * sizeof(ModelInstance));
-		VK_CHECK (vmaFlushAllocation (vk.allocator, b->allocation, 0, num_instances * sizeof(ModelInstance)));
+		if (num_instances)
+		{
+			memcpy (b->mapped, instances, num_instances * sizeof(ModelInstance));
+			VK_CHECK (vmaFlushAllocation (vk.allocator, b->allocation, 0, num_instances * sizeof(ModelInstance)));
+		}
+		memcpy ((byte *)b->mapped + PREV_TO_CURRENT_OFFSET, prev_to_current, sizeof(prev_to_current));
+		VK_CHECK (vmaFlushAllocation (vk.allocator, b->allocation, PREV_TO_CURRENT_OFFSET, sizeof(prev_to_current)));
 	}
 }
 
@@ -1007,7 +1043,7 @@ void VK_InitInstances (void)
 
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
 	{
-		VK_CreateBuffer (&instance_buffers[i], MAX_MODEL_INSTANCES * sizeof(ModelInstance),
+		VK_CreateBuffer (&instance_buffers[i], INSTANCE_BUFFER_SIZE,
 				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 				 VK_MEMORY_UPLOAD);
 	}
