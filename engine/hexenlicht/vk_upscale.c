@@ -66,9 +66,20 @@
 #pragma warning(pop)
 #endif
 
+#ifdef HEXENLICHT_STREAMLINE
+#include "vk_streamline.h"	/* SPIKE (3.9) */
+#endif
+
 #define NUM_TAA_SAMPLES	128	/* Quake II RTX's */
 
-enum { UPSCALER_TAA, UPSCALER_TAAU, UPSCALER_FSR };
+enum { UPSCALER_TAA, UPSCALER_TAAU, UPSCALER_FSR, UPSCALER_DLSS_SR, UPSCALER_DLSS_RR };
+
+/* SPIKE (3.9): RR's checkerboard fields swap every frame (Quake II RTX's
+ * noisy and reference modes) */
+static cvar_t	r_dlss_swap = {"r_dlss_swap", "0", CVAR_NONE};
+/* SPIKE (3.9): RR and the checkerboard fields at translucent surfaces: 1 the
+ * interleave blurs them (as with the denoiser), 2 the guides too */
+static cvar_t	r_dlss_cb = {"r_dlss_cb", "0", CVAR_NONE};
 
 /* the render size in percent of the view's: 25-100 */
 static cvar_t	r_scale = {"r_scale", "100", CVAR_ARCHIVE};
@@ -116,7 +127,7 @@ static float Halton (int base, int index)
 const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_height, int debug_view)
 {
 	float		scale = (float)q_max (25, q_min (100, r_scale.integer)) / 100.0f;
-	int		upscaler = q_max (UPSCALER_TAA, q_min (UPSCALER_FSR, r_upscaler.integer));
+	int		upscaler = q_max (UPSCALER_TAA, q_min (UPSCALER_DLSS_RR, r_upscaler.integer));
 	qboolean	lit = debug_view == DEBUGVIEW_LIT;
 	qboolean	denoise = VK_DenoiserEnabled ();
 	qboolean	easu = flt_fsr_easu.integer != 0, rcas = flt_fsr_rcas.integer != 0;
@@ -133,6 +144,28 @@ const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_heigh
 	up.render.width = q_max (up.render.width, 2u);
 	up.render.height = q_max (up.render.height, 1u);
 	up.taa_output = up.render;
+
+#ifdef HEXENLICHT_STREAMLINE
+	/* SPIKE (3.9): DLSS SR (the denoised image) or RR (the noisy one, no
+	 * denoiser) instead of the TAA pass, jittered as TAAU, into
+	 * TAA_OUTPUT at the view's size */
+	if (lit && upscaler >= UPSCALER_DLSS_SR && VK_SLSupported (upscaler - UPSCALER_DLSS_SR + VK_SL_SR))
+	{
+		int	i = (int)((vk_render_frame + 1) % NUM_TAA_SAMPLES);
+
+		up.dlss = upscaler - UPSCALER_DLSS_SR + VK_SL_SR;
+		up.swap_checkerboard = up.dlss == VK_SL_RR && r_dlss_swap.integer;
+		up.rr_blur = (up.dlss == VK_SL_RR) ? q_max (0, q_min (2, r_dlss_cb.integer)) : 0;
+		up.jitter[0] = taa_samples[i][0];
+		up.jitter[1] = taa_samples[i][1];
+		up.taa_output = up.unscaled;
+		up.lod_bias = log2f (scale);
+		up.display_size = up.unscaled;
+		return &up;
+	}
+#endif
+	if (upscaler > UPSCALER_FSR)
+		upscaler = UPSCALER_TAAU;	/* no DLSS */
 
 	/* Quake II RTX's vkpt_fsr_is_enabled (flt_fsr_enable 1: only when it
 	 * upscales) and evaluate_taa_settings; RCAS alone needs TAAU's
@@ -282,7 +315,7 @@ void VK_EndUpscaleFrame (void)
 
 static void VK_Upscale_f (void)
 {
-	static const char	*names[] = { "TAA", "TAAU", "FSR 1" };
+	static const char	*names[] = { "TAA", "TAAU", "FSR 1", "DLSS SR", "DLSS RR" };
 	const char		*pass;
 
 	if (!up.view.width)
@@ -290,9 +323,9 @@ static void VK_Upscale_f (void)
 		Con_Printf ("No 3D view rendered yet\n");
 		return;
 	}
-	pass = !up.taa ? "none (a debug view)" : (up.taa_mode == AA_MODE_OFF) ? "copy (no history, or no denoiser)" : "TAA";
+	pass = up.dlss ? ((up.dlss == 2) ? "DLSS RR (spike)" : "DLSS SR (spike)") : !up.taa ? "none (a debug view)" : (up.taa_mode == AA_MODE_OFF) ? "copy (no history, or no denoiser)" : "TAA";
 	Con_Printf ("r_upscaler %d (%s), r_scale %d: view %u x %u, render %u x %u\n",
-		    r_upscaler.integer, names[q_max (0, q_min (2, r_upscaler.integer))], r_scale.integer,
+		    r_upscaler.integer, names[q_max (0, q_min (4, r_upscaler.integer))], r_scale.integer,
 		    up.view.width, up.view.height, up.render.width, up.render.height);
 	Con_Printf ("TAA pass: %s, output %u x %u, jitter %.3f %.3f, LOD bias %.2f\n",
 		    pass, up.taa_output.width, up.taa_output.height, up.jitter[0], up.jitter[1], up.lod_bias);
@@ -312,6 +345,8 @@ void VK_InitUpscale (void)
 	Cvar_RegisterVariable (&flt_fsr_easu);
 	Cvar_RegisterVariable (&flt_fsr_rcas);
 	Cvar_RegisterVariable (&flt_fsr_sharpness);
+	Cvar_RegisterVariable (&r_dlss_swap);
+	Cvar_RegisterVariable (&r_dlss_cb);
 	Cmd_AddCommand ("vk_upscale", VK_Upscale_f);
 	for (i = 0; i < NUM_TAA_SAMPLES; i++)
 	{

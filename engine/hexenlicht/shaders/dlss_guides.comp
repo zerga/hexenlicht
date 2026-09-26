@@ -1,0 +1,103 @@
+/* dlss_guides.comp -- SPIKE (story 3.9, not for merging): DLSS's inputs in
+ * the screen layout at the render size, from the G-buffer's checkerboard
+ * fields (debug_view.comp's flat_position): hardware depth, diffuse albedo,
+ * specular albedo (Karis's environment BRDF approximation, as debug view
+ * 12), shading normal (world space) with the roughness in .w, the specular
+ * bounce's hit distance.
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define KHR_RAY_QUERY
+#include "path_tracer_rgen.h"	/* its local size, 8 x 8 */
+
+ivec2
+flat_position(ivec2 p, int width)
+{
+	bool is_even_checkerboard = (p.x & 1) == (p.y & 1);
+	if (global_ubo.pt_swap_checkerboard != 0)
+		is_even_checkerboard = !is_even_checkerboard;
+	return ivec2(p.x / 2 + (is_even_checkerboard ? 0 : width / 2), p.y);
+}
+
+vec3
+env_brdf_approx(vec3 F0, float roughness, float NoV)
+{
+	const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+	const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+	vec4 r = roughness * c0 + c1;
+	float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+	vec2 AB = vec2(-1.04, 1.04) * a004 + r.zw;
+	return F0 * AB.x + AB.y;
+}
+
+/* the guides of the surface a field pixel holds */
+void
+field_guides(ivec2 ipos, out vec3 albedo, out vec3 specular, out vec3 normal, out float roughness, out float depth)
+{
+	uint material = floatBitsToUint(texelFetch(TEX_PT_SHADING_POSITION, ipos, 0).w);
+	vec4 base = texelFetch(TEX_PT_BASE_COLOR_A, ipos, 0);
+	vec3 dir = texelFetch(TEX_PT_VIEW_DIRECTION, ipos, 0).xyz;
+	vec2 metallic_roughness = texelFetch(TEX_PT_METALLIC_A, ipos, 0).xy;
+
+	normal = decode_normal(texelFetch(TEX_PT_NORMAL_A, ipos, 0).r);
+	roughness = metallic_roughness.y;
+	depth = abs(texelFetch(TEX_PT_VIEW_DEPTH_A, ipos, 0).r);
+	albedo = vec3(0.0);
+	specular = vec3(0.0);
+	if (material != 0u)
+	{
+		vec3 base_reflectivity;
+		get_reflectivity(base.rgb, metallic_roughness.x, albedo, base_reflectivity);
+		specular = env_brdf_approx(base_reflectivity, metallic_roughness.y, clamp(-dot(normal, dir), 0.0, 1.0)) * base.a;
+	}
+	else
+	{
+		normal = -dir;	/* the sky or nothing */
+	}
+}
+
+void
+main()
+{
+	ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+	if (px.x >= global_ubo.width || px.y >= global_ubo.height)
+		return;
+
+	ivec2 ipos = flat_position(px, global_ubo.width);
+	vec3 albedo, specular, normal;
+	float roughness, depth;
+
+	field_guides(ipos, albedo, specular, normal, roughness, depth);
+
+	/* push_constants.bounce_index bit 1 (r_dlss_cb 2): where the two fields
+	 * hold different surfaces (translucent ones), the average of both, as
+	 * checkerboard_interleave.comp blurs their colors */
+	int flags = int(texelFetch(TEX_ASVGF_COLOR, ipos, 0).a);
+	if ((push_constants.bounce_index & 2) != 0 && bitCount(flags & CHECKERBOARD_FLAG_FIELD_MASK) > 1)
+	{
+		vec3 albedo2, specular2, normal2;
+		float roughness2, depth2;
+		int other = (ipos.x < global_ubo.width / 2) ? global_ubo.width / 2 : -(global_ubo.width / 2);
+
+		field_guides(ipos + ivec2(other, 0), albedo2, specular2, normal2, roughness2, depth2);
+		albedo = 0.5 * (albedo + albedo2);
+		specular = 0.5 * (specular + specular2);
+		normal = normalize(normal + normal2 + vec3(1e-6));
+		roughness = 0.5 * (roughness + roughness2);
+	}
+
+	/* hardware depth of a D3D-style projection, 0 at the near plane (4), 1 at
+	 * the far (4096), as vk_view.c's RunDLSS gives DLSS (Quake II RTX's
+	 * projection matrix has no usable depth row) */
+	imageStore(IMG_DLSS_DEPTH, px, vec4(clamp((4096.0 / 4092.0) * (1.0 - 4.0 / max(depth, 4.0)), 0.0, 1.0)));
+	imageStore(IMG_DLSS_ALBEDO, px, vec4(albedo, 1.0));
+	imageStore(IMG_DLSS_SPEC_ALBEDO, px, vec4(specular, 1.0));
+	imageStore(IMG_DLSS_NORMAL_ROUGHNESS, px, vec4(normal, roughness));
+	/* push_constants.bounce_index bit 0 (r_dlss_nohitdist, a test): none */
+	imageStore(IMG_DLSS_SPEC_HIT, px, vec4(((push_constants.bounce_index & 1) != 0) ? 0.0 : texelFetch(TEX_PT_SPECULAR_HIT_DIST, ipos, 0).r));
+}

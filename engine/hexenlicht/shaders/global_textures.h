@@ -103,8 +103,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(FSR_EASU_OUTPUT,           34, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
 	IMG_DO(FSR_RCAS_OUTPUT,           35, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
 	IMG_DO(HQ_COLOR_INTERLEAVED,      36, R32G32B32A32_SFLOAT, rgba32f, 1,                   1              ) \
+	IMG_DO(DLSS_DEPTH,                37, R32_SFLOAT,          r32f,    IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(DLSS_ALBEDO,               38, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(DLSS_SPEC_ALBEDO,          39, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(DLSS_NORMAL_ROUGHNESS,     40, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(DLSS_SPEC_HIT,             41, R16_SFLOAT,          r16f,    IMG_WIDTH,           IMG_HEIGHT     ) \
 
-#define NUM_IMAGES_BASE     37
+/* SPIKE (3.9): DLSS_* are DLSS's guides in the screen layout (dlss_guides.comp) */
+#define NUM_IMAGES_BASE     42
 
 /* images that exist twice: the _A names are this frame's, the _B names the
  * last frame's (vk_images.c's even and odd descriptor sets swap them) */

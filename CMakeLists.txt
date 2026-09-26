@@ -210,6 +210,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/fsr_easu_fp32.comp
 	${HEXENLICHT_SHADER_DIR}/fsr_rcas_fp32.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
+	${HEXENLICHT_SHADER_DIR}/dlss_guides.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
 )
@@ -273,6 +274,16 @@ target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
 add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise)	# building the exe also builds its shaders and data
+# SPIKE (3.9, not for merging): NVIDIA Streamline from a downloaded SDK
+# (-DHEXENLICHT_STREAMLINE_SDK=<folder>); its DLLs are copied next to the exe
+# by hand, never committed.
+set(HEXENLICHT_STREAMLINE_SDK "" CACHE PATH "Streamline SDK folder (spike 3.9)")
+if(HEXENLICHT_STREAMLINE_SDK)
+	target_sources(hexenlicht PRIVATE ${HEXENLICHT_DIR}/vk_streamline.cpp)
+	target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_STREAMLINE_SDK}/include)
+	target_compile_definitions(hexenlicht PRIVATE HEXENLICHT_STREAMLINE)
+	target_compile_features(hexenlicht PRIVATE cxx_std_17)
+endif()
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

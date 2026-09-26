@@ -72,6 +72,16 @@ VkImage VK_Image (int index)
 	return images[index].image;
 }
 
+/* SPIKE (3.9): what Streamline's resource tags need */
+void VK_ImageInfo (int index, VkImage *image, VkImageView *view, VkFormat *format, uint32_t *width, uint32_t *height)
+{
+	*image = images[index].image;
+	*view = images[index].view;
+	*format = images[index].format;
+	*width = images[index].width;
+	*height = images[index].height;
+}
+
 qboolean VK_ImagesReady (void)
 {
 	return vk_image_extent.width > 0;
@@ -262,6 +272,7 @@ static const char *FormatName (VkFormat format)
 	case VK_FORMAT_R32G32B32A32_SFLOAT:	return "rgba32f";
 	case VK_FORMAT_R16G16_SFLOAT:		return "rg16f";
 	case VK_FORMAT_R16_SFLOAT:		return "r16f";
+	case VK_FORMAT_R32_SFLOAT:		return "r32f";
 	case VK_FORMAT_R32_UINT:		return "r32ui";
 	case VK_FORMAT_R32G32_UINT:		return "rg32ui";
 	case VK_FORMAT_R16_UINT:		return "r16ui";

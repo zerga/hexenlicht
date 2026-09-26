@@ -385,6 +385,9 @@ typedef struct
 	int		display_source;	/* what the composite shows: 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
 	VkExtent2D	display_size;	/* its top left part covering the view */
 	qboolean	display_lanczos;	/* scaled with Lanczos, else 1:1 or nearest */
+	int		dlss;		/* SPIKE (3.9): 0, 1 DLSS SR, 2 DLSS RR (vk_streamline.h's VK_SL_*) */
+	qboolean	swap_checkerboard;	/* SPIKE (3.9): RR, the fields swap every frame */
+	int		rr_blur;	/* SPIKE (3.9): r_dlss_cb, 1 the interleave blurs checkerboarded pixels for RR, 2 also their guides */
 } vk_upscale_t;
 
 void VK_InitUpscale (void);
@@ -443,6 +446,7 @@ void VK_CreateImages (void);
 void VK_DestroyImages (void);
 qboolean VK_ImagesReady (void);
 VkImage VK_Image (int index);
+void VK_ImageInfo (int index, VkImage *image, VkImageView *view, VkFormat *format, uint32_t *width, uint32_t *height);	/* SPIKE (3.9) */
 VkDescriptorSet VK_ImagesSet (void);	/* this 3D frame's */
 
 /* vk_pathtracer.c: the view passes' pipeline layouts (set 0 the UBO, set 1

@@ -30,6 +30,9 @@
 #include "quakedef.h"
 #include "winquake.h"
 #include "vk_local.h"
+#ifdef HEXENLICHT_STREAMLINE
+#include "vk_streamline.h"	/* SPIKE (3.9) */
+#endif
 
 vk_state_t	vk;
 
@@ -447,6 +450,9 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	enable.v13.synchronization2 = VK_TRUE;
 	enable.v13.maintenance4 = VK_TRUE;
 	enable.v13.shaderDemoteToHelperInvocation = VK_TRUE;	/* GLSL discard with a 1.3 target */
+#ifdef HEXENLICHT_STREAMLINE
+	enable.v13.privateData = VK_TRUE;	/* SPIKE (3.9): Streamline/NGX create private data slots */
+#endif
 	enable.as.accelerationStructure = VK_TRUE;
 	enable.rq.rayQuery = VK_TRUE;
 	enable.rtp.rayTracingPipeline = c->has_rtp;
@@ -656,9 +662,29 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 	VkWin32SurfaceCreateInfoKHR	surface_info;
 	vk_candidate_t			chosen;
 
+#ifdef HEXENLICHT_STREAMLINE
+	/* SPIKE (3.9): Streamline before the instance, Vulkan through its interposer */
+	{
+		char				dir[MAX_OSPATH];
+		size_t				len;
+		PFN_vkGetInstanceProcAddr	gipa;
+
+		VK_ExePath ("", dir, sizeof(dir));
+		len = strlen (dir);
+		if (len && (dir[len - 1] == '\\' || dir[len - 1] == '/'))
+			dir[len - 1] = 0;
+		gipa = VK_SLPreInit (dir);
+		if (gipa)
+			volkInitializeCustom (gipa);
+		else if (volkInitialize () != VK_SUCCESS)
+			Sys_Error ("Vulkan is not available (vulkan-1.dll not found).\n"
+				   "Update the graphics driver.");
+	}
+#else
 	if (volkInitialize () != VK_SUCCESS)
 		Sys_Error ("Vulkan is not available (vulkan-1.dll not found).\n"
 			   "Update the graphics driver.");
+#endif
 
 	VK_CreateInstance ();
 
@@ -670,6 +696,9 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 
 	VK_SelectPhysicalDevice (&chosen);
 	VK_CreateDevice (&chosen);
+#ifdef HEXENLICHT_STREAMLINE
+	VK_SLDeviceReady (vk.physical_device);
+#endif
 	VK_CreateAllocator ();
 
 	Con_Printf ("Vulkan: using %s (Vulkan %u.%u, RT pipeline %s, SER %s)\n", vk.props.deviceName,
@@ -678,6 +707,9 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 
 	Cmd_AddCommand ("vk_info", VK_Info_f);
 	Cmd_AddCommand ("vk_reload_shaders", VK_ReloadShaders_f);
+#ifdef HEXENLICHT_STREAMLINE
+	Cmd_AddCommand ("vk_dlss", VK_SLStatus);
+#endif
 
 	VK_InitModules (VK_INIT_DEFAULT);
 	vk_modules_ready = true;
@@ -692,6 +724,9 @@ void VK_Shutdown (void)
 	{
 		vk_modules_ready = false;
 		VK_ShutdownModules (VK_INIT_DEFAULT);
+#ifdef HEXENLICHT_STREAMLINE
+		VK_SLShutdown ();
+#endif
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
 		vkDestroyDevice (vk.device, NULL);

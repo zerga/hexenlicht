@@ -145,7 +145,8 @@ void main()
     vec4 color;
     bool use_center_mv = true;
     int checkerboard_flags = int(center.a);
-    bool is_checkerboarded_surface = (global_ubo.flt_enable != 0) && (bitCount(checkerboard_flags & CHECKERBOARD_FLAG_FIELD_MASK) > 1);
+    // SPIKE (3.9): num_cameras (unused) 1 = DLSS RR wants the blur too
+    bool is_checkerboarded_surface = (global_ubo.flt_enable != 0 || global_ubo.num_cameras == 1) && (bitCount(checkerboard_flags & CHECKERBOARD_FLAG_FIELD_MASK) > 1);
 
     // The alpha channel encodes whether the material uses checkerboard reflections and refractions.
     // Don't do the filter if there is no checkerboarding - which improves sharpness and reduces sparkles.

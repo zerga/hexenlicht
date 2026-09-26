@@ -45,6 +45,9 @@
 #include "r_scene.h"
 #include "shaders/hl_shared.h"
 #include "shaders/global_textures.h"
+#ifdef HEXENLICHT_STREAMLINE
+#include "vk_streamline.h"	/* SPIKE (3.9) */
+#endif
 
 /* 0 the path tracer's image (the lighting passes, bloom and tone mapping),
  * or the G-buffer's and lighting channels: 1 base color with the
@@ -65,6 +68,9 @@ static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
 static VkPipeline		interleave_pipeline;
 static VkPipeline		debug_pipeline;		/* the same */
+#ifdef HEXENLICHT_STREAMLINE
+static VkPipeline		guides_pipeline;	/* SPIKE (3.9): dlss_guides.comp */
+#endif
 static VkPipelineLayout		composite_layout;	/* the pass sets, composite_push_t */
 static VkPipeline		composite_pipeline;
 static VkFormat			composite_format;
@@ -203,6 +209,11 @@ void VK_DestroyViewPipelines (void)
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
 	primary_pipeline = direct_pipeline = compositing_pipeline = interleave_pipeline = VK_NULL_HANDLE;
 	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
+#ifdef HEXENLICHT_STREAMLINE
+	if (guides_pipeline)
+		vkDestroyPipeline (vk.device, guides_pipeline, NULL);
+	guides_pipeline = VK_NULL_HANDLE;
+#endif
 }
 
 
@@ -258,6 +269,106 @@ static qboolean ViewReady (void)
 	       view_rect.extent.height <= vk_image_extent.height;
 }
 
+#ifdef HEXENLICHT_STREAMLINE
+/* ==========================================================================
+ * SPIKE (3.9, not for merging): DLSS SR / RR through Streamline
+ * ========================================================================== */
+
+static cvar_t	r_dlss_jitter_sign = {"r_dlss_jitter_sign", "-1", CVAR_NONE};	/* DLSS takes the opposite of our sub-pixel offset (measured) */
+static cvar_t	r_dlss_mv_sign = {"r_dlss_mv_sign", "1", CVAR_NONE};		/* our motion vectors or their opposite */
+static cvar_t	r_dlss_preexposure = {"r_dlss_preexposure", "1", CVAR_NONE};	/* DLSS's preExposure */
+static cvar_t	r_dlss_nohitdist = {"r_dlss_nohitdist", "0", CVAR_NONE};	/* RR gets 0 for every specular hit distance (a test) */
+static uint32_t		dlss_last_frame;	/* the last 3D frame DLSS ran in */
+static VkExtent2D	dlss_last_size;
+
+static void SLImage (vk_sl_image_t *img, int index)
+{
+	VK_ImageInfo (index, &img->image, &img->view, &img->format, &img->width, &img->height);
+}
+
+static void AllMemoryBarrier (VkCommandBuffer cmd)
+{
+	VkMemoryBarrier2	barrier;
+	VkDependencyInfo	dep;
+
+	memset (&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+	memset (&dep, 0, sizeof(dep));
+	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dep.memoryBarrierCount = 1;
+	dep.pMemoryBarriers = &barrier;
+	vkCmdPipelineBarrier2 (cmd, &dep);
+}
+
+/* the guides in the screen layout, then Streamline's DLSS into TAA_OUTPUT */
+static qboolean RunDLSS (VkCommandBuffer cmd, const vk_upscale_t *up, const pt_push_constants_t *push)
+{
+	const QVKUniformBuffer_t	*u = VK_CurrentUBO ();
+	vk_sl_frame_t			f;
+	qboolean			ok;
+
+	if (!guides_pipeline)
+		guides_pipeline = VK_CreateComputePipeline ("dlss_guides.comp", VK_PathTracerLayout ());
+	{
+		pt_push_constants_t	gp = *push;
+
+		gp.bounce = (r_dlss_nohitdist.integer ? 1 : 0) | ((up->rr_blur == 2) ? 2 : 0);	/* dlss_guides.comp: 1 zeroes the hit distance, 2 blends the fields */
+		VK_DispatchRays (cmd, guides_pipeline, &gp, up->render.width, up->render.height, 1);
+	}
+	AllMemoryBarrier (cmd);
+
+	memset (&f, 0, sizeof(f));
+	f.mode = up->dlss;
+	f.frame = vk_render_frame;
+	f.render_width = up->render.width;
+	f.render_height = up->render.height;
+	f.output_width = up->unscaled.width;
+	f.output_height = up->unscaled.height;
+	f.jitter[0] = up->jitter[0] * r_dlss_jitter_sign.value;
+	f.jitter[1] = up->jitter[1] * r_dlss_jitter_sign.value;
+	f.mvec_scale[0] = f.mvec_scale[1] = r_dlss_mv_sign.value;	/* ours are in UV units */
+	memcpy (f.V, &u->V[0][0], sizeof(f.V));
+	memcpy (f.invV, &u->invV[0][0], sizeof(f.invV));
+	memcpy (f.P, &u->P[0][0], sizeof(f.P));
+	memcpy (f.V_prev, &u->V_prev[0][0], sizeof(f.V_prev));
+	memcpy (f.P_prev, &u->P_prev[0][0], sizeof(f.P_prev));
+	/* a D3D-style depth row (0 at the near plane, 1 at the far), which
+	 * dlss_guides.comp's hardware depth follows; Quake II RTX's
+	 * projection only maps x and y */
+	f.P[10] = f.P_prev[10] = 4096.0f / 4092.0f;
+	f.P[14] = f.P_prev[14] = -4096.0f * 4.0f / 4092.0f;
+	VK_InverseMatrix (f.P, f.invP);
+	VectorCopy (r_scene.vieworg, f.cam_pos);
+	VectorCopy (r_scene.forward, f.cam_fwd);
+	VectorCopy (r_scene.right, f.cam_right);
+	VectorCopy (r_scene.up, f.cam_up);
+	f.znear = 4.0f;
+	f.zfar = 4096.0f;
+	f.fov_y = r_scene.fov_y * (float)M_PI / 180.0f;
+	f.aspect = (float)up->unscaled.width / (float)up->unscaled.height;
+	f.pre_exposure = r_dlss_preexposure.value;
+	f.reset = dlss_last_frame + 1 != vk_render_frame || dlss_last_size.width != up->render.width ||
+		  dlss_last_size.height != up->render.height;
+	SLImage (&f.color_in, VKPT_IMG_FLAT_COLOR);
+	SLImage (&f.color_out, VKPT_IMG_TAA_OUTPUT);
+	SLImage (&f.depth, VKPT_IMG_DLSS_DEPTH);
+	SLImage (&f.mvec, VKPT_IMG_FLAT_MOTION);
+	SLImage (&f.albedo, VKPT_IMG_DLSS_ALBEDO);
+	SLImage (&f.spec_albedo, VKPT_IMG_DLSS_SPEC_ALBEDO);
+	SLImage (&f.normal_roughness, VKPT_IMG_DLSS_NORMAL_ROUGHNESS);
+	SLImage (&f.spec_hit, VKPT_IMG_DLSS_SPEC_HIT);
+	ok = VK_SLEvaluate (cmd, &f) != 0;
+	AllMemoryBarrier (cmd);
+	dlss_last_frame = vk_render_frame;
+	dlss_last_size = up->render;
+	return ok;
+}
+#endif
+
 void VK_RenderView3D (void)
 {
 	VkCommandBuffer		cmd;
@@ -284,6 +395,8 @@ void VK_RenderView3D (void)
 	width = up->render.width;
 	height = up->render.height;
 	VK_PrepareUBO (up, mode);
+	if (up->dlss == 2)
+		denoise = false;	/* SPIKE (3.9): DLSS RR takes the noisy image */
 
 	if (!primary_pipeline)
 		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
@@ -380,6 +493,11 @@ void VK_RenderView3D (void)
 		 * RTX's order) */
 		const uint32_t	w = up->taa_output.width, h = up->taa_output.height;
 
+#ifdef HEXENLICHT_STREAMLINE
+		if (up->dlss)
+			RunDLSS (cmd, up, &push);	/* SPIKE (3.9) */
+		else
+#endif
 		VK_UpscaleHDR (cmd);
 		if (VK_BloomEnabled ())
 			VK_Bloom (cmd, w, h);
@@ -468,6 +586,12 @@ void VK_DrawView3D (void)
 void VK_InitView (void)
 {
 	Cvar_RegisterVariable (&r_debugview);
+#ifdef HEXENLICHT_STREAMLINE
+	Cvar_RegisterVariable (&r_dlss_jitter_sign);
+	Cvar_RegisterVariable (&r_dlss_mv_sign);
+	Cvar_RegisterVariable (&r_dlss_preexposure);
+	Cvar_RegisterVariable (&r_dlss_nohitdist);
+#endif
 	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(composite_push_t));
 }
 

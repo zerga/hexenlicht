@@ -209,6 +209,19 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid;
 	 * VK_CheckDenoiserCvars has dropped it on a cvar change) */
 	ubo.flt_enable = VK_DenoiserEnabled () ? 1.0f : 0.0f;
+	/* SPIKE (3.9): DLSS RR takes the noisy image: no denoiser, and as in
+	 * Quake II RTX without it, every specular ray counts (no fake
+	 * specular from the denoiser's spherical harmonics) */
+	ubo.pt_swap_checkerboard = 0;
+	ubo.num_cameras = 0;
+	if (up->dlss == 2)
+	{
+		ubo.flt_enable = 0.0f;
+		ubo.pt_fake_roughness_threshold = 1.0f;
+		if (up->swap_checkerboard)
+			ubo.pt_swap_checkerboard = (int)(vk_render_frame & 1);
+		ubo.num_cameras = up->rr_blur;	/* checkerboard_interleave.comp blurs the fields for RR */
+	}
 	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
 	if (!VK_DenoiserHistoryValid ())
 	{
