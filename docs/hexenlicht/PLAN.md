@@ -120,8 +120,12 @@ client code, replaces the GL renderer files (`gl_rmain.c`, `gl_rsurf.c`,
 - The G-buffer is designed to feed both A-SVGF and DLSS Ray Reconstruction:
   diffuse albedo, specular albedo, shading normals, roughness, depth, motion
   vectors, specular motion vectors / hit distance.
-- Open risk: Streamline's Vulkan support for Ray Reconstruction — verified
-  by a spike early in E3 before building on it.
+- Verified by the 3.9 spike (Streamline 2.14.1, NGX 310.9.1, RTX 4070 Ti):
+  SR and RR run on our Vulkan device, loaded at runtime (Vulkan through
+  `sl.interposer.dll`). The player copies `sl.interposer.dll`,
+  `sl.common.dll`, `sl.dlss.dll`, `sl.dlss_d.dll`, `nvngx_dlss.dll` and
+  `nvngx_dlssd.dll` from Streamline's release zip on NVIDIA's GitHub;
+  Streamline's over-the-air updates stay off. Details: DECISIONS R52–R57.
 - Not legal advice. Revisit if the project grows (e.g. ask the Software
   Freedom Conservancy).
 
@@ -261,6 +265,7 @@ Goal: a test map path-traced, denoised, 60+ fps at 1440p with upscaling.
 | 3.9 | **Spike:** Streamline on Vulkan with DLSS SR + RR, user-supplied DLLs | S | Go/no-go documented |
 | 3.10 | DLSS backend via Streamline (optional at runtime) + player docs | M | DLSS selectable when DLLs present |
 | 3.11 | GPU timers overlay, performance baseline | S | Per-pass timings on screen |
+| 3.12 | Translucent surfaces keep a fine checkerboard at some views (the interleave's blur misses pixels; found in 3.9) | S | Blend without a checkerboard from every view, also as DLSS RR's input |
 
 ### E4 — Hexen II lighting
 Goal: every map lit with no manual work; mood matches the original reasonably.
@@ -331,7 +336,7 @@ Goal: v1.0 on GitHub Releases.
 | Path tracer effort (E3) | Reuse Q2RTX code; keep the debug view; small stories |
 | Mood mismatch (physical vs linear falloff) | Calibration tooling (4.9), per-map overrides |
 | Denoiser artefacts with translucency, particles, flickering lights | RR-ready G-buffer, handle translucency in a separate path as Q2RTX does |
-| Streamline lacking RR on Vulkan | Spike 3.9 before building on it; A-SVGF stays the default |
+| Streamline lacking RR on Vulkan | Retired by spike 3.9: RR runs on our device; A-SVGF stays the default (RR costs more) |
 | Q2RTX archived — no upstream fixes | We own the imported code from day one |
 | Upstream merge conflicts | New code in new files, minimal `#ifdef HEXENLICHT` hooks |
 | Legal (DLSS, texture packs, branding) | Rules in §4 and §5 |
