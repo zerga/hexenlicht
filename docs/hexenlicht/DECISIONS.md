@@ -75,14 +75,20 @@ story settles something a later session must not undo; mark a line
 | R14 | A model's `colorshade` tint: its hue, scaled to at most 1, multiplies the base color (`get_material`); what GL's tints above 1 brighten is left to the lighting (E4) | 3.2 |
 | R15 | No images only for DLSS Ray Reconstruction: its inputs come from the G-buffer (RENDERER.md, 3D view); the specular hit distance comes with the reflections (3.5) | 3.2 |
 | R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
-| R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them | 3.3 (#33) |
-| R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS | 3.3 |
+| R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them; *partly superseded by R21 (spheres in the lists)* | 3.3 (#33) |
+| R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS; *the lists: superseded by R22* | 3.3 |
 | R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1) | 3.3 |
 | R20 | The weapon only shadows itself; the first-person player casts no shadow (it has no model; GL draws no weapon shadow) | 3.3 |
+| R21 | Hexen II's point lights are spheres in the per-cluster light lists, next to polygons (Q2RTX's lists hold only polygons): weighed by solid angle like a triangle, contributing radiance × solid angle; the UBO's 32 uniformly picked spheres stay for moving lights (4.4); a test sphere's intensity is π × its radiance in both | 3.4 (#34) |
+| R22 | The light lists are built on the CPU when the lights change: a light goes into every cluster in the PVS of the open leafs its emitter touches (Q2RTX: its one cluster), minus clusters behind a polygon and beyond a sphere's range; cluster bounds are the leaf's plus its world triangles'; lights inside solid are in no list; a light that doesn't fit is left out whole | 3.4 |
+| R23 | A sphere may have a range, where `saturate(1 - (d / range)^4)^2` takes its inverse-square light to 0 so culling by it never shows; 0 = unlimited. The test entity lights use the entity's `light` value (utils/light's hard range); 4.9 picks the curve and the range scale | 3.4 |
+| R24 | Q2RTX's light statistics are counted per list entry (12 uints), not per cluster × light (~50 MB per buffer on the largest maps); three buffers take turns per 3D frame, cleared when the lists change; dynamic lights injected into the lists later (4.4) must not move the entries | 3.4 |
+| R25 | Screenshot comparisons of the noisy lit image average in linear light: averaging sRGB values makes a noisier image look darker (3.4's first culling check reported a false 27 %) | 3.4 |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
 (3.5, 6.5), specular hit distance (3.5), checkerboard fields and RR (3.9),
 model tint brightness (E4), instance history for A-SVGF (3.6), effects
-brightness (3.7), point lights in the light lists (3.4, 4.1).
+brightness (3.7), lights inside solid (4.1), dynamic lights in the light
+lists (4.4).

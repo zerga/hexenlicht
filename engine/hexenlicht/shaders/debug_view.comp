@@ -4,8 +4,9 @@
  * primary_rays.rgen wrote this frame (base color with the effects over it,
  * normals, material kinds, instances, vis clusters, motion vectors, depth,
  * roughness and metallic, the albedos DLSS Ray Reconstruction would get,
- * the effects, the blue noise) or direct_lighting.rgen's diffuse and
- * specular lighting. It traces no rays.
+ * the effects, the blue noise), direct_lighting.rgen's diffuse and
+ * specular lighting or the length of each pixel's light list. It traces
+ * no rays.
  *
  * The G-buffer is in Quake II RTX's checkerboard fields: the left half of
  * each image holds the pixels where x and y have the same parity (the
@@ -65,6 +66,20 @@ kind_color(uint material_id)
 	case MATERIAL_KIND_TRANSP_MODEL: return vec3(1.0, 0.5, 0.8);
 	default:			return vec3(0.7);
 	}
+}
+
+/* the length of a light list: black none; up to MAX_BRUTEFORCE_SAMPLING
+ * (8: every sample weighs all of them) blue to green; then yellow to red
+ * at 64 and more */
+vec3
+light_count_color(uint count)
+{
+	if (count == 0u)
+		return vec3(0.0);
+	if (count <= MAX_BRUTEFORCE_SAMPLING)
+		return mix(vec3(0.1, 0.2, 1.0), vec3(0.1, 1.0, 0.2), float(count - 1u) / float(MAX_BRUTEFORCE_SAMPLING - 1));
+	return mix(vec3(1.0, 1.0, 0.1), vec3(1.0, 0.1, 0.1),
+		   clamp(float(count - MAX_BRUTEFORCE_SAMPLING) / float(64 - MAX_BRUTEFORCE_SAMPLING), 0.0, 1.0));
 }
 
 vec3
@@ -228,6 +243,16 @@ main()
 		break;
 	case DEBUGVIEW_DIRECT_SPECULAR:
 		color = unpackRGBE(texelFetch(TEX_PT_COLOR_SPEC, ipos, 0).r) / STORAGE_SCALE_SPEC;
+		break;
+	case DEBUGVIEW_LIGHT_LISTS:	/* what direct_lighting.rgen samples from (light_lists.h) */
+		if (surface)
+		{
+			uint cluster = texelFetch(TEX_PT_CLUSTER_A, ipos, 0).x;	/* 0xffff: none */
+			uint count = 0u;
+			if (cluster != 0xffffu && cluster + 1u < MAX_LIGHT_LISTS && global_ubo.lights != uvec2(0u))
+				count = light_buffer.light_list_offsets[cluster + 1u] - light_buffer.light_list_offsets[cluster];
+			color = light_count_color(count) * shade;
+		}
 		break;
 	default:	/* the base color, with the effects (and emission) over it */
 		color = transparent.rgb + (1.0 - transparent.a) * base.rgb;

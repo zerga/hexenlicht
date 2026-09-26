@@ -390,7 +390,8 @@ bindings.
   `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
-  instanced primitives, materials, PVS, particles, sprites — the particle
+  instanced primitives, materials, PVS, particles, sprites, the light
+  buffer and the three light statistics buffers (3.4) — the particle
   texture slot, `anim_frame`, `debug_view`, `view_cluster`; our
   `ModelInstance`; `TlasInstanceInfo` instead of Q2RTX's `InstanceBuffer`;
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
@@ -409,10 +410,11 @@ bindings.
   `trace_effects_ray`, `get_material`, `get_rng`, `env_map` — with the TLASes
   by device address; `env_map` is black until 4.6; `get_material` tints a
   model's base color with its `colorshade` hue; 3.3: shadow and caustic rays
-  and `get_direct_illumination`, without light statistics; no sunlight until
-  4.6, `get_is_gradient` is false until 3.6), `light_lists.h` (3.3: Q2RTX's
-  polygon and sphere light sampling; a list's current light count instead of
-  the gradient history, no light statistics, no sky lights),
+  and `get_direct_illumination`, since 3.4 with the light statistics per
+  list entry; no sunlight until 4.6, `get_is_gradient` is false until 3.6),
+  `light_lists.h` (3.3: Q2RTX's polygon and sphere light sampling; 3.4:
+  spheres in the light lists, the statistics per list entry; a list's
+  current light count instead of the gradient history, no sky lights),
   `brdf.glsl` (GGX, `get_reflectivity`, `composite_color`).
 - **Random numbers:** Q2RTX's `get_rng` over blue noise: Christoph Peters'
   CC0 textures (`libs/bluenoise`, 64 of 64x64, 16-bit RGBA; copied next to
@@ -450,45 +452,112 @@ bindings.
 
 ## Lights (`vk_light.c`)
 
-Story 3.3; Q2RTX's two kinds of lights, sampled in `light_lists.h`:
+Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
+`light_lists.h`:
 
-- **Polygon lights:** triangles in the light buffer (`LightBuffer` in
-  `shaders/vertex_buffer.h`: Q2RTX's without its material table, light
-  styles, cluster debug mask and sky visibility; one host-visible buffer per
-  frame in flight, `global_ubo.lights`; the shaders' `light_buffer`), each
-  `LIGHT_POLY_VEC4S` vec4s (corners with the color in w, then the style
-  scales), sampled from the light list of the receiving point's cluster
-  (`PT_CLUSTER`; up to `MAX_BRUTEFORCE_SAMPLING` candidates weighted by solid
-  angle and luminance; clusters past `MAX_LIGHT_LISTS - 1` get none). For
-  now every cluster's list holds every polygon light, rewritten every frame
-  (3.4 culls them by the PVS and writes them when they change). Emission is
-  one-sided, along `cross(p1 - p0, p2 - p0)`.
-- **Sphere lights:** up to `MAX_LIGHT_SOURCES` (32) in the UBO's
+- **The light buffer's lights** (`LightBuffer` in `shaders/vertex_buffer.h`:
+  Q2RTX's without its material table, light styles, cluster debug mask and
+  sky visibility; one host-visible buffer per frame in flight,
+  `global_ubo.lights`; the shaders' `light_buffer`), `LIGHT_POLY_VEC4S`
+  vec4s each, of two types (`LIGHT_TYPE_*` in the fourth vec4's z):
+  - **polygons** (Q2RTX's light polygons): the corners with the color in
+    w, then the style scales; emission is one-sided, along
+    `cross(p1 - p0, p2 - p0)`;
+  - **spheres** (3.4, for Hexen II's point lights; Q2RTX's lists hold only
+    polygons): center, radius, an optional **range** (0 = unlimited) and
+    the color. With a range the light fades to 0 there:
+    `saturate(1 - (d / range)^4)^2` times the inverse square
+    (`sphere_light_window`), so culling by the range never shows as a seam.
+    A sphere's weight in the light CDF is its solid angle, as a triangle's
+    (`sphere_light_mass`); it contributes its radiance times its solid
+    angle; the shadow ray goes to a point on it (Q2RTX's
+    `compute_dynlight_sphere`); on bounces its solid angle has Q2RTX's
+    sphere-light limit.
+
+  A pixel samples the light list of its cluster (`PT_CLUSTER`): Q2RTX's up
+  to `MAX_BRUTEFORCE_SAMPLING` (8) candidates, in `ceil(n / 8)` interleaved
+  partitions of which each sample weighs one, weighted by solid angle,
+  luminance and the light statistics; clusters past `MAX_LIGHT_LISTS - 1`
+  get none.
+- **The light lists** (3.4, Q2RTX's `collect_cluster_lights`), built on the
+  CPU when the lights change (`VK_UpdateLights`: test light commands, map
+  load; 1–5 ms): a light goes into the list of every cluster in the PVS of
+  the open leafs its emitter touches (a BSP walk with the sphere's box, or
+  the polygon's box reaching one unit in front of it; Q2RTX takes the
+  light's one cluster), except clusters entirely behind a polygon (Q2RTX's
+  `light_affects_cluster`) and clusters beyond a sphere's range. A
+  cluster's bounds (`VK_LoadLightClusters`, after the PVS is final) are its
+  leaf's and those of its world triangles (Q2RTX: its opaque triangles');
+  models and brush entities take the cluster of their center, so their
+  parts beyond a cluster's bounds can miss a light near the end of its
+  range, where the window has taken it almost to 0. Lights touching no
+  open leaf (inside solid) are in no list; a light that doesn't fit into
+  `MAX_LIGHT_LIST_NODES` is left out whole (both counted by `vk_lights`).
+  Each frame in flight's buffer copies the lists when their version
+  changed; the lights are written every frame (light styles, 4.2). Hexen
+  II's light entities as test spheres (below), range = their `light` value:
+  1500–18000 list entries, mean 8–22 per cluster, the longest 249
+  (romeric6: 317 lights in 70 clusters); by the PVS alone mean 27–305, up to
+  73000 entries (keep2). 3.3's every light in every list would not fit on
+  keep2, keep5 or tibet1 (clusters × lights > 524288).
+- **Light statistics** (3.4, Q2RTX's, after G. Ward's "Adaptive Shadow
+  Testing for Ray Tracing"): `get_direct_illumination` counts unshadowed
+  and shadowed rays per light list entry and primary direction of the
+  normal (`LIGHT_STATS_UINTS` = 12 per entry; Q2RTX counts per cluster and
+  light, ~50 MB per buffer on the largest Hexen II maps); the next frame's
+  CDF weighs each light by its unshadowed share (at least 0.1;
+  `pt_light_stats`). Three device-local buffers take turns per 3D frame
+  (`global_ubo.light_stats` counted this frame, `light_stats_prev` read,
+  `light_stats_prev2` for the denoiser's gradient samples, 3.6), sized to
+  the lists (grown after `vkDeviceWaitIdle`); `VK_ClearLightStats` fills
+  this frame's before the passes, and all three after the lists changed
+  (their entries moved). The UBO's sphere lights have none, as in Q2RTX.
+- **Dynamic sphere lights:** up to `MAX_LIGHT_SOURCES` (32) in the UBO's
   `dyn_light_data`, one picked at random per pixel (Q2RTX's dynamic lights,
-  no culling); spot lights come with the code, unused.
-- Per pixel, `get_direct_illumination` picks a polygon or a sphere sample
-  by their estimated contributions and traces one shadow ray (opaque
+  no culling), for lights that move (4.4); spot lights come with the code,
+  unused.
+- Per pixel, `get_direct_illumination` picks a list light or a dynamic
+  sphere sample by their estimated contributions and traces one shadow ray (opaque
   geometry; cutouts alpha-tested; translucent surfaces and effects don't
   shadow; no shadow ray without a light). The weapon only shadows itself
   (`direct_lighting.rgen`). Direct specular only where the roughness is
   above `pt_direct_roughness_threshold` (0.18): smoother surfaces get it
   from the reflections (3.5), so mode 16 is black on them.
-- Units are Q2RTX's shaders': a sphere's color is π × its radiance (the
-  sampling gives solid angle / π, the diffuse BRDF divides by π again),
-  inverse-square falloff; a polygon's color is its radiance with Q2RTX's
-  sqrt(cos) emission lobe. Q2RTX's `add_dlights` divides a dlight's
-  intensity by 25; test lights give the color directly. Calibrating to
-  Hexen II's linear falloff is 4.9's. The lighting is stored RGBE-packed
-  ×32 (`STORAGE_SCALE_HF/SPEC`), which holds values up to 4088 / 32 ≈ 128:
+- Units are Q2RTX's shaders': inverse-square falloff; a list sphere's
+  color is its radiance, a dynamic sphere's π × its radiance (the sampling
+  gives solid angle / π, the diffuse BRDF divides by π again); a polygon's
+  color is its radiance with Q2RTX's sqrt(cos) emission lobe. Q2RTX's
+  `add_dlights` divides a dlight's intensity by 25; a test sphere's
+  intensity is π × its radiance in both kinds (the same command looks the
+  same as a list or a dynamic sphere). Calibrating to Hexen II's linear
+  falloff is 4.9's. The lighting is stored RGBE-packed ×32
+  (`STORAGE_SCALE_HF/SPEC`), which holds values up to 4088 / 32 ≈ 128:
   `packRGBE` clamps there (Q2RTX's wraps darker above it).
-- For now the lights are **test lights**: `vk_testlight sphere [radius]
-  [intensity] [r g b]` drops a sphere light at the eye (8, 1000, white),
-  `vk_testlight quad [size] [intensity] [r g b]` a square polygon light at
-  the eye facing the view direction (32, 50, white; two triangles),
-  `vk_testlight list`, `vk_testlight clear`; `VK_LoadWorld` clears them
-  (`VK_ClearLights`). Colors below 0 become 0.
+- For now the lights are **test lights** (`VK_LoadWorld` clears them,
+  `VK_ClearLights`; colors below 0 become 0):
+  - `vk_testlight sphere [radius] [intensity] [r g b] [range]`: a sphere
+    light in the lists at the eye (8, 1000, white, 0 = unlimited);
+  - `vk_testlight dlight [radius] [intensity] [r g b]`: a dynamic sphere
+    light at the eye;
+  - `vk_testlight quad [size] [intensity] [r g b]`: a square polygon light
+    at the eye facing the view direction (32, 50, white; two triangles);
+  - `vk_testlight entities [intensity] [range scale]` replaces the test
+    lights with a white sphere (radius 8) at each light entity (classname
+    `light*`), its range the entity's `light` value (utils/light's hard
+    range; default 300) × the scale (1000, 1; 0 = unlimited); the real
+    lights come with 4.1;
+  - `vk_testlight list`, `vk_testlight clear`.
+
   `VK_PrepareLights` (from `VK_PrepareUBO`) writes the buffer and the UBO
   fields every 3D frame.
+- `vk_lights` prints the lights, the lists (entries, mean and longest,
+  empty ones), lights inside solid or left out, the build time, the
+  statistics buffers' sizes and the camera cluster's list; `vk_lights stats`
+  reads back the shadow rays the last frame counted; `vk_lights cull 0|1`
+  turns range culling off and on (a check: the image must stay the same,
+  only noisier). `r_debugview 17` shows each pixel's list length: black
+  none, blue to green up to 8 (every sample weighs them all), yellow to red
+  at 64 and more.
 
 ## 3D view (`vk_view.c`)
 
@@ -569,8 +638,9 @@ Story 3.3; Q2RTX's two kinds of lights, sampled in `light_lists.h`:
   where the point was off the screen), 8 geometric normals, 9 depth (log
   scale), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
   specular albedo (as RR would get them), 13 effects and emission, 14 the
-  pixel's first random number, 15 direct diffuse (without the albedo) and
-  16 direct specular lighting.
+  pixel's first random number, 15 direct diffuse (without the albedo),
+  16 direct specular lighting and 17 the length of the pixel's light list
+  (see [Lights](#lights-vk_lightc)).
 
 ## Other
 
@@ -589,7 +659,7 @@ Story 3.3; Q2RTX's two kinds of lights, sampled in `light_lists.h`:
 
 | Command | What |
 |---|---|
-| `r_debugview 0-16` | 0 the lit image, 1-16 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
+| `r_debugview 0-17` | 0 the lit image, 1-17 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |
@@ -603,5 +673,6 @@ Story 3.3; Q2RTX's two kinds of lights, sampled in `light_lists.h`:
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
-| `vk_testlight sphere, quad, list, clear` | test lights (see [Lights](#lights-vk_lightc)) |
+| `vk_testlight sphere, dlight, quad, entities, list, clear` | test lights (see [Lights](#lights-vk_lightc)) |
+| `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1` | light lists, light statistics read back, range culling off/on |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

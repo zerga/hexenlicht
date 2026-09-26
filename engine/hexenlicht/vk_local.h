@@ -373,14 +373,20 @@ void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 
-/* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now):
- * VK_PrepareLights fills this frame's light buffer (polygon lights and
- * their per-cluster lists) and the UBO's sphere lights */
+/* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now)
+ * and their per-cluster lists, built when the lights change (VK_UpdateLights);
+ * VK_PrepareLights fills this frame's light buffer (the lights, the lists
+ * when they changed), the UBO's dynamic sphere lights and the light
+ * statistics buffers, which VK_ClearLightStats clears before the passes */
 void VK_InitLights (void);
 void VK_ShutdownLights (void);
 void VK_ClearLights (void);	/* a new map (VK_LoadWorld) */
+struct VboPrimitive;
+void VK_LoadLightClusters (qmodel_t *worldmodel, const struct VboPrimitive *prims, uint32_t num_prims);	/* after the PVS */
+void VK_UpdateLights (void);	/* after the lights change, outside frames */
 struct QVKUniformBuffer_s;
 void VK_PrepareLights (struct QVKUniformBuffer_s *ubo);	/* shaders/global_ubo.h */
+void VK_ClearLightStats (VkCommandBuffer cmd);	/* after VK_PrepareUBO, before the passes */
 
 /* vk_images.c: the render targets (shaders/global_textures.h's
  * LIST_IMAGES, VKPT_IMG_*) at the swapchain's size (the width rounded up

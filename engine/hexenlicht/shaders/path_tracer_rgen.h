@@ -27,7 +27,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - no environment until the sky (4.6): env_map returns black;
  *  - trace_effects_ray: pt_logic_sprite takes the hit distance, beams and
  *    explosions come with their story (6.3), no effects TLAS = no effects;
- *  - get_direct_illumination: no light statistics (3.4), no shadow ray
+ *  - get_direct_illumination: the light statistics per light list entry
+ *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); left out until
  *    their passes: sunlight (get_sunlight, 4.6) and the gradient samples of
  *    the denoiser (get_is_gradient is false until 3.6);
@@ -684,6 +685,7 @@ get_direct_illumination(
 	float phong_weight = clamp(specular_factor * luminance(base_reflectivity) / (luminance(base_reflectivity) + luminance(albedo)), 0, 0.9);
 
 	int polygonal_light_index = -1;
+	uint polygonal_light_node = ~0u;	// Hexenlicht: its light list entry
 	float polygonal_light_pdfw = 0;
 	bool polygonal_light_is_sky = false;
 
@@ -692,22 +694,30 @@ get_direct_illumination(
 		get_rng(RNG_NEE_TRI_X(bounce)),
 		get_rng(RNG_NEE_TRI_Y(bounce)));
 
+	// Limit the solid angle of sphere lights for indirect lighting
+	// in order to kill some fireflies in locations with many sphere lights.
+	// Example: green wall-lamp corridor in the "train" map.
+	// Hexenlicht: the light lists' spheres too
+	float max_solid_angle = (bounce == 0) ? 2 * M_PI : 0.02;
+
 	/* polygonal light illumination */
-	if(enable_polygonal) 
+	if(enable_polygonal)
 	{
 		sample_polygonal_lights(
 			cluster_idx,
-			position, 
-			normal, 
-			geo_normal, 
-			view_direction, 
-			phong_exp, 
+			position,
+			normal,
+			geo_normal,
+			view_direction,
+			phong_exp,
 			phong_scale,
-			phong_weight, 
-			is_gradient, 
-			pos_on_light_polygonal, 
+			phong_weight,
+			is_gradient,
+			max_solid_angle,
+			pos_on_light_polygonal,
 			contrib_polygonal,
 			polygonal_light_index,
+			polygonal_light_node,
 			polygonal_light_pdfw,
 			polygonal_light_is_sky,
 			rng);
@@ -719,11 +729,6 @@ get_direct_illumination(
 	/* dynamic light illumination */
 	if(enable_dynamic)
 	{
-		// Limit the solid angle of sphere lights for indirect lighting 
-		// in order to kill some fireflies in locations with many sphere lights.
-		// Example: green wall-lamp corridor in the "train" map.
-		float max_solid_angle = (bounce == 0) ? 2 * M_PI : 0.02;
-	
 		sample_dynamic_lights(
 			position,
 			normal,
@@ -765,9 +770,38 @@ get_direct_illumination(
 	}
 #endif
 
-	// Hexenlicht: the light shadowing statistics ("Adaptive Shadow Testing for Ray
-	// Tracing", G. Ward, 1994), counted here for the next frame's light CDF, come
-	// with the light lists (3.4)
+	/*
+		Accumulate light shadowing statistics to guide importance sampling on the next frame.
+		Inspired by paper called "Adaptive Shadow Testing for Ray Tracing" by G. Ward, EUROGRAPHICS 1994.
+
+		The algorithm counts the shadowed and unshadowed rays towards each light, per cluster,
+		per surface orientation in each cluster. Orientation helps improve accuracy in cases
+		when a single cluster has different parts which have the same light mostly shadowed and
+		mostly unshadowed.
+
+		On the next frame, the light CDF is built using the counts from this frame, or the frame
+		before that in case of gradient rays. See light_lists.h for more info.
+
+		Hexenlicht: counted per light list entry (a cluster's light), polygons and spheres
+		alike; the lists hold only the map's lights (vk_light.c), whose entries stay put
+		until the lists are rebuilt, which clears the statistics. The UBO's sphere lights
+		(sample_dynamic_lights) have none, as in Quake II RTX.
+	*/
+	if(global_ubo.pt_light_stats != 0
+		&& is_polygonal
+		&& !null_light
+		&& polygonal_light_node != ~0u
+		&& global_ubo.light_stats != uvec2(0u))
+	{
+		uint addr = get_light_stats_addr(polygonal_light_node, get_primary_direction(normal));
+
+		// Offset 0 is unshadowed rays,
+		// Offset 1 is shadowed rays
+		if(vis == 0) addr += 1;
+
+		// Increment the ray counter
+		atomicAdd(LightStatsRef(global_ubo.light_stats).stats[addr], 1);
+	}
 
 	if(null_light)
 		return;
