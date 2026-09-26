@@ -372,6 +372,7 @@ void VK_InitUBO (void);
 void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
+float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
 
 /* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now)
  * and their per-cluster lists, built when the lights change (VK_UpdateLights);
@@ -416,6 +417,7 @@ void VK_ShutdownPathTracer (void);
 VkPipelineLayout VK_CreatePassLayout (VkShaderStageFlags push_stages, uint32_t push_size);
 VkPipelineLayout VK_PathTracerLayout (void);	/* pt_push_constants_t */
 VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout);
+VkPipeline VK_CreateComputePipelineSpec (const char *shader, VkPipelineLayout layout, uint32_t value);	/* constant_id 0 */
 void VK_BindPassSets (VkCommandBuffer cmd, VkPipelineBindPoint bind_point, VkPipelineLayout layout);
 void VK_DispatchRays (VkCommandBuffer cmd, VkPipeline pipeline, const pt_push_constants_t *push,
 		      uint32_t width, uint32_t height, uint32_t depth);

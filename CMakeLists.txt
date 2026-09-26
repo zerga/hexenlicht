@@ -190,6 +190,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/ray_probe.comp
 	${HEXENLICHT_SHADER_DIR}/primary_rays.rgen
 	${HEXENLICHT_SHADER_DIR}/direct_lighting.rgen
+	${HEXENLICHT_SHADER_DIR}/indirect_lighting.rgen
 	${HEXENLICHT_SHADER_DIR}/compositing.comp
 	${HEXENLICHT_SHADER_DIR}/checkerboard_interleave.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp

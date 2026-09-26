@@ -35,7 +35,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    weapon shadows the world when it has no first-person model);
  *  - no sunlight until the sky and sun (4.6);
  *  - caustics stay off (the specialization constant is 0): they need a
- *    water normal map. */
+ *    water normal map;
+ *  - it clears PT_SPECULAR_HIT_DIST, which indirect_lighting.rgen writes
+ *    where it traces a specular ray. */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -152,6 +154,7 @@ main()
 	
 	imageStore(IMG_PT_COLOR_LF_SH, ipos, vec4(0));
 	imageStore(IMG_PT_COLOR_LF_COCG, ipos, vec4(0));
+	imageStore(IMG_PT_SPECULAR_HIT_DIST, ipos, vec4(0));	// Hexenlicht: indirect_lighting.rgen's specular rays write it
 	imageStore(IMG_PT_COLOR_HF, ipos, uvec4(packRGBE(high_freq)));
 	imageStore(IMG_PT_COLOR_SPEC, ipos, uvec4(packRGBE(specular)));
 }

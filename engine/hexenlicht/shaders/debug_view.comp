@@ -5,8 +5,12 @@
  * normals, material kinds, instances, vis clusters, motion vectors, depth,
  * roughness and metallic, the albedos DLSS Ray Reconstruction would get,
  * the effects, the blue noise), direct_lighting.rgen's diffuse and
- * specular lighting or the length of each pixel's light list. It traces
- * no rays.
+ * specular lighting (the specular with indirect_lighting.rgen's),
+ * indirect_lighting.rgen's diffuse lighting and specular hit distances,
+ * or the length of each pixel's light list. It traces no rays. vk_view.c
+ * runs it before the indirect passes for the G-buffer's modes (with two
+ * bounces the first stores its hit into the shading position), after them
+ * for the lighting's (DEBUGVIEW_READS_LIGHTING).
  *
  * The G-buffer is in Quake II RTX's checkerboard fields: the left half of
  * each image holds the pixels where x and y have the same parity (the
@@ -244,6 +248,17 @@ main()
 	case DEBUGVIEW_DIRECT_SPECULAR:
 		color = unpackRGBE(texelFetch(TEX_PT_COLOR_SPEC, ipos, 0).r) / STORAGE_SCALE_SPEC;
 		break;
+	case DEBUGVIEW_INDIRECT_DIFFUSE:	/* without the albedo, as the denoiser gets it */
+		color = texelFetch(TEX_PT_COLOR_LF_SH, ipos, 0).rgb / STORAGE_SCALE_LF;
+		break;
+	case DEBUGVIEW_SPECULAR_HIT_DIST:	/* log scale as the depth; black: no specular ray (a diffuse bounce, no
+					 * surface, lava, the rows 0.5 skips this frame, no bounces) */
+	{
+		float d = texelFetch(TEX_PT_SPECULAR_HIT_DIST, ipos, 0).r;
+		if (d > 0.0)
+			color = vec3(1.0 - clamp(log2(max(d, 1.0)) / 13.0, 0.0, 1.0)) * vec3(1.0, 0.8, 0.5);
+		break;
+	}
 	case DEBUGVIEW_LIGHT_LISTS:	/* what direct_lighting.rgen samples from (light_lists.h) */
 		if (surface)
 		{

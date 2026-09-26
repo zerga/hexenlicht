@@ -438,14 +438,17 @@ bindings.
   passes: `TAA_OUTPUT` (3.1), the G-buffer (3.2, see
   [3D view](#3d-view-vk_viewc)) and the lighting's (3.3: `PT_COLOR_LF_SH`,
   `PT_COLOR_LF_COCG`, `PT_COLOR_HF`, `PT_COLOR_SPEC`, `ASVGF_COLOR`,
-  `FLAT_COLOR`, `FLAT_MOTION`): 184 bytes per pixel by their formats. It
-  also loads the blue noise. `vk_images` lists them with their allocated
+  `FLAT_COLOR`, `FLAT_MOTION`; 3.5a: `PT_VIEW_DIRECTION2`,
+  `PT_GEO_NORMAL2` and our `PT_SPECULAR_HIT_DIST`): 198 bytes per pixel by
+  their formats. It also loads the blue noise. `vk_images` lists them with their allocated
   sizes.
 - `vk_matrix.c`: Q2RTX's `matrix.c` (view space x right, y up, z forward; clip
   y down); `vk_ubo.c` uses GL's near 4 / far 4096.
 - `vk_pathtracer.c`: `VK_CreatePassLayout` (the three sets + push constants),
   `VK_PathTracerLayout` (Q2RTX's `pt_push_constants_t`),
-  `VK_CreateComputePipeline`, `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
+  `VK_CreateComputePipeline` (`VK_CreateComputePipelineSpec` with the
+  shader's specialization constant 0, as Q2RTX's bounce pipelines),
+  `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
   `dispatch_rays` in ray-query mode), `VK_DispatchCompute` (Q2RTX's 16x16
   compute passes), `VK_RenderTargetBarrier`, `VK_ComputeBarrier` (between
   the compute passes, which share the images).
@@ -502,7 +505,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   keep2, keep5 or tibet1 (clusters × lights > 524288).
 - **Light statistics** (3.4, Q2RTX's, after G. Ward's "Adaptive Shadow
   Testing for Ray Tracing"): `get_direct_illumination` counts unshadowed
-  and shadowed rays per light list entry and primary direction of the
+  and shadowed rays (of the primary surfaces and, as in Q2RTX, of the first
+  bounce's hits, 3.5a) per light list entry and primary direction of the
   normal (`LIGHT_STATS_UINTS` = 12 per entry; Q2RTX counts per cluster and
   light, ~50 MB per buffer on the largest Hexen II maps); the next frame's
   CDF weighs each light by its unshadowed share (at least 0.1;
@@ -605,24 +609,66 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 - **The lighting passes** (3.3), after the primary rays:
   `direct_lighting.rgen` (the same fields; one light sample and shadow ray
   per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
-  `PT_COLOR_HF`, specular into `PT_COLOR_SPEC`, RGBE-packed; `LF` zero until
-  bounces, 3.5), `compositing.comp` (Q2RTX's path without the denoiser,
+  `PT_COLOR_HF`, specular into `PT_COLOR_SPEC`, RGBE-packed; it clears `LF`
+  and `PT_SPECULAR_HIT_DIST`), `indirect_lighting.rgen` (3.5a, see below),
+  `compositing.comp` (Q2RTX's path without the denoiser,
   `flt_enable` 0 until 3.6: lighting × albedo + specular, × throughput, the
   effects and emission over it, into `ASVGF_COLOR`),
   `checkerboard_interleave.comp` (the fields into the screen layout:
   `FLAT_COLOR`, `FLAT_MOTION`; its blur of checkerboarded surfaces needs
   the denoiser). Unchanged from Q2RTX apart from `direct_lighting.rgen`'s
-  launch check, weapon shadows and no sunlight. The lit image is noisy at
-  one sample per pixel until the denoiser (3.6); translucent surfaces show
-  their two fields' brightnesses as a checkerboard until refraction (3.5);
+  launch check, weapon shadows, no sunlight and the hit-distance clear.
+  The lit image is noisy at one sample per pixel until the denoiser (3.6);
+  translucent surfaces show
+  their two fields' brightnesses as a checkerboard until refraction (3.5b);
   there is no exposure or tone curve until 3.7 (the composite clamps).
+- **Bounces** (3.5a): `indirect_lighting.rgen`, Q2RTX's, as two pipelines
+  of one shader (specialization constant 0: the first and the second
+  bounce), dispatched after direct lighting by `pt_num_bounce_rays`
+  (Q2RTX's default 1; `VK_NumBounceRays` takes it as Q2RTX does: 0.5, else
+  0–2 rounded):
+  - 1: one bounce ray per pixel, specular (GGX VNDF sampling) with
+    probability 0.5 (1 for metals), else diffuse (cosine); at its hit the
+    base color and one light sample through the hit's light list
+    (`get_direct_illumination`, bounce 1: spheres with Q2RTX's solid-angle
+    limit), plus the hit's emission. Diffuse into `PT_COLOR_LF_SH` (plain
+    color: the spherical harmonics come with the denoiser, 3.6), specular
+    into `PT_COLOR_SPEC` (demodulated). Specular rays of surfaces rougher
+    than `pt_fake_roughness_threshold` (0.2, fading out by 0.3) count for
+    nothing: Q2RTX leaves their indirect specular to the denoiser's
+    spherical harmonics (3.6).
+  - 2: the second bounce continues from the first one's hit (which
+    overwrites `PT_SHADING_POSITION` and `PT_BOUNCE_THROUGHPUT`, with
+    `PT_VIEW_DIRECTION2` and `PT_GEO_NORMAL2`); as in Q2RTX it gathers only
+    emission and the sky, no light samples, so it adds nothing until
+    emissive surfaces (4.5) and the sky (4.6).
+  - 0.5: the first bounce for every other row, alternating per frame, ×2.
+
+  Hexenlicht's changes: the launch check; the weapon is only in its own
+  surfaces' bounce and shadow rays (as R20; Q2RTX's is in every ray without
+  a first-person model); a model hit by a bounce ray has its `colorshade`
+  hue (as `get_material`); the first bounce stores the specular ray's hit
+  distance in `PT_SPECULAR_HIT_DIST` (r16f; 0 without a specular ray: a
+  diffuse bounce, no surface, lava, the rows 0.5 skips, no bounces); at 0.5
+  the rows are (h + 1) / 2, so an odd height's last row is traced too
+  (Q2RTX: h / 2); no sunlight (4.6). Sphere lights are not geometry: bounce rays
+  never hit them, so surfaces smoother than `pt_direct_roughness_threshold`
+  (0.18), whose specular comes only from the specular bounce, reflect lit
+  surfaces but show no highlight of a sphere (Q2RTX's dynamic lights
+  alike; Q2RTX.md open questions). Measured (3.5a, test entity lights,
+  2560x1440, Release): the pass takes 0.7 ms at 0.5, 1.1–1.3 ms at 1,
+  1.7–1.9 ms at 2. Hexen II's textures are dark in linear light (the
+  cathedral's mean diffuse albedo 0.04), so one bounce adds 2–3 % to the
+  lit image there.
 - **DLSS Ray Reconstruction's inputs** (PLAN §5) from the G-buffer: diffuse
   albedo = `get_reflectivity`'s albedo, specular albedo = Karis's
   environment-BRDF approximation of its reflectivity × the specular factor,
   normals `PT_NORMAL`, roughness `PT_METALLIC.g`, depth `PT_VIEW_DEPTH`,
-  motion `PT_MOTION.xy` (× the size in pixels); the specular hit distance or
-  motion vectors come with the reflections (3.5). RR needs the fields
-  interleaved; at translucent surfaces they differ pixel by pixel (3.9).
+  motion `PT_MOTION.xy` (× the size in pixels), the specular hit distance
+  `PT_SPECULAR_HIT_DIST` where the pixel traced a specular bounce (3.5a;
+  whether RR needs one in every pixel is the 3.9 spike's). RR needs the
+  fields interleaved; at translucent surfaces they differ pixel by pixel
+  (3.9).
 - For now **`debug_view.comp`** writes `TAA_OUTPUT` (`r_debugview`, default
   1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR` /
   `STORAGE_SCALE_HDR`, until TAA and tone mapping take over, 3.7–3.8), or
@@ -639,8 +685,13 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   scale), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
   specular albedo (as RR would get them), 13 effects and emission, 14 the
   pixel's first random number, 15 direct diffuse (without the albedo),
-  16 direct specular lighting and 17 the length of the pixel's light list
-  (see [Lights](#lights-vk_lightc)).
+  16 specular lighting (direct and bounced), 17 the length of the pixel's
+  light list (see [Lights](#lights-vk_lightc)), 18 indirect diffuse
+  (without the albedo) and 19 the specular hit distance (log scale as the
+  depth, black without a specular ray). `vk_view.c` runs it before the
+  bounces for the G-buffer's modes (with two bounces the first stores its
+  hit into the shading position) and after compositing for the lighting's (0, 15, 16,
+  18, 19: `DEBUGVIEW_READS_LIGHTING`).
 
 ## Other
 
@@ -659,7 +710,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 
 | Command | What |
 |---|---|
-| `r_debugview 0-17` | 0 the lit image, 1-17 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
+| `r_debugview 0-19` | 0 the lit image, 1-19 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
+| `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |

@@ -253,7 +253,8 @@ Goal: a test map path-traced, denoised, 60+ fps at 1440p with upscaling.
 | 3.2 | Primary visibility / G-buffer incl. motion vectors (RR-ready layout, §5) | M | G-buffer channels visible in debug view |
 | 3.3 | Direct lighting: point/sphere and polygon lights, shadow rays | M | Test lights cast shadows |
 | 3.4 | Per-cluster light lists using PVS (Q2RTX approach) | M | Many lights without cost explosion |
-| 3.5 | Indirect lighting, reflections, refraction; GGX BRDF | L | Bounce light, glossy reflections |
+| 3.5a | Indirect lighting: diffuse and GGX specular bounces (Q2RTX's `indirect_lighting.rgen`), split from 3.5 | M | Bounce light; glossy reflections with the roughness override (materials are rough until E5) |
+| 3.5b | Reflection and refraction pass (Q2RTX's `reflect_refract.rgen`): translucent surfaces and models seen through, mirrors and glass for E5's kinds; decide the water look (GL draws it opaque; lean: GL's until 6.5) | M | Translucent surfaces and models show what is behind them |
 | 3.6 | A-SVGF denoiser | M | Stable image at 1 spp |
 | 3.7 | Tone mapping, auto exposure, bloom | S | Exposure adapts between areas |
 | 3.8 | Upscaler interface + TAAU; FSR backend | M | Render at lower res, upscale |

@@ -12,7 +12,9 @@
  * The frame's buffers are read by device address from the UBO. Each
  * module creates its pipeline layouts with its own push constants
  * (VK_CreatePassLayout); the path tracer's passes share one with Quake II
- * RTX's pt push constants (VK_PathTracerLayout).
+ * RTX's pt push constants (VK_PathTracerLayout). A shader can be made
+ * into several pipelines by its specialization constant 0
+ * (VK_CreateComputePipelineSpec), as Quake II RTX's bounces.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -68,9 +70,11 @@ VkPipelineLayout VK_PathTracerLayout (void)
 	return pt_layout;
 }
 
-VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout)
+static VkPipeline CreateComputePipeline (const char *shader, VkPipelineLayout layout, const uint32_t *constant0)
 {
 	VkComputePipelineCreateInfo	info;
+	VkSpecializationMapEntry	entry;
+	VkSpecializationInfo		spec;
 	VkShaderModule			module = VK_LoadShader (shader);
 	VkPipeline			pipeline;
 
@@ -81,9 +85,32 @@ VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout
 	info.stage.module = module;
 	info.stage.pName = "main";
 	info.layout = layout;
+	if (constant0)
+	{
+		entry.constantID = 0;
+		entry.offset = 0;
+		entry.size = sizeof(uint32_t);
+		spec.mapEntryCount = 1;
+		spec.pMapEntries = &entry;
+		spec.dataSize = sizeof(uint32_t);
+		spec.pData = constant0;
+		info.stage.pSpecializationInfo = &spec;
+	}
 	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &info, NULL, &pipeline));
 	vkDestroyShaderModule (vk.device, module, NULL);
 	return pipeline;
+}
+
+VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout)
+{
+	return CreateComputePipeline (shader, layout, NULL);
+}
+
+/* with the shader's specialization constant 0 (constant_id = 0) set to value,
+ * as Quake II RTX's pipelines that share a shader */
+VkPipeline VK_CreateComputePipelineSpec (const char *shader, VkPipelineLayout layout, uint32_t value)
+{
+	return CreateComputePipeline (shader, layout, &value);
 }
 
 /* the frame's UBO, images and textures */
