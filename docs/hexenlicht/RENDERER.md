@@ -624,7 +624,8 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 - **`primary_rays.rgen`** (3.2): Q2RTX's primary rays, dispatched as its
   are (width / 2 × height × 2 checkerboard fields: the left half of each
   image holds the pixels where x and y have the same parity, the right half
-  the others), write the G-buffer:
+  the others; swapped every other frame where the interleave doesn't blur,
+  below), write the G-buffer:
 
   | Image | Contents |
   |---|---|
@@ -712,7 +713,16 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   DLSS RR it blurs checkerboarded surfaces, so translucent surfaces show
   their blend instead of a fine checkerboard of the surface and what is
   behind it; with DLSS it also writes DLSS's inputs, see
-  [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)).
+  [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)). Where it doesn't blur (the
+  lit image without the denoiser and without RR) the fields swap every
+  frame (3.12: `vk_ubo.c` sets `pt_swap_checkerboard` to the frame's
+  parity, as Q2RTX without the denoiser), so a translucent surface's
+  pixels show the surface and what is behind it in turn: averaged frames
+  show the blend (DLSS SR's history, averaged screenshots), a single frame
+  keeps the checkerboard (the TAA pass only copies without the denoiser).
+  The debug views keep one layout, as nothing averages them; the motion
+  check reads last frame's in that layout, so it is misaligned for the
+  one frame after a swapped one.
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
   weapon shadows, no sunlight and the hit-distance clear. Without the
   denoiser the lit image is noisy at one sample per pixel. The TAA pass
@@ -1066,7 +1076,12 @@ player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
   `hl_shared.h`): `PT_VIEW_DEPTH`, the distance along the ray, divided by
   the length of the pixel's view-space direction at z = 1 (the jittered
   pixel center), from the field pixel the motion vector comes from; 1
-  without a surface. The guides: `get_reflectivity`'s albedo, Karis's
+  without a surface. At blurred pixels the motion vector and the depth
+  come from one of the two fields: for RR the one with the larger
+  throughput (the split's share, noise-free; a tie goes to the field that
+  went through or refracted: 3.12), since the brighter color, the
+  denoiser's rule (Q2RTX's), flips per pixel on RR's noisy image. The
+  guides: `get_reflectivity`'s albedo, Karis's
   environment-BRDF approximation of the reflectivity × the specular factor
   (as debug view 12), the shading normal with the roughness in `.w`,
   `PT_SPECULAR_HIT_DIST`; at blurred pixels half the pixel's and half the
@@ -1106,9 +1121,11 @@ player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
   coherent down to 33 % and is steadier paused (temporal noise 0.019 at
   67 %, as in 3.9). DLSS's output is unclamped HDR, where the TAA's PQ
   encoding clamps at 10000 cd/m² (R51): stronger bloom around the test
-  lights' hot spots. At the cathedral's font RR's input is blurred where
-  the interleave blurs (without it RR shows the fine checkerboard); where
-  the blur misses pixels the checkerboard remains, as with TAA (3.12).
+  lights' hot spots. At the cathedral's font RR's input is blurred
+  (without the blur RR shows the fine checkerboard); 3.12 found no view of
+  the font where RR keeps it (DECISIONS R73). SR on the raw image
+  (`flt_enable 0`) gets the swapped fields and resolves them in its
+  history (R72).
 - **Measured** (2560x1440, Release, temporary GPU timestamps, the 72 fps
   cap and the unfocused window's sleep lifted; the GPU at its ~100 W power
   cap, 0.9 GHz):

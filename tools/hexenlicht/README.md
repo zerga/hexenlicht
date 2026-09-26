@@ -18,6 +18,7 @@ or `Hexenlicht-data` next to the repository.
 | `crop_strip.ps1` | crops the same rectangle out of several PNGs, side by side |
 | `tga_diff.ps1` | pixel-diffs two folders of screenshots (skip the HUD rows, mask run-to-run noise, write diff images) |
 | `tga_mean.ps1` | averages screenshots of a paused frame in linear light and compares two sets (means, 60-pixel blocks, noise) |
+| `tga_checkerboard.ps1` | averages screenshots of a paused frame and scores a fine checkerboard (unresolved checkerboard fields) per block, with a heat map |
 | `ubo_layout_check.ps1` | checks every global UBO member's C offset against glslang's reflection |
 | `pak_entities.ps1` | lists entities of a classname pattern per map in the paks |
 | `monsters_near_start.ps1` | monsters near each map's `info_player_start` |

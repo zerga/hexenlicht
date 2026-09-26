@@ -5,10 +5,11 @@
  * (vk_pathtracer.c). VK_RenderView3D calls VK_PrepareUBO, which fills the
  * current frame's from r_scene: the camera's matrices and last frame's,
  * the sizes, jitter, TAA mode and FSR constants vk_upscale.c decided,
- * time, the medium the camera is in, the cvars of
- * Quake II RTX's UBO_CVAR_LIST (registered here with its defaults; each
- * does something once the pass that reads it is imported) and the
- * Hexenlicht block: the frame's buffers and the debug view's values.
+ * the checkerboard fields' swap, time, the medium the camera is in, the
+ * cvars of Quake II RTX's UBO_CVAR_LIST (registered here with its
+ * defaults; each does something once the pass that reads it is imported)
+ * and the Hexenlicht block: the frame's buffers and the debug view's
+ * values.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -215,6 +216,17 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	 * denoiser's spherical harmonics) */
 	if (up->dlss == VK_SL_RR)
 		ubo.pt_fake_roughness_threshold = 1.0f;
+	/* the checkerboard fields swap every frame where the interleave doesn't
+	 * blur them (the lit image without the denoiser and without DLSS RR), as
+	 * Quake II RTX's without the denoiser: a pixel on a translucent surface
+	 * shows the surface and what is behind it in turn, so averaged frames
+	 * show the blend (DLSS SR's history, averaged screenshots; each frame
+	 * keeps the checkerboard: without the denoiser the TAA pass copies).
+	 * The debug views keep one layout: nothing averages them (the motion
+	 * check reads last frame's in this layout: misaligned for one frame
+	 * after a swapped one) */
+	ubo.pt_swap_checkerboard = (debug_view == DEBUGVIEW_LIT && !up->denoise && up->dlss != VK_SL_RR)
+				   ? (int)(vk_render_frame & 1) : 0;
 	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
 	if (!VK_DenoiserHistoryValid ())
 	{

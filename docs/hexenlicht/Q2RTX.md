@@ -82,7 +82,7 @@ this repository) or one at a time with
 
 | Q2RTX | What it does | Hexenlicht | Story |
 |---|---|---|---|
-| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); `get_render_extent`, `evaluate_taa_settings` and the TAA jitter in `vk_upscale.c` (3.8: `r_scale` instead of `scr_viewsize`, our TAA mode without random sub-pixel offsets); dynamic resolution left out (3.11 or 7.2, see the open questions) | E1, E2, 3.1, 3.8, … |
+| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1; the checkerboard swap without the denoiser 3.12); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); `get_render_extent`, `evaluate_taa_settings` and the TAA jitter in `vk_upscale.c` (3.8: `r_scale` instead of `scr_viewsize`, our TAA mode without random sub-pixel offsets); dynamic resolution left out (3.11 or 7.2, see the open questions) | E1, E2, 3.1, 3.8, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
 | `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1; specialization constants 3.5a); the passes 3.2–3.5b (`vk_view.c`: the bounces 3.5a) | 2.6, 3.1, … |
@@ -114,7 +114,7 @@ this repository) or one at a time with
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6) | 3.2, 3.3, 3.5b, 3.6 |
-| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too) | 3.3, 3.10 |
+| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too; 3.12: for RR the motion vector and depth of blurred pixels from the field with the larger throughput) | 3.3, 3.10, 3.12 |
 | `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6) | 3.3, 3.4 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
@@ -174,7 +174,7 @@ this repository) or one at a time with
   2–3 % to the lit image, where lighter PBR textures would get tens of
   percent. The calibration (4.9) or the materials (E5) decide whether that
   stays.
-- **Checkerboard fields and RR (3.12).** At translucent surfaces Q2RTX puts one
+- **Checkerboard fields and RR (answered in 3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.
   *3.9: RR keeps that alternation (a fine checkerboard) where A-SVGF +
@@ -183,7 +183,14 @@ this repository) or one at a time with
   misses the see-through pixels at some views (3.12, DECISIONS R56).
   3.10: the interleave blurs RR's input and its guides alike; at the
   cathedral's font the checkerboard is gone from RR's image where the blur
-  triggers and remains where it misses pixels (R62).*
+  triggers and remains where it misses pixels (R62).
+  3.12, answered: the blur misses nothing (no pass loses the checkerboard
+  flags; no view of the font kept the pattern with the denoiser or RR).
+  What kept it was the lit image without the denoiser, which Q2RTX
+  resolves by swapping the fields every frame (`prepare_ubo`'s
+  `pt_swap_checkerboard`), the port had left out: now ported (R72). RR's
+  motion vector and depth at blurred pixels come from the field with the
+  larger throughput (R73).*
 - **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
   the vertex light, then clamps); the G-buffer takes only the hue.
 - **Light styles and the gradients (4.2).** A gradient sample weighs the

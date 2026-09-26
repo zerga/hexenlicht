@@ -185,6 +185,20 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   under the font; mode 3 at 0 shows the purple translucent kind in a
   checkerboard. The lit image averages to the surface blended with what is
   behind it.
+- **Checkerboard fields (3.12):** `tga_checkerboard.ps1 -Dir <shots>
+  -Shots (1..16) -MaxY <HUD row> [-Region x,y,w,h] [-Heat h.tga]` averages
+  paused shots in linear light and scores a fine checkerboard per 8x8
+  block (up to 2; the font's two fields unresolved score 1.4–1.6, the same
+  view without the split up to ~0.7 with the noise of 16 raw frames,
+  denoised images ~0.1–0.25 at the weapon's edges). Without the denoiser
+  the fields swap every frame, so each frame keeps a checkerboard: take an
+  even number of shots at alternating intervals (`screenshot` then 3 and 4
+  waits in turn) so both parities count. Single noisy frames score high
+  from noise alone; score them only with the denoiser or DLSS. At the
+  font (the route above, then `+back` 20 and 40 frames and `+moveright`
+  25): the denoised image with TAA and TAAU, DLSS RR at 100 % and 67 %,
+  and 16 raw frames or DLSS SR with `flt_enable 0` all stay below 0.4 on
+  the font (TAA without jitter reaches ~0.4 on the weapon's edge).
 - **Water stays opaque (3.5b):** with `pt_reflect_refract 2`, romeric1's
   pool (look down at the start) and egypt4's vertical water walls (`+right`
   69 frames) must match the build before 3.5b pixel for pixel in the
