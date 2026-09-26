@@ -25,6 +25,7 @@ From the [project plan](docs/hexenlicht/PLAN.md#4-licensing-rules):
 | [volk](https://github.com/zeux/volk) | 1.4.350 | MIT | `libs/volk` | Loading Vulkan functions at runtime |
 | [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.4.0 | MIT | `libs/vma` | GPU memory management |
 | [stb_image](https://github.com/nothings/stb) | 2.30 (commit `2c980bb`) | MIT or public domain | `libs/stb` | Loading PNG/TGA textures |
+| [Free blue noise textures](http://momentsingraphics.de/BlueNoise.html) (Christoph Peters) | `FreeBlueNoiseTextures.zip` of 2025-05-12, `64_64/HDR_RGBA_*` only | CC0 1.0 | `libs/bluenoise` | The path tracer's random numbers |
 
 `libs/vma/vma_impl.cpp` and `libs/stb/stb_image_impl.c` are Hexenlicht's own
 files (GPL-2.0-or-later) that compile the libraries' implementations.
@@ -34,7 +35,7 @@ file headers:
 
 | Project | License | Adapted in |
 |---|---|---|
-| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11; commit `f2526e9a1`) | GPL-2.0-or-later | `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/vk_effects.c`, `engine/hexenlicht/vk_core.c` (the module table), `engine/hexenlicht/vk_matrix.c`, `engine/hexenlicht/vk_ubo.c`, `engine/hexenlicht/vk_images.c`, `engine/hexenlicht/vk_pathtracer.c`; shaders in `engine/hexenlicht/shaders/`: `hl_shared.h`, `constants.h`, `shader_structs.h`, `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h`, `debug_view.comp`, `model_geometry.comp`; copied unchanged: `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl`. How modules come in: [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
+| [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (archived 2025-12-11; commit `f2526e9a1`) | GPL-2.0-or-later | `engine/hexenlicht/vk_world.c`, `engine/hexenlicht/vk_pvs.c`, `engine/hexenlicht/vk_instance.c`, `engine/hexenlicht/vk_accel.c`, `engine/hexenlicht/vk_effects.c`, `engine/hexenlicht/vk_core.c` (the module table), `engine/hexenlicht/vk_matrix.c`, `engine/hexenlicht/vk_ubo.c`, `engine/hexenlicht/vk_images.c`, `engine/hexenlicht/vk_pathtracer.c`; shaders in `engine/hexenlicht/shaders/`: `hl_shared.h`, `constants.h`, `shader_structs.h`, `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h`, `path_tracer_rgen.h`, `primary_rays.rgen`, `debug_view.comp`, `model_geometry.comp`; copied unchanged: `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl`, `brdf.glsl`, `water.glsl`, `asvgf.glsl`. How modules come in: [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
 | [QuakeSpasm](https://sourceforge.net/projects/quakespasm/) | GPL-2.0-or-later | `engine/hexenlicht/vk_instance.c` (alias model frame blending, after `R_SetupAliasFrame`; movement blending, after `R_SetupEntityTransform`) |
 
 Used from the LunarG Vulkan SDK at build time, not vendored:

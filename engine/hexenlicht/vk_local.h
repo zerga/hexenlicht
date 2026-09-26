@@ -122,8 +122,10 @@ void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
  * (gl_screen.c's "screenshot" command) */
 void VK_RequestScreenshot (const char *filename);
 
-/* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert" */
+/* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert";
+ * VK_ExePath gives <exe folder>\<file> */
 VkShaderModule VK_LoadShader (const char *name);
+void VK_ExePath (const char *file, char *path, size_t size);
 
 /* vk_buffer.c: buffers, and one-time upload commands for load time
  * (VK_EndUpload submits and waits) */
@@ -360,8 +362,10 @@ void VK_InverseMatrix (const float m[16], float inv[16]);
 
 /* vk_ubo.c: the global uniform buffer (shaders/global_ubo.h), one per frame
  * in flight: descriptor set 0 of the view passes. VK_PrepareUBO fills the
- * current frame's from r_scene for a width x height 3D view and counts the
- * 3D frames (vk_render_frame, the UBO's current_frame_idx). */
+ * current frame's from r_scene for a width x height 3D view (rendered at
+ * the width rounded up to even: global_ubo.width; the output's size is
+ * taa_output_width x taa_output_height) and counts the 3D frames
+ * (vk_render_frame, the UBO's current_frame_idx). */
 extern VkDescriptorSetLayout	vk_ubo_set_layout;
 extern uint32_t			vk_render_frame;
 void VK_InitUBO (void);
@@ -370,8 +374,9 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 
 /* vk_images.c: the render targets (shaders/global_textures.h's
- * LIST_IMAGES, VKPT_IMG_*) at the swapchain's size, in the GENERAL layout:
- * descriptor set 1 of the view passes, even or odd by vk_render_frame */
+ * LIST_IMAGES, VKPT_IMG_*) at the swapchain's size (the width rounded up
+ * to even), in the GENERAL layout, and the blue noise: descriptor set 1 of
+ * the view passes, even or odd by vk_render_frame */
 extern VkExtent2D		vk_image_extent;	/* 0 x 0 = none */
 extern VkDescriptorSetLayout	vk_images_set_layout;
 void VK_InitImages (void);
@@ -402,10 +407,12 @@ void VK_DispatchRays (VkCommandBuffer cmd, VkPipeline pipeline, const pt_push_co
 void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
 			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
+void VK_ComputeBarrier (VkCommandBuffer cmd);	/* between compute passes */
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
- * TLAS: it fills the UBO and runs the view pass (r_debugview's
- * debug_view.comp for now) into the TAA_OUTPUT render target;
+ * TLAS: it fills the UBO and runs the view passes (primary_rays.rgen, the
+ * G-buffer; for now r_debugview's debug_view.comp shows it) into the
+ * TAA_OUTPUT render target;
  * GL_EndRendering calls VK_DrawView3D, which copies it into the
  * swapchain's 3D view rectangle before the 2D. */
 void VK_InitView (void);

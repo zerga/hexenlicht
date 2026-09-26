@@ -137,6 +137,29 @@ void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 	vkCmdPipelineBarrier2 (cmd, &dep);
 }
 
+/* everything the compute shaders wrote before is visible to the compute
+ * shaders after, and what they read before is not overwritten early: between
+ * the view passes, which share the render targets (Quake II RTX's
+ * BARRIER_COMPUTE on each image) */
+void VK_ComputeBarrier (VkCommandBuffer cmd)
+{
+	VkMemoryBarrier2	barrier;
+	VkDependencyInfo	dep;
+
+	memset (&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+				VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+	memset (&dep, 0, sizeof(dep));
+	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dep.memoryBarrierCount = 1;
+	dep.pMemoryBarriers = &barrier;
+	vkCmdPipelineBarrier2 (cmd, &dep);
+}
+
 void VK_InitPathTracer (void)
 {
 	pt_layout = VK_CreatePassLayout (VK_SHADER_STAGE_COMPUTE_BIT, sizeof(pt_push_constants_t));

@@ -15,9 +15,14 @@ this repository) or one at a time with
   ray queries (`KHR_RAY_QUERY`, compute shaders); on NVIDIA it picks ray
   queries. Hexenlicht has no ray-tracing pipelines, shader binding tables
   or hit shaders (`.rchit`, `.rahit`, `.rmiss`, `.rint`); Q2RTX's `.rgen`
-  shaders will be compiled as compute shaders with `-DKHR_RAY_QUERY` (the
-  build rule comes with the first one, 3.2; `debug_view.comp` defines
-  `KHR_RAY_QUERY` itself). The
+  shaders are compiled as compute shaders with `-DKHR_RAY_QUERY` (the build
+  rule in `cmake/HexenlichtShaders.cmake`, since 3.2; other shaders that
+  include `path_tracer_rgen.h`, such as `debug_view.comp`, define
+  `KHR_RAY_QUERY` themselves). `VK_DispatchRays` rounds the launch up to
+  8x8 workgroups and Q2RTX's `.rgen` shaders don't check their launch
+  bounds (its ray-tracing pipelines launch exact sizes): every imported
+  `.rgen` returns at once past `global_ubo.width / 2` × `height`, or its
+  padding threads write into the other checkerboard field. The
   shaders keep their `#ifdef KHR_RAY_QUERY` branches, so a pipeline path can
   still be added (7.2, if shader execution reordering is worth it). The TLAS
   instances still carry Q2RTX's shader binding table offsets (`SBTO_*`),
@@ -41,9 +46,10 @@ this repository) or one at a time with
   not exist; the headers that declare descriptors or set numbers are the
   ones that are adapted: `global_ubo.h`, `global_textures.h`,
   `vertex_buffer.h`, `path_tracer.h` (the UBO's set), `path_tracer_hit_shaders.h`
-  (the effects' texel buffers) and, with 3.2, `path_tracer_rgen.h` (its TLAS
-  set, `GLOBAL_TEXTURES_DESC_SET_IDX 2` and `VERTEX_BUFFER_DESC_SET_IDX 3`,
-  which become 1 and unused). A shader defines `GLOBAL_UBO_DESC_SET_IDX`,
+  (the effects' texel buffers) and `path_tracer_rgen.h` (3.2: its TLAS array
+  becomes `TLAS_GEOMETRY`/`TLAS_EFFECTS` by device address,
+  `GLOBAL_TEXTURES_DESC_SET_IDX 2` and `VERTEX_BUFFER_DESC_SET_IDX 3` become
+  1 and unused). A shader defines `GLOBAL_UBO_DESC_SET_IDX`,
   `GLOBAL_TEXTURES_DESC_SET_IDX` and `VERTEX_BUFFER_DESC_SET_IDX` before
   including them; a fragment shader also defines
   `GLOBAL_TEXTURES_SAMPLED_ONLY` (no writable storage images there).
@@ -72,7 +78,7 @@ this repository) or one at a time with
 |---|---|---|---|
 | `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; dynamic lights 4.4; readback 3.7; dynamic resolution 3.8 | E1, E2, 3.1, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
-| `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise 3.2; env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, … |
+| `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1); the passes 3.2–3.5 | 2.6, 3.1, … |
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
@@ -101,11 +107,11 @@ this repository) or one at a time with
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
-| `primary_rays.rgen`, `path_tracer_rgen.h`, `tiny_encryption_algorithm.h` | G-buffer in Q2RTX's checkerboard fields | 3.2 |
+| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields; `path_tracer_rgen.h` without the lighting functions (3.3) and the gradient samples (3.6) | 3.2 |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser | 3.3 |
 | `light_lists.h` | per-cluster light lists | 3.4 |
-| `indirect_lighting.rgen`, `reflect_refract.rgen`, `brdf.glsl`, `water.glsl` | bounces, reflections, refraction | 3.5 |
-| `asvgf.glsl`, `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
+| `indirect_lighting.rgen`, `reflect_refract.rgen` | bounces, reflections, refraction | 3.5 |
+| `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
 | `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | 4.6 |
@@ -114,19 +120,22 @@ this repository) or one at a time with
 | `*.rchit`, `*.rahit`, `*.rmiss`, `*.rint` | not used: ray queries only | — |
 | `animate_materials.comp` | not used: materials animate while tracing (`vertex_buffer.h`) | — |
 | `god_rays*.comp`, `shadow_map.vert`, `debug_line.*` | not planned | — |
+| `tiny_encryption_algorithm.h` | not used: nothing in Q2RTX includes it | — |
 
 ## Open questions for later stories
 
-- **`path_tracer_rgen.h` (3.2).** Its `trace_geometry_ray` and
-  `trace_effects_ray` call the hit logic with Q2RTX's signatures; ours
-  differ: `pt_logic_sprite` takes the hit distance (for the sprite's mip
-  level), and `pt_logic_beam`, `pt_logic_beam_intersection` and
-  `pt_logic_explosion` don't exist until 6.3 (`debug_view.comp` has its
-  own loops for now). The import adapts those calls and its descriptor
-  declarations (see the rules).
-- **Random numbers (3.2).** Q2RTX samples blue noise from 128 textures that
-  ship in a separate media package (`blue_noise.pkz`) with no license note;
-  we need our own or a CC0 source.
+- **Water normal map (3.5, 6.5).** Q2RTX's water waves (`get_water_normal`)
+  sample `textures/water_n.tga` from its media package; we need our own
+  (generated or CC0). Until then the water keeps its geometric normal.
+- **Specular hit distance (3.5).** DLSS Ray Reconstruction wants the
+  specular hit distance (or specular motion vectors) of the reflection
+  bounce; Q2RTX's reflection pass doesn't store it. The other RR inputs come
+  from the G-buffer (RENDERER.md, 3D view).
+- **Checkerboard fields and RR (3.9).** At translucent surfaces Q2RTX puts one
+  field on the surface and the other through it, so an interleaved G-buffer
+  alternates between the two surfaces pixel by pixel there.
+- **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
+  the vertex light, then clamps); the G-buffer takes only the hue.
 - **Instance history (3.6).** A-SVGF's gradient reprojection maps last
   frame's instances to this frame's (`model_prev_to_current`); our entity
   history in `vk_instance.c` has to provide it.
