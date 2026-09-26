@@ -261,6 +261,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   pvs)                  /* the PVS buffer (shaders/pvs.glsl) */ \
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   particles)            /* EffectParticle[] (shaders/hl_shared.h) */ \
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   sprites)              /* EffectSprite[] */ \
+	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   lights)               /* this frame's LightBuffer (vk_light.c): light_buffer */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            particle_texture)     /* texture slot of GL's particle dot */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             anim_frame)           /* int(cl.time * 5), R_TextureAnimation's frame */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            debug_view)           /* r_debugview: DEBUGVIEW_* */ \

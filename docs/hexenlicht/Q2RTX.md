@@ -65,7 +65,9 @@ this repository) or one at a time with
   into their top left `global_ubo.width x global_ubo.height`.
 - **Q2RTX's cvars** (`UBO_CVAR_LIST`: `pt_*`, `flt_*`, `tm_*`) are registered
   with Q2RTX's defaults; each does something once the pass that reads it
-  is imported.
+  is imported. `VK_PrepareUBO` overrides those Q2RTX's host code sets per
+  mode until their passes exist: `pt_aperture` 0 (no accumulation mode),
+  `flt_taa` off (3.8), `flt_enable` 0 (no denoiser, 3.6).
 - Copyright lines stay; ours is added to files we change. `THIRD_PARTY.md`
   lists the files.
 - New modules join `vk_core.c`'s init table: `VK_INIT_DEFAULT` at
@@ -76,15 +78,15 @@ this repository) or one at a time with
 
 | Q2RTX | What it does | Hexenlicht | Story |
 |---|---|---|---|
-| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; dynamic lights 4.4; readback 3.7; dynamic resolution 3.8 | E1, E2, 3.1, … |
+| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test sphere lights, 3.3), the game's dynamic lights 4.4; readback 3.7; dynamic resolution 3.8 | E1, E2, 3.1, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
 | `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1); the passes 3.2–3.5 | 2.6, 3.1, … |
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
 | `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag`; underwater warp 6.6 | 1.6, 6.6 |
-| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons 3.3; cluster light lists 3.4; sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.6 |
-| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer 3.3; light stats 3.4 | E2, 3.3, 3.4 |
+| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3), map lights E4; cluster light lists: every light in every cluster's list for now (`vk_light.c`, 3.3), by the PVS 3.4; sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.6 |
+| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, light polygons and lists only); light stats 3.4 | E2, 3.3, 3.4 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
@@ -103,13 +105,13 @@ this repository) or one at a time with
 
 | Q2RTX | Hexenlicht | Story |
 |---|---|---|
-| `constants.h`, `shader_structs.h`, `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl` | imported (`utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl` unchanged) | 3.1 |
+| `constants.h`, `shader_structs.h`, `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl` | imported (`projection.glsl`, `path_tracer_transparency.glsl` unchanged; `utils.glsl`: `packRGBE` clamps, 3.3) | 3.1, 3.3 |
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
-| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields; `path_tracer_rgen.h` without the lighting functions (3.3) and the gradient samples (3.6) | 3.2 |
-| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser | 3.3 |
-| `light_lists.h` | per-cluster light lists | 3.4 |
+| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields; `path_tracer_rgen.h` (its lighting functions since 3.3, the gradient samples come with 3.6) | 3.2, 3.3 |
+| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
+| `light_lists.h` | imported (3.3) without light statistics (3.4), the gradient light-count history (3.6) and sky lights (4.6) | 3.3, 3.4 |
 | `indirect_lighting.rgen`, `reflect_refract.rgen` | bounces, reflections, refraction | 3.5 |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
@@ -139,5 +141,11 @@ this repository) or one at a time with
 - **Instance history (3.6).** A-SVGF's gradient reprojection maps last
   frame's instances to this frame's (`model_prev_to_current`); our entity
   history in `vk_instance.c` has to provide it.
-- **Effects brightness (3.3).** Q2RTX scales particles and sprites by the
-  exposure; the debug view shows GL's colors unlit.
+- **Effects brightness (3.7).** Q2RTX scales particles and sprites by the
+  exposure; ours keep GL's colors, added as they are to the lit image
+  (3.3), until exposure and tone mapping settle how bright they are.
+- **Point lights in the light lists (3.4, 4.1).** Hexen II maps have
+  hundreds of point light entities; Q2RTX's per-cluster lists only hold
+  polygon lights, and its sphere lights (at most 32, in the UBO) are picked
+  uniformly with no culling. The lean: sphere entries in the per-cluster
+  lists, decided with 3.4.

@@ -189,6 +189,9 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/effects_check.comp
 	${HEXENLICHT_SHADER_DIR}/ray_probe.comp
 	${HEXENLICHT_SHADER_DIR}/primary_rays.rgen
+	${HEXENLICHT_SHADER_DIR}/direct_lighting.rgen
+	${HEXENLICHT_SHADER_DIR}/compositing.comp
+	${HEXENLICHT_SHADER_DIR}/checkerboard_interleave.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
@@ -236,6 +239,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_accel.c
 	${HEXENLICHT_DIR}/vk_matrix.c
 	${HEXENLICHT_DIR}/vk_ubo.c
+	${HEXENLICHT_DIR}/vk_light.c
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_view.c

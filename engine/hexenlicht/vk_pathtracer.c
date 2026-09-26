@@ -108,6 +108,16 @@ void VK_DispatchRays (VkCommandBuffer cmd, VkPipeline pipeline, const pt_push_co
 	vkCmdDispatch (cmd, (width + 7) / 8, (height + 7) / 8, depth);
 }
 
+/* a compute pass of local_size x local_size workgroups over width x height,
+ * with the path tracer's layout (compositing.comp and
+ * checkerboard_interleave.comp: 16, as Quake II RTX dispatches them) */
+void VK_DispatchCompute (VkCommandBuffer cmd, VkPipeline pipeline, uint32_t width, uint32_t height, uint32_t local_size)
+{
+	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+	VK_BindPassSets (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pt_layout);
+	vkCmdDispatch (cmd, (width + local_size - 1) / local_size, (height + local_size - 1) / local_size, 1);
+}
+
 /* a barrier on a render target (they stay in the GENERAL layout) */
 void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,

@@ -567,6 +567,7 @@ static vk_module_t	vk_modules[] =
 	{ "instances",	VK_InitInstances,	VK_ShutdownInstances,		VK_INIT_DEFAULT },
 	{ "effects",	VK_InitEffects,		VK_ShutdownEffects,		VK_INIT_DEFAULT },
 	{ "accel",	VK_InitAccel,		VK_ShutdownAccel,		VK_INIT_DEFAULT },
+	{ "lights",	VK_InitLights,		VK_ShutdownLights,		VK_INIT_DEFAULT },
 	{ "ubo",	VK_InitUBO,		VK_ShutdownUBO,			VK_INIT_DEFAULT },
 	{ "images",	VK_InitImages,		VK_ShutdownImages,		VK_INIT_DEFAULT },
 	{ "images|",	VK_CreateImages,	VK_DestroyImages,		VK_INIT_SWAPCHAIN },

@@ -162,10 +162,10 @@ END_SHADER_STRUCT( EffectsCheckPush )
 
 /* ==========================================================================
  * The debug view (vk_view.c, debug_view.comp): r_debugview's modes, in the
- * global UBO's debug_view; each shows G-buffer channels (primary_rays.rgen)
+ * global UBO's debug_view: the lit image (0) or G-buffer and lighting channels
  * ========================================================================== */
 
-#define DEBUGVIEW_OFF			0
+#define DEBUGVIEW_LIT			0	/* the path tracer's image (compositing, interleave) */
 #define DEBUGVIEW_ALBEDO		1	/* base color, the effects over it */
 #define DEBUGVIEW_NORMALS		2	/* shading normal */
 #define DEBUGVIEW_MATERIAL		3	/* material kinds */
@@ -180,6 +180,8 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_SPECULAR_ALBEDO	12	/* the same */
 #define DEBUGVIEW_EFFECTS		13	/* effects and emissive (PT_TRANSPARENT) */
 #define DEBUGVIEW_BLUE_NOISE		14	/* the first random number of the pixel */
-#define DEBUGVIEW_MAX			14
+#define DEBUGVIEW_DIRECT_DIFFUSE	15	/* direct lighting, diffuse (PT_COLOR_HF, demodulated) */
+#define DEBUGVIEW_DIRECT_SPECULAR	16	/* direct lighting, specular (PT_COLOR_SPEC) */
+#define DEBUGVIEW_MAX			16
 
 #endif	/* HL_SHARED_H */

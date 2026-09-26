@@ -373,6 +373,15 @@ void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 
+/* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now):
+ * VK_PrepareLights fills this frame's light buffer (polygon lights and
+ * their per-cluster lists) and the UBO's sphere lights */
+void VK_InitLights (void);
+void VK_ShutdownLights (void);
+void VK_ClearLights (void);	/* a new map (VK_LoadWorld) */
+struct QVKUniformBuffer_s;
+void VK_PrepareLights (struct QVKUniformBuffer_s *ubo);	/* shaders/global_ubo.h */
+
 /* vk_images.c: the render targets (shaders/global_textures.h's
  * LIST_IMAGES, VKPT_IMG_*) at the swapchain's size (the width rounded up
  * to even), in the GENERAL layout, and the blue noise: descriptor set 1 of
@@ -408,6 +417,7 @@ void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
 			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 void VK_ComputeBarrier (VkCommandBuffer cmd);	/* between compute passes */
+void VK_DispatchCompute (VkCommandBuffer cmd, VkPipeline pipeline, uint32_t width, uint32_t height, uint32_t local_size);
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
  * TLAS: it fills the UBO and runs the view passes (primary_rays.rgen, the
