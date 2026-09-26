@@ -384,8 +384,9 @@ bindings.
 
 - **Shader headers** from Q2RTX: `constants.h` (blue noise
   `BLUE_NOISE_RES 64`, `NUM_BLUE_NOISE_TEX 256`), `shader_structs.h`,
-  `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl`,
-  `brdf.glsl`, `water.glsl`, `asvgf.glsl` (the last six unchanged); adapted:
+  `projection.glsl`, `path_tracer_transparency.glsl`, `brdf.glsl`,
+  `water.glsl`, `asvgf.glsl` (the last five unchanged), `utils.glsl` (3.3:
+  `packRGBE` clamps to what it can store); adapted:
   `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
@@ -407,8 +408,12 @@ bindings.
   `path_tracer_rgen.h` (3.2: the passes' common code — `trace_geometry_ray`,
   `trace_effects_ray`, `get_material`, `get_rng`, `env_map` — with the TLASes
   by device address; `env_map` is black until 4.6; `get_material` tints a
-  model's base color with its `colorshade` hue; the lighting functions come
-  with 3.3, the gradient samples with 3.6).
+  model's base color with its `colorshade` hue; 3.3: shadow and caustic rays
+  and `get_direct_illumination`, without light statistics; no sunlight until
+  4.6, `get_is_gradient` is false until 3.6), `light_lists.h` (3.3: Q2RTX's
+  polygon and sphere light sampling; a list's current light count instead of
+  the gradient history, no light statistics, no sky lights),
+  `brdf.glsl` (GGX, `get_reflectivity`, `composite_color`).
 - **Random numbers:** Q2RTX's `get_rng` over blue noise: Christoph Peters'
   CC0 textures (`libs/bluenoise`, 64 of 64x64, 16-bit RGBA; copied next to
   the exe as `blue_noise\`), each channel one layer of a 256-layer
@@ -428,18 +433,62 @@ bindings.
   the width rounded up to even (recreated with it), GENERAL layout, cleared
   to 0 when created, even/odd sets swapping `LIST_IMAGES_A_B`; the 3D view
   renders into their top left `width x height`. Images come with their
-  passes: `TAA_OUTPUT` (3.1) and the G-buffer (3.2, see
-  [3D view](#3d-view-vk_viewc)): 140 bytes per pixel by their formats;
-  `vk_images` reports 82 MB allocated at 960x540 (about 160 bytes per
-  pixel, 1.3 GB at 3840x2160). It also loads the blue noise. `vk_images`
-  lists them.
+  passes: `TAA_OUTPUT` (3.1), the G-buffer (3.2, see
+  [3D view](#3d-view-vk_viewc)) and the lighting's (3.3: `PT_COLOR_LF_SH`,
+  `PT_COLOR_LF_COCG`, `PT_COLOR_HF`, `PT_COLOR_SPEC`, `ASVGF_COLOR`,
+  `FLAT_COLOR`, `FLAT_MOTION`): 184 bytes per pixel by their formats. It
+  also loads the blue noise. `vk_images` lists them with their allocated
+  sizes.
 - `vk_matrix.c`: Q2RTX's `matrix.c` (view space x right, y up, z forward; clip
   y down); `vk_ubo.c` uses GL's near 4 / far 4096.
 - `vk_pathtracer.c`: `VK_CreatePassLayout` (the three sets + push constants),
   `VK_PathTracerLayout` (Q2RTX's `pt_push_constants_t`),
   `VK_CreateComputePipeline`, `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
-  `dispatch_rays` in ray-query mode), `VK_RenderTargetBarrier`,
-  `VK_ComputeBarrier` (between the compute passes, which share the images).
+  `dispatch_rays` in ray-query mode), `VK_DispatchCompute` (Q2RTX's 16x16
+  compute passes), `VK_RenderTargetBarrier`, `VK_ComputeBarrier` (between
+  the compute passes, which share the images).
+
+## Lights (`vk_light.c`)
+
+Story 3.3; Q2RTX's two kinds of lights, sampled in `light_lists.h`:
+
+- **Polygon lights:** triangles in the light buffer (`LightBuffer` in
+  `shaders/vertex_buffer.h`: Q2RTX's without its material table, light
+  styles, cluster debug mask and sky visibility; one host-visible buffer per
+  frame in flight, `global_ubo.lights`; the shaders' `light_buffer`), each
+  `LIGHT_POLY_VEC4S` vec4s (corners with the color in w, then the style
+  scales), sampled from the light list of the receiving point's cluster
+  (`PT_CLUSTER`; up to `MAX_BRUTEFORCE_SAMPLING` candidates weighted by solid
+  angle and luminance; clusters past `MAX_LIGHT_LISTS - 1` get none). For
+  now every cluster's list holds every polygon light, rewritten every frame
+  (3.4 culls them by the PVS and writes them when they change). Emission is
+  one-sided, along `cross(p1 - p0, p2 - p0)`.
+- **Sphere lights:** up to `MAX_LIGHT_SOURCES` (32) in the UBO's
+  `dyn_light_data`, one picked at random per pixel (Q2RTX's dynamic lights,
+  no culling); spot lights come with the code, unused.
+- Per pixel, `get_direct_illumination` picks a polygon or a sphere sample
+  by their estimated contributions and traces one shadow ray (opaque
+  geometry; cutouts alpha-tested; translucent surfaces and effects don't
+  shadow; no shadow ray without a light). The weapon only shadows itself
+  (`direct_lighting.rgen`). Direct specular only where the roughness is
+  above `pt_direct_roughness_threshold` (0.18): smoother surfaces get it
+  from the reflections (3.5), so mode 16 is black on them.
+- Units are Q2RTX's shaders': a sphere's color is π × its radiance (the
+  sampling gives solid angle / π, the diffuse BRDF divides by π again),
+  inverse-square falloff; a polygon's color is its radiance with Q2RTX's
+  sqrt(cos) emission lobe. Q2RTX's `add_dlights` divides a dlight's
+  intensity by 25; test lights give the color directly. Calibrating to
+  Hexen II's linear falloff is 4.9's. The lighting is stored RGBE-packed
+  ×32 (`STORAGE_SCALE_HF/SPEC`), which holds values up to 4088 / 32 ≈ 128:
+  `packRGBE` clamps there (Q2RTX's wraps darker above it).
+- For now the lights are **test lights**: `vk_testlight sphere [radius]
+  [intensity] [r g b]` drops a sphere light at the eye (8, 1000, white),
+  `vk_testlight quad [size] [intensity] [r g b]` a square polygon light at
+  the eye facing the view direction (32, 50, white; two triangles),
+  `vk_testlight list`, `vk_testlight clear`; `VK_LoadWorld` clears them
+  (`VK_ClearLights`). Colors below 0 become 0.
+  `VK_PrepareLights` (from `VK_PrepareUBO`) writes the buffer and the UBO
+  fields every 3D frame.
 
 ## 3D view (`vk_view.c`)
 
@@ -484,6 +533,20 @@ bindings.
   Textures are sampled with Q2RTX's anisotropic ray-cone gradients; liquids
   warp as Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's
   turbulence (`d_scan.c`), with game time.
+- **The lighting passes** (3.3), after the primary rays:
+  `direct_lighting.rgen` (the same fields; one light sample and shadow ray
+  per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
+  `PT_COLOR_HF`, specular into `PT_COLOR_SPEC`, RGBE-packed; `LF` zero until
+  bounces, 3.5), `compositing.comp` (Q2RTX's path without the denoiser,
+  `flt_enable` 0 until 3.6: lighting × albedo + specular, × throughput, the
+  effects and emission over it, into `ASVGF_COLOR`),
+  `checkerboard_interleave.comp` (the fields into the screen layout:
+  `FLAT_COLOR`, `FLAT_MOTION`; its blur of checkerboarded surfaces needs
+  the denoiser). Unchanged from Q2RTX apart from `direct_lighting.rgen`'s
+  launch check, weapon shadows and no sunlight. The lit image is noisy at
+  one sample per pixel until the denoiser (3.6); translucent surfaces show
+  their two fields' brightnesses as a checkerboard until refraction (3.5);
+  there is no exposure or tone curve until 3.7 (the composite clamps).
 - **DLSS Ray Reconstruction's inputs** (PLAN §5) from the G-buffer: diffuse
   albedo = `get_reflectivity`'s albedo, specular albedo = Karis's
   environment-BRDF approximation of its reflectivity × the specular factor,
@@ -491,10 +554,12 @@ bindings.
   motion `PT_MOTION.xy` (× the size in pixels); the specular hit distance or
   motion vectors come with the reflections (3.5). RR needs the fields
   interleaved; at translucent surfaces they differ pixel by pixel (3.9).
-- For now **`debug_view.comp`** shows the G-buffer (`r_debugview`, default 1
-  until the path tracer shows a lit image, 3.3), reading each screen pixel
-  from its field (`checkerboard_interleave.comp`'s mapping); it traces no
-  rays: 1 base color with the effects over it, 2 shading normals, 3 material
+- For now **`debug_view.comp`** writes `TAA_OUTPUT` (`r_debugview`, default
+  1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR` /
+  `STORAGE_SCALE_HDR`, until TAA and tone mapping take over, 3.7–3.8), or
+  the G-buffer and lighting channels, reading each screen pixel from its
+  field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
+  base color with the effects over it, 2 shading normals, 3 material
   kinds (cutouts yellow, the weapon cyan; translucent surfaces alternate
   between regular and their kind), 4 instances, 5 clusters with the camera's
   PVS, 6 motion vectors (gray still, hue = direction, brightness = length up
@@ -504,7 +569,8 @@ bindings.
   where the point was off the screen), 8 geometric normals, 9 depth (log
   scale), 10 roughness/metallic/specular factor as R/G/B, 11 diffuse and 12
   specular albedo (as RR would get them), 13 effects and emission, 14 the
-  pixel's first random number; 0 off.
+  pixel's first random number, 15 direct diffuse (without the albedo) and
+  16 direct specular lighting.
 
 ## Other
 
@@ -523,7 +589,7 @@ bindings.
 
 | Command | What |
 |---|---|
-| `r_debugview 0-14` | debug view mode: the G-buffer's channels (see [3D view](#3d-view-vk_viewc)) |
+| `r_debugview 0-16` | 0 the lit image, 1-16 the G-buffer's and lighting channels (see [3D view](#3d-view-vk_viewc)) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |
@@ -537,4 +603,5 @@ bindings.
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
+| `vk_testlight sphere, quad, list, clear` | test lights (see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

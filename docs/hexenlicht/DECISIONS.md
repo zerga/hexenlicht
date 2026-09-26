@@ -65,8 +65,8 @@ story settles something a later session must not undo; mark a line
 | R4 | Render targets at the swapchain's size, recreated with it; the 3D view renders into their top left; images come with the passes that use them | 3.1 |
 | R5 | Q2RTX's global UBO is imported whole; its `UBO_CVAR_LIST` cvars are registered with Q2RTX's defaults and are inert until their pass | 3.1 |
 | R6 | Triangles of brush entities take their instance's cluster (Q2RTX's `load_and_transform_triangle`) | 3.1 |
-| R7 | `r_debugview` defaults to 1 (albedo) until the path tracer shows a lit image | 2.7 |
-| R8 | Open: the weapon's light never goes below 24 in GL — a path-traced weapon in the dark needs a decision (3.3/E4) | 2.8 |
+| R7 | `r_debugview` defaults to 1 (albedo) until the path tracer shows a lit image; since 3.3 (R19): until the maps have lights (4.1) | 2.7, 3.3 |
+| R8 | Open: the weapon's light never goes below 24 in GL — a path-traced weapon in the dark needs a decision (E4; 3.3 lights the weapon like everything else) | 2.8, 3.3 |
 | R9 | The G-buffer is Q2RTX's primary rays' (`primary_rays.rgen`) in its two checkerboard fields, the render width rounded up to even (at an odd view width the view shows one column less of it: under a pixel); the debug view only shows its channels (it traces no rays of its own) | 3.2 (#32) |
 | R10 | Random numbers: Q2RTX's `get_rng` over Christoph Peters' CC0 blue noise (`libs/bluenoise`: 64 textures of 64x64 16-bit RGBA = 256 layers); Q2RTX's own 128 textures have no license note | 3.2 |
 | R11 | Primary rays don't cull back faces (GL draws `EF_SPECIAL_TRANS` models two-sided, one TLAS instance holds all alias models); normals face the ray, as in Q2RTX | 3.2 |
@@ -75,10 +75,14 @@ story settles something a later session must not undo; mark a line
 | R14 | A model's `colorshade` tint: its hue, scaled to at most 1, multiplies the base color (`get_material`); what GL's tints above 1 brighten is left to the lighting (E4) | 3.2 |
 | R15 | No images only for DLSS Ray Reconstruction: its inputs come from the G-buffer (RENDERER.md, 3D view); the specular hit distance comes with the reflections (3.5) | 3.2 |
 | R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
+| R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them | 3.3 (#33) |
+| R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS | 3.3 |
+| R19 | `r_debugview 0` is the lit image (no denoiser, exposure or tone curve until 3.6–3.8); the default stays 1 (albedo) until the maps have lights (4.1) | 3.3 |
+| R20 | The weapon only shadows itself; the first-person player casts no shadow (it has no model; GL draws no weapon shadow) | 3.3 |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
 (3.5, 6.5), specular hit distance (3.5), checkerboard fields and RR (3.9),
 model tint brightness (E4), instance history for A-SVGF (3.6), effects
-brightness (3.3).
+brightness (3.7), point lights in the light lists (3.4, 4.1).

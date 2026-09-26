@@ -35,8 +35,8 @@
  * (glslangValidator -q --reflect-all-block-variables of a shader that
  * includes the UBO) and update these. */
 COMPILE_TIME_ASSERT(ubo_tlas, offsetof(QVKUniformBuffer_t, tlas) == 3640);
-COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3732);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3736);
+COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3740);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3744);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -128,6 +128,8 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.pt_aperture = 0.0f;
 	ubo.pt_aperture_type = roundf (ubo.pt_aperture_type);
 	ubo.flt_taa = AA_MODE_OFF;
+	/* no denoiser until 3.6: the lighting is composited as it is (compositing.comp) */
+	ubo.flt_enable = 0.0f;
 
 	/* Hexenlicht */
 	ubo.tlas = VK_TLASAddress ();
@@ -140,6 +142,7 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.pvs = vk_pvs.buffer.address;
 	ubo.particles = ef->particles;
 	ubo.sprites = ef->sprites;
+	VK_PrepareLights (&ubo);	/* light_buffer, the sphere lights, num_static_lights */
 	ubo.particle_texture = (uint32_t)VK_ParticleTexture ();
 	ubo.anim_frame = (int)(r_scene.time * 5.0);	/* R_TextureAnimation's frame */
 	ubo.debug_view = (uint32_t)debug_view;

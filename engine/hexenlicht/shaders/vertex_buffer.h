@@ -32,10 +32,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    time (global_ubo.anim_frame), and brush entities whose frame is not 0
  *    show the alternate animation; Quake II RTX animates the world buffer
  *    with animate_materials.comp and steps instances by their frame;
- *  - left out until their passes: the light buffer (light polygons, light
- *    styles of emissive materials), the IQM matrices, the tone mapping,
- *    readback and sun color buffers, store_triangle (model_geometry.comp
- *    writes the instanced buffer). */
+ *  - the light buffer (vk_light.c) has only the light polygons and the
+ *    light lists (3.3); Quake II RTX's also holds the material table (ours
+ *    is vk_material.c's), and the light styles of emissive materials, the
+ *    cluster debug mask and the sky visibility come with their stories;
+ *  - left out until their passes: the light count history and light
+ *    statistics buffers, the IQM matrices, the tone mapping, readback and
+ *    sun color buffers, store_triangle (model_geometry.comp writes the
+ *    instanced buffer). */
 
 #ifndef _VERTEX_BUFFER_H_
 #define _VERTEX_BUFFER_H_
@@ -56,6 +60,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 // should match the same constant declared in material.h
 #define MAX_PBR_MATERIALS      4096	// Hexenlicht: MATERIAL_INDEX_MASK + 1; index 0 is unused
+
+#define MAX_LIGHT_LISTS         (1 << 14)
+#define MAX_LIGHT_LIST_NODES    (1 << 19)
+
+#define MAX_LIGHT_POLYS         4096
+#define LIGHT_POLY_VEC4S        4
 
 #define VERTEX_BUFFER_WORLD 0		// Hexenlicht: the world buffer (vk_world.c)
 #define VERTEX_BUFFER_INSTANCED 1	// this frame's alias model triangles (vk_model.c)
@@ -95,6 +105,20 @@ BEGIN_SHADER_STRUCT( VboPrimitive )
 }
 END_SHADER_STRUCT( VboPrimitive )
 
+/* Hexenlicht: Quake II RTX's light buffer without its material table, light
+ * styles, cluster debug mask and sky visibility (see the top): a light
+ * polygon is LIGHT_POLY_VEC4S vec4s (the three corners with the color in
+ * their w, then the light style scales); light list n, the lights of vis
+ * cluster n, is light_list_lights[light_list_offsets[n]] up to
+ * light_list_offsets[n + 1] */
+BEGIN_SHADER_STRUCT( LightBuffer )
+{
+	vec4 light_polys[MAX_LIGHT_POLYS * LIGHT_POLY_VEC4S];
+	uint light_list_offsets[MAX_LIGHT_LISTS];
+	uint light_list_lights[MAX_LIGHT_LIST_NODES];
+}
+END_SHADER_STRUCT( LightBuffer )
+
 
 #if defined(VKPT_SHADER) && defined(VERTEX_BUFFER_DESC_SET_IDX)
 
@@ -129,6 +153,20 @@ layout(buffer_reference, std430, buffer_reference_align = 16) VERTEX_READONLY_FL
 
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer MaterialTableRef {
 	uint material_table[];
+};
+
+/* Hexenlicht: this frame's light buffer (vk_light.c) by device address */
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer LightBufferRef {
+	LightBuffer light_buffer_data;
+};
+#define light_buffer LightBufferRef(global_ubo.lights).light_buffer_data
+
+struct LightPolygon
+{
+	mat3 positions;
+	vec3 color;
+	float light_style_scale;
+	float prev_style_scale;
 };
 
 VboPrimitive
@@ -317,6 +355,22 @@ animate_material(uint material, int frame, bool alternate)
 	}
 
 	return new_material | (material & ~MATERIAL_INDEX_MASK); // preserve flags
+}
+
+LightPolygon
+get_light_polygon(uint index)
+{
+	vec4 p0 = light_buffer.light_polys[index * LIGHT_POLY_VEC4S + 0];
+	vec4 p1 = light_buffer.light_polys[index * LIGHT_POLY_VEC4S + 1];
+	vec4 p2 = light_buffer.light_polys[index * LIGHT_POLY_VEC4S + 2];
+	vec4 p3 = light_buffer.light_polys[index * LIGHT_POLY_VEC4S + 3];
+
+	LightPolygon light;
+	light.positions = mat3x3(p0.xyz, p1.xyz, p2.xyz);
+	light.color = vec3(p0.w, p1.w, p2.w);
+	light.light_style_scale = p3.x;
+	light.prev_style_scale = p3.y;
+	return light;
 }
 
 #endif

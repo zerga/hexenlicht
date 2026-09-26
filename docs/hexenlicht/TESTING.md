@@ -135,6 +135,14 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   animated textures and liquids; dark blue where the point was off the
   screen. A wrong vector shows the texture shifted (double edges).
 - **Liquids near a start:** romeric1 (`*skulls`, look down), meso9 (lava).
+- **Lighting (until E4's map lights):** `r_debugview 0`, `vk_testlight
+  sphere 8 2000` at the start, `+forward` ~60 frames, `+right` 90 frames
+  (180° with `cl_yawspeed 100`): the light's shadows face the camera
+  (demo1: tombstones, tree, statue). A quad lights only what is in front of
+  it: after `+back` the camera is behind it. Modes 15 and 16 show the
+  direct diffuse and specular lighting. The image is noisy (one sample per
+  pixel, no denoiser until 3.6) and low-poly models show grainy
+  self-shadowing at grazing angles.
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

@@ -1,9 +1,11 @@
-/* debug_view.comp -- the r_debugview pass: shows the G-buffer that
+/* debug_view.comp -- the r_debugview pass: writes IMG_TAA_OUTPUT, the
+ * image the composite shows: the lit image (mode 0: the interleaved
+ * FLAT_COLOR, until TAA and tone mapping, 3.7-3.8), or the G-buffer that
  * primary_rays.rgen wrote this frame (base color with the effects over it,
  * normals, material kinds, instances, vis clusters, motion vectors, depth,
  * roughness and metallic, the albedos DLSS Ray Reconstruction would get,
- * the effects, the blue noise) into IMG_TAA_OUTPUT, the image the
- * composite shows. It traces no rays.
+ * the effects, the blue noise) or direct_lighting.rgen's diffuse and
+ * specular lighting. It traces no rays.
  *
  * The G-buffer is in Quake II RTX's checkerboard fields: the left half of
  * each image holds the pixels where x and y have the same parity (the
@@ -215,6 +217,17 @@ main()
 	case DEBUGVIEW_BLUE_NOISE:
 		rng_seed = texelFetch(TEX_ASVGF_RNG_SEED_A, ipos, 0).r;
 		color = vec3(get_rng(0));
+		break;
+	case DEBUGVIEW_LIT:
+		/* the interleaved lit image (checkerboard_interleave.comp), stored
+		 * scaled by STORAGE_SCALE_HDR; no exposure or tone curve until 3.7 */
+		color = texelFetch(TEX_FLAT_COLOR, px, 0).rgb / STORAGE_SCALE_HDR;
+		break;
+	case DEBUGVIEW_DIRECT_DIFFUSE:	/* without the albedo, as the denoiser gets it */
+		color = unpackRGBE(texelFetch(TEX_PT_COLOR_HF, ipos, 0).r) / STORAGE_SCALE_HF;
+		break;
+	case DEBUGVIEW_DIRECT_SPECULAR:
+		color = unpackRGBE(texelFetch(TEX_PT_COLOR_SPEC, ipos, 0).r) / STORAGE_SCALE_SPEC;
 		break;
 	default:	/* the base color, with the effects (and emission) over it */
 		color = transparent.rgb + (1.0 - transparent.a) * base.rgb;

@@ -1,6 +1,7 @@
 /*
 Copyright (C) 2018 Christoph Schied
 Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+Copyright (C) 2026  Hexenlicht contributors
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -16,6 +17,9 @@ You should have received a copy of the GNU General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
+
+/* Hexenlicht: Quake II RTX's shader utilities; one change: packRGBE clamps
+ * to the largest value it can store. */
 
 #ifndef _GLSL_UTILS_GLSL
 #define _GLSL_UTILS_GLSL
@@ -443,7 +447,10 @@ vec4 unpackHalf4x16(uvec2 v)
 
 uint packRGBE(vec3 v)
 {
-    vec3 va = max(vec3(0), v);
+    // Hexenlicht: clamped to the largest value the encoding holds (511 * 2^11 / 256):
+    // above it the exponent saturates but the mantissa's scale doesn't, and brighter
+    // values would come back darker
+    vec3 va = clamp(v, vec3(0), vec3(4088.0));
     float max_abs = max(va.r, max(va.g, va.b));
     if(max_abs == 0)
         return 0;

@@ -6,9 +6,12 @@
  * dispatches the view passes, which end in the TAA_OUTPUT render target
  * (vk_images.c), the image Quake II RTX's post-processing ends in:
  * primary_rays.rgen writes the G-buffer (Quake II RTX's primary rays, in
- * its two checkerboard fields), then, for now, debug_view.comp shows its
- * channels, selected by r_debugview; the lighting passes of epic E3 come
- * between them. GL_EndRendering then calls VK_DrawView3D, which copies the
+ * its two checkerboard fields), direct_lighting.rgen lights it,
+ * compositing.comp combines the lighting with the surfaces and
+ * checkerboard_interleave.comp puts the fields into the screen layout;
+ * then, for now, debug_view.comp shows the lit image or a G-buffer or
+ * lighting channel, selected by r_debugview (the rest of epic E3's passes
+ * come between them). GL_EndRendering then calls VK_DrawView3D, which copies the
  * image into the swapchain's 3D view rectangle (view_composite.frag,
  * Quake II RTX's final blit) before the 2D is drawn on top.
  *
@@ -33,15 +36,21 @@
 #include "shaders/hl_shared.h"
 #include "shaders/global_textures.h"
 
-/* the G-buffer's channels: 1 base color with the effects over it, 2
- * normals, 3 material kinds (cutouts yellow, the weapon cyan), 4 instances,
- * 5 clusters (and the camera's PVS), 6 motion vectors, 7 motion check, 8
- * geometric normals, 9 depth, 10 roughness/metallic/specular factor, 11
- * diffuse and 12 specular albedo, 13 effects, 14 blue noise
- * (shaders/hl_shared.h's DEBUGVIEW_*); 0 draws no 3D view */
+/* 0 the path tracer's image (the lighting passes, no tone mapping until
+ * 3.7), or the G-buffer's and lighting channels: 1 base color with the
+ * effects over it, 2 normals, 3 material kinds (cutouts yellow, the weapon
+ * cyan), 4 instances, 5 clusters (and the camera's PVS), 6 motion vectors,
+ * 7 motion check, 8 geometric normals, 9 depth, 10
+ * roughness/metallic/specular factor, 11 diffuse and 12 specular albedo, 13
+ * effects, 14 blue noise, 15 direct diffuse and 16 direct specular
+ * lighting (shaders/hl_shared.h's DEBUGVIEW_*); 1 until the maps have
+ * lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
+static VkPipeline		direct_pipeline;	/* the same */
+static VkPipeline		compositing_pipeline;
+static VkPipeline		interleave_pipeline;
 static VkPipeline		debug_pipeline;		/* the same */
 static VkPipelineLayout		composite_layout;	/* the pass sets, gamma */
 static VkPipeline		composite_pipeline;
@@ -143,11 +152,18 @@ void VK_DestroyViewPipelines (void)
 {
 	if (primary_pipeline)
 		vkDestroyPipeline (vk.device, primary_pipeline, NULL);
+	if (direct_pipeline)
+		vkDestroyPipeline (vk.device, direct_pipeline, NULL);
+	if (compositing_pipeline)
+		vkDestroyPipeline (vk.device, compositing_pipeline, NULL);
+	if (interleave_pipeline)
+		vkDestroyPipeline (vk.device, interleave_pipeline, NULL);
 	if (debug_pipeline)
 		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
 	if (composite_pipeline)
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
-	primary_pipeline = debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
+	primary_pipeline = direct_pipeline = compositing_pipeline = interleave_pipeline = VK_NULL_HANDLE;
+	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
 }
 
 
@@ -182,10 +198,10 @@ void VK_RenderView3D (void)
 	VkImage			output;
 	pt_push_constants_t	push;
 	uint32_t		width;
-	int			mode = r_debugview.integer;
+	int			mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
 
 	view_drawn = false;
-	if (!vk.frame_active || mode <= DEBUGVIEW_OFF || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
+	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
 		return;
 	if (!ViewRect (&view_rect) || !VK_ImagesReady ())
 		return;
@@ -199,6 +215,12 @@ void VK_RenderView3D (void)
 
 	if (!primary_pipeline)
 		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
+	if (!direct_pipeline)
+		direct_pipeline = VK_CreateComputePipeline ("direct_lighting.rgen", VK_PathTracerLayout ());
+	if (!compositing_pipeline)
+		compositing_pipeline = VK_CreateComputePipeline ("compositing.comp", VK_PathTracerLayout ());
+	if (!interleave_pipeline)
+		interleave_pipeline = VK_CreateComputePipeline ("checkerboard_interleave.comp", VK_PathTracerLayout ());
 	if (!debug_pipeline)
 		debug_pipeline = VK_CreateComputePipeline ("debug_view.comp", VK_PathTracerLayout ());
 
@@ -213,6 +235,15 @@ void VK_RenderView3D (void)
 	/* the G-buffer: each checkerboard field is half the width (Quake II
 	 * RTX's vkpt_pt_trace_primary_rays) */
 	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, view_rect.extent.height, 2);
+	VK_ComputeBarrier (cmd);
+	/* direct lighting of the G-buffer's surfaces, in the same fields */
+	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, view_rect.extent.height, 2);
+	VK_ComputeBarrier (cmd);
+	/* the lighting times the surfaces, with the effects over them (no
+	 * denoiser until 3.6), then the fields interleaved into FLAT_COLOR */
+	VK_DispatchCompute (cmd, compositing_pipeline, width, view_rect.extent.height, 16);
+	VK_ComputeBarrier (cmd);
+	VK_DispatchCompute (cmd, interleave_pipeline, width, view_rect.extent.height, 16);
 	VK_ComputeBarrier (cmd);
 	VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,

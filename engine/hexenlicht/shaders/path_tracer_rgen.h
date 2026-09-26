@@ -27,9 +27,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - no environment until the sky (4.6): env_map returns black;
  *  - trace_effects_ray: pt_logic_sprite takes the hit distance, beams and
  *    explosions come with their story (6.3), no effects TLAS = no effects;
- *  - left out until their passes: the light lists (light_lists.h), shadow
- *    and caustic rays, direct illumination and sunlight (3.3, 3.4), the
- *    gradient samples of the denoiser (get_is_gradient, 3.6);
+ *  - get_direct_illumination: no light statistics (3.4), no shadow ray
+ *    without a light (Quake II RTX's has t_max < t_min); left out until
+ *    their passes: sunlight (get_sunlight, 4.6) and the gradient samples of
+ *    the denoiser (get_is_gradient is false until 3.6);
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -128,7 +129,7 @@ env_map(vec3 direction, bool remove_sun)
 }
 
 // depends on env_map
-// Hexenlicht: light_lists.h comes with the light lists (3.3, 3.4)
+#include "light_lists.h"
 
 ivec2 get_image_position()
 {
@@ -457,8 +458,165 @@ trace_effects_ray(Ray ray, bool skip_procedural)
 	return get_payload_transparency_with_fog(ray_payload_effects, ray.t_max);
 }
 
-// Hexenlicht: get_shadow_ray, trace_shadow_ray and trace_caustic_ray come with
-// the direct lighting (3.3)
+Ray get_shadow_ray(vec3 p1, vec3 p2, float tmin)
+{
+	vec3 l = p2 - p1;
+	float dist = length(l);
+	l /= dist;
+
+	Ray ray;
+	ray.origin = p1 + l * tmin;
+	ray.t_min = 0;
+	ray.t_max = dist - tmin - 0.01;
+	ray.direction = l;
+
+	return ray;
+}
+
+float
+trace_shadow_ray(Ray ray, int cull_mask)
+{
+	const uint rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipProceduralPrimitives;
+
+
+#ifdef KHR_RAY_QUERY
+
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, TLAS_GEOMETRY, rayFlags, cull_mask, 
+		ray.origin, ray.t_min, ray.direction, ray.t_max);
+
+	while (rayQueryProceedEXT(rayQuery))
+	{
+		uint sbtOffset = rayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetEXT(rayQuery, false);
+		int primitiveID = rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, false);
+		int instanceID = rayQueryGetIntersectionInstanceIdEXT(rayQuery, false);
+		int geometryIndex = rayQueryGetIntersectionGeometryIndexEXT(rayQuery, false);
+		uint instanceCustomIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, false);
+		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rayQuery, false);
+		bool isProcedural = rayQueryGetIntersectionTypeEXT(rayQuery, false) == gl_RayQueryCandidateIntersectionAABBEXT;
+
+		if (!isProcedural && sbtOffset == SBTO_MASKED)
+		{
+			if (pt_logic_masked(primitiveID, instanceID, geometryIndex, instanceCustomIndex, bary))
+				rayQueryConfirmIntersectionEXT(rayQuery);
+		}
+	}
+
+	if(rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT)
+		return 0.0f;
+	else
+		return 1.0f;
+
+#else
+
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.primitive_id = ~0u;
+	ray_payload_geometry.buffer_and_instance_idx = 0;
+	ray_payload_geometry.hit_distance = -1;
+
+	traceRayEXT( topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, cull_mask,
+			SBT_RCHIT_GEOMETRY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_EMPTY /*missIndex*/,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
+
+	return found_intersection(ray_payload_geometry) ? 0.0 : 1.0;
+
+#endif
+}
+
+vec3
+trace_caustic_ray(Ray ray, int surface_medium)
+{
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.primitive_id = ~0u;
+	ray_payload_geometry.buffer_and_instance_idx = 0;
+	ray_payload_geometry.hit_distance = -1;
+
+
+	uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipProceduralPrimitives;
+	uint instance_mask = AS_FLAG_TRANSPARENT;
+	
+#ifdef KHR_RAY_QUERY
+
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, TLAS_GEOMETRY, rayFlags, instance_mask, 
+		ray.origin, ray.t_min, ray.direction, ray.t_max);
+	
+	rayQueryProceedEXT(rayQuery);
+
+	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+	{
+		pt_logic_rchit(ray_payload_geometry, 
+			rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
+			rayQueryGetIntersectionInstanceIdEXT(rayQuery, true),
+			rayQueryGetIntersectionGeometryIndexEXT(rayQuery, true),
+			rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
+			rayQueryGetIntersectionTEXT(rayQuery, true),
+			rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
+	}
+
+#else
+
+	traceRayEXT(topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask, SBT_RCHIT_GEOMETRY, 0, SBT_RMISS_EMPTY,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
+
+#endif
+
+	float extinction_distance = ray.t_max - ray.t_min;
+	vec3 throughput = vec3(1);
+
+	if(found_intersection(ray_payload_geometry))
+	{
+		Triangle triangle = get_hit_triangle(ray_payload_geometry);
+		
+		vec3 geo_normal = triangle.normals[0];
+		bool is_vertical = abs(geo_normal.z) < 0.1;
+
+		if((is_water(triangle.material_id) || is_slime(triangle.material_id)) && !is_vertical)
+		{
+			vec3 position = ray.origin + ray.direction * ray_payload_geometry.hit_distance;
+			vec3 w = get_water_normal(triangle.material_id, geo_normal, triangle.tangents[0], position, true);
+
+			float caustic = clamp((1 - pow(clamp(1 - length(w.xz), 0, 1), 2)) * 100, 0, 8);
+			caustic = mix(1, caustic, clamp(ray_payload_geometry.hit_distance * 0.02, 0, 1));
+			throughput = vec3(caustic);
+
+			if(surface_medium != MEDIUM_NONE)
+			{
+				extinction_distance = ray_payload_geometry.hit_distance;
+			}
+			else
+			{
+				if(is_water(triangle.material_id))
+					surface_medium = MEDIUM_WATER;
+				else
+					surface_medium = MEDIUM_SLIME;
+
+				extinction_distance = max(0, ray.t_max - ray_payload_geometry.hit_distance);
+			}
+		}
+		else if(is_glass(triangle.material_id) || is_water(triangle.material_id) && is_vertical)
+		{
+			vec3 bary = get_hit_barycentric(ray_payload_geometry);
+			vec2 tex_coord = triangle.tex_coords * bary;
+
+			MaterialInfo minfo = get_material_info(triangle.material_id);
+
+	    	vec3 base_color = vec3(minfo.base_factor);
+	    	if (minfo.base_texture > 0)
+	    		base_color *= global_textureLod(minfo.base_texture, tex_coord, 2).rgb;
+	    	base_color = clamp(base_color, vec3(0), vec3(1));
+
+			throughput = base_color;
+		}
+		else
+		{
+			throughput = vec3(clamp(1.0 - triangle.alpha, 0.0, 1.0));
+		}
+	}
+
+	//return vec3(caustic);
+	return extinction(surface_medium, extinction_distance) * throughput;
+}
 
 vec3 rgbToNormal(vec3 rgb, out float len)
 {
@@ -479,8 +637,173 @@ AdjustRoughnessToksvig(float roughness, float normalMapLen, float mip_level)
     return SpecPowerToRoughnessSquare(ft * shininess / effect);
 }
 
-// Hexenlicht: get_specular_sampled_lighting_weight, get_direct_illumination and
-// get_sunlight come with the direct lighting (3.3)
+float
+get_specular_sampled_lighting_weight(float roughness, vec3 N, vec3 V, vec3 L, float pdfw)
+{
+    float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(roughness, 0.01), N, V, L);
+  
+    // Balance heuristic assuming one sample from each strategy: light sampling and BRDF sampling
+    return clamp(pdfw / (pdfw + ggxVndfPdf), 0, 1);
+}
+
+void
+get_direct_illumination(
+	vec3 position, 
+	vec3 normal, 
+	vec3 geo_normal, 
+	uint cluster_idx, 
+	uint material_id,
+	int shadow_cull_mask, 
+	vec3 view_direction, 
+	vec3 albedo,
+	vec3 base_reflectivity,
+	float specular_factor,
+	float roughness, 
+	int surface_medium, 
+	bool enable_caustics, 
+	float direct_specular_weight, 
+	bool enable_polygonal,
+	bool enable_dynamic,
+	bool is_gradient, 
+	int bounce,
+	out vec3 diffuse,
+	out vec3 specular)
+{
+	diffuse = vec3(0);
+	specular = vec3(0);
+
+	vec3 pos_on_light_polygonal;
+	vec3 pos_on_light_dynamic;
+
+	vec3 contrib_polygonal = vec3(0);
+	vec3 contrib_dynamic = vec3(0);
+
+	float alpha = square(roughness);
+	float phong_exp = RoughnessSquareToSpecPower(alpha);
+	float phong_scale = min(100, 1 / (M_PI * square(alpha)));
+	float phong_weight = clamp(specular_factor * luminance(base_reflectivity) / (luminance(base_reflectivity) + luminance(albedo)), 0, 0.9);
+
+	int polygonal_light_index = -1;
+	float polygonal_light_pdfw = 0;
+	bool polygonal_light_is_sky = false;
+
+	vec3 rng = vec3(
+		get_rng(RNG_NEE_LIGHT_SELECTION(bounce)),
+		get_rng(RNG_NEE_TRI_X(bounce)),
+		get_rng(RNG_NEE_TRI_Y(bounce)));
+
+	/* polygonal light illumination */
+	if(enable_polygonal) 
+	{
+		sample_polygonal_lights(
+			cluster_idx,
+			position, 
+			normal, 
+			geo_normal, 
+			view_direction, 
+			phong_exp, 
+			phong_scale,
+			phong_weight, 
+			is_gradient, 
+			pos_on_light_polygonal, 
+			contrib_polygonal,
+			polygonal_light_index,
+			polygonal_light_pdfw,
+			polygonal_light_is_sky,
+			rng);
+	}
+
+	bool is_polygonal = true;
+	float vis = 1;
+
+	/* dynamic light illumination */
+	if(enable_dynamic)
+	{
+		// Limit the solid angle of sphere lights for indirect lighting 
+		// in order to kill some fireflies in locations with many sphere lights.
+		// Example: green wall-lamp corridor in the "train" map.
+		float max_solid_angle = (bounce == 0) ? 2 * M_PI : 0.02;
+	
+		sample_dynamic_lights(
+			position,
+			normal,
+			geo_normal,
+			max_solid_angle,
+			pos_on_light_dynamic,
+			contrib_dynamic,
+			rng);
+	}
+
+	float spec_polygonal = phong(normal, normalize(pos_on_light_polygonal - position), view_direction, phong_exp) * phong_scale;
+	float spec_dynamic = phong(normal, normalize(pos_on_light_dynamic - position), view_direction, phong_exp) * phong_scale;
+
+	float l_polygonal  = luminance(abs(contrib_polygonal)) * mix(1, spec_polygonal, phong_weight);
+	float l_dynamic = luminance(abs(contrib_dynamic)) * mix(1, spec_dynamic, phong_weight);
+	float l_sum = l_polygonal + l_dynamic;
+
+	bool null_light = (l_sum == 0);
+
+	float w = null_light ? 0.5 : l_polygonal / (l_polygonal + l_dynamic);
+
+	float rng2 = get_rng(RNG_NEE_LIGHT_TYPE(bounce));
+	is_polygonal = (rng2 < w);
+	vis = is_polygonal ? (1 / w) : (1 / (1 - w));
+	vec3 pos_on_light = null_light ? position : (is_polygonal ? pos_on_light_polygonal : pos_on_light_dynamic);
+	vec3 contrib = is_polygonal ? contrib_polygonal : contrib_dynamic;
+
+	Ray shadow_ray = get_shadow_ray(position - view_direction * 0.01, pos_on_light, 0);
+	
+	// Hexenlicht: no shadow ray without a light: Quake II RTX traces one with an
+	// empty mask to the surface itself, whose t_max (0.01 * |V| - 0.01, V from the
+	// fp16 PT_VIEW_DIRECTION) can be below t_min, which ray queries don't allow
+	if(!null_light)
+		vis *= trace_shadow_ray(shadow_ray, shadow_cull_mask);
+#ifdef ENABLE_SHADOW_CAUSTICS
+	if(enable_caustics)
+	{
+		contrib *= trace_caustic_ray(shadow_ray, surface_medium);
+	}
+#endif
+
+	// Hexenlicht: the light shadowing statistics ("Adaptive Shadow Testing for Ray
+	// Tracing", G. Ward, 1994), counted here for the next frame's light CDF, come
+	// with the light lists (3.4)
+
+	if(null_light)
+		return;
+
+	vec3 radiance = vis * contrib;
+
+	vec3 L = pos_on_light - position;
+	L = normalize(L);
+
+	if(is_polygonal && direct_specular_weight > 0 && polygonal_light_is_sky && global_ubo.pt_specular_mis != 0)
+	{
+		// MIS with direct specular and indirect specular.
+		// Only applied to sky lights, for two reasons:
+		//  1) Non-sky lights are trimmed to match the light texture, and indirect rays don't see that;
+		//  2) Non-sky lights are usually away from walls, so the direct sampling issue is not as pronounced.
+
+		direct_specular_weight *= get_specular_sampled_lighting_weight(roughness,
+			normal, -view_direction, L, polygonal_light_pdfw);
+	}
+
+	vec3 F = vec3(0);
+
+	if(vis > 0 && direct_specular_weight > 0)
+	{
+		vec3 specular_brdf = GGX_times_NdotL(view_direction, normalize(pos_on_light - position),
+			normal, roughness, base_reflectivity, 0.0, specular_factor, F);
+		specular = radiance * specular_brdf * direct_specular_weight;
+	}
+
+	float NdotL = max(0, dot(normal, L));
+
+	float diffuse_brdf = NdotL / M_PI;
+	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);
+}
+
+// Hexenlicht: get_sunlight comes with the sky and sun (4.6)
 
 vec3 clamp_output(vec3 c)
 {
@@ -545,7 +868,12 @@ vec3 get_emissive_shell(uint material_id, uint shell)
     return c;
 }
 
-// Hexenlicht: get_is_gradient, the denoiser's gradient samples, comes with the denoiser (3.6)
+// Hexenlicht: no gradient samples until the denoiser (3.6) brings Quake II RTX's
+// get_is_gradient (which reads TEX_ASVGF_GRAD_SMPL_POS_A)
+bool get_is_gradient(ivec2 ipos)
+{
+	return false;
+}
 
 
 void
