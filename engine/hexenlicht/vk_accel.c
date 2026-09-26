@@ -10,8 +10,10 @@
  * II RTX's AS_FLAG_VIEWER_WEAPON) and then the top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per
  * brush entity (vk_instance.c) and the dynamic BLASes, with Quake II RTX's
- * instance masks. Each TLAS instance has a TlasInstanceInfo
- * (shaders/hl_shared.h) so shaders can find the primitive they hit. The
+ * instance masks and shader binding table offsets (SBTO_*: its ray query
+ * code picks the hit logic of a candidate by them). Each TLAS instance has
+ * a TlasInstanceInfo (shaders/global_ubo.h) so shaders can find the
+ * primitive they hit. The
  * frame's particles and sprites (vk_effects.c) get a BLAS each, built with
  * the dynamic ones, and a TLAS of their own, the effects TLAS, as in Quake
  * II RTX: they never block the rays through the main TLAS; the view pass
@@ -96,6 +98,17 @@ static qboolean DynCandidates (int d)
 static VkGeometryInstanceFlagsKHR DynInstanceFlags (int d)
 {
 	return DynCandidates (d) ? NO_OPAQUE_INSTANCE : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+}
+
+/* a dynamic BLAS's shader binding table offset (Quake II RTX's SBTO_*),
+ * which its ray query code picks the hit logic of a candidate by */
+static uint32_t DynSBTOffset (int d)
+{
+	if (d == DYN_PARTICLES)
+		return SBTO_PARTICLE;
+	if (d == DYN_SPRITES)
+		return SBTO_SPRITE;
+	return DynCandidates (d) ? SBTO_MASKED : SBTO_OPAQUE;
 }
 
 #define DYN_MIN_CAPACITY	4096u	/* triangles */
@@ -347,9 +360,10 @@ void VK_BuildWorldAccel (void)
  * ========================================================================== */
 
 /* an instance of a BLAS in a TLAS's instance buffer: transform NULL =
- * identity */
+ * identity; sbt_offset is Quake II RTX's SBTO_* of its candidates' hit
+ * logic */
 static void WriteASInstance (VkAccelerationStructureInstanceKHR *ai, const mat4 transform, VkDeviceAddress blas,
-			     uint32_t custom_index, uint32_t mask, VkGeometryInstanceFlagsKHR flags)
+			     uint32_t custom_index, uint32_t mask, VkGeometryInstanceFlagsKHR flags, uint32_t sbt_offset)
 {
 	int	r, c;
 
@@ -361,7 +375,7 @@ static void WriteASInstance (VkAccelerationStructureInstanceKHR *ai, const mat4 
 	}
 	ai->instanceCustomIndex = custom_index;
 	ai->mask = mask;
-	ai->instanceShaderBindingTableRecordOffset = 0;
+	ai->instanceShaderBindingTableRecordOffset = sbt_offset;
 	ai->flags = flags;
 	ai->accelerationStructureReference = blas;
 }
@@ -369,8 +383,8 @@ static void WriteASInstance (VkAccelerationStructureInstanceKHR *ai, const mat4 
 /* one TLAS instance of a BLAS: transform NULL = identity; its primitives
  * start at prim_offset in the buffer custom_index names */
 static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, VkDeviceAddress blas, uint32_t prim_offset,
-			     uint32_t custom_index, uint32_t mask, VkGeometryInstanceFlagsKHR flags, int range,
-			     qboolean models, int model_instance)
+			     uint32_t custom_index, uint32_t mask, VkGeometryInstanceFlagsKHR flags, uint32_t sbt_offset,
+			     int range, qboolean models, int model_instance)
 {
 	TlasInstanceInfo	*info;
 
@@ -378,7 +392,7 @@ static void AddTLASInstance (vk_tlas_t *t, const mat4 transform, VkDeviceAddress
 		return;
 
 	WriteASInstance ((VkAccelerationStructureInstanceKHR *) t->instances.mapped + t->num_instances, transform,
-			 blas, custom_index, mask, flags);
+			 blas, custom_index, mask, flags, sbt_offset);
 
 	info = (TlasInstanceInfo *) t->info.mapped + t->num_instances;
 	info->prim_offset = prim_offset;
@@ -605,7 +619,7 @@ void VK_BuildTLAS (void)
 	{
 		if (blases[r].as)
 			AddTLASInstance (t, NULL, blases[r].address, blases[r].first, VERTEX_BUFFER_WORLD,
-					 range_masks[r], VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, r, false, -1);
+					 range_masks[r], VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, SBTO_OPAQUE, r, false, -1);
 	}
 	for (i = 0; i < VK_NumInstances (); i++)
 	{
@@ -622,7 +636,7 @@ void VK_BuildTLAS (void)
 			if (b->as)
 				AddTLASInstance (t, mi->transform, b->address, b->first, VERTEX_BUFFER_WORLD,
 						 translucent ? AS_FLAG_TRANSPARENT : range_masks[r],
-						 VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, r, false, i);
+						 VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR, SBTO_OPAQUE, r, false, i);
 		}
 	}
 	/* the model triangles are in world space; their VboPrimitive.instance
@@ -633,7 +647,7 @@ void VK_BuildTLAS (void)
 
 		if (d->count)
 			AddTLASInstance (t, NULL, d->address, d->first, VERTEX_BUFFER_INSTANCED, dyn_masks[r], DynInstanceFlags (r),
-					 r, true, -1);
+					 DynSBTOffset (r), r, true, -1);
 	}
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->instances.allocation, 0, VK_WHOLE_SIZE));
 	VK_CHECK (vmaFlushAllocation (vk.allocator, t->info.allocation, 0, VK_WHOLE_SIZE));
@@ -648,7 +662,7 @@ void VK_BuildTLAS (void)
 		if (d->count)
 			WriteASInstance ((VkAccelerationStructureInstanceKHR *) t->effects_instances.mapped + t->num_effects++,
 					 NULL, d->address, (r == DYN_PARTICLES) ? EFFECTS_PARTICLES : EFFECTS_SPRITES,
-					 dyn_masks[r], DynInstanceFlags (r));
+					 dyn_masks[r], DynInstanceFlags (r), DynSBTOffset (r));
 	}
 	if (t->num_effects)
 		VK_CHECK (vmaFlushAllocation (vk.allocator, t->effects_instances.allocation, 0, VK_WHOLE_SIZE));

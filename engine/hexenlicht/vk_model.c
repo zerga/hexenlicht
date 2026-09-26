@@ -858,9 +858,7 @@ void VK_InitModels (void)
 {
 	VkPushConstantRange		push_range;
 	VkPipelineLayoutCreateInfo	layout_info;
-	VkComputePipelineCreateInfo	pipe_info;
 	VkQueryPoolCreateInfo		query_info;
-	VkShaderModule			module;
 	float				normals[NUM_VERTEX_NORMALS][4];
 	int				i;
 
@@ -893,17 +891,6 @@ void VK_InitModels (void)
 	layout_info.pPushConstantRanges = &push_range;
 	VK_CHECK (vkCreatePipelineLayout (vk.device, &layout_info, NULL, &geometry_layout));
 
-	module = VK_LoadShader ("model_geometry.comp");
-	memset (&pipe_info, 0, sizeof(pipe_info));
-	pipe_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	pipe_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	pipe_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	pipe_info.stage.module = module;
-	pipe_info.stage.pName = "main";
-	pipe_info.layout = geometry_layout;
-	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &pipe_info, NULL, &geometry_pipeline));
-	vkDestroyShaderModule (vk.device, module, NULL);
-
 	if (vk.props.limits.timestampComputeAndGraphics)
 	{
 		memset (&query_info, 0, sizeof(query_info));
@@ -916,6 +903,18 @@ void VK_InitModels (void)
 	Cmd_AddCommand ("vk_models", VK_Models_f);
 }
 
+void VK_CreateModelPipelines (void)
+{
+	geometry_pipeline = VK_CreateComputePipeline ("model_geometry.comp", geometry_layout);
+}
+
+void VK_DestroyModelPipelines (void)
+{
+	if (geometry_pipeline)
+		vkDestroyPipeline (vk.device, geometry_pipeline, NULL);
+	geometry_pipeline = VK_NULL_HANDLE;
+}
+
 void VK_ShutdownModels (void)
 {
 	int	i;
@@ -925,13 +924,11 @@ void VK_ShutdownModels (void)
 		VK_DestroyBuffer (&instanced[i]);
 	VK_DestroyBuffer (&normal_buffer);
 	VK_DestroyBuffer (&model_table);
-	if (geometry_pipeline)
-		vkDestroyPipeline (vk.device, geometry_pipeline, NULL);
+	VK_DestroyModelPipelines ();
 	if (geometry_layout)
 		vkDestroyPipelineLayout (vk.device, geometry_layout, NULL);
 	if (query_pool)
 		vkDestroyQueryPool (vk.device, query_pool, NULL);
-	geometry_pipeline = VK_NULL_HANDLE;
 	geometry_layout = VK_NULL_HANDLE;
 	query_pool = VK_NULL_HANDLE;
 }

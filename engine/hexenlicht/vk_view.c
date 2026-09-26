@@ -1,14 +1,16 @@
-/* vk_view.c -- the 3D view: ray-traced passes into a view image, then a
- * composite into the swapchain under the 2D
+/* vk_view.c -- the 3D view: ray-traced passes into the render targets,
+ * then a composite into the swapchain under the 2D
  *
  * R_RenderView calls VK_RenderView3D after the TLAS is built: it fills
- * this frame's ViewUniforms (shaders/hl_shared.h) from r_scene and
- * dispatches the view pass into the view image, sized to the 3D view in
- * pixels. For now the pass is debug_view.comp, selected by r_debugview,
- * which also walks the effects TLAS for the particles and sprites; the
- * path tracer of epic E3 replaces it. GL_EndRendering then calls
- * VK_DrawView3D, which copies the image into the swapchain's 3D view
- * rectangle (view_composite.frag) before the 2D is drawn on top.
+ * this frame's global UBO (vk_ubo.c) for the 3D view's size in pixels and
+ * dispatches the view pass, which writes the TAA_OUTPUT render target
+ * (vk_images.c), the image Quake II RTX's post-processing ends in. For
+ * now the pass is debug_view.comp, selected by r_debugview, which also
+ * walks the effects TLAS for the particles and sprites; the path tracer
+ * of epic E3 replaces it. GL_EndRendering then calls VK_DrawView3D, which
+ * copies the image into the swapchain's 3D view rectangle
+ * (view_composite.frag, Quake II RTX's final blit) before the 2D is drawn
+ * on top.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -29,154 +31,25 @@
 #include "vid_vk.h"
 #include "r_scene.h"
 #include "shaders/hl_shared.h"
-
-#define VIEW_FORMAT	VK_FORMAT_R16G16B16A16_SFLOAT	/* linear, room for HDR later */
-
-COMPILE_TIME_ASSERT(ViewUniforms, sizeof(ViewUniforms) == 184);	/* the shaders' std430 layout */
+#include "shaders/global_textures.h"
 
 /* 1 albedo, 2 normals, 3 material kinds (cutouts yellow, the weapon cyan),
  * 4 instances, 5 clusters (and the camera's PVS), 6 motion since the last
  * frame; 0 draws no 3D view */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
-static VkDescriptorSetLayout	view_set_layout;	/* binding 0: the view image */
-static VkDescriptorPool		view_pool;
-static VkDescriptorSet		view_set;
-
-static VkImage			view_image;
-static VmaAllocation		view_allocation;
-static VkImageView		view_image_view;
-static uint32_t			view_width, view_height;
-
-static VkPipelineLayout		pass_layout;		/* textures (set 0), view image (set 1) */
-static VkPipeline		debug_pipeline;
-static VkPipelineLayout		composite_layout;	/* view image (set 0) */
+static VkPipeline		debug_pipeline;		/* VK_PathTracerLayout () */
+static VkPipelineLayout		composite_layout;	/* the pass sets, gamma */
 static VkPipeline		composite_pipeline;
 static VkFormat			composite_format;
-
-static vk_buffer_t		uniform_buffers[VK_FRAMES_IN_FLIGHT];
 
 static qboolean			view_drawn;		/* this frame has a 3D view to composite */
 static VkRect2D			view_rect;		/* in the swapchain */
 
 
 /* ==========================================================================
- * The view image
- * ========================================================================== */
-
-static void DestroyViewImage (void)
-{
-	if (view_image_view)
-		vkDestroyImageView (vk.device, view_image_view, NULL);
-	if (view_image)
-		vmaDestroyImage (vk.allocator, view_image, view_allocation);
-	view_image_view = VK_NULL_HANDLE;
-	view_image = VK_NULL_HANDLE;
-	view_width = view_height = 0;
-}
-
-static void CreateViewImage (uint32_t width, uint32_t height)
-{
-	VkImageCreateInfo	image_info;
-	VmaAllocationCreateInfo	alloc_info;
-	VkImageViewCreateInfo	view_info;
-	VkDescriptorImageInfo	desc_image;
-	VkWriteDescriptorSet	write;
-
-	vkDeviceWaitIdle (vk.device);	/* earlier frames may still use the old one */
-	DestroyViewImage ();
-
-	memset (&image_info, 0, sizeof(image_info));
-	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	image_info.imageType = VK_IMAGE_TYPE_2D;
-	image_info.format = VIEW_FORMAT;
-	image_info.extent.width = width;
-	image_info.extent.height = height;
-	image_info.extent.depth = 1;
-	image_info.mipLevels = 1;
-	image_info.arrayLayers = 1;
-	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image_info.usage = VK_IMAGE_USAGE_STORAGE_BIT;
-	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	memset (&alloc_info, 0, sizeof(alloc_info));
-	alloc_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-	VK_CHECK (vmaCreateImage (vk.allocator, &image_info, &alloc_info, &view_image, &view_allocation, NULL));
-
-	memset (&view_info, 0, sizeof(view_info));
-	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view_info.image = view_image;
-	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_info.format = VIEW_FORMAT;
-	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	view_info.subresourceRange.levelCount = 1;
-	view_info.subresourceRange.layerCount = 1;
-	VK_CHECK (vkCreateImageView (vk.device, &view_info, NULL, &view_image_view));
-
-	memset (&desc_image, 0, sizeof(desc_image));
-	desc_image.imageView = view_image_view;
-	desc_image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	memset (&write, 0, sizeof(write));
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = view_set;
-	write.dstBinding = 0;
-	write.descriptorCount = 1;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	write.pImageInfo = &desc_image;
-	vkUpdateDescriptorSets (vk.device, 1, &write, 0, NULL);
-
-	view_width = width;
-	view_height = height;
-}
-
-static void ViewImageBarrier (VkCommandBuffer cmd, VkImageLayout old_layout,
-			      VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-			      VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access)
-{
-	VkImageMemoryBarrier2	barrier;
-	VkDependencyInfo	dep;
-
-	memset (&barrier, 0, sizeof(barrier));
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-	barrier.srcStageMask = src_stage;
-	barrier.srcAccessMask = src_access;
-	barrier.dstStageMask = dst_stage;
-	barrier.dstAccessMask = dst_access;
-	barrier.oldLayout = old_layout;
-	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = view_image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.layerCount = 1;
-	memset (&dep, 0, sizeof(dep));
-	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-	dep.imageMemoryBarrierCount = 1;
-	dep.pImageMemoryBarriers = &barrier;
-	vkCmdPipelineBarrier2 (cmd, &dep);
-}
-
-
-/* ==========================================================================
  * Pipelines
  * ========================================================================== */
-
-static void CreateDebugPipeline (void)
-{
-	VkComputePipelineCreateInfo	info;
-	VkShaderModule			module = VK_LoadShader ("debug_view.comp");
-
-	memset (&info, 0, sizeof(info));
-	info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	info.stage.module = module;
-	info.stage.pName = "main";
-	info.layout = pass_layout;
-	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &info, NULL, &debug_pipeline));
-	vkDestroyShaderModule (vk.device, module, NULL);
-}
 
 /* fullscreen.vert + view_composite.frag, for the swapchain's format */
 static void CreateCompositePipeline (void)
@@ -262,6 +135,15 @@ static void CreateCompositePipeline (void)
 	vkDestroyShaderModule (vk.device, frag, NULL);
 }
 
+void VK_DestroyViewPipelines (void)
+{
+	if (debug_pipeline)
+		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
+	if (composite_pipeline)
+		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
+	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
+}
+
 
 /* ==========================================================================
  * The frame's view
@@ -290,65 +172,35 @@ static qboolean ViewRect (VkRect2D *r)
 
 void VK_RenderView3D (void)
 {
-	ViewUniforms	*u;
-	VkCommandBuffer	cmd;
-	VkDescriptorSet	sets[2];
-	VkDeviceAddress	address;
-	int		mode = r_debugview.integer;
+	VkCommandBuffer		cmd;
+	VkImage			output;
+	pt_push_constants_t	push;
+	int			mode = r_debugview.integer;
 
 	view_drawn = false;
 	if (!vk.frame_active || mode <= DEBUGVIEW_OFF || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
 		return;
-	if (!ViewRect (&view_rect))
+	if (!ViewRect (&view_rect) || !VK_ImagesReady ())
 		return;
-	if (view_rect.extent.width != view_width || view_rect.extent.height != view_height)
-		CreateViewImage (view_rect.extent.width, view_rect.extent.height);
+	/* the render targets have the swapchain's size, the view fits in them */
+	if (view_rect.extent.width > vk_image_extent.width || view_rect.extent.height > vk_image_extent.height)
+		return;
 
-	u = (ViewUniforms *) uniform_buffers[vk.frame_index].mapped;
-	memset (u, 0, sizeof(*u));
-	VectorCopy (r_scene.vieworg, u->origin);
-	VectorCopy (r_scene.forward, u->forward);
-	VectorCopy (r_scene.right, u->right);
-	VectorCopy (r_scene.up, u->up);
-	u->tan_half_fov[0] = tanf (r_scene.fov_x * (float)M_PI / 360.0f);
-	u->tan_half_fov[1] = tanf (r_scene.fov_y * (float)M_PI / 360.0f);
-	u->size[0] = view_width;
-	u->size[1] = view_height;
-	u->time = (float)r_scene.time;
-	u->anim_frame = (int)(r_scene.time * 5.0);	/* R_TextureAnimation's frame */
-	u->debug_mode = (uint32_t)q_min (mode, DEBUGVIEW_MAX);
-	u->view_cluster = r_scene.viewleaf ? (int)(r_scene.viewleaf - r_scene.worldmodel->leafs) - 1 : -1;
-	u->tlas = VK_TLASAddress ();
-	u->primitives = vk_world.buffer.address;
-	u->tlas_info = VK_TLASInfoAddress ();
-	u->instances = VK_InstanceBuffer ()->address;
-	u->materials = vk_material_table.address;
-	u->pvs = vk_pvs.buffer.address;
-	u->instanced = VK_InstancedBuffer ()->address;
-	u->effects_tlas = VK_EffectsTLASAddress ();
-	u->particles = VK_EffectsFrame ()->particles;
-	u->sprites = VK_EffectsFrame ()->sprites;
-	u->particle_texture = (uint32_t)VK_ParticleTexture ();
-	VK_CHECK (vmaFlushAllocation (vk.allocator, uniform_buffers[vk.frame_index].allocation, 0, sizeof(*u)));
+	VK_PrepareUBO (view_rect.extent.width, view_rect.extent.height, q_min (mode, DEBUGVIEW_MAX));
 
 	if (!debug_pipeline)
-		CreateDebugPipeline ();
+		debug_pipeline = VK_CreateComputePipeline ("debug_view.comp", VK_PathTracerLayout ());
 
 	cmd = vk.frames[vk.frame_index].cmd;
-	/* the last frame's composite has read the image; its contents go */
-	ViewImageBarrier (cmd, VK_IMAGE_LAYOUT_UNDEFINED,
-			  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
-			  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-	sets[0] = vk.texture_set;
-	sets[1] = view_set;
-	address = uniform_buffers[vk.frame_index].address;
-	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, debug_pipeline);
-	vkCmdBindDescriptorSets (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pass_layout, 0, 2, sets, 0, NULL);
-	vkCmdPushConstants (cmd, pass_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(address), &address);
-	vkCmdDispatch (cmd, (view_width + 7) / 8, (view_height + 7) / 8, 1);
-	ViewImageBarrier (cmd, VK_IMAGE_LAYOUT_GENERAL,
-			  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-			  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+	output = VK_Image (VKPT_IMG_TAA_OUTPUT);
+	/* the last frame's composite has read the image */
+	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+			 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	push.gpu_index = -1;
+	push.bounce = 0;
+	VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
+	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 	view_drawn = true;
 }
 
@@ -381,7 +233,7 @@ void VK_DrawView3D (void)
 	vkCmdSetViewport (cmd, 0, 1, &viewport);
 	vkCmdSetScissor (cmd, 0, 1, &view_rect);
 	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, composite_pipeline);
-	vkCmdBindDescriptorSets (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, composite_layout, 0, 1, &view_set, 0, NULL);
+	VK_BindPassSets (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, composite_layout);
 	vkCmdPushConstants (cmd, composite_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(gamma), &gamma);
 	vkCmdDraw (cmd, 3, 1, 0, 0);
 
@@ -402,96 +254,15 @@ void VK_DrawView3D (void)
 
 void VK_InitView (void)
 {
-	VkDescriptorSetLayoutBinding	binding;
-	VkDescriptorSetLayoutCreateInfo	layout_info;
-	VkDescriptorPoolSize		pool_size;
-	VkDescriptorPoolCreateInfo	pool_info;
-	VkDescriptorSetAllocateInfo	alloc_info;
-	VkPipelineLayoutCreateInfo	pl_info;
-	VkPushConstantRange		push_range;
-	VkDescriptorSetLayout		pass_sets[2];
-	int				i;
-
 	Cvar_RegisterVariable (&r_debugview);
-
-	memset (&binding, 0, sizeof(binding));
-	binding.binding = 0;
-	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	binding.descriptorCount = 1;
-	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	memset (&layout_info, 0, sizeof(layout_info));
-	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layout_info.bindingCount = 1;
-	layout_info.pBindings = &binding;
-	VK_CHECK (vkCreateDescriptorSetLayout (vk.device, &layout_info, NULL, &view_set_layout));
-
-	pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	pool_size.descriptorCount = 1;
-	memset (&pool_info, 0, sizeof(pool_info));
-	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_info.maxSets = 1;
-	pool_info.poolSizeCount = 1;
-	pool_info.pPoolSizes = &pool_size;
-	VK_CHECK (vkCreateDescriptorPool (vk.device, &pool_info, NULL, &view_pool));
-	memset (&alloc_info, 0, sizeof(alloc_info));
-	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	alloc_info.descriptorPool = view_pool;
-	alloc_info.descriptorSetCount = 1;
-	alloc_info.pSetLayouts = &view_set_layout;
-	VK_CHECK (vkAllocateDescriptorSets (vk.device, &alloc_info, &view_set));
-
-	/* the view passes: textures, the view image, the ViewUniforms' address */
-	memset (&push_range, 0, sizeof(push_range));
-	push_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	push_range.size = sizeof(VkDeviceAddress);
-	pass_sets[0] = vk.texture_set_layout;
-	pass_sets[1] = view_set_layout;
-	memset (&pl_info, 0, sizeof(pl_info));
-	pl_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pl_info.setLayoutCount = 2;
-	pl_info.pSetLayouts = pass_sets;
-	pl_info.pushConstantRangeCount = 1;
-	pl_info.pPushConstantRanges = &push_range;
-	VK_CHECK (vkCreatePipelineLayout (vk.device, &pl_info, NULL, &pass_layout));
-
-	/* the composite: the view image, gamma */
-	push_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-	push_range.size = sizeof(float);
-	pl_info.setLayoutCount = 1;
-	pl_info.pSetLayouts = &view_set_layout;
-	VK_CHECK (vkCreatePipelineLayout (vk.device, &pl_info, NULL, &composite_layout));
-
-	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
-	{
-		VK_CreateBuffer (&uniform_buffers[i], sizeof(ViewUniforms),
-				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-				 VK_MEMORY_UPLOAD);
-	}
+	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float));
 }
 
 void VK_ShutdownView (void)
 {
-	int	i;
-
-	DestroyViewImage ();
-	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
-		VK_DestroyBuffer (&uniform_buffers[i]);
-	if (debug_pipeline)
-		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
-	if (composite_pipeline)
-		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
-	if (pass_layout)
-		vkDestroyPipelineLayout (vk.device, pass_layout, NULL);
+	VK_DestroyViewPipelines ();
 	if (composite_layout)
 		vkDestroyPipelineLayout (vk.device, composite_layout, NULL);
-	if (view_pool)
-		vkDestroyDescriptorPool (vk.device, view_pool, NULL);
-	if (view_set_layout)
-		vkDestroyDescriptorSetLayout (vk.device, view_set_layout, NULL);
-	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
-	pass_layout = composite_layout = VK_NULL_HANDLE;
-	view_pool = VK_NULL_HANDLE;
-	view_set_layout = VK_NULL_HANDLE;
-	view_set = VK_NULL_HANDLE;
+	composite_layout = VK_NULL_HANDLE;
 	view_drawn = false;
 }

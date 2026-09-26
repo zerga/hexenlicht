@@ -1,6 +1,8 @@
-/* view_composite.frag -- copies the 3D view image into its part of the
- * swapchain (drawn with fullscreen.vert and a viewport on the 3D view),
- * encoding to sRGB and applying the gamma cvar like draw2d.frag.
+/* view_composite.frag -- copies the 3D view (TEX_TAA_OUTPUT's top left
+ * global_ubo.width x global_ubo.height, the image Quake II RTX's final
+ * blit shows) into its part of the swapchain (drawn with fullscreen.vert
+ * and a viewport on the 3D view), encoding to sRGB and applying the gamma
+ * cvar like draw2d.frag.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -19,12 +21,16 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
+#define GLOBAL_UBO_DESC_SET_IDX 0
+#define GLOBAL_TEXTURES_DESC_SET_IDX 1
+#define GLOBAL_TEXTURES_SAMPLED_ONLY
+
+#include "global_ubo.h"
+#include "global_textures.h"
 #include "srgb.glsl"
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
-
-layout(set = 0, binding = 0, rgba16f) uniform readonly image2D view_image;
 
 layout(push_constant) uniform Push
 {
@@ -33,9 +39,9 @@ layout(push_constant) uniform Push
 
 void main()
 {
-	ivec2 size = imageSize(view_image);
+	ivec2 size = ivec2(global_ubo.width, global_ubo.height);
 	ivec2 p = min(ivec2(in_uv * vec2(size)), size - 1);
-	vec3 c = linear_to_srgb(imageLoad(view_image, p).rgb);
+	vec3 c = linear_to_srgb(texelFetch(TEX_TAA_OUTPUT, p, 0).rgb);
 
 	out_color = vec4(pow(c, vec3(push.gamma)), 1.0);
 }

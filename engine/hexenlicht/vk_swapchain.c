@@ -314,6 +314,8 @@ static void VK_CreateSwapchain (void)
 	Con_DPrintf ("Vulkan swapchain: %ux%u, %u images, %s\n", vk.extent.width, vk.extent.height, num_images,
 			(vk.present_mode == VK_PRESENT_MODE_FIFO_KHR) ? "vsync" :
 			(vk.present_mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate");
+
+	VK_SwapchainRecreated ();	/* the render targets follow its size */
 }
 
 

@@ -223,7 +223,7 @@ void R_RenderView (void)
 	VK_UpdateModelGeometry ();	/* the alias models' triangles, in this frame's command buffer */
 	VK_UpdateEffects ();		/* the particles' and sprites' triangles */
 	VK_BuildTLAS ();		/* the dynamic BLASes, the TLAS and the effects TLAS, in the command buffer */
-	VK_RenderView3D ();		/* the view pass into the view image */
+	VK_RenderView3D ();		/* the UBO, then the view pass into the TAA_OUTPUT render target */
 
 	/* r_debugview's pass for now; the path tracer comes with epic E3 */
 }

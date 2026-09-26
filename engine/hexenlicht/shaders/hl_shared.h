@@ -1,10 +1,13 @@
 /* hl_shared.h -- definitions shared by the Hexenlicht renderer (C) and its
- * shaders (GLSL): the per-triangle primitive record, material ID bits and
- * the material table layout.
+ * shaders (GLSL): Quake II RTX's headers (constants.h, the primitive
+ * record in vertex_buffer.h, ModelInstance and the global UBO in
+ * global_ubo.h), and Hexenlicht's own GPU data: the PVS buffer, alias
+ * models, effects and the checks' records.
  *
- * The primitive record, the material ID bits and the material table
- * layout follow Quake II RTX (src/refresh/vkpt/shader/vertex_buffer.h,
- * constants.h, shader_structs.h), so its shaders can read our buffers.
+ * Shaders are compiled with -DVKPT_SHADER. A shader that uses the global
+ * UBO, the render-target images or vertex_buffer.h's functions defines
+ * GLOBAL_UBO_DESC_SET_IDX, GLOBAL_TEXTURES_DESC_SET_IDX and
+ * VERTEX_BUFFER_DESC_SET_IDX before including any of these headers.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019-2021, NVIDIA CORPORATION. All rights reserved.
@@ -25,81 +28,10 @@
 #ifndef HL_SHARED_H
 #define HL_SHARED_H
 
-/* glslang defines VULKAN when compiling a shader for Vulkan */
-#ifdef VULKAN
-
-#define BEGIN_SHADER_STRUCT(NAME)	struct NAME
-#define END_SHADER_STRUCT(NAME)		;
-
-/* a buffer device address: uvec2 needs no 64-bit integers in shaders
- * (GL_EXT_buffer_reference_uvec2 turns it into a buffer reference) */
-#define DeviceAddress			uvec2
-
-#else	/* C */
-
-#include <stdint.h>
-
-#define BEGIN_SHADER_STRUCT(NAME)	typedef struct NAME	/* tagged, so C headers can declare pointers to it */
-#define END_SHADER_STRUCT(NAME)		NAME;
-
-typedef uint32_t	uint;
-typedef float		vec2[2];
-typedef float		vec3[3];
-typedef float		vec4[4];
-typedef uint32_t	uvec2[2];
-typedef uint32_t	uvec3[3];
-typedef uint32_t	uvec4[4];
-typedef float		mat4[4][4];	/* [column][row], as GLSL stores it */
-typedef uint64_t	DeviceAddress;
-
-#endif	/* VULKAN */
-
-
-/* ==========================================================================
- * Material IDs: kind | flags | light style | index into the material table
- * ========================================================================== */
-
-#define MATERIAL_KIND_MASK		0xf0000000
-#define MATERIAL_KIND_INVALID		0x00000000
-#define MATERIAL_KIND_REGULAR		0x10000000
-#define MATERIAL_KIND_CHROME		0x20000000
-#define MATERIAL_KIND_WATER		0x30000000
-#define MATERIAL_KIND_LAVA		0x40000000
-#define MATERIAL_KIND_SLIME		0x50000000
-#define MATERIAL_KIND_GLASS		0x60000000
-#define MATERIAL_KIND_SKY		0x70000000
-#define MATERIAL_KIND_INVISIBLE		0x80000000
-#define MATERIAL_KIND_EXPLOSION		0x90000000
-#define MATERIAL_KIND_TRANSPARENT	0xa0000000	/* see-through surfaces, e.g. *rtex078 */
-#define MATERIAL_KIND_SCREEN		0xb0000000
-#define MATERIAL_KIND_CAMERA		0xc0000000
-#define MATERIAL_KIND_CHROME_MODEL	0xd0000000
-#define MATERIAL_KIND_TRANSP_MODEL	0xe0000000
-
-#define MATERIAL_FLAG_LIGHT		0x08000000
-#define MATERIAL_FLAG_HANDEDNESS	0x02000000	/* the bitangent is -cross(normal, tangent) */
-#define MATERIAL_FLAG_WEAPON		0x01000000
-#define MATERIAL_FLAG_WARP		0x00800000	/* turbulent (*) surface: warped texture coordinates */
-#define MATERIAL_FLAG_FLOWING		0x00400000
-#define MATERIAL_FLAG_DOUBLE_SIDED	0x00200000
-
-#define MATERIAL_LIGHT_STYLE_MASK	0x0003f000
-#define MATERIAL_LIGHT_STYLE_SHIFT	12
-#define MATERIAL_INDEX_MASK		0x00000fff
-
-#define MAX_MATERIALS			4096	/* MATERIAL_INDEX_MASK + 1; index 0 is unused */
-
-/* One material is MATERIAL_UINTS uints in the material table:
- *   [0] base texture | normal map << 16          (texture slots, 0 = none;
- *   [1] emissive texture | mask texture << 16      the base falls back to white)
- *   [2] half2 (bump scale, roughness override)
- *   [3] half2 (metalness factor, emissive factor)
- *   [4] number of animation frames | next frame's material << 16
- *   [5] half2 (specular factor, base factor)
- *   [6] Hexen II: material of the alternate animation (+a..+j), 0 = none
- *   [7] unused
- * [0]-[5] are Quake II RTX's layout. */
-#define MATERIAL_UINTS			8
+#include "shader_structs.h"
+#include "constants.h"
+#include "global_ubo.h"
+#include "vertex_buffer.h"
 
 
 /* ==========================================================================
@@ -110,94 +42,6 @@ typedef uint64_t	DeviceAddress;
  * ========================================================================== */
 
 #define PVS_HEADER_UINTS		4
-
-
-/* ==========================================================================
- * One triangle, 128 bytes (Quake II RTX's VboPrimitive)
- * ========================================================================== */
-
-BEGIN_SHADER_STRUCT( VboPrimitive )
-{
-	vec3 pos0;
-	uint material_id;	/* MATERIAL_KIND_* | MATERIAL_FLAG_* | material index */
-
-	vec3 pos1;
-	int cluster;		/* Hexen II: vis leaf (leaf number - 1), -1 = none */
-
-	vec3 pos2;
-	uint shell;		/* unused */
-
-	uvec3 normals;		/* octahedral encoding, see encode_normal */
-	uint instance;
-
-	uvec3 tangents;
-	uint emissive_and_alpha;	/* half2 (emissive factor, alpha) */
-
-	vec2 uv0;
-	vec2 uv1;
-	vec2 uv2;
-	uvec2 custom0;		/* motion or skinning data of instanced meshes */
-	uvec2 custom1;
-	uvec2 custom2;
-}
-END_SHADER_STRUCT( VboPrimitive )
-
-
-/* ==========================================================================
- * Model instances: the frame's entities with geometry, 224 bytes each.
- * Quake II RTX's ModelInstance, with Hexen II's fields at the end.
- * ========================================================================== */
-
-#define MAX_MODEL_INSTANCES		1024
-
-/* primitive buffers (source_buffer_idx, render_buffer_idx, the TLAS
- * instances' custom index), numbered like Quake II RTX's */
-#define VERTEX_BUFFER_WORLD		0	/* the world buffer (vk_world.c) */
-#define VERTEX_BUFFER_INSTANCED		1	/* this frame's alias model triangles (vk_model.c) */
-#define VERTEX_BUFFER_FIRST_MODEL	2	/* alias model k (source only): VERTEX_BUFFER_FIRST_MODEL + k */
-
-BEGIN_SHADER_STRUCT( ModelInstance )
-{
-	mat4 transform;		/* model to world */
-	mat4 transform_prev;	/* the same, last frame */
-
-	uint material;		/* alias models: material ID of every triangle; unused for brush models */
-	uint shell;		/* unused */
-	int cluster;		/* vis cluster the model is in, -1 = none */
-	uint source_buffer_idx;	/* VERTEX_BUFFER_* with the primitives, or the alias model */
-	uint prim_count;
-
-	/* Alias models: the first vertex of each pose in the model's pose
-	 * data. The frame blends the current pose with the previous one by
-	 * pose_lerp_curr_frame (the previous pose's weight, Quake II's
-	 * backlerp); the _prev_frame fields are what the last frame showed. */
-	uint prim_offset_curr_pose_curr_frame;
-	uint prim_offset_prev_pose_curr_frame;
-	uint prim_offset_curr_pose_prev_frame;
-	uint prim_offset_prev_pose_prev_frame;
-
-	float pose_lerp_curr_frame;
-	float pose_lerp_prev_frame;
-	int iqm_matrix_offset_curr_frame;	/* unused, -1 */
-	int iqm_matrix_offset_prev_frame;
-
-	/* half float alpha (low 16 bits) | entity frame << 16; for brush
-	 * entities, a frame other than 0 shows the alternate animations
-	 * (alias models: frame 0) */
-	uint alpha_and_frame;
-	uint render_buffer_idx;
-	uint render_prim_offset;	/* first primitive in render_buffer_idx */
-
-	/* Hexen II */
-	uint drawflags;		/* the entity's MLS_*, SCALE_*, DRF_* bits */
-	float light;		/* GL's fixed light level for the model (255 = 1): MLS_ABSLIGHT's abslight,
-				 * the MLS_* light styles, spinning items' pulse; -1 = lit by the world */
-	uint entity;		/* scene_entkind_t << 16 | entity number, for debugging */
-	uint colorshade;	/* the entity's colorshade, 0 = none */
-	vec3 tint;		/* GL's colorshade tint (RTint/GTint/BTint), which multiplies the light; 1 1 1 = none */
-	float pad;
-}
-END_SHADER_STRUCT( ModelInstance )
 
 
 /* ==========================================================================
@@ -249,32 +93,6 @@ END_SHADER_STRUCT( ModelGeometryPush )
 
 
 /* ==========================================================================
- * The top-level acceleration structure (vk_accel.c). Instance masks are
- * Quake II RTX's; each TLAS instance has a TlasInstanceInfo at its index
- * (rayQueryGetIntersectionInstanceIdEXT): the first primitive of its BLAS
- * in the buffer named by its custom index (VERTEX_BUFFER_*), and its model
- * instance, -1 for the world and for the alias model triangles of
- * VERTEX_BUFFER_INSTANCED, whose VboPrimitive.instance names it.
- * ========================================================================== */
-
-#define MAX_TLAS_INSTANCES		4096
-
-#define AS_FLAG_OPAQUE			(1 << 0)
-#define AS_FLAG_TRANSPARENT		(1 << 1)
-#define AS_FLAG_VIEWER_MODELS		(1 << 2)
-#define AS_FLAG_VIEWER_WEAPON		(1 << 3)
-#define AS_FLAG_SKY			(1 << 4)
-#define AS_FLAG_CUSTOM_SKY		(1 << 5)
-
-BEGIN_SHADER_STRUCT( TlasInstanceInfo )
-{
-	uint prim_offset;
-	int model_instance;
-}
-END_SHADER_STRUCT( TlasInstanceInfo )
-
-
-/* ==========================================================================
  * Effects (vk_effects.c): the frame's particles and sprites, written by the
  * CPU into one buffer per frame in flight, laid out like Quake II RTX's
  * transparency.c: the vertex positions (vec3: 3 per particle, one
@@ -282,15 +100,15 @@ END_SHADER_STRUCT( TlasInstanceInfo )
  * are vertices 0 1 2 and 2 3 0 of a shared uint16 index buffer), an
  * EffectParticle per particle and an EffectSprite per sprite. They are
  * ray traced through a second, effects-only TLAS (Quake II RTX's
- * TLAS_INDEX_EFFECTS), whose instance masks are their own namespace; the
- * custom index tells particles from sprites. Particle i is primitive i of
- * its BLAS, sprite i primitives 2i and 2i + 1 of its own.
+ * TLAS_INDEX_EFFECTS), whose instance masks are their own namespace
+ * (AS_FLAG_EFFECTS); the instances' shader binding table offsets
+ * (SBTO_PARTICLE, SBTO_SPRITE) and custom indices tell particles from
+ * sprites. Particle i is primitive i of its BLAS, sprite i primitives 2i
+ * and 2i + 1 of its own.
  * ========================================================================== */
 
 #define MAX_EFFECT_PARTICLES		32768	/* r_part.c has 7000 unless -particles N */
 #define MAX_EFFECT_SPRITES		1024	/* over r_scene.h's MAX_SCENE_ENTITIES */
-
-#define AS_FLAG_EFFECTS			(1 << 0)	/* the effects TLAS's instances */
 
 #define EFFECTS_PARTICLES		0	/* the effects TLAS instances' custom index */
 #define EFFECTS_SPRITES			1
@@ -343,11 +161,10 @@ END_SHADER_STRUCT( EffectsCheckPush )
 
 
 /* ==========================================================================
- * The 3D view (vk_view.c): what the view passes read, one per frame, 184
- * bytes, found through the push constant's address
+ * The debug view (vk_view.c, debug_view.comp): r_debugview's modes, in the
+ * global UBO's debug_view
  * ========================================================================== */
 
-/* r_debugview */
 #define DEBUGVIEW_OFF			0
 #define DEBUGVIEW_ALBEDO		1
 #define DEBUGVIEW_NORMALS		2
@@ -356,34 +173,5 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_CLUSTERS		5
 #define DEBUGVIEW_MOTION		6
 #define DEBUGVIEW_MAX			6
-
-BEGIN_SHADER_STRUCT( ViewUniforms )
-{
-	vec4 origin;		/* camera position, w unused */
-	vec4 forward;
-	vec4 right;
-	vec4 up;
-	vec2 tan_half_fov;	/* x, y */
-	uvec2 size;		/* view image, pixels */
-	float time;		/* cl.time */
-	int anim_frame;		/* int(cl.time * 5), for animate_material */
-	uint debug_mode;	/* DEBUGVIEW_* */
-	int view_cluster;	/* the camera's cluster, -1 = none */
-
-	DeviceAddress tlas;
-	DeviceAddress primitives;	/* the world buffer's VboPrimitives */
-	DeviceAddress tlas_info;	/* TlasInstanceInfo[] */
-	DeviceAddress instances;	/* ModelInstance[] */
-	DeviceAddress materials;	/* the material table */
-	DeviceAddress pvs;		/* the PVS buffer */
-	DeviceAddress instanced;	/* this frame's VERTEX_BUFFER_INSTANCED VboPrimitives */
-
-	DeviceAddress effects_tlas;	/* 0 = no particles or sprites this frame */
-	DeviceAddress particles;	/* EffectParticle[] */
-	DeviceAddress sprites;		/* EffectSprite[] */
-	uint particle_texture;		/* texture slot of GL's particle dot */
-	uint pad;
-}
-END_SHADER_STRUCT( ViewUniforms )
 
 #endif	/* HL_SHARED_H */

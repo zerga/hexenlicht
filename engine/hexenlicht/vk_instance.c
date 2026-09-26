@@ -1,7 +1,7 @@
 /* vk_instance.c -- the frame's model instances
  *
  * Every frame, VK_UpdateInstances turns the scene's entities with geometry
- * into ModelInstances (shaders/hl_shared.h): a model-to-world transform
+ * into ModelInstances (shaders/global_ubo.h): a model-to-world transform
  * and last frame's, the vis cluster the model is in, where its primitives
  * are and the entity's Hexen II draw state. They go to a mapped buffer
  * per frame in flight, for the acceleration structures and the shaders.

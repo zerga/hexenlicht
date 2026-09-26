@@ -1,7 +1,8 @@
 /* vk_material.c -- the material table
  *
- * A material is what a primitive's material ID indexes (hl_shared.h): the
- * textures to shade it with, factors, and the animation sequence it is in.
+ * A material is what a primitive's material ID indexes
+ * (shaders/vertex_buffer.h): the textures to shade it with, factors, and
+ * the animation sequence it is in.
  * Materials are rebuilt on every map change (vk_world.c adds the world's
  * textures); VK_UploadMaterials writes them to the GPU table in Quake II
  * RTX's layout. For now only the base texture and the animation are set;
@@ -25,9 +26,9 @@
 #include "vk_local.h"
 #include "shaders/hl_shared.h"
 
-vk_buffer_t	vk_material_table;		/* MAX_MATERIALS * MATERIAL_UINTS uints */
+vk_buffer_t	vk_material_table;		/* MAX_PBR_MATERIALS * MATERIAL_UINTS uints */
 
-static vk_material_t	materials[MAX_MATERIALS];
+static vk_material_t	materials[MAX_PBR_MATERIALS];
 int			vk_num_materials;	/* including the unused index 0 */
 
 
@@ -75,8 +76,8 @@ int VK_AddMaterial (const char *name, int base_texture)
 	vk_material_t	*m;
 	int		index;
 
-	if (vk_num_materials >= MAX_MATERIALS)
-		Sys_Error ("Too many materials (%d)", MAX_MATERIALS);
+	if (vk_num_materials >= MAX_PBR_MATERIALS)
+		Sys_Error ("Too many materials (%d)", MAX_PBR_MATERIALS);
 
 	index = vk_num_materials++;
 	m = &materials[index];
@@ -136,7 +137,7 @@ void VK_UploadMaterials (void)
 
 void VK_InitMaterials (void)
 {
-	VK_CreateBuffer (&vk_material_table, MAX_MATERIALS * MATERIAL_UINTS * sizeof(uint32_t),
+	VK_CreateBuffer (&vk_material_table, MAX_PBR_MATERIALS * MATERIAL_UINTS * sizeof(uint32_t),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 			 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |	/* vk_models check reads it back */
 			 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);

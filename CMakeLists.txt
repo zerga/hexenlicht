@@ -212,6 +212,10 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_instance.c
 	${HEXENLICHT_DIR}/vk_effects.c
 	${HEXENLICHT_DIR}/vk_accel.c
+	${HEXENLICHT_DIR}/vk_matrix.c
+	${HEXENLICHT_DIR}/vk_ubo.c
+	${HEXENLICHT_DIR}/vk_images.c
+	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_view.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c

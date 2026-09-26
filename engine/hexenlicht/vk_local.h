@@ -81,9 +81,14 @@ const char *VK_ResultString (VkResult result);
 					VK_ResultString (vk_check_result_));	\
 	} while (0)
 
-/* vk_core.c */
+/* vk_core.c: the renderer's modules are initialized and shut down from one
+ * table (Quake II RTX's vkpt_initialize_all): all at startup; those that
+ * depend on the swapchain's size again when it is recreated
+ * (VK_SwapchainRecreated); those with pipelines on vk_reload_shaders,
+ * which rebuilds them from the SPIR-V on disk. */
 void VK_Init (HINSTANCE hinstance, HWND hwnd);
 void VK_Shutdown (void);
+void VK_SwapchainRecreated (void);
 
 /* vk_swapchain.c */
 void VK_InitSwapchain (void);
@@ -111,6 +116,7 @@ const char *VK_TextureName (int slot);
 void VK_InitDraw (void);
 void Draw_ClearCachedPics (void);	/* after texture slots were purged */
 void VK_ShutdownDraw (void);
+void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
 
 /* vk_swapchain.c: capture the next presented frame into a TGA file
  * (gl_screen.c's "screenshot" command) */
@@ -145,7 +151,7 @@ VkCommandBuffer VK_BeginUpload (void);
 void VK_EndUpload (void);
 void VK_UploadBuffer (vk_buffer_t *dst, VkDeviceSize offset, const void *data, VkDeviceSize size);
 
-/* vk_material.c: the material table (layout in shaders/hl_shared.h) */
+/* vk_material.c: the material table (layout in shaders/vertex_buffer.h) */
 typedef struct
 {
 	char		name[16];	/* texture name */
@@ -169,7 +175,7 @@ void VK_UploadMaterialRange (int first, int count);	/* new materials, while othe
 uint16_t VK_FloatToHalf (float f);
 
 /* vk_world.c: the BSP world and its brush submodels in one GPU buffer:
- * num_primitives VboPrimitives (shaders/hl_shared.h), then their
+ * num_primitives VboPrimitives (shaders/vertex_buffer.h), then their
  * positions (3 vec3 per triangle) for acceleration structure builds.
  * Each model's primitives are grouped into ranges. */
 typedef struct
@@ -243,6 +249,8 @@ typedef struct
 
 void VK_InitModels (void);
 void VK_ShutdownModels (void);
+void VK_CreateModelPipelines (void);
+void VK_DestroyModelPipelines (void);
 void VK_LoadModels (void);		/* on map change, after VK_LoadWorld: every alias model in cl.model_precache */
 int VK_AliasModelIndex (qmodel_t *model);	/* builds the model's data on first use; -1 = can't be drawn */
 const vk_aliasmodel_t *VK_GetAliasModel (int index);
@@ -262,7 +270,7 @@ qboolean VK_ModelHasCutouts (const qmodel_t *model);
 int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboolean *bad_skin);
 
 /* vk_instance.c: the frame's model instances (ModelInstance in
- * shaders/hl_shared.h): the brush entities, then the alias entities group
+ * shaders/global_ubo.h): the brush entities, then the alias entities group
  * by group, the first-person weapon last; rebuilt from r_scene by
  * R_RenderView and copied to this frame's mapped buffer */
 enum
@@ -328,8 +336,10 @@ int VK_ParticleTexture (void);
  * the submodels' primitive ranges are built on map load; every frame, the
  * dynamic BLASes over the instanced buffer's model triangles (opaque,
  * transparent, masked) and the effects (particles, sprites), the TLAS
- * (world + model instances, shaders/hl_shared.h) and the effects TLAS are
- * rebuilt in the frame's command buffer, one per frame in flight. */
+ * (world + model instances; TlasInstanceInfo in shaders/global_ubo.h) and
+ * the effects TLAS are rebuilt in the frame's command buffer, one per
+ * frame in flight. The instances have Quake II RTX's shader binding table
+ * offsets (SBTO_*), which its ray query code dispatches candidates by. */
 void VK_InitAccel (void);
 void VK_ShutdownAccel (void);
 void VK_BuildWorldAccel (void);		/* after the world buffer is uploaded */
@@ -342,12 +352,65 @@ VkDeviceAddress VK_EffectsTLASAddress (void);	/* the current frame's, 0 = no eff
 VkDeviceAddress VK_LastEffectsTLAS (int *slot, uint64_t *frame_count);	/* the last one built (0 = none), for checks */
 void VK_PrintEffectsAccel (void);	/* the effects' BLASes and TLAS, for vk_effects */
 
+/* vk_matrix.c: 4x4 matrices in columns (m[column * 4 + row]), Quake II
+ * RTX's matrix.c: view space x right, y up, z forward; clip space y down */
+void VK_CreateViewMatrix (float m[16], const vec3_t origin, const vec3_t forward, const vec3_t right, const vec3_t up);
+void VK_CreateProjectionMatrix (float m[16], float znear, float zfar, float fov_x, float fov_y);
+void VK_InverseMatrix (const float m[16], float inv[16]);
+
+/* vk_ubo.c: the global uniform buffer (shaders/global_ubo.h), one per frame
+ * in flight: descriptor set 0 of the view passes. VK_PrepareUBO fills the
+ * current frame's from r_scene for a width x height 3D view and counts the
+ * 3D frames (vk_render_frame, the UBO's current_frame_idx). */
+extern VkDescriptorSetLayout	vk_ubo_set_layout;
+extern uint32_t			vk_render_frame;
+void VK_InitUBO (void);
+void VK_ShutdownUBO (void);
+void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
+VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
+
+/* vk_images.c: the render targets (shaders/global_textures.h's
+ * LIST_IMAGES, VKPT_IMG_*) at the swapchain's size, in the GENERAL layout:
+ * descriptor set 1 of the view passes, even or odd by vk_render_frame */
+extern VkExtent2D		vk_image_extent;	/* 0 x 0 = none */
+extern VkDescriptorSetLayout	vk_images_set_layout;
+void VK_InitImages (void);
+void VK_ShutdownImages (void);
+void VK_CreateImages (void);
+void VK_DestroyImages (void);
+qboolean VK_ImagesReady (void);
+VkImage VK_Image (int index);
+VkDescriptorSet VK_ImagesSet (void);	/* this 3D frame's */
+
+/* vk_pathtracer.c: the view passes' pipeline layouts (set 0 the UBO, set 1
+ * the images, set 2 the bindless textures), ray query compute pipelines
+ * (Quake II RTX's path_tracer.c in ray query mode) and image barriers */
+typedef struct
+{
+	int	gpu_index;	/* -1: one GPU */
+	int	bounce;
+} pt_push_constants_t;	/* shaders/path_tracer.h's push_constant_block */
+
+void VK_InitPathTracer (void);
+void VK_ShutdownPathTracer (void);
+VkPipelineLayout VK_CreatePassLayout (VkShaderStageFlags push_stages, uint32_t push_size);
+VkPipelineLayout VK_PathTracerLayout (void);	/* pt_push_constants_t */
+VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout);
+void VK_BindPassSets (VkCommandBuffer cmd, VkPipelineBindPoint bind_point, VkPipelineLayout layout);
+void VK_DispatchRays (VkCommandBuffer cmd, VkPipeline pipeline, const pt_push_constants_t *push,
+		      uint32_t width, uint32_t height, uint32_t depth);
+void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
+			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
+
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
- * TLAS: the view pass (r_debugview's debug_view.comp for now) renders
- * into the view image; GL_EndRendering calls VK_DrawView3D, which copies
- * it into the swapchain's 3D view rectangle before the 2D. */
+ * TLAS: it fills the UBO and runs the view pass (r_debugview's
+ * debug_view.comp for now) into the TAA_OUTPUT render target;
+ * GL_EndRendering calls VK_DrawView3D, which copies it into the
+ * swapchain's 3D view rectangle before the 2D. */
 void VK_InitView (void);
 void VK_ShutdownView (void);
+void VK_DestroyViewPipelines (void);	/* rebuilt when next used */
 void VK_RenderView3D (void);
 void VK_DrawView3D (void);
 
