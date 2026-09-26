@@ -181,8 +181,17 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_EFFECTS		13	/* effects and emissive (PT_TRANSPARENT) */
 #define DEBUGVIEW_BLUE_NOISE		14	/* the first random number of the pixel */
 #define DEBUGVIEW_DIRECT_DIFFUSE	15	/* direct lighting, diffuse (PT_COLOR_HF, demodulated) */
-#define DEBUGVIEW_DIRECT_SPECULAR	16	/* direct lighting, specular (PT_COLOR_SPEC) */
+#define DEBUGVIEW_DIRECT_SPECULAR	16	/* specular lighting, direct and bounced (PT_COLOR_SPEC) */
 #define DEBUGVIEW_LIGHT_LISTS		17	/* the length of the pixel's cluster's light list */
-#define DEBUGVIEW_MAX			17
+#define DEBUGVIEW_INDIRECT_DIFFUSE	18	/* indirect lighting, diffuse (PT_COLOR_LF_SH, demodulated) */
+#define DEBUGVIEW_SPECULAR_HIT_DIST	19	/* the specular bounce's hit distance (PT_SPECULAR_HIT_DIST) */
+#define DEBUGVIEW_MAX			19
+
+/* the modes that read the lighting: debug_view.comp runs after the indirect
+ * passes for them, before for the others (vk_view.c: with two bounces, the
+ * first stores its hit into the G-buffer's shading position for the second) */
+#define DEBUGVIEW_READS_LIGHTING(m)	((m) == DEBUGVIEW_LIT || (m) == DEBUGVIEW_DIRECT_DIFFUSE || \
+					 (m) == DEBUGVIEW_DIRECT_SPECULAR || (m) == DEBUGVIEW_INDIRECT_DIFFUSE || \
+					 (m) == DEBUGVIEW_SPECULAR_HIT_DIST)
 
 #endif	/* HL_SHARED_H */

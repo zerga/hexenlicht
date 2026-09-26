@@ -7,13 +7,16 @@
  * (vk_images.c), the image Quake II RTX's post-processing ends in:
  * primary_rays.rgen writes the G-buffer (Quake II RTX's primary rays, in
  * its two checkerboard fields), direct_lighting.rgen lights it,
- * compositing.comp combines the lighting with the surfaces and
- * checkerboard_interleave.comp puts the fields into the screen layout;
- * then, for now, debug_view.comp shows the lit image or a G-buffer or
- * lighting channel, selected by r_debugview (the rest of epic E3's passes
- * come between them). GL_EndRendering then calls VK_DrawView3D, which copies the
- * image into the swapchain's 3D view rectangle (view_composite.frag,
- * Quake II RTX's final blit) before the 2D is drawn on top.
+ * indirect_lighting.rgen adds pt_num_bounce_rays bounces (0, 0.5 = half
+ * resolution, 1, 2), compositing.comp combines the lighting with the
+ * surfaces and checkerboard_interleave.comp puts the fields into the
+ * screen layout; for now debug_view.comp shows the lit image or a G-buffer
+ * or lighting channel, selected by r_debugview (the G-buffer's before the
+ * bounces: with two, the first stores its hit into the shading position;
+ * the rest of epic E3's passes come between them). GL_EndRendering then
+ * calls VK_DrawView3D, which copies the image into the swapchain's 3D
+ * view rectangle (view_composite.frag, Quake II RTX's final blit) before
+ * the 2D is drawn on top.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -42,13 +45,15 @@
  * cyan), 4 instances, 5 clusters (and the camera's PVS), 6 motion vectors,
  * 7 motion check, 8 geometric normals, 9 depth, 10
  * roughness/metallic/specular factor, 11 diffuse and 12 specular albedo, 13
- * effects, 14 blue noise, 15 direct diffuse and 16 direct specular
- * lighting, 17 light list lengths (shaders/hl_shared.h's DEBUGVIEW_*); 1
- * until the maps have lights (4.1) */
+ * effects, 14 blue noise, 15 direct diffuse and 16 specular lighting
+ * (direct and bounced), 17 light list lengths, 18 indirect diffuse
+ * lighting, 19 specular hit distances (shaders/hl_shared.h's
+ * DEBUGVIEW_*); 1 until the maps have lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
 static VkPipeline		direct_pipeline;	/* the same */
+static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
 static VkPipeline		interleave_pipeline;
 static VkPipeline		debug_pipeline;		/* the same */
@@ -150,10 +155,18 @@ static void CreateCompositePipeline (void)
 
 void VK_DestroyViewPipelines (void)
 {
+	int	i;
+
 	if (primary_pipeline)
 		vkDestroyPipeline (vk.device, primary_pipeline, NULL);
 	if (direct_pipeline)
 		vkDestroyPipeline (vk.device, direct_pipeline, NULL);
+	for (i = 0; i < 2; i++)
+	{
+		if (indirect_pipelines[i])
+			vkDestroyPipeline (vk.device, indirect_pipelines[i], NULL);
+		indirect_pipelines[i] = VK_NULL_HANDLE;
+	}
 	if (compositing_pipeline)
 		vkDestroyPipeline (vk.device, compositing_pipeline, NULL);
 	if (interleave_pipeline)
@@ -198,7 +211,8 @@ void VK_RenderView3D (void)
 	VkImage			output;
 	pt_push_constants_t	push;
 	uint32_t		width;
-	int			mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
+	float			num_bounces;
+	int			i, mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
 
 	view_drawn = false;
 	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
@@ -217,6 +231,11 @@ void VK_RenderView3D (void)
 		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
 	if (!direct_pipeline)
 		direct_pipeline = VK_CreateComputePipeline ("direct_lighting.rgen", VK_PathTracerLayout ());
+	for (i = 0; i < 2; i++)
+	{
+		if (!indirect_pipelines[i])
+			indirect_pipelines[i] = VK_CreateComputePipelineSpec ("indirect_lighting.rgen", VK_PathTracerLayout (), (uint32_t)i);
+	}
 	if (!compositing_pipeline)
 		compositing_pipeline = VK_CreateComputePipeline ("compositing.comp", VK_PathTracerLayout ());
 	if (!interleave_pipeline)
@@ -230,7 +249,7 @@ void VK_RenderView3D (void)
 	VK_ComputeBarrier (cmd);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
 			 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-	VK_ClearLightStats (cmd);	/* the buffer direct lighting counts into */
+	VK_ClearLightStats (cmd);	/* the buffer the lighting passes count into */
 	push.gpu_index = -1;
 	push.bounce = 0;
 	/* the G-buffer: each checkerboard field is half the width (Quake II
@@ -240,13 +259,32 @@ void VK_RenderView3D (void)
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
 	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, view_rect.extent.height, 2);
 	VK_ComputeBarrier (cmd);
+	/* the G-buffer's debug views before the bounces: with two, the first
+	 * stores its hit into the shading position for the second */
+	mode = q_min (mode, DEBUGVIEW_MAX);
+	if (!DEBUGVIEW_READS_LIGHTING (mode))
+	{
+		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
+		VK_ComputeBarrier (cmd);
+	}
+	/* the bounces (Quake II RTX's vkpt_pt_trace_lighting): 0.5 traces
+	 * every other row, alternating per frame, (h + 1) / 2 rows so an odd
+	 * height's last row gets them too (Quake II RTX: h / 2) */
+	num_bounces = VK_NumBounceRays ();
+	for (i = 0; i < (int)ceilf (num_bounces); i++)
+	{
+		VK_DispatchRays (cmd, indirect_pipelines[i], &push, width / 2,
+				 (num_bounces == 0.5f) ? (view_rect.extent.height + 1) / 2 : view_rect.extent.height, 2);
+		VK_ComputeBarrier (cmd);
+	}
 	/* the lighting times the surfaces, with the effects over them (no
 	 * denoiser until 3.6), then the fields interleaved into FLAT_COLOR */
 	VK_DispatchCompute (cmd, compositing_pipeline, width, view_rect.extent.height, 16);
 	VK_ComputeBarrier (cmd);
 	VK_DispatchCompute (cmd, interleave_pipeline, width, view_rect.extent.height, 16);
 	VK_ComputeBarrier (cmd);
-	VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
+	if (DEBUGVIEW_READS_LIGHTING (mode))
+		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
 	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 	view_drawn = true;

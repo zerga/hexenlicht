@@ -21,8 +21,9 @@
  * copies the lists when they have changed; the lights are written every
  * frame.
  * The light statistics (Quake II RTX's, after G. Ward's "Adaptive Shadow
- * Testing for Ray Tracing"): direct_lighting.rgen counts unshadowed and
- * shadowed rays per light list entry and primary direction of the
+ * Testing for Ray Tracing"): get_direct_illumination counts unshadowed and
+ * shadowed rays (of the primary surfaces and, as in Quake II RTX, of the
+ * first bounce's hits) per light list entry and primary direction of the
  * receiving normal, and the next frame's light CDF weighs each light by
  * its unshadowed share. Three device-local buffers take turns per 3D
  * frame (counted this frame, last frame's, the one before for the

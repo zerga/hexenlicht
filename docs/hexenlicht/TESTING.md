@@ -157,6 +157,21 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still
   get new random numbers, so averaging shots reduces the noise.
+  `tga_mean.ps1 -Dir <shots> -A (0..11) -B (12..23) -MaxY 470 [-OutDir d]`
+  compares two sets (means, 60-pixel blocks, noise) and writes the
+  averages for `tga2png.ps1`.
+- **Bounces (3.5a):** `pt_num_bounce_rays 0` must be pixel-identical to the
+  build before the bounces (3.5a: 3 maps × 8 modes identical to 3.4).
+  Bounce light is weak on Hexen II's dark textures (demo1's start and the
+  cathedral: +2–3 %; `r_debugview 18` shows it); `pt_num_bounce_rays 2`
+  adds nothing until emissive surfaces and the sky (the second bounce takes
+  no light samples); 0.5 averages to the same as 1. Reflections: paused,
+  looking down at demo1's floor (`cl_pitchspeed 100`, `+lookdown` 8
+  frames), `vk_testlight entities 4000`, then `pt_roughness_override 0.02`
+  with `pt_metallic_override 0` (mirror: the statue and tombstones
+  reflected in the floor), 0.15 (glossy, blurred); `r_debugview 16` shows
+  the specular alone, 19 the specular rays' hit distances. Reset the
+  overrides to −1 afterwards.
 - In a bash script generator, a helper that loops must use a `local`
   counter, or it overwrites the caller's (story 3.2 chained every
   regression script to the same one that way).

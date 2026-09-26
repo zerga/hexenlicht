@@ -62,6 +62,15 @@ VkDescriptorSet VK_UBOSet (void)
 	return ubo_sets[vk.frame_index];
 }
 
+/* pt_num_bounce_rays as Quake II RTX's evaluate_reference_mode takes it:
+ * 0.5 (half-resolution diffuse), else 0, 1 or 2 */
+float VK_NumBounceRays (void)
+{
+	float	n = cvar_pt_num_bounce_rays.value;
+
+	return (n == 0.5f) ? 0.5f : q_max (0.0f, q_min (2.0f, roundf (n)));
+}
+
 /* the camera and size become last frame's, as Quake II RTX's prepare_ubo keeps them */
 static void KeepAsPrevious (void)
 {
@@ -130,6 +139,11 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.flt_taa = AA_MODE_OFF;
 	/* no denoiser until 3.6: the lighting is composited as it is (compositing.comp) */
 	ubo.flt_enable = 0.0f;
+	/* the bounces vk_view.c dispatches (indirect_lighting.rgen); no MIS
+	 * with the specular bounce without specular rays */
+	ubo.pt_num_bounce_rays = VK_NumBounceRays ();
+	if (ubo.pt_num_bounce_rays < 1.0f)
+		ubo.pt_specular_mis = 0.0f;
 
 	/* Hexenlicht */
 	ubo.tlas = VK_TLASAddress ();

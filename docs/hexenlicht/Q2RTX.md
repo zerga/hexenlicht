@@ -81,7 +81,7 @@ this repository) or one at a time with
 | `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback 3.7; dynamic resolution 3.8 | E1, E2, 3.1, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
 | `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
-| `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1); the passes 3.2–3.5 | 2.6, 3.1, … |
+| `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1; specialization constants 3.5a); the passes 3.2–3.5b (`vk_view.c`: the bounces 3.5a) | 2.6, 3.1, … |
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
 | `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag`; underwater warp 6.6 | 1.6, 6.6 |
@@ -110,9 +110,10 @@ this repository) or one at a time with
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields; `path_tracer_rgen.h` (its lighting functions since 3.3, the gradient samples come with 3.6) | 3.2, 3.3 |
-| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
+| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
 | `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the gradient light-count history (3.6) and sky lights (4.6) | 3.3, 3.4 |
-| `indirect_lighting.rgen`, `reflect_refract.rgen` | bounces, reflections, refraction | 3.5 |
+| `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
+| `reflect_refract.rgen` | reflections and refraction of mirrors, glass, water, translucent surfaces | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom | 3.7 |
 | `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
@@ -126,13 +127,33 @@ this repository) or one at a time with
 
 ## Open questions for later stories
 
-- **Water normal map (3.5, 6.5).** Q2RTX's water waves (`get_water_normal`)
+- **Water normal map (3.5b, 6.5).** Q2RTX's water waves (`get_water_normal`)
   sample `textures/water_n.tga` from its media package; we need our own
   (generated or CC0). Until then the water keeps its geometric normal.
-- **Specular hit distance (3.5).** DLSS Ray Reconstruction wants the
-  specular hit distance (or specular motion vectors) of the reflection
-  bounce; Q2RTX's reflection pass doesn't store it. The other RR inputs come
-  from the G-buffer (RENDERER.md, 3D view).
+- **Specular hit distance (3.9).** DLSS Ray Reconstruction wants the
+  specular hit distance (or specular motion vectors). Since 3.5a the first
+  bounce stores it where it traced a specular ray (`PT_SPECULAR_HIT_DIST`,
+  0 elsewhere: half the pixels of rough surfaces, and the rows half
+  resolution skips). On surfaces rougher than `pt_fake_roughness_threshold`
+  (all of Hexen II's until E5) and at half resolution (roughness 1, metal
+  0) the stored ray is one that contributes nothing, whose distance RR may
+  not want. The 3.9 spike finds out whether RR needs a value in every
+  pixel, and whether 3.5b's mirror and glass paths need theirs (Q2RTX's
+  reflection pass doesn't store it).
+- **Smooth surfaces and sphere lights (E5, 4.5).** Sphere lights are not
+  geometry, so no ray hits them. Surfaces smoother than
+  `pt_direct_roughness_threshold` (0.18) get their specular only from the
+  specular bounce and show no highlight of a sphere (Q2RTX's dynamic lights
+  alike); with `pt_roughness_override 0.02` demo1's start is 35 % darker
+  (the rough surfaces' direct specular is as strong as their diffuse there).
+  Options when E5 brings smooth materials: direct specular for spheres at
+  every roughness (no double counting, since bounces can't hit them, but
+  noisy for mirrors), or visible emitters (4.5's emissive flames).
+- **Dark albedo (E4, E5).** Hexen II's textures are dark in linear light:
+  the cathedral's mean diffuse albedo is 0.04 (sRGB ~55), so one bounce adds
+  2–3 % to the lit image, where lighter PBR textures would get tens of
+  percent. The calibration (4.9) or the materials (E5) decide whether that
+  stays.
 - **Checkerboard fields and RR (3.9).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.

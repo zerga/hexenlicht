@@ -73,7 +73,7 @@ story settles something a later session must not undo; mark a line
 | R12 | The sky is an empty surface in the G-buffer, black until the sky (4.6) | 3.2 |
 | R13 | Liquids warp per pixel with Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's turbulence (AMP 8, SPEED 20, CYCLE 128, game time); GL's per-vertex warp of subdivided polygons is not reproduced | 3.2 |
 | R14 | A model's `colorshade` tint: its hue, scaled to at most 1, multiplies the base color (`get_material`); what GL's tints above 1 brighten is left to the lighting (E4) | 3.2 |
-| R15 | No images only for DLSS Ray Reconstruction: its inputs come from the G-buffer (RENDERER.md, 3D view); the specular hit distance comes with the reflections (3.5) | 3.2 |
+| R15 | No images only for DLSS Ray Reconstruction: its inputs come from the G-buffer (RENDERER.md, 3D view); the specular hit distance comes with the reflections (3.5); *the one exception: R28* | 3.2 |
 | R16 | Q2RTX's real-time settings for primary rays: no depth of field (`pt_aperture` 0; Q2RTX only uses it when accumulating), no jitter until TAA (3.8) | 3.2 |
 | R17 | Direct lighting is Q2RTX's, with its two kinds of lights: polygon lights in the light buffer, sampled from the receiving cluster's light list, and up to 32 sphere lights in the UBO, picked uniformly; one light sample and shadow ray per pixel; Q2RTX's units (a sphere's color is π × its radiance, a polygon's its radiance; inverse square) until 4.9 calibrates them; *partly superseded by R21 (spheres in the lists)* | 3.3 (#33) |
 | R18 | Until E4 the lights are test lights (`vk_testlight`: spheres and quads at the eye, cleared on map change); every cluster's list holds every polygon light until 3.4 culls by the PVS; *the lists: superseded by R22* | 3.3 |
@@ -84,11 +84,17 @@ story settles something a later session must not undo; mark a line
 | R23 | A sphere may have a range, where `saturate(1 - (d / range)^4)^2` takes its inverse-square light to 0 so culling by it never shows; 0 = unlimited. The test entity lights use the entity's `light` value (utils/light's hard range); 4.9 picks the curve and the range scale | 3.4 |
 | R24 | Q2RTX's light statistics are counted per list entry (12 uints), not per cluster × light (~50 MB per buffer on the largest maps); three buffers take turns per 3D frame, cleared when the lists change; dynamic lights injected into the lists later (4.4) must not move the entries | 3.4 |
 | R25 | Screenshot comparisons of the noisy lit image average in linear light: averaging sRGB values makes a noisier image look darker (3.4's first culling check reported a false 27 %) | 3.4 |
+| R26 | Bounces are Q2RTX's `indirect_lighting.rgen`, `pt_num_bounce_rays` 1 by default (0, 0.5, 1, 2); its second bounce gathers only emission and the sky, no light samples, and stays so (it adds nothing until 4.5/4.6) | 3.5a (#35) |
+| R27 | The weapon is only in its own surfaces' bounce rays (as R20 for shadows); a model hit by a bounce ray has its `colorshade` hue (as R14) | 3.5a |
+| R28 | The first bounce stores the specular ray's hit distance for DLSS Ray Reconstruction (`PT_SPECULAR_HIT_DIST`, r16f, 0 without a specular ray: a diffuse bounce, no surface, lava, the rows half resolution skips); 3.9 decides whether RR needs more | 3.5a |
+| R29 | `debug_view.comp` runs before the bounces for the G-buffer's modes (with two bounces the first stores its hit into the shading position), after compositing for the lighting's | 3.5a |
+| R30 | 3.5 is split: 3.5a bounces, 3.5b the reflection and refraction pass (#121) with the water decision (GL draws water opaque; lean: GL's until 6.5) | 3.5 proposal |
 
 ## Open questions carried forward
 
 See [Q2RTX.md](Q2RTX.md#open-questions-for-later-stories): water normal map
-(3.5, 6.5), specular hit distance (3.5), checkerboard fields and RR (3.9),
+(3.5b, 6.5), specular hit distance (3.9), checkerboard fields and RR (3.9),
 model tint brightness (E4), instance history for A-SVGF (3.6), effects
 brightness (3.7), lights inside solid (4.1), dynamic lights in the light
-lists (4.4).
+lists (4.4), smooth surfaces and sphere lights (E5, 4.5), dark albedo (E4,
+E5).
