@@ -1,27 +1,29 @@
 /* vk_view.c -- the 3D view: ray-traced passes into the render targets,
  * then a composite into the swapchain under the 2D
  *
- * R_RenderView calls VK_RenderView3D after the TLAS is built: it fills
- * this frame's global UBO (vk_ubo.c) for the 3D view's size in pixels and
- * dispatches the view passes, which end in the TAA_OUTPUT render target
- * (vk_images.c), the image Quake II RTX's post-processing ends in:
- * primary_rays.rgen writes the G-buffer (Quake II RTX's primary rays, in
- * its two checkerboard fields), reflect_refract.rgen follows the paths
- * through translucent surfaces and off mirrors and glass pt_reflect_refract
- * times (the G-buffer then holds what is seen through or in them),
- * direct_lighting.rgen lights it (after the denoiser's gradient samples
- * are placed, vk_asvgf.c), indirect_lighting.rgen adds pt_num_bounce_rays
- * bounces (0, 0.5 = half resolution, 1, 2), the denoiser (flt_enable 1)
- * or compositing.comp combines the lighting with the surfaces and
- * checkerboard_interleave.comp puts the fields into the screen layout;
- * for now debug_view.comp copies the lit image into TAA_OUTPUT (until TAA,
- * 3.8) or shows a G-buffer or lighting channel, selected by r_debugview
- * (the G-buffer's before the bounces: with two, the first stores its hit
- * into the shading position); the lit image then gets the bloom
- * (vk_bloom.c) and the tone mapping (vk_tonemap.c). GL_EndRendering then
- * calls VK_DrawView3D, which copies the image into the swapchain's 3D
- * view rectangle (view_composite.frag, Quake II RTX's final blit) before
- * the 2D is drawn on top.
+ * R_RenderView calls VK_RenderView3D after the TLAS is built: vk_upscale.c
+ * decides the frame's render size (the 3D view's size in pixels times
+ * r_scale), jitter and upscaling, it fills this frame's global UBO
+ * (vk_ubo.c) and dispatches the view passes at the render size, which end
+ * in the TAA_OUTPUT render target (vk_images.c), the image Quake II RTX's
+ * post-processing ends in: primary_rays.rgen writes the G-buffer (Quake II
+ * RTX's primary rays, in its two checkerboard fields), reflect_refract.rgen
+ * follows the paths through translucent surfaces and off mirrors and glass
+ * pt_reflect_refract times (the G-buffer then holds what is seen through
+ * or in them), direct_lighting.rgen lights it (after the denoiser's
+ * gradient samples are placed, vk_asvgf.c), indirect_lighting.rgen adds
+ * pt_num_bounce_rays bounces (0, 0.5 = half resolution, 1, 2), the
+ * denoiser (flt_enable 1) or compositing.comp combines the lighting with
+ * the surfaces and checkerboard_interleave.comp puts the fields into the
+ * screen layout; the TAA pass (vk_upscale.c) takes the lit image into
+ * TAA_OUTPUT (TAA, or TAAU up to the view's size), which the bloom
+ * (vk_bloom.c) and the tone mapping (vk_tonemap.c) follow, then FSR if
+ * chosen; or debug_view.comp shows a G-buffer or lighting channel,
+ * selected by r_debugview (the G-buffer's before the bounces: with two,
+ * the first stores its hit into the shading position). GL_EndRendering
+ * then calls VK_DrawView3D, which scales the image into the swapchain's
+ * 3D view rectangle (view_composite.frag, Quake II RTX's final blit)
+ * before the 2D is drawn on top.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -63,12 +65,27 @@ static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
 static VkPipeline		interleave_pipeline;
 static VkPipeline		debug_pipeline;		/* the same */
-static VkPipelineLayout		composite_layout;	/* the pass sets, gamma */
+static VkPipelineLayout		composite_layout;	/* the pass sets, composite_push_t */
 static VkPipeline		composite_pipeline;
 static VkFormat			composite_format;
 
+/* view_composite.frag's push constants */
+typedef struct
+{
+	float	uv_to_texel[2];	/* 0..1 over the view to the input's texel coordinates */
+	int	input_size[2];	/* the input's texels shown over the view */
+	float	gamma;		/* the "gamma" cvar */
+	float	scale;		/* 1 / STORAGE_SCALE_HDR for the lit image without tone mapping, else 1 */
+	int	filter_lanczos;	/* else nearest */
+	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
+} composite_push_t;
+
 static qboolean			view_drawn;		/* this frame has a 3D view to composite */
 static VkRect2D			view_rect;		/* in the swapchain */
+static float			view_scale;		/* composite_push_t's scale for this frame */
+
+/* the images the composite may show (vk_upscale.c's display_source) */
+static const int		display_images[3] = { VKPT_IMG_TAA_OUTPUT, VKPT_IMG_FSR_EASU_OUTPUT, VKPT_IMG_FSR_RCAS_OUTPUT };
 
 
 /* ==========================================================================
@@ -228,9 +245,8 @@ static float FrameTime (void)
 	return (t > 0.0f) ? t : wall;
 }
 
-/* whether the 3D view can be drawn this frame, into view_rect, rendered
- * *width pixels wide */
-static qboolean ViewReady (uint32_t *width)
+/* whether the 3D view can be drawn this frame, into view_rect */
+static qboolean ViewReady (void)
 {
 	if (!vk.frame_active || !r_scene.worldmodel || !VK_TLASBuiltThisFrame ())
 		return false;
@@ -238,22 +254,22 @@ static qboolean ViewReady (uint32_t *width)
 		return false;
 	/* the render targets have the swapchain's size (the width rounded up
 	 * to even, as the view's for rendering), the view fits in them */
-	*width = (view_rect.extent.width + 1) & ~1u;
-	return *width <= vk_image_extent.width && view_rect.extent.height <= vk_image_extent.height;
+	return ((view_rect.extent.width + 1) & ~1u) <= vk_image_extent.width &&
+	       view_rect.extent.height <= vk_image_extent.height;
 }
 
 void VK_RenderView3D (void)
 {
 	VkCommandBuffer		cmd;
-	VkImage			output;
+	const vk_upscale_t	*up;
 	pt_push_constants_t	push;
-	uint32_t		width;
+	uint32_t		width, height;
 	float			num_bounces;
-	int			num_reflect, i, mode = q_max (r_debugview.integer, DEBUGVIEW_LIT);
+	int			num_reflect, i, mode = q_min (q_max (r_debugview.integer, DEBUGVIEW_LIT), DEBUGVIEW_MAX);
 	qboolean		denoise = VK_DenoiserEnabled ();
 
 	view_drawn = false;
-	if (!ViewReady (&width))
+	if (!ViewReady ())
 	{
 		/* the images fall behind the entities' history (vk_instance.c),
 		 * which the denoiser's history must keep in step with */
@@ -261,7 +277,13 @@ void VK_RenderView3D (void)
 		return;
 	}
 
-	VK_PrepareUBO (view_rect.extent.width, view_rect.extent.height, q_min (mode, DEBUGVIEW_MAX));
+	/* the render size, jitter and upscaling (vk_upscale.c; whether there
+	 * is history, after the denoiser's cvars are checked), then the UBO */
+	VK_CheckDenoiserCvars ();
+	up = VK_UpscaleEvaluate (view_rect.extent.width, view_rect.extent.height, mode);
+	width = up->render.width;
+	height = up->render.height;
+	VK_PrepareUBO (up, mode);
 
 	if (!primary_pipeline)
 		primary_pipeline = VK_CreateComputePipeline ("primary_rays.rgen", VK_PathTracerLayout ());
@@ -285,17 +307,19 @@ void VK_RenderView3D (void)
 		debug_pipeline = VK_CreateComputePipeline ("debug_view.comp", VK_PathTracerLayout ());
 
 	cmd = vk.frames[vk.frame_index].cmd;
-	output = VK_Image (VKPT_IMG_TAA_OUTPUT);
-	/* the last frame's passes have read the images, its composite TAA_OUTPUT */
+	/* the last frame's passes have read the images, its composite
+	 * TAA_OUTPUT or FSR's output */
 	VK_ComputeBarrier (cmd);
-	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-			 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	for (i = 0; i < (int)Q_COUNTOF(display_images); i++)
+		VK_RenderTargetBarrier (cmd, VK_Image (display_images[i]), VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+					VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 	VK_ClearLightStats (cmd);	/* the buffer the lighting passes count into */
 	push.gpu_index = -1;
 	push.bounce = 0;
 	/* the G-buffer: each checkerboard field is half the width (Quake II
 	 * RTX's vkpt_pt_trace_primary_rays) */
-	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, view_rect.extent.height, 2);
+	VK_DispatchRays (cmd, primary_pipeline, &push, width / 2, height, 2);
 	VK_ComputeBarrier (cmd);
 	/* reflections and refractions (Quake II RTX's vkpt_pt_trace_reflections):
 	 * pt_reflect_refract passes, each following the path one surface
@@ -304,23 +328,23 @@ void VK_RenderView3D (void)
 	for (i = 0; i < num_reflect; i++)
 	{
 		push.bounce = i;
-		VK_DispatchRays (cmd, reflect_pipelines[i ? 1 : 0], &push, width / 2, view_rect.extent.height, 2);
+		VK_DispatchRays (cmd, reflect_pipelines[i ? 1 : 0], &push, width / 2, height, 2);
 		VK_ComputeBarrier (cmd);
 	}
 	push.bounce = 0;
 	/* the denoiser's gradient samples: surfaces seen last frame, which the
 	 * lighting passes shade as last frame did (vk_asvgf.c) */
 	if (denoise)
-		VK_GradientReproject (cmd, width, view_rect.extent.height);
+		VK_GradientReproject (cmd, width, height);
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
-	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, view_rect.extent.height, 2);
+	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, height, 2);
 	VK_ComputeBarrier (cmd);
 	/* the G-buffer's debug views before the bounces: with two, the first
-	 * stores its hit into the shading position for the second */
-	mode = q_min (mode, DEBUGVIEW_MAX);
+	 * stores its hit into the shading position for the second; at the
+	 * render size, which the composite scales */
 	if (!DEBUGVIEW_READS_LIGHTING (mode))
 	{
-		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
+		VK_DispatchRays (cmd, debug_pipeline, &push, width, height, 1);
 		VK_ComputeBarrier (cmd);
 	}
 	/* the bounces (Quake II RTX's vkpt_pt_trace_lighting): 0.5 traces
@@ -329,8 +353,7 @@ void VK_RenderView3D (void)
 	num_bounces = VK_NumBounceRays ();
 	for (i = 0; i < (int)ceilf (num_bounces); i++)
 	{
-		VK_DispatchRays (cmd, indirect_pipelines[i], &push, width / 2,
-				 (num_bounces == 0.5f) ? (view_rect.extent.height + 1) / 2 : view_rect.extent.height, 2);
+		VK_DispatchRays (cmd, indirect_pipelines[i], &push, width / 2, (num_bounces == 0.5f) ? (height + 1) / 2 : height, 2);
 		VK_ComputeBarrier (cmd);
 	}
 	/* the lighting times the surfaces, with the effects over them, into
@@ -340,43 +363,70 @@ void VK_RenderView3D (void)
 	 * denoised */
 	if (denoise)
 	{
-		VK_DenoiseLighting (cmd, width, view_rect.extent.height, num_bounces >= 0.5f);
+		VK_DenoiseLighting (cmd, width, height, num_bounces >= 0.5f);
 	}
 	else
 	{
-		VK_DispatchCompute (cmd, compositing_pipeline, width, view_rect.extent.height, 16);
+		VK_DispatchCompute (cmd, compositing_pipeline, width, height, 16);
 		VK_ComputeBarrier (cmd);
 	}
-	VK_DispatchCompute (cmd, interleave_pipeline, width, view_rect.extent.height, 16);
+	VK_DispatchCompute (cmd, interleave_pipeline, width, height, 16);
 	VK_ComputeBarrier (cmd);
-	if (DEBUGVIEW_READS_LIGHTING (mode))
-		VK_DispatchRays (cmd, debug_pipeline, &push, view_rect.extent.width, view_rect.extent.height, 1);
-	/* the lit image in TAA_OUTPUT: bloom, then tone mapping and exposure
-	 * (Quake II RTX's order after its TAA); the debug views stay as they are */
-	if (mode == DEBUGVIEW_LIT && (VK_BloomEnabled () || VK_ToneMappingEnabled ()))
+	if (mode == DEBUGVIEW_LIT)
 	{
-		VK_ComputeBarrier (cmd);
+		/* the lit image into TAA_OUTPUT (TAA, TAAU; a copy without the
+		 * denoiser or history), in Quake II RTX's storage scale; then bloom,
+		 * tone mapping and exposure on the TAA output, and FSR (Quake II
+		 * RTX's order) */
+		const uint32_t	w = up->taa_output.width, h = up->taa_output.height;
+
+		VK_UpscaleHDR (cmd);
 		if (VK_BloomEnabled ())
-			VK_Bloom (cmd, view_rect.extent.width, view_rect.extent.height);
+			VK_Bloom (cmd, w, h);
 		if (VK_ToneMappingEnabled ())
-			VK_ToneMap (cmd, view_rect.extent.width, view_rect.extent.height, FrameTime ());
+			VK_ToneMap (cmd, w, h, FrameTime ());
+		VK_UpscaleDisplay (cmd);
 	}
-	VK_RenderTargetBarrier (cmd, output, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-			 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	else if (DEBUGVIEW_READS_LIGHTING (mode))
+	{
+		VK_DispatchRays (cmd, debug_pipeline, &push, width, height, 1);	/* the debug views stay as they are */
+	}
+	/* the composite shows one of them, but its shader has all three */
+	for (i = 0; i < (int)Q_COUNTOF(display_images); i++)
+		VK_RenderTargetBarrier (cmd, VK_Image (display_images[i]), VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+					VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	/* the lit image without tone mapping is still scaled by
+	 * STORAGE_SCALE_HDR (asvgf_atrous.comp, compositing.comp) */
+	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
 	VK_EndDenoiserFrame (denoise);
+	VK_EndUpscaleFrame ();
 	view_drawn = true;
 }
 
 /* in GL_EndRendering, with the swapchain rendering begun, before the 2D */
 void VK_DrawView3D (void)
 {
-	VkCommandBuffer	cmd = vk.frames[vk.frame_index].cmd;
-	VkViewport	viewport;
-	float		gamma = v_gamma.value;
+	VkCommandBuffer		cmd = vk.frames[vk.frame_index].cmd;
+	const vk_upscale_t	*up = VK_Upscale ();
+	VkViewport		viewport;
+	composite_push_t	push;
 
 	if (!view_drawn)
 		return;
 	view_drawn = false;
+
+	/* the upscaler's output covers the view (its width rounded up to
+	 * even: an odd view drops the last column), shown as Quake II RTX's
+	 * final blit shows it */
+	push.uv_to_texel[0] = (float)up->view.width * (float)up->display_size.width / (float)up->unscaled.width;
+	push.uv_to_texel[1] = (float)up->view.height * (float)up->display_size.height / (float)up->unscaled.height;
+	push.input_size[0] = (int)up->display_size.width;
+	push.input_size[1] = (int)up->display_size.height;
+	push.gamma = v_gamma.value;
+	push.scale = view_scale;
+	push.filter_lanczos = up->display_lanczos ? 1 : 0;
+	push.source = up->display_source;
 
 	if (composite_pipeline && composite_format != vk.surface_format.format)
 	{
@@ -397,7 +447,7 @@ void VK_DrawView3D (void)
 	vkCmdSetScissor (cmd, 0, 1, &view_rect);
 	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, composite_pipeline);
 	VK_BindPassSets (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, composite_layout);
-	vkCmdPushConstants (cmd, composite_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(gamma), &gamma);
+	vkCmdPushConstants (cmd, composite_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
 	vkCmdDraw (cmd, 3, 1, 0, 0);
 
 	/* back to the whole swapchain for the 2D */
@@ -418,7 +468,7 @@ void VK_DrawView3D (void)
 void VK_InitView (void)
 {
 	Cvar_RegisterVariable (&r_debugview);
-	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float));
+	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(composite_push_t));
 }
 
 void VK_ShutdownView (void)

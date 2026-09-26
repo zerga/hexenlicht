@@ -70,13 +70,15 @@ VkPipelineLayout VK_PathTracerLayout (void)
 	return pt_layout;
 }
 
-static VkPipeline CreateComputePipeline (const char *shader, VkPipelineLayout layout, const uint32_t *constant0)
+/* with specialization constants 0 to count - 1 (constant_id) set to values */
+static VkPipeline CreateComputePipeline (const char *shader, VkPipelineLayout layout, const uint32_t *values, int count)
 {
 	VkComputePipelineCreateInfo	info;
-	VkSpecializationMapEntry	entry;
+	VkSpecializationMapEntry	entries[4];
 	VkSpecializationInfo		spec;
 	VkShaderModule			module = VK_LoadShader (shader);
 	VkPipeline			pipeline;
+	int				i;
 
 	memset (&info, 0, sizeof(info));
 	info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -85,15 +87,19 @@ static VkPipeline CreateComputePipeline (const char *shader, VkPipelineLayout la
 	info.stage.module = module;
 	info.stage.pName = "main";
 	info.layout = layout;
-	if (constant0)
+	if (count > 0)
 	{
-		entry.constantID = 0;
-		entry.offset = 0;
-		entry.size = sizeof(uint32_t);
-		spec.mapEntryCount = 1;
-		spec.pMapEntries = &entry;
-		spec.dataSize = sizeof(uint32_t);
-		spec.pData = constant0;
+		count = q_min (count, (int)Q_COUNTOF(entries));
+		for (i = 0; i < count; i++)
+		{
+			entries[i].constantID = (uint32_t)i;
+			entries[i].offset = (uint32_t)(i * sizeof(uint32_t));
+			entries[i].size = sizeof(uint32_t);
+		}
+		spec.mapEntryCount = (uint32_t)count;
+		spec.pMapEntries = entries;
+		spec.dataSize = count * sizeof(uint32_t);
+		spec.pData = values;
 		info.stage.pSpecializationInfo = &spec;
 	}
 	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &info, NULL, &pipeline));
@@ -103,14 +109,20 @@ static VkPipeline CreateComputePipeline (const char *shader, VkPipelineLayout la
 
 VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout)
 {
-	return CreateComputePipeline (shader, layout, NULL);
+	return CreateComputePipeline (shader, layout, NULL, 0);
 }
 
 /* with the shader's specialization constant 0 (constant_id = 0) set to value,
  * as Quake II RTX's pipelines that share a shader */
 VkPipeline VK_CreateComputePipelineSpec (const char *shader, VkPipelineLayout layout, uint32_t value)
 {
-	return CreateComputePipeline (shader, layout, &value);
+	return CreateComputePipeline (shader, layout, &value, 1);
+}
+
+/* with its specialization constants 0 to count - 1 (at most 4) set to values */
+VkPipeline VK_CreateComputePipelineSpecs (const char *shader, VkPipelineLayout layout, const uint32_t *values, int count)
+{
+	return CreateComputePipeline (shader, layout, values, count);
 }
 
 /* the frame's UBO, images and textures */

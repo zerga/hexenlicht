@@ -31,8 +31,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    from 0 (environment and sky textures come with their passes too);
  *  - the blue noise (vk_images.c) is the set's last binding: 64 x 64
  *    texels, 256 layers (constants.h);
- *  - TAA_OUTPUT and the bloom images are sampled with a linear sampler, the
- *    others with a nearest one (vk_images.c), as in Quake II RTX;
+ *  - TAA_OUTPUT, the TAA history (ASVGF_TAA_A/B) and the bloom images are
+ *    sampled with a linear sampler, the others with a nearest one
+ *    (vk_images.c), as in Quake II RTX;
+ *  - HQ_COLOR_INTERLEAVED, the accumulator of Quake II RTX's reference mode
+ *    (asvgf_taau.comp, temporal_blend_factor > 0, never set here), is 1 x 1;
  *  - PT_SPECULAR_HIT_DIST is Hexenlicht's: the specular bounce's hit
  *    distance, for DLSS Ray Reconstruction (indirect_lighting.rgen);
  *  - PT_VIEW_DEPTH is declared r16f, its format (Quake II RTX declares
@@ -97,8 +100,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(ASVGF_GRAD_HF_SPEC_PONG,   31, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(BLOOM_HBLUR,               32, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
 	IMG_DO(BLOOM_VBLUR,               33, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
+	IMG_DO(FSR_EASU_OUTPUT,           34, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(FSR_RCAS_OUTPUT,           35, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
+	IMG_DO(HQ_COLOR_INTERLEAVED,      36, R32G32B32A32_SFLOAT, rgba32f, 1,                   1              ) \
 
-#define NUM_IMAGES_BASE     34
+#define NUM_IMAGES_BASE     37
 
 /* images that exist twice: the _A names are this frame's, the _B names the
  * last frame's (vk_images.c's even and odd descriptor sets swap them) */
@@ -131,6 +137,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(ASVGF_HIST_COLOR_LF_COCG_B,NUM_IMAGES_BASE + 25, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(ASVGF_GRAD_SMPL_POS_A,     NUM_IMAGES_BASE + 26, R32_UINT,            r32ui,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(ASVGF_GRAD_SMPL_POS_B,     NUM_IMAGES_BASE + 27, R32_UINT,            r32ui,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
+	IMG_DO(ASVGF_TAA_A,               NUM_IMAGES_BASE + 28, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA,       IMG_HEIGHT_TAA ) \
+	IMG_DO(ASVGF_TAA_B,               NUM_IMAGES_BASE + 29, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA,       IMG_HEIGHT_TAA ) \
 
 #define LIST_IMAGES_B_A \
 	IMG_DO(PT_VISBUF_PRIM_B,          NUM_IMAGES_BASE + 0,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
@@ -161,8 +169,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(ASVGF_HIST_COLOR_LF_COCG_A,NUM_IMAGES_BASE + 25, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(ASVGF_GRAD_SMPL_POS_B,     NUM_IMAGES_BASE + 26, R32_UINT,            r32ui,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(ASVGF_GRAD_SMPL_POS_A,     NUM_IMAGES_BASE + 27, R32_UINT,            r32ui,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
+	IMG_DO(ASVGF_TAA_B,               NUM_IMAGES_BASE + 28, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA,       IMG_HEIGHT_TAA ) \
+	IMG_DO(ASVGF_TAA_A,               NUM_IMAGES_BASE + 29, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA,       IMG_HEIGHT_TAA ) \
 
-#define NUM_IMAGES (NUM_IMAGES_BASE + 28) /* this really sucks but I don't know how to fix it
+#define NUM_IMAGES (NUM_IMAGES_BASE + 30) /* this really sucks but I don't know how to fix it
                                              counting with enum does not work in GLSL */
 
 // todo: make naming consistent!

@@ -200,12 +200,15 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/asvgf_temporal.comp
 	${HEXENLICHT_SHADER_DIR}/asvgf_lf.comp
 	${HEXENLICHT_SHADER_DIR}/asvgf_atrous.comp
+	${HEXENLICHT_SHADER_DIR}/asvgf_taau.comp
 	${HEXENLICHT_SHADER_DIR}/bloom_downscale.comp
 	${HEXENLICHT_SHADER_DIR}/bloom_blur.comp
 	${HEXENLICHT_SHADER_DIR}/bloom_composite.comp
 	${HEXENLICHT_SHADER_DIR}/tone_mapping_histogram.comp
 	${HEXENLICHT_SHADER_DIR}/tone_mapping_curve.comp
 	${HEXENLICHT_SHADER_DIR}/tone_mapping_apply.comp
+	${HEXENLICHT_SHADER_DIR}/fsr_easu_fp32.comp
+	${HEXENLICHT_SHADER_DIR}/fsr_rcas_fp32.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
@@ -259,13 +262,14 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_asvgf.c
 	${HEXENLICHT_DIR}/vk_bloom.c
 	${HEXENLICHT_DIR}/vk_tonemap.c
+	${HEXENLICHT_DIR}/vk_upscale.c
 	${HEXENLICHT_DIR}/vk_view.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
-target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR})
+target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1)
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
 add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise)	# building the exe also builds its shaders and data

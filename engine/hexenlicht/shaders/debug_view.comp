@@ -1,7 +1,6 @@
-/* debug_view.comp -- the r_debugview pass: writes IMG_TAA_OUTPUT, the
- * image the composite shows: the lit image (mode 0: the interleaved
- * FLAT_COLOR, which the bloom and tone mapping then take, until TAA, 3.8),
- * or the G-buffer that
+/* debug_view.comp -- the r_debugview pass (modes 1 and up; the lit image,
+ * mode 0, is the TAA pass's, vk_upscale.c): writes IMG_TAA_OUTPUT at the
+ * render size, which the composite scales to the view: the G-buffer that
  * primary_rays.rgen wrote this frame (base color with the effects over it,
  * normals, material kinds, instances, vis clusters, motion vectors, depth,
  * roughness and metallic, the albedos DLSS Ray Reconstruction would get,
@@ -238,16 +237,6 @@ main()
 	case DEBUGVIEW_BLUE_NOISE:
 		rng_seed = texelFetch(TEX_ASVGF_RNG_SEED_A, ipos, 0).r;
 		color = vec3(get_rng(0));
-		break;
-	case DEBUGVIEW_LIT:
-		/* the interleaved lit image (checkerboard_interleave.comp), denoised
-		 * with flt_enable 1, stored scaled by STORAGE_SCALE_HDR: kept so for
-		 * the tone mapping (tone_mapping_apply.comp takes the scale out, as
-		 * after Quake II RTX's TAA), which the bloom precedes; unscaled
-		 * without it (tm_enable 0: the composite clamps) */
-		color = texelFetch(TEX_FLAT_COLOR, px, 0).rgb;
-		if (global_ubo.tm_enable == 0)
-			color /= STORAGE_SCALE_HDR;
 		break;
 	case DEBUGVIEW_DIRECT_DIFFUSE:	/* without the albedo, as the denoiser gets it */
 		color = unpackRGBE(texelFetch(TEX_PT_COLOR_HF, ipos, 0).r) / STORAGE_SCALE_HF;

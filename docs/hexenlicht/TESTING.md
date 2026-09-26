@@ -230,6 +230,31 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   the value tried, over the effect pixels below the console rows: their
   mean luminance should match. `tm_debug 1/2`, `bloom_debug 1-3` show the
   stages.
+- **Upscaling (3.8):** at `r_scale 100` with `flt_enable 0` (the TAA pass
+  only copies) the lit image must match the build before within ±1 (the
+  TAA's PQ encoding rounds in fp16), apart from bloom halos around the
+  test lights' hot spots, which the PQ clamp dims (romeric2: up to 7;
+  gone with `tm_enable 0 bloom_enable 0`); the G-buffer views identical,
+  modes 4, 5, 9 with `flt_enable 1` too (the debug views get no jitter).
+  `vk_upscale` prints the sizes, jitter and passes: check every
+  `r_upscaler` at 100, 67 and 50 %. Still image: paused, 8 shots per
+  setting into `tga_mean.ps1` (temporal noise; wait ~400 frames after
+  changing the lights, the exposure adapts meanwhile). Motion: `+right`
+  (`cl_yawspeed 100`), shots mid-turn and 2 and 30 frames after `-right`;
+  village3's sheep. Robustness: `resize_test.ps1` with `r_upscaler 2`,
+  `r_scale 67`; `vid_restart`, `viewsize`, `r_scale`/`r_upscaler` changes
+  while turning, an odd view width (`-Width 1283` at UI scale 3: 1281).
+- **GPU cost:** until 3.11's timers, temporary timestamps
+  (`vkCmdWriteTimestamp2` between the passes, read back when the frame's
+  slot comes round, averaged over 100 frames by a console command; not
+  committed). Measure the baseline build the same way on the same day:
+  the GPU's clocks follow its load and power limit (3.8 found the machine
+  at a ~100 W cap, the 100 % view at 0.8 GHz; watch with `nvidia-smi
+  --query-gpu=clocks.gr,power.draw,clocks_throttle_reasons.active
+  --format=csv -lms 250`). uHexen2 caps frames at 72 fps outside timedemo,
+  so a light setting runs partly idle at other clocks: lift the cap
+  temporarily (`host.c`'s `1.0/72.0` check) so every setting runs at full
+  load.
 - **`screenshot` captures the next frame:** a command in the same frame
   after it (e.g. `vk_testlight` changing the lights) is already in the
   shot; put waits after every `screenshot`.

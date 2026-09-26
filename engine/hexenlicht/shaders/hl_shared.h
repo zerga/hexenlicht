@@ -165,7 +165,7 @@ END_SHADER_STRUCT( EffectsCheckPush )
  * global UBO's debug_view: the lit image (0) or G-buffer and lighting channels
  * ========================================================================== */
 
-#define DEBUGVIEW_LIT			0	/* the path tracer's image (compositing, interleave) */
+#define DEBUGVIEW_LIT			0	/* the path tracer's image (the TAA pass's, vk_upscale.c; not debug_view.comp's) */
 #define DEBUGVIEW_ALBEDO		1	/* base color, the effects over it */
 #define DEBUGVIEW_NORMALS		2	/* shading normal */
 #define DEBUGVIEW_MATERIAL		3	/* material kinds */
@@ -188,7 +188,8 @@ END_SHADER_STRUCT( EffectsCheckPush )
 #define DEBUGVIEW_HISTORY		20	/* the denoiser's history length (ASVGF_HIST_MOMENTS_HF) */
 #define DEBUGVIEW_MAX			20
 
-/* the modes that read the lighting: debug_view.comp runs after the indirect
+/* the modes that read the lighting: debug_view.comp (the TAA pass for the
+ * lit image) runs after the indirect
  * passes (and the denoiser) for them, before for the others (vk_view.c:
  * with two bounces, the first stores its hit into the G-buffer's shading
  * position for the second) */

@@ -15,6 +15,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
+[Upscaling](#upscaling-vk_upscalec) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Other](#other) · [Console commands](#console-commands)
 
 ## Build target
@@ -36,7 +37,9 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   `.github/workflows/build-windows.yml`). Vendored static-library targets:
   `volk` (`libs/volk`), `vma` (`libs/vma`, C++ implementation in
   `vma_impl.cpp`, volk's loaders via `VMA_DYNAMIC_VULKAN_FUNCTIONS`),
-  `stb_image` (`libs/stb`, PNG/TGA only, `STBI_NO_STDIO`). Versions and
+  `stb_image` (`libs/stb`, PNG/TGA only, `STBI_NO_STDIO`); AMD's FSR 1
+  headers (`libs/fsr1`, header-only: on the include path of `hexenlicht`
+  and of the shaders, 3.8). Versions and
   licenses are in `THIRD_PARTY.md`; update it when a vendored library changes.
 - Codec DLLs from `oslibs/windows/codecs/x64` are copied next to the exe
   post-build.
@@ -104,7 +107,7 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `CMakeLists.txt` (include files are not listed; glslang's depfile tracks
   them).
 - They compile to `build/<preset>/bin/shaders/<file>.spv` (Vulkan 1.3 target,
-  `-DVKPT_SHADER`, `-g` in Debug) and load at runtime with
+  `-DVKPT_SHADER`, `-g` in Debug, `libs/fsr1` on the include path) and load at runtime with
   `VK_LoadShader("<file>")`. A shader change needs no relink: build the
   `hexenlicht_shaders` target and run `vk_reload_shaders` in the game.
 - Shared C/GLSL layouts: see [Buffers and layouts](#buffers-and-gpu-data-layouts).
@@ -438,7 +441,9 @@ bindings.
 - **Descriptor sets** of every view pass: 0 = global UBO, 1 = render targets
   (even/odd), 2 = bindless textures.
 - `vk_ubo.c` (Q2RTX's `uniform_buffer.c` + `prepare_ubo`): one UBO per frame in
-  flight; `VK_PrepareUBO` fills V/invV/P/invP and their `_prev`, sizes, time,
+  flight; `VK_PrepareUBO` fills V/invV/P/invP and their `_prev`, the sizes,
+  jitter, TAA mode and FSR constants `vk_upscale.c` decided (3.8, see
+  [Upscaling](#upscaling-vk_upscalec)), time,
   medium, the Hexenlicht block and `UBO_CVAR_LIST`'s cvars (registered with
   Q2RTX's defaults, inert until their pass). `vk_render_frame` counts 3D
   frames (= `current_frame_idx`, picks the even/odd image set). Three offset
@@ -455,8 +460,11 @@ bindings.
   `PT_GEO_NORMAL2` and our `PT_SPECULAR_HIT_DIST`) and the denoiser's
   (3.6: Q2RTX's 25 `ASVGF_*` images, some at 1/3 resolution) and the
   bloom's (3.7: `BLOOM_HBLUR`, `BLOOM_VBLUR` at a quarter of the size,
-  sampled linearly as `TAA_OUTPUT`): about 288 bytes per pixel by their
-  formats, 89 of them the denoiser's; 1081 MB allocated at 2560x1440. New
+  sampled linearly as `TAA_OUTPUT`) and the upscalers' (3.8: the TAA
+  history `ASVGF_TAA_A/B`, sampled linearly, `FSR_EASU_OUTPUT`,
+  `FSR_RCAS_OUTPUT`; `HQ_COLOR_INTERLEAVED`, which only Q2RTX's reference
+  mode writes, 1x1): about 320 bytes per pixel by their
+  formats, 89 of them the denoiser's; 1201 MB allocated at 2560x1440 (3.8: +120). New
   images mean no denoiser history
   (`VK_ResetDenoiserHistory`) and no last frame in the UBO
   (`VK_ResetUBOHistory`: the `_prev` sizes would point past smaller
@@ -467,7 +475,8 @@ bindings.
 - `vk_pathtracer.c`: `VK_CreatePassLayout` (the three sets + push constants),
   `VK_PathTracerLayout` (Q2RTX's `pt_push_constants_t`),
   `VK_CreateComputePipeline` (`VK_CreateComputePipelineSpec` with the
-  shader's specialization constant 0, as Q2RTX's bounce pipelines),
+  shader's specialization constant 0, as Q2RTX's bounce pipelines;
+  `VK_CreateComputePipelineSpecs` with constants 0 to 3, FSR's),
   `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
   `dispatch_rays` in ray-query mode), `VK_DispatchCompute` (Q2RTX's 16x16
   compute passes), `VK_DispatchComputeLayout` (the same with a module's own
@@ -587,14 +596,17 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
 
 ## 3D view (`vk_view.c`)
 
-- `VK_RenderView3D` fills the UBO for the 3D view in pixels (`r_refdef.vrect`
-  × UI scale, centered like the 2D; rendered at the width rounded up to even,
-  the output `taa_output_width x taa_output_height` is the view's) and
-  dispatches the view passes into `TAA_OUTPUT`, with `VK_ComputeBarrier`
-  between them; `GL_EndRendering` calls `VK_DrawView3D` after beginning
-  swapchain rendering: `fullscreen.vert` + `view_composite.frag` (reads
-  `TEX_TAA_OUTPUT`, Q2RTX's final blit; sRGB encode + `gamma` like the 2D)
-  into the 3D rectangle, then restores the full viewport for the 2D.
+- `VK_RenderView3D` takes the 3D view in pixels (`r_refdef.vrect` × UI
+  scale, centered like the 2D), lets `vk_upscale.c` decide the render size
+  (the view × `r_scale`, the width rounded up to even), jitter and
+  upscaling (3.8, see [Upscaling](#upscaling-vk_upscalec)), fills the UBO
+  and dispatches the view passes at the render size into `TAA_OUTPUT`
+  (FSR's outputs with FSR), with `VK_ComputeBarrier` between them;
+  `GL_EndRendering` calls `VK_DrawView3D` after beginning swapchain
+  rendering: `fullscreen.vert` + `view_composite.frag` (Q2RTX's final
+  blit: scales the upscaler's output over the view, see Upscaling; sRGB
+  encode + `gamma` like the 2D) into the 3D rectangle, then restores the
+  full viewport for the 2D.
 - **`primary_rays.rgen`** (3.2): Q2RTX's primary rays, dispatched as its
   are (width / 2 × height × 2 checkerboard fields: the left half of each
   image holds the pixels where x and y have the same parity, the right half
@@ -687,9 +699,9 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   instead of a fine checkerboard of the surface and what is behind it).
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
   weapon shadows, no sunlight and the hit-distance clear. Without the
-  denoiser the lit image is noisy at one sample per pixel. The bloom and
-  tone mapping follow (3.7); without them (`tm_enable 0`) the composite
-  clamps.
+  denoiser the lit image is noisy at one sample per pixel. The TAA pass
+  (3.8), the bloom and tone mapping (3.7) and FSR (3.8) follow; without
+  tone mapping (`tm_enable 0`) the composite clamps.
 - **Bounces** (3.5a): `indirect_lighting.rgen`, Q2RTX's, as two pipelines
   of one shader (specialization constant 0: the first and the second
   bounce), dispatched after direct lighting by `pt_num_bounce_rays`
@@ -739,11 +751,11 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   whether RR needs one in every pixel is the 3.9 spike's). RR needs the
   fields interleaved; at translucent surfaces they differ pixel by pixel
   (3.9).
-- For now **`debug_view.comp`** writes `TAA_OUTPUT` (`r_debugview`, default
-  1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR`,
-  denoised with `flt_enable 1`, which the bloom and tone mapping then take,
-  see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc);
-  until TAA, 3.8), or
+- `r_debugview` (default 1 until the maps have lights, 4.1) picks what the
+  view shows: 0 the lit image (the TAA pass's, see
+  [Upscaling](#upscaling-vk_upscalec), then bloom and tone mapping), or
+  what **`debug_view.comp`** writes into `TAA_OUTPUT` at the render size
+  (no jitter or TAA; the composite scales it, nearest):
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
@@ -779,14 +791,16 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   compare G-buffers with `flt_enable 0`. `vk_view.c` runs it before
   the bounces for the G-buffer's modes (with two bounces the first stores
   its hit into the shading position) and after compositing for the
-  lighting's (0, 15, 16, 18, 19, 20: `DEBUGVIEW_READS_LIGHTING`).
+  lighting's (15, 16, 18, 19, 20: `DEBUGVIEW_READS_LIGHTING`, which also
+  holds 0, the TAA pass's place).
 
 ## Denoiser (`vk_asvgf.c`)
 
 Story 3.6: Quake II RTX's A-SVGF (adaptive spatiotemporal variance-guided
 filtering; `shaders/asvgf.glsl` explains it), `flt_enable 1` (Q2RTX's
 default; 0 = the undenoised composite, as before). Its TAA pass
-(`asvgf_taau.comp`) comes with 3.8. The shaders are Q2RTX's, unchanged but
+(`asvgf_taau.comp`) is the upscaler's (3.8, see
+[Upscaling](#upscaling-vk_upscalec)). The shaders are Q2RTX's, unchanged but
 `asvgf_temporal.comp` (below); they work in the G-buffer's two fields.
 
 - **Gradient samples** (`VK_GradientReproject`, after the reflection and
@@ -852,15 +866,134 @@ default; 0 = the undenoised composite, as before). Its TAA pass
   (`compositing.comp`: 0.3 ms); the 3D view 6.6 ms instead of 3.9 (demo1's
   start), 7.1 instead of 4.2 (the cathedral's font).
 
+## Upscaling (`vk_upscale.c`)
+
+Story 3.8: Quake II RTX's resolution scale, TAA/TAAU and AMD FSR 1 behind
+one small interface, which DLSS (3.10) joins in the TAA pass's place.
+
+- **Once per 3D frame** `VK_UpscaleEvaluate` (Q2RTX's `get_render_extent`
+  and `evaluate_taa_settings`) decides, into `vk_upscale_t`:
+  - the *unscaled* size: the 3D view with its width rounded up to even,
+    the upscalers' output; the composite shows it 1:1, so an odd view
+    width drops its last column, as before;
+  - the *render* size: unscaled × `r_scale` (25–100 %, default 100; Q2RTX
+    uses `scr_viewsize`, but Hexen II's `viewsize` is the HUD layout), the
+    width rounded up to even for the checkerboard fields. The render
+    targets keep the swapchain's size (enough up to 100 %), so a change
+    needs no new images; the denoiser (`prev_width`) and the TAA
+    (`prev_taa_output_*`) reproject across a size change, as for Q2RTX's
+    dynamic resolution;
+  - the TAA pass's mode, output size and jitter, whether FSR runs, the
+    texture LOD bias (Q2RTX's: `pt_texture_lod_bias` + log2 of the scale
+    when upscaling), FSR's constants and what the composite shows.
+
+  `VK_PrepareUBO` puts them into the UBO (`width`/`height`, `unscaled_*`,
+  `taa_output_*`, `sub_pixel_jitter`, `flt_taa`, `easu_const*`,
+  `rcas_const0`). `vk_upscale` prints the last frame's.
+- **`r_upscaler`** (archived, default 1):
+
+  | | TAA pass (`asvgf_taau.comp`) | after tone mapping | composite |
+  |---|---|---|---|
+  | 0 TAA | at the render size, primary rays through the pixel centers | — | scales `TAA_OUTPUT` (1:1 at 100 %) |
+  | 1 TAAU | jittered (Halton 2/3, Q2RTX's 128 samples), upsampled to the unscaled size (at 100 %: jittered TAA) | — | 1:1 |
+  | 2 FSR 1 | TAAU's jittered TAA at the render size | EASU into `FSR_EASU_OUTPUT`, RCAS into `FSR_RCAS_OUTPUT` | 1:1 |
+
+  FSR runs only below 100 % (Q2RTX's `flt_fsr_enable 1`) and with tone
+  mapping (it wants the tone-mapped image); elsewhere 2 is TAAU.
+  `flt_fsr_easu`, `flt_fsr_rcas` (Q2RTX's toggles; RCAS alone sharpens
+  TAAU's output, so it needs the denoiser) and `flt_fsr_sharpness` (0.2;
+  0 the sharpest, clamped to 2). Q2RTX's `flt_taa` is registered but
+  follows `r_upscaler`; its `flt_fsr_enable` is not registered.
+- **The TAA pass** (`VK_UpscaleHDR`, Q2RTX's `vkpt_taa`) runs for the lit
+  image after the interleave, before bloom and tone mapping: `FLAT_COLOR`
+  (in Q2RTX's ×128 storage scale) into `TAA_OUTPUT` and the history
+  `ASVGF_TAA_A` (PQ-encoded; last frame's is `ASVGF_TAA_B`, sampled
+  Catmull-Rom at the motion vector: the longest of the 3x3 around the
+  pixel). It blends in PQ space, the history clamped to the mean ± sigma
+  of the 3x3 neighbourhood (`flt_taa_variance` 1; `flt_taa_anti_sparkle`
+  0.25 clamps the new sample to its neighbours; Q2RTX's
+  `flt_taa_history_weight` is read by no shader), taking a tenth of the
+  new sample at most (less for a still pixel whose jittered sample fell
+  far from its center). Without history (the denoiser's,
+  Q2RTX's `temporal_frame_valid`, and the last 3D frame ran the TAA pass:
+  not after a debug view) or without the denoiser (Q2RTX: no TAA without
+  it) the UBO's `flt_taa` is `AA_MODE_OFF` and the pass copies the nearest
+  render pixel. Changes: threads past the TAA output write their zero only
+  inside the images (the dispatch is rounded up to 16x16 groups);
+  `HQ_COLOR_INTERLEAVED` (the reference mode's accumulator) is 1x1.
+  Hexenlicht's TAA differs from Q2RTX's `AA_MODE_TAA`, which also moves
+  each primary ray to a random point in its pixel (`primary_rays.rgen`):
+  ours keeps the pixel centers (crisp, the closest to GL), so every mode
+  gives the UBO `AA_MODE_UPSCALE` (the shader blends alike in both) and the
+  jitter and output size decide.
+- **PQ clamps the lit image** at 10000 cd/m², 78 in linear units before the
+  storage scale (Q2RTX's): hot spots above lose energy before the bloom.
+  The test lights' hottest walls (romeric2) have up to 7/255 dimmer bloom
+  halos than before 3.8; elsewhere the image matches within ±1 (PQ's fp16
+  rounding).
+- **FSR** (`VK_UpscaleDisplay`, Q2RTX's `fsr.c`): `fsr_easu_fp32.comp` and
+  `fsr_rcas_fp32.comp` with `fsr_easu.glsl`, `fsr_rcas.glsl`,
+  `fsr_utils.glsl` (Q2RTX's) and AMD's `ffx_a.h`/`ffx_fsr1.h` (`libs/fsr1`,
+  v1.0.2, which fixed RCAS's limits after Q2RTX's copy); the constants from
+  `FsrEasuCon`/`FsrRcasCon` (the headers compiled as C in `vk_upscale.c`).
+  SDR pipelines only (`spec_hdr` 0; HDR 7.3), FP32 only (FP16 needs
+  `shaderFloat16`; 7.2). Changes: EASU fetches its input texels one by one,
+  each clamped to `TAA_OUTPUT`'s rendered part (Q2RTX clamps the gather
+  point to the image, which moves taps by a texel at its edges), RCAS
+  its input clamped to the view (Q2RTX reads one texel past it), neither
+  writes past the view: our images have the swapchain's
+  size and hold older frames past the rendered part. Its input is the
+  tone-mapped linear image, as in Q2RTX (AMD recommends a perceptual one).
+- **The composite** (`view_composite.frag`, Q2RTX's final blit) shows the
+  top left `display_size` texels of `TAA_OUTPUT` or FSR's output over the
+  view: 1:1 at the unscaled size, nearest at exactly half of it, Q2RTX's
+  Lanczos 3 otherwise with its taps clamped to those texels; the debug
+  views nearest. Q2RTX's "nearest" at half size samples its linear
+  sampler, which blends neighbours; ours is a texel fetch. The lit image
+  without tone mapping gets its storage scale taken out there (push
+  constant `scale`).
+- **The look:** TAA and TAAU soften the image and blur it during fast
+  turns, sharpening within a few frames after (no lasting ghosting
+  seen: demo1 turning and walking, village3's sheep); `r_upscaler 0` at
+  100 % keeps GL's crisp, aliased edges; FSR at 50 % is sharper than TAAU
+  at 50 %, TAA at 50 % blocky with Lanczos ringing at edges. The TAA does
+  not remove the denoiser's low-frequency flicker (the variance clamp
+  follows the current frame): a paused frame's temporal noise (demo1,
+  test lights) was 0.024 before 3.8, 0.025 with TAAU, 0.020 with TAA,
+  0.031 with TAAU at 50 %, 0.049 with FSR at 50 % (RCAS sharpens noise
+  too); the mean stays within 1 %.
+- **Measured** (2560x1440, Release, test entity lights, temporary GPU
+  timestamps, the 72 fps cap lifted so every setting runs at full load;
+  the GPU sat at a ~100 W power cap, 0.8–1.4 GHz, so the absolute times are
+  about twice those 3.6/3.7 recorded, and 3.7's build measured the same way
+  took 13.6 ms at demo1's start, 14.0 at the cathedral's font):
+
+  | 3D view, ms | 100 % | 67 % | 50 % |
+  |---|---|---|---|
+  | TAAU, demo1 / cathedral | 14.2 / 14.3 | 6.4 / 6.4 | 3.4 / 3.4 |
+  | TAA | 14.2 / 14.3 | 5.8 / 5.9 | 2.7 / 2.7 |
+  | FSR | (TAAU) | 6.2 / 6.3 | 3.1 / 3.1 |
+
+  The path tracer and denoiser take 0.42 of their 100 % time at 67 %; the
+  TAA pass 0.47 ms at 100 % (the copy it replaces took 0.33), 0.35 ms for
+  TAAU at 67 %, 0.18 ms for TAA at 67 %; EASU + RCAS 0.24–0.30 ms; bloom and
+  tone mapping 0.69 ms at the view's size, 0.28 ms at 67 %'s render size.
+- Left out: dynamic resolution (Q2RTX's `drs_*`: it steers by frame time,
+  which uHexen2's 72 fps cap hides; needs GPU timers, 3.11 or 7.2), scales
+  above 100 % (bigger images), the FP16 FSR variants (7.2), FSR's HDR
+  variant (7.3), Q2RTX's reference accumulation mode (`HQ_COLOR_INTERLEAVED`,
+  `pt_accumulation_rendering`: an option for 4.9's reference shots).
+
 ## Bloom and tone mapping (`vk_bloom.c`, `vk_tonemap.c`)
 
 Story 3.7: Quake II RTX's bloom, tone mapping and auto exposure, its shaders
 unchanged but the curve's launch check, run by `vk_view.c` on the lit image in `TAA_OUTPUT`
 (`r_debugview 0` only; the debug views stay raw): bloom, then tone mapping,
-Q2RTX's order after its TAA (3.8). `debug_view.comp` copies `FLAT_COLOR`
-there with Q2RTX's ×128 storage scale (`STORAGE_SCALE_HDR`), which the tone
-mapper takes out; with `tm_enable 0` unscaled, clamped by the composite as
-before 3.7.
+Q2RTX's order after its TAA, at the TAA output's size (since 3.8: the render
+size with TAA and FSR, the view's with TAAU). The TAA pass leaves the image
+in Q2RTX's ×128 storage scale (`STORAGE_SCALE_HDR`), which the tone
+mapper takes out; with `tm_enable 0` the composite takes it out and clamps
+(before 3.8 `debug_view.comp` did).
 
 - **Bloom** (`vk_bloom.c`, Q2RTX's `bloom.c`): `bloom_downscale.comp`
   averages the image into `BLOOM_VBLUR` at a quarter of its size,
@@ -954,6 +1087,7 @@ before 3.7.
 | `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
 | `tm_enable 0/1`, `tm_debug 0-2`, `bloom_enable 0/1`, `bloom_debug 0-3` | tone mapping and auto exposure (Q2RTX's `tm_*` cvars tune them), their histogram or curve over the view; bloom (`bloom_sigma`, `bloom_intensity`) and its stages (see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)) |
 | `vk_exposure` | the adapted luminance read back (two frames old) |
+| `r_scale 25-100`, `r_upscaler 0-2`, `vk_upscale` | the render size in percent of the view's; 0 TAA, 1 TAAU, 2 FSR 1 (`flt_fsr_easu`, `flt_fsr_rcas`, `flt_fsr_sharpness`); the last frame's sizes, jitter and passes (see [Upscaling](#upscaling-vk_upscalec)) |
 | `pt_particle_brightness` | the effects' brightness under the exposure (15) |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
