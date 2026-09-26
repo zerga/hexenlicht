@@ -4,7 +4,10 @@ Hexenlicht's renderer reuses code from NVIDIA's
 [Quake II RTX](https://github.com/NVIDIA/Q2RTX) (`src/refresh/vkpt`,
 GPL-2.0-or-later, archived on 2025-12-11). This page maps its modules to
 ours and says how code comes in. Each story that imports a module updates its
-row. The last Q2RTX commit is `f2526e9a1` (2025-12-10).
+row. The last Q2RTX commit is `f2526e9a1` (2025-12-10). Read its files from a
+local clone (`git clone --depth 1 https://github.com/NVIDIA/Q2RTX`, outside
+this repository) or one at a time with
+`gh api "repos/NVIDIA/Q2RTX/contents/src/refresh/vkpt/<path>?ref=f2526e9a1" --jq .content | base64 -d`.
 
 ## Rules
 

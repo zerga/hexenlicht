@@ -74,8 +74,9 @@ The repository ships these run configurations in `.run/`:
 | `hexenlicht (smoke test)` | `hexenlicht.exe -condebug +quit`: initializes the game and quits; the log should end with `Hexen II Initialized` and the config files being executed |
 
 `hexenlicht.exe` runs on Vulkan and draws the 2D screens — console,
-menus, status bar, loading plaque, intermissions — but no 3D view yet
-(epic E2): the game area stays black. The 2D screen is scaled by a whole
+menus, status bar, loading plaque, intermissions — and, until the path
+tracer arrives, a ray-traced debug view of the world (`r_debugview`, unlit
+textures by default). The 2D screen is scaled by a whole
 number (`vid_uiscale`, automatic by default: 2x at 1080p, 3x at 1440p, 4x
 at 4K; the *Scale* slider in the options menu changes it). Its shaders are loaded from the
 `shaders` folder next to the exe (`build\<preset>\bin\shaders`); keep that
@@ -123,13 +124,14 @@ directory, or pass `-basedir D:\dev\Hexenlicht-data`.
 | `-validation` / `-novalidation` | Force the Vulkan validation layer on (Release) or off (Debug) — `hexenlicht.exe` only |
 | `-vkdevice <n>` | Use Vulkan device *n* (the startup log lists them) — `hexenlicht.exe` only |
 
-Console commands and variables of `hexenlicht.exe` so far:
+Everyday console commands and variables of `hexenlicht.exe` (the renderer's
+debug commands are listed in [RENDERER.md](RENDERER.md#console-commands)):
 
 | Command / variable | Effect |
 |---|---|
 | `vk_info` | Device, driver, ray tracing features, swapchain and validation counts |
 | `vk_textures` / `vk_textures list` | Number and memory of loaded textures / every texture with size, mip count and name |
-| `map <name>` | Start a map (e.g. `map demo1`); nothing of it is drawn yet, but its textures and models load |
+| `map <name>` | Start a map (e.g. `map demo1`) |
 | `vid_vsync 1` / `0` | Wait for vertical blank (default), or present immediately (mailbox) |
 | `vid_restart` | Apply `vid_mode` (window size) |
 | `vid_uiscale 0` / `n` | Automatic 2D scale (largest whole number keeping the 2D screen at least 640×480), or a fixed factor *n* |

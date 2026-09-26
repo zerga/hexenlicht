@@ -61,8 +61,9 @@ The renderer seam already exists: the renderer is selected at compile time
 (software vs `GLQUAKE`). Hexenlicht is built as a third client target that
 keeps the `GLQUAKE` semantics for the ~60 hardware-renderer branches in the
 client code, replaces the GL renderer files (`gl_rmain.c`, `gl_rsurf.c`,
-`gl_draw.c`, `gl_warp.c`, `gl_rlight.c`, `gl_screen.c`, `gl_rmisc.c`, GL parts
-of `r_part.c`) and reuses the model loading in `gl_model.c` where possible.
+`gl_draw.c`, `gl_warp.c`, `gl_rlight.c`, `gl_rmisc.c`, GL parts of
+`r_part.c`) and reuses `gl_model.c`, `gl_mesh.c`, `gl_refrag.c`,
+`gl_screen.c` and the rest of `r_part.c`.
 
 ### Code organisation
 - New code under `engine/hexenlicht/` (renderer, vid layer) and
@@ -81,7 +82,7 @@ of `r_part.c`) and reuses the model loading in `gl_model.c` where possible.
   not indexed by code search) containing the **full upstream history**.
 - Remotes: `origin` = our repo, `upstream` = `sezero/uhexen2`.
 - `main` = Hexenlicht. `upstream/master` is merged into `main` periodically.
-- Feature branches per story, merged via PR (squash or merge — decide in E0).
+- Feature branches per story, merged via PR with merge commits.
 - README states clearly: unofficial fork of Hammer of Thyrion, credits
   upstream, Raven, id Software and Q2RTX authors; game data not included.
 

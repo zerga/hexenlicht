@@ -33,6 +33,9 @@ HexenWorld is not part of Hexenlicht's scope.
 
 - [Project plan](docs/hexenlicht/PLAN.md) — decisions, architecture,
   licensing rules and the epic/story breakdown.
+- [Development setup](docs/hexenlicht/SETUP.md), [renderer reference](docs/hexenlicht/RENDERER.md),
+  [decision log](docs/hexenlicht/DECISIONS.md), [testing](docs/hexenlicht/TESTING.md),
+  [Quake II RTX code intake](docs/hexenlicht/Q2RTX.md), [upstream syncs](docs/hexenlicht/UPSTREAM.md).
 - [Issues](https://github.com/zerga/hexenlicht/issues) and the
   [project board](https://github.com/users/zerga/projects/1) — live status.
 - [Third-party components](THIRD_PARTY.md).
@@ -59,8 +62,8 @@ cmake --build --preset windows-debug
 
 The executables and the music codec DLLs end up in `build/<preset>/bin/`:
 `glh2.exe` is Hexen II with the upstream OpenGL renderer, `hexenlicht.exe`
-the Hexenlicht renderer (work in progress: console, menus and status bar
-work, the 3D view does not exist yet),
+the Hexenlicht renderer (work in progress: the 2D screens work, the 3D view
+is a ray-traced debug view until the path tracer arrives),
 with its compiled shaders in the `shaders` folder next to it.
 
 GitHub Actions builds both presets for every pull request and every push to
