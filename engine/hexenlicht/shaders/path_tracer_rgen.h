@@ -34,8 +34,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
- *  - get_emissive_shell: no tone mapping buffer (3.7); Hexen II has no
- *    shells. */
+ *  - get_emissive_shell: not scaled by the tone mapper's adapted luminance
+ *    (Hexen II has no shells). */
 
 #include "path_tracer.h"
 #include "utils.glsl"
@@ -895,8 +895,8 @@ vec3 get_emissive_shell(uint material_id, uint shell)
 	    if((material_id & MATERIAL_FLAG_WEAPON) != 0) c *= 0.2;
 	}
 
-	// Hexenlicht: scaled by the tone mapping buffer's adapted luminance (3.7)
-	// in Quake II RTX; Hexen II has no shells
+	// Hexenlicht: Quake II RTX scales it by the tone mapping buffer's adapted
+	// luminance here; Hexen II has no shells
 
     return c;
 }

@@ -31,6 +31,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    from 0 (environment and sky textures come with their passes too);
  *  - the blue noise (vk_images.c) is the set's last binding: 64 x 64
  *    texels, 256 layers (constants.h);
+ *  - TAA_OUTPUT and the bloom images are sampled with a linear sampler, the
+ *    others with a nearest one (vk_images.c), as in Quake II RTX;
  *  - PT_SPECULAR_HIT_DIST is Hexenlicht's: the specular bounce's hit
  *    distance, for DLSS Ray Reconstruction (indirect_lighting.rgen);
  *  - PT_VIEW_DEPTH is declared r16f, its format (Quake II RTX declares
@@ -93,8 +95,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(ASVGF_GRAD_LF_PONG,        29, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(ASVGF_GRAD_HF_SPEC_PING,   30, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(ASVGF_GRAD_HF_SPEC_PONG,   31, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
+	IMG_DO(BLOOM_HBLUR,               32, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
+	IMG_DO(BLOOM_VBLUR,               33, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
 
-#define NUM_IMAGES_BASE     32
+#define NUM_IMAGES_BASE     34
 
 /* images that exist twice: the _A names are this frame's, the _B names the
  * last frame's (vk_images.c's even and odd descriptor sets swap them) */

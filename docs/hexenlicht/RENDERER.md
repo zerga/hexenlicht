@@ -14,7 +14,8 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
-[3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) · [Other](#other) · [Console commands](#console-commands)
+[3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
+[Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Other](#other) · [Console commands](#console-commands)
 
 ## Build target
 
@@ -338,6 +339,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   types, frame groups with `syncbase`, alpha 0.33 for
   `DRF_TRANSLUCENT`/`EF_TRANSPARENT`, unlit; `SPR_FACING_UPRIGHT` uses the
   sprite's own direction to the camera (no game sprite has that type).
+- In the lit image both are scaled by the exposure so that they show at
+  GL's colors (3.7, see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)).
 - `vk_effects [check]`: counts, drops, BLAS/TLAS sizes; `check` casts a ray at
   every effect triangle of the last frame through the effects TLAS
   (`effects_check.comp`) and compares where it is reported.
@@ -398,7 +401,8 @@ bindings.
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
   instanced primitives, materials, PVS, particles, sprites, the light
-  buffer and the three light statistics buffers (3.4) — the particle
+  buffer and the three light statistics buffers (3.4), the tone mapping
+  and readback buffers (3.7) — the particle
   texture slot, `anim_frame`, `debug_view`, `view_cluster`; our
   `ModelInstance`; `TlasInstanceInfo` instead of Q2RTX's `InstanceBuffer`;
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
@@ -449,9 +453,11 @@ bindings.
   `PT_COLOR_LF_COCG`, `PT_COLOR_HF`, `PT_COLOR_SPEC`, `ASVGF_COLOR`,
   `FLAT_COLOR`, `FLAT_MOTION`; 3.5a: `PT_VIEW_DIRECTION2`,
   `PT_GEO_NORMAL2` and our `PT_SPECULAR_HIT_DIST`) and the denoiser's
-  (3.6: Q2RTX's 25 `ASVGF_*` images, some at 1/3 resolution): about 287
-  bytes per pixel by their formats, 89 of them the denoiser's; 1078 MB
-  allocated at 2560x1440. New images mean no denoiser history
+  (3.6: Q2RTX's 25 `ASVGF_*` images, some at 1/3 resolution) and the
+  bloom's (3.7: `BLOOM_HBLUR`, `BLOOM_VBLUR` at a quarter of the size,
+  sampled linearly as `TAA_OUTPUT`): about 288 bytes per pixel by their
+  formats, 89 of them the denoiser's; 1081 MB allocated at 2560x1440. New
+  images mean no denoiser history
   (`VK_ResetDenoiserHistory`) and no last frame in the UBO
   (`VK_ResetUBOHistory`: the `_prev` sizes would point past smaller
   images). It also loads the blue noise. `vk_images` lists them with their
@@ -464,7 +470,8 @@ bindings.
   shader's specialization constant 0, as Q2RTX's bounce pipelines),
   `VK_BindPassSets`, `VK_DispatchRays` (Q2RTX's
   `dispatch_rays` in ray-query mode), `VK_DispatchCompute` (Q2RTX's 16x16
-  compute passes), `VK_RenderTargetBarrier`, `VK_ComputeBarrier` (between
+  compute passes), `VK_DispatchComputeLayout` (the same with a module's own
+  layout and push constants, 3.7), `VK_RenderTargetBarrier`, `VK_ComputeBarrier` (between
   the compute passes, which share the images).
 
 ## Lights (`vk_light.c`)
@@ -680,8 +687,9 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   instead of a fine checkerboard of the surface and what is behind it).
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
   weapon shadows, no sunlight and the hit-distance clear. Without the
-  denoiser the lit image is noisy at one sample per pixel; there is no
-  exposure or tone curve until 3.7 (the composite clamps).
+  denoiser the lit image is noisy at one sample per pixel. The bloom and
+  tone mapping follow (3.7); without them (`tm_enable 0`) the composite
+  clamps.
 - **Bounces** (3.5a): `indirect_lighting.rgen`, Q2RTX's, as two pipelines
   of one shader (specialization constant 0: the first and the second
   bounce), dispatched after direct lighting by `pt_num_bounce_rays`
@@ -732,9 +740,10 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   fields interleaved; at translucent surfaces they differ pixel by pixel
   (3.9).
 - For now **`debug_view.comp`** writes `TAA_OUTPUT` (`r_debugview`, default
-  1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR` /
-  `STORAGE_SCALE_HDR`, denoised with `flt_enable 1`, until TAA and tone
-  mapping take over, 3.7–3.8), or
+  1 until the maps have lights, 4.1): 0 the lit image (`FLAT_COLOR`,
+  denoised with `flt_enable 1`, which the bloom and tone mapping then take,
+  see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc);
+  until TAA, 3.8), or
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
@@ -843,6 +852,87 @@ default; 0 = the undenoised composite, as before). Its TAA pass
   (`compositing.comp`: 0.3 ms); the 3D view 6.6 ms instead of 3.9 (demo1's
   start), 7.1 instead of 4.2 (the cathedral's font).
 
+## Bloom and tone mapping (`vk_bloom.c`, `vk_tonemap.c`)
+
+Story 3.7: Quake II RTX's bloom, tone mapping and auto exposure, its shaders
+unchanged but the curve's launch check, run by `vk_view.c` on the lit image in `TAA_OUTPUT`
+(`r_debugview 0` only; the debug views stay raw): bloom, then tone mapping,
+Q2RTX's order after its TAA (3.8). `debug_view.comp` copies `FLAT_COLOR`
+there with Q2RTX's ×128 storage scale (`STORAGE_SCALE_HDR`), which the tone
+mapper takes out; with `tm_enable 0` unscaled, clamped by the composite as
+before 3.7.
+
+- **Bloom** (`vk_bloom.c`, Q2RTX's `bloom.c`): `bloom_downscale.comp`
+  averages the image into `BLOOM_VBLUR` at a quarter of its size,
+  `bloom_blur.comp` blurs it horizontally into `BLOOM_HBLUR` and back
+  vertically (a Gaussian of `bloom_sigma` 0.037 times the view's height,
+  1–100 quarter-size pixels), `bloom_composite.comp` blends it in by
+  `bloom_intensity` (0.002: a faint glow around very bright light, barely
+  visible with the test lights). Both images are rgba16f, sampled
+  linearly. `bloom_enable`, `bloom_debug 1-3` (the stages stretched over
+  the view). Left out: Q2RTX's stronger, wider bloom under water (Hexen
+  II's underwater look is GL's warp and tint, 6.6) and its blur behind
+  menus.
+- **Tone mapping** (`vk_tonemap.c`, Q2RTX's `tone_mapping.c`, Eilertsen,
+  Mantiuk and Unger's noise-aware tone mapping with Q2RTX's changes; its
+  shaders explain it): `tone_mapping_histogram.comp` bins the image's log
+  luminance into the tone mapping buffer; `tone_mapping_curve.comp` (one
+  workgroup of 128 threads, one per bin, subgroup arithmetic; without
+  Q2RTX's launch check against the view's size, which returned some
+  threads before its barriers in a view under 128 pixels wide) finds the
+  exposure, the adapted luminance:
+  the histogram's 70th–90th percentile (`tm_low/high_percentile`), clamped
+  to `tm_min_luminance` 0.0002 – `tm_max_luminance` 1 and adapting over
+  time (`tm_exposure_speed_up` 2, `_down` 1: per second, exponentially),
+  and the tone curve, blended with last frame's; `tone_mapping_apply.comp`
+  applies the curve and the exposure (`tm_reinhard` 0.5 blends a Reinhard
+  curve in; `tm_exposure_bias` −1), a knee towards white
+  (`tm_knee_start`, `tm_white_point`; the push constants from
+  `KneeConstants`) and blue noise dither, linear [0, 1] out for the
+  composite. Q2RTX's `tm_*` cvars (registered since 3.1) with its
+  defaults; `tm_enable` (the UBO gets 0 or 1, as the host decides),
+  `tm_debug 1/2` (the histogram or the curve over
+  the view, drawn by the shader). The adaptation runs on game time between
+  3D frames (at most 1 s), on real time while it stands still (paused).
+  The exposure starts over (Q2RTX's request_reset: the buffer cleared, the
+  curve not blended) on a new map, with new pipelines, and when the last
+  3D frame wasn't tone mapped (`vk_render_frame` not the next one: a debug
+  view, `tm_enable 0`). Left out: the HDR output variant (7.3); the full
+  screen blend and colorize (`fs_blend_color`, `fs_colorize`: Q2RTX's
+  blend is strongest at the screen's edges; GL's view blend `v_blend`,
+  not drawn yet, comes with 6.6); Q2RTX's on-screen adapted luminance
+  line (`vk_exposure` prints it).
+- **Readback** (Q2RTX's `ReadbackBuffer`, only `adapted_luminance`
+  written): the curve pass writes the adapted luminance into this frame's
+  mapped readback buffer (one per frame in flight, by device address); the
+  CPU reads it when the slot comes round (`VK_ReadbackAddress` in
+  `VK_PrepareUBO`, two frames old; a compute-to-host barrier after the
+  curve pass), as Q2RTX's `prev_adapted_luminance`, 0.005 until the first.
+  Q2RTX ignores readbacks of exactly 1 as "mysterious spikes"; 1 is
+  `tm_max_luminance`'s clamp, which a bright scene reaches, so only values
+  that aren't positive and finite (a slot never written) are ignored.
+- **Effects brightness** (`effects_brightness`,
+  `path_tracer_hit_shaders.h`): GL draws particles and sprites unlit at
+  their colors; under the exposure they are scaled by
+  `prev_adapted_luminance × pt_particle_brightness` (Q2RTX's for its
+  particles; its sprites have their own factor, ours share it), 1 with
+  `tm_enable 0` and in the debug views. `pt_particle_brightness` is 15
+  (Q2RTX 100), measured: over the pixels of a paused frame's meteor staff
+  particles (demo1), the tone-mapped effects' mean luminance matched their
+  GL colors (0.095 against 0.096) at 15, and at a sixteenth of the lights'
+  intensity 0.104: the exposure scaling holds them within ~10 %. 100 shows
+  them about 3× too bright.
+- Measured (demo1's start, test entity lights): after the lights dim
+  16×, the image comes back over ~6 s (image mean 0.010 → 0.053, 0.070
+  before; the adapted luminance 1/16 of before); 1000× dimmer, the
+  exposure stops at `tm_min_luminance` and the image stays dark (0.014).
+  Cost at 2560x1440, Release (temporary GPU timestamps): bloom 0.34 ms,
+  tone mapping 0.26 ms.
+- The look: Q2RTX's curve lifts the shadows and flattens the contrast of
+  Hexen II's dark scenes compared with the clamped image before 3.7; the
+  calibration against GL (4.9) and keeping dark places dark (4.10:
+  `tm_min_luminance`, per-map exposure 4.7) decide the settings.
+
 ## Other
 
 - **Settings:** `hexenlicht.exe` saves to `hexenlicht.cfg` instead of
@@ -862,6 +952,9 @@ default; 0 = the undenoised composite, as before). Its TAA pass
 |---|---|
 | `r_debugview 0-20` | 0 the lit image, 1-20 the G-buffer's, lighting and denoiser channels (see [3D view](#3d-view-vk_viewc)) |
 | `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
+| `tm_enable 0/1`, `tm_debug 0-2`, `bloom_enable 0/1`, `bloom_debug 0-3` | tone mapping and auto exposure (Q2RTX's `tm_*` cvars tune them), their histogram or curve over the view; bloom (`bloom_sigma`, `bloom_intensity`) and its stages (see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)) |
+| `vk_exposure` | the adapted luminance read back (two frames old) |
+| `pt_particle_brightness` | the effects' brightness under the exposure (15) |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |

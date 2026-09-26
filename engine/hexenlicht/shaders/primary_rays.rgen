@@ -37,7 +37,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    one TLAS instance holds all alias models;
  *  - threads past the fields' size (the dispatch is rounded up to 8x8
  *    workgroups) return at once;
- *  - no readback (3.7), no god rays (not planned), no PVS overlay (it
+ *  - no readback of the material and cluster under the crosshair (Quake
+ *    II RTX's debug feedback, not needed; the readback buffer carries the
+ *    adapted luminance since 3.7), no god rays (not planned), no PVS overlay (it
  *    needs the light buffer; r_debugview 5 shows the PVS);
  *  - the water keeps its geometric normal while there is no water normal
  *    map (Quake II RTX's comes with its media);
@@ -168,7 +170,7 @@ main()
 
 	Ray ray = get_primary_ray(inUV);
 
-	// Hexenlicht: no readback (3.7)
+	// Hexenlicht: no readback of the crosshair's material and cluster (see the top)
 
 	bool weapon_hit;
 	{
@@ -209,7 +211,7 @@ main()
 		
 		vec4 transparent = alpha_blend(effects, vec4(env, 1));
 
-		// Hexenlicht: no readback (3.7)
+		// Hexenlicht: no readback of the crosshair's material and cluster (see the top)
 
 		// Compute a motion vector for the sky, because we don't want TAA to blur it
 		vec3 prev_view_dir = (global_ubo.V_prev * vec4(direction, 0)).xyz;
@@ -243,7 +245,7 @@ main()
 		imageStore(IMG_PT_VISBUF_BARY_A, ipos, vec4(bary.yz, 0, 0));
 	}
 
-	// Hexenlicht: no readback (3.7)
+	// Hexenlicht: no readback of the crosshair's material and cluster (see the top)
 
 	position       = triangle.positions * bary;
 	vec2 tex_coord = triangle.tex_coords * bary;

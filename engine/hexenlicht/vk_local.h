@@ -372,6 +372,8 @@ void VK_InitUBO (void);
 void VK_ShutdownUBO (void);
 void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
 void VK_ResetUBOHistory (void);	/* the next frame's _prev values are its own */
+const struct QVKUniformBuffer_s *VK_CurrentUBO (void);	/* this frame's, after VK_PrepareUBO */
+qboolean VK_ToneMappingEnabled (void);	/* tm_enable */
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
 qboolean VK_DenoiserEnabled (void);	/* flt_enable */
@@ -429,6 +431,8 @@ void VK_RenderTargetBarrier (VkCommandBuffer cmd, VkImage image,
 			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 void VK_ComputeBarrier (VkCommandBuffer cmd);	/* between compute passes */
 void VK_DispatchCompute (VkCommandBuffer cmd, VkPipeline pipeline, uint32_t width, uint32_t height, uint32_t local_size);
+void VK_DispatchComputeLayout (VkCommandBuffer cmd, VkPipeline pipeline, VkPipelineLayout layout, const void *push,
+			       uint32_t push_size, uint32_t width, uint32_t height, uint32_t local_size);
 
 /* vk_asvgf.c: the denoiser (Quake II RTX's A-SVGF), for a view rendered
  * width x height: the gradient samples before the lighting passes, the
@@ -440,6 +444,24 @@ void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, q
 void VK_ResetDenoiserHistory (void);	/* a new map, new images, a skipped view, changed cvars */
 qboolean VK_DenoiserHistoryValid (void);	/* for VK_PrepareUBO */
 void VK_EndDenoiserFrame (qboolean denoised);	/* the frame's images are the next one's history */
+
+/* vk_bloom.c and vk_tonemap.c: Quake II RTX's bloom, tone mapping and auto
+ * exposure, in place on TAA_OUTPUT's width x height view (r_debugview 0);
+ * the adapted luminance comes back through a readback buffer per frame in
+ * flight */
+void VK_InitBloom (void);
+void VK_ShutdownBloom (void);
+void VK_DestroyBloomPipelines (void);	/* rebuilt when next used */
+qboolean VK_BloomEnabled (void);	/* bloom_enable */
+float VK_BloomIntensity (void);		/* bloom_intensity, for the UBO */
+void VK_Bloom (VkCommandBuffer cmd, uint32_t width, uint32_t height);
+void VK_InitToneMap (void);
+void VK_ShutdownToneMap (void);
+void VK_DestroyToneMapPipelines (void);	/* rebuilt when next used */
+void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float frame_time);
+void VK_ResetToneMapping (void);	/* a new map: the exposure starts over */
+VkDeviceAddress VK_ToneMapBufferAddress (void);
+VkDeviceAddress VK_ReadbackAddress (float *adapted_luminance);	/* this frame's; the luminance read back from it */
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
  * TLAS: it fills the UBO and runs the view passes (primary_rays.rgen, the

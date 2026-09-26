@@ -87,7 +87,8 @@ static void WriteImageDescriptors (VkDescriptorSet set, int binding, int index)
 	storage.imageView = images[index].view;
 	storage.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	sampled = storage;
-	sampled.sampler = (index == VKPT_IMG_TAA_OUTPUT) ? sampler_linear : sampler_nearest;
+	sampled.sampler = (index == VKPT_IMG_TAA_OUTPUT || index == VKPT_IMG_BLOOM_HBLUR || index == VKPT_IMG_BLOOM_VBLUR) ?
+			  sampler_linear : sampler_nearest;
 
 	memset (writes, 0, sizeof(writes));
 	writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

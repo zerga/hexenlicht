@@ -27,6 +27,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    InstanceBuffer is our instance buffer (instance_buffer.model_instances,
  *    .model_prev_to_current) and the TLAS's TlasInstanceInfo (its
  *    tlas_instance_* arrays);
+ *  - pt_particle_brightness defaults to 15 (3.7: Hexen II's particles and
+ *    sprites at GL's colors under the tone mapper's exposure);
  *  - the shader part is only declared when the shader defines
  *    GLOBAL_UBO_DESC_SET_IDX, so shaders without the UBO can include the
  *    structs (define it before including any of these headers). */
@@ -105,7 +107,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	UBO_CVAR_DO(pt_ndf_trim, 0.9) /* trim factor for GGX NDF sampling (0..1] */ \
 	UBO_CVAR_DO(pt_num_bounce_rays, 1) /* number of bounce rays, valid values are 0 (disabled), 0.5 (half-res diffuse), 1 (full-res diffuse + specular), 2 (two bounces) */ \
 	UBO_CVAR_DO(pt_particle_softness, 0.7) /* particle softness */ \
-	UBO_CVAR_DO(pt_particle_brightness, 100) /* particle brightness */ \
+	UBO_CVAR_DO(pt_particle_brightness, 15) /* particle brightness; Hexenlicht: 15 (Quake II RTX 100), particles and sprites show at GL's colors under the exposure (3.7) */ \
 	UBO_CVAR_DO(pt_reflect_refract, 2) /* number of reflection or refraction bounces: 0, 1 or 2 */ \
 	UBO_CVAR_DO(pt_roughness_override, -1) /* overrides roughness of all materials if non-negative, [0..1] */ \
 	UBO_CVAR_DO(pt_specular_anti_flicker, 2) /* fade factor for rough reflections of surfaces far away, [0..inf) */ \
@@ -266,6 +268,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   light_stats)          /* the light statistics counted this frame (LightStatsRef), 0 = none */ \
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   light_stats_prev)     /* last frame's, which the light CDF reads */ \
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   light_stats_prev2)    /* the frame before's, for gradient samples (3.6) */ \
+	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   tonemap)              /* the tone mapper's ToneMappingBuffer (vk_tonemap.c): tonemap_buffer */ \
+	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   readback)             /* this frame's ReadbackBuffer: readback */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            particle_texture)     /* texture slot of GL's particle dot */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             anim_frame)           /* int(cl.time * 5), R_TextureAnimation's frame */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            debug_view)           /* r_debugview: DEBUGVIEW_* */ \

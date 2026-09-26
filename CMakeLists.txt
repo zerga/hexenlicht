@@ -200,6 +200,12 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/asvgf_temporal.comp
 	${HEXENLICHT_SHADER_DIR}/asvgf_lf.comp
 	${HEXENLICHT_SHADER_DIR}/asvgf_atrous.comp
+	${HEXENLICHT_SHADER_DIR}/bloom_downscale.comp
+	${HEXENLICHT_SHADER_DIR}/bloom_blur.comp
+	${HEXENLICHT_SHADER_DIR}/bloom_composite.comp
+	${HEXENLICHT_SHADER_DIR}/tone_mapping_histogram.comp
+	${HEXENLICHT_SHADER_DIR}/tone_mapping_curve.comp
+	${HEXENLICHT_SHADER_DIR}/tone_mapping_apply.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
@@ -251,6 +257,8 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_asvgf.c
+	${HEXENLICHT_DIR}/vk_bloom.c
+	${HEXENLICHT_DIR}/vk_tonemap.c
 	${HEXENLICHT_DIR}/vk_view.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c
