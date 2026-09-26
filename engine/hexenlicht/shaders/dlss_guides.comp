@@ -74,6 +74,18 @@ main()
 
 	field_guides(ipos, albedo, specular, normal, roughness, depth);
 
+	/* PT_VIEW_DEPTH holds the distance along the ray (projection.glsl's
+	 * length(view_pos)), not the depth along the view axis that the
+	 * projection needs: divided by the length of the pixel's primary ray
+	 * direction in view space at z = 1 (primary_rays.rgen: the pixel's
+	 * center plus the jitter) */
+	{
+		vec2 uv = (vec2(px) + 0.5 + global_ubo.sub_pixel_jitter) / vec2(global_ubo.width, global_ubo.height);
+		vec2 ndc = uv * 2.0 - 1.0;
+		vec2 xy = (ndc - vec2(global_ubo.P[2][0], global_ubo.P[2][1])) / vec2(global_ubo.P[0][0], global_ubo.P[1][1]);
+		depth /= length(vec3(xy, 1.0));
+	}
+
 	/* push_constants.bounce_index bit 1 (r_dlss_cb 2): where the two fields
 	 * hold different surfaces (translucent ones), the average of both, as
 	 * checkerboard_interleave.comp blurs their colors */
