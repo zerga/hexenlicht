@@ -11,7 +11,9 @@
  * a storage image and as a sampled texture; there are two sets, even and
  * odd, which swap the A and B images
  * of LIST_IMAGES_A_B, picked by the 3D frame's number, so the _A names are
- * always this frame's and the _B names the last frame's.
+ * always this frame's and the _B names the last frame's. DLSS's inputs
+ * (DLSS_*) are full size only while DLSS SR or RR is chosen
+ * (vk_dlss_images, from vk_dlss.c), 1 x 1 otherwise.
  *
  * The set's last binding is Quake II RTX's blue noise (load_blue_noise),
  * the path tracer's random numbers: Christoph Peters' CC0 textures
@@ -54,6 +56,7 @@ typedef struct
 } vk_image_t;
 
 VkExtent2D		vk_image_extent;	/* the images' size; 0 x 0 = none (IMG_WIDTH, IMG_HEIGHT) */
+int			vk_dlss_images;		/* DLSS's inputs at full size: 0 none, 1 the depth, 2 RR's too (vk_dlss.c) */
 VkDescriptorSetLayout	vk_images_set_layout;
 
 static vk_image_t	images[NUM_VKPT_IMAGES];
@@ -70,6 +73,16 @@ VkDescriptorSet VK_ImagesSet (void)
 VkImage VK_Image (int index)
 {
 	return images[index].image;
+}
+
+/* what Streamline's resource tags need (vk_dlss.c) */
+void VK_ImageInfo (int index, VkImage *image, VkImageView *view, VkFormat *format, uint32_t *width, uint32_t *height)
+{
+	*image = images[index].image;
+	*view = images[index].view;
+	*format = images[index].format;
+	*width = images[index].width;
+	*height = images[index].height;
 }
 
 qboolean VK_ImagesReady (void)
@@ -122,6 +135,7 @@ void VK_CreateImages (void)
 
 	VK_ResetDenoiserHistory ();	/* new images hold no history, */
 	VK_ResetUBOHistory ();		/* nor a last frame of another size */
+	vk_dlss_images = VK_DLSSImagesWanted ();	/* IMG_WIDTH_DLSS, IMG_WIDTH_RR */
 	vk_image_extent = vk.extent;
 	vk_image_extent.width = (vk_image_extent.width + 1) & ~1u;	/* two checkerboard fields */
 	if (!vk.swapchain || !vk_image_extent.width || !vk_image_extent.height)
@@ -235,7 +249,9 @@ void VK_CreateImages (void)
 	vkCmdPipelineBarrier2 (cmd, &dep);
 	VK_EndUpload ();
 
-	Con_DPrintf ("Render targets: %u x %u, %.1f MB\n", vk_image_extent.width, vk_image_extent.height,
+	/* safe: VK_BeginFrame recreates them (a resize, DLSS's images), where a
+	 * screen update would draw a frame inside it */
+	Con_SafeDPrintf ("Render targets: %u x %u, %.1f MB\n", vk_image_extent.width, vk_image_extent.height,
 		     (double)total / (1024.0 * 1024.0));
 }
 
@@ -262,6 +278,7 @@ static const char *FormatName (VkFormat format)
 	case VK_FORMAT_R32G32B32A32_SFLOAT:	return "rgba32f";
 	case VK_FORMAT_R16G16_SFLOAT:		return "rg16f";
 	case VK_FORMAT_R16_SFLOAT:		return "r16f";
+	case VK_FORMAT_R32_SFLOAT:		return "r32f";
 	case VK_FORMAT_R32_UINT:		return "r32ui";
 	case VK_FORMAT_R32G32_UINT:		return "rg32ui";
 	case VK_FORMAT_R16_UINT:		return "r16ui";

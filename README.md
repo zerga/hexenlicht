@@ -24,7 +24,7 @@ with shadows, bounce light, reflections and PBR materials.
 - Support PBR texture sets (albedo, normal, roughness, metallic, emissive)
   so reworked textures can shine.
 - Optional NVIDIA DLSS support (players download NVIDIA's files themselves;
-  see the plan for why).
+  see [DLSS](docs/hexenlicht/DLSS.md) and the plan for why).
 
 The existing software and OpenGL renderers of Hammer of Thyrion stay intact.
 HexenWorld is not part of Hexenlicht's scope.

@@ -366,9 +366,12 @@ void VK_InverseMatrix (const float m[16], float inv[16]);
  * which VK_PrepareUBO puts into the UBO; VK_UpscaleHDR runs the TAA pass
  * on the lit image before bloom and tone mapping, VK_UpscaleDisplay FSR
  * after them; the composite shows display_source's top left display_size
- * over the view. DLSS (3.10) replaces the TAA pass. */
+ * over the view. DLSS SR and RR (vk_dlss.c) replace the TAA pass. */
 typedef struct
 {
+	int		dlss;		/* 0, or DLSS instead of the TAA pass: VK_SL_SR, VK_SL_RR (vk_streamline.h) */
+	int		dlss_mode;	/* its VK_SL_MODE_* */
+	qboolean	denoise;	/* the denoiser runs: flt_enable, not with DLSS RR */
 	VkExtent2D	view;		/* the 3D view in the swapchain */
 	VkExtent2D	unscaled;	/* the view with the width rounded up to even: the upscalers' output,
 					 * shown 1:1 (an odd view width drops its last column) */
@@ -395,6 +398,25 @@ const vk_upscale_t *VK_Upscale (void);	/* this frame's */
 void VK_UpscaleHDR (VkCommandBuffer cmd);	/* the TAA pass */
 void VK_UpscaleDisplay (VkCommandBuffer cmd);	/* FSR */
 void VK_EndUpscaleFrame (void);		/* the frame's TAA output is the next one's history */
+int VK_UpscaleDLSSFeature (void);	/* the DLSS feature r_upscaler asks for: 0, VK_SL_SR, VK_SL_RR */
+
+/* vk_dlss.c: DLSS SR and RR through Streamline (vk_streamline.cpp, the
+ * player's DLLs) in the TAA pass's place. VK_DLSSChoose decides from
+ * VK_UpscaleEvaluate whether it runs and its mode and render size;
+ * checkerboard_interleave.comp writes its inputs; VK_DLSSRun evaluates it
+ * instead of the TAA pass; VK_DLSSBetweenFrames (VK_BeginFrame) recreates
+ * the render targets when its images change and frees what a feature no
+ * longer chosen holds. */
+void VK_InitDLSS (void);
+void VK_ShutdownDLSS (void);
+int VK_DLSSImagesWanted (void);		/* vk_dlss_images for the chosen feature */
+const char *VK_DLSSUnavailable (int feature);	/* why it can't run, or NULL */
+qboolean VK_DLSSChoose (int feature, qboolean lit, int percent, vk_upscale_t *up);
+qboolean VK_DLSSRun (VkCommandBuffer cmd, const vk_upscale_t *up);	/* false: it failed */
+void VK_EndDLSSFrame (qboolean ran);
+void VK_ResetDLSSHistory (void);	/* with the denoiser's */
+void VK_DLSSUpscalerChanged (void);	/* r_upscaler changed: a failed feature gets another try */
+void VK_DLSSBetweenFrames (void);	/* outside frames */
 
 /* vk_ubo.c: the global uniform buffer (shaders/global_ubo.h), one per frame
  * in flight: descriptor set 0 of the view passes. VK_PrepareUBO fills the
@@ -436,6 +458,7 @@ void VK_ClearLightStats (VkCommandBuffer cmd);	/* after VK_PrepareUBO, before th
  * to even), in the GENERAL layout, and the blue noise: descriptor set 1 of
  * the view passes, even or odd by vk_render_frame */
 extern VkExtent2D		vk_image_extent;	/* 0 x 0 = none */
+extern int			vk_dlss_images;		/* DLSS's inputs at full size: 0, 1 the depth, 2 RR's too */
 extern VkDescriptorSetLayout	vk_images_set_layout;
 void VK_InitImages (void);
 void VK_ShutdownImages (void);
@@ -443,6 +466,7 @@ void VK_CreateImages (void);
 void VK_DestroyImages (void);
 qboolean VK_ImagesReady (void);
 VkImage VK_Image (int index);
+void VK_ImageInfo (int index, VkImage *image, VkImageView *view, VkFormat *format, uint32_t *width, uint32_t *height);
 VkDescriptorSet VK_ImagesSet (void);	/* this 3D frame's */
 
 /* vk_pathtracer.c: the view passes' pipeline layouts (set 0 the UBO, set 1

@@ -20,6 +20,7 @@ Read only what the task needs.
 | Quake II RTX module map and import rules | [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
 | Testing: scripted runs, screenshots, pixel regression, check commands, maps | [docs/hexenlicht/TESTING.md](docs/hexenlicht/TESTING.md), tools in [tools/hexenlicht](tools/hexenlicht/README.md) |
 | Development setup: Vulkan SDK, game data, CLion | [docs/hexenlicht/SETUP.md](docs/hexenlicht/SETUP.md) |
+| DLSS for players: NVIDIA's files, turning it on | [docs/hexenlicht/DLSS.md](docs/hexenlicht/DLSS.md) |
 | Upstream merges and conflict hot spots | [docs/hexenlicht/UPSTREAM.md](docs/hexenlicht/UPSTREAM.md) |
 | The upstream engine: architecture, Makefile builds, gamecode | [docs/hexenlicht/ENGINE.md](docs/hexenlicht/ENGINE.md) |
 | Third-party code and licenses | [THIRD_PARTY.md](THIRD_PARTY.md) |

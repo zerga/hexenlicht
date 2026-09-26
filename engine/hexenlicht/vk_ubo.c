@@ -30,6 +30,7 @@
 #include "vk_local.h"
 #include "r_scene.h"
 #include "shaders/hl_shared.h"
+#include "vk_streamline.h"	/* VK_SL_RR */
 
 /* The C struct must match the shaders' std140 block: when the list
  * changes, compare every member's offsetof with glslang's reflection
@@ -208,7 +209,12 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	/* the denoiser (vk_asvgf.c); its temporal filters use no history when
 	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid;
 	 * VK_CheckDenoiserCvars has dropped it on a cvar change) */
-	ubo.flt_enable = VK_DenoiserEnabled () ? 1.0f : 0.0f;
+	ubo.flt_enable = up->denoise ? 1.0f : 0.0f;
+	/* DLSS RR takes the noisy image: as in Quake II RTX without the
+	 * denoiser, every specular ray counts (no specular faked from the
+	 * denoiser's spherical harmonics) */
+	if (up->dlss == VK_SL_RR)
+		ubo.pt_fake_roughness_threshold = 1.0f;
 	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
 	if (!VK_DenoiserHistoryValid ())
 	{

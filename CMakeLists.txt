@@ -8,6 +8,7 @@
 #   hexenlicht Hexen II with the Hexenlicht renderer (work in progress)
 #   h2patch    patches retail pak files to v1.11
 #   volk, vma, stb_image   vendored libraries for the Vulkan renderer
+#   (libs/streamline: NVIDIA Streamline's headers for optional DLSS, no binaries)
 #
 # Requires the LunarG Vulkan SDK 1.3+ (VULKAN_SDK environment variable).
 #
@@ -263,13 +264,16 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_bloom.c
 	${HEXENLICHT_DIR}/vk_tonemap.c
 	${HEXENLICHT_DIR}/vk_upscale.c
+	${HEXENLICHT_DIR}/vk_dlss.c
+	${HEXENLICHT_DIR}/vk_streamline.cpp	# C++: Streamline's headers (libs/streamline)
 	${HEXENLICHT_DIR}/vk_view.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
-target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1)
+target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1 ${LIBS_DIR}/streamline)
+target_compile_features(hexenlicht PRIVATE cxx_std_17)	# vk_streamline.cpp
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
 add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise)	# building the exe also builds its shaders and data

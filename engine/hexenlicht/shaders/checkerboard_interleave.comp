@@ -1,5 +1,6 @@
 /*
 Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+Copyright (C) 2026  Hexenlicht contributors
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -88,6 +89,14 @@ right before this shader is invoked, see function `vkpt_interleave`.
 
 #include "utils.glsl"
 
+// Hexenlicht: DLSS's inputs in the screen layout (vk_dlss.c, dlss_inputs.glsl):
+// spec_dlss_inputs 1 (DLSS SR) writes the depth, 2 (DLSS RR) also RR's guides,
+// and RR, which takes the noisy image, gets the checkerboard of translucent
+// surfaces blurred as the denoiser's image does (DECISIONS R56)
+layout(constant_id = 0) const uint spec_dlss_inputs = 0;
+#include "hl_shared.h"
+#include "dlss_inputs.glsl"
+
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 ivec2 get_input_position(out int other_side_offset)
@@ -145,7 +154,8 @@ void main()
     vec4 color;
     bool use_center_mv = true;
     int checkerboard_flags = int(center.a);
-    bool is_checkerboarded_surface = (global_ubo.flt_enable != 0) && (bitCount(checkerboard_flags & CHECKERBOARD_FLAG_FIELD_MASK) > 1);
+    // Hexenlicht: also for DLSS RR (spec_dlss_inputs 2)
+    bool is_checkerboarded_surface = (global_ubo.flt_enable != 0 || spec_dlss_inputs == 2) && (bitCount(checkerboard_flags & CHECKERBOARD_FLAG_FIELD_MASK) > 1);
 
     // The alpha channel encodes whether the material uses checkerboard reflections and refractions.
     // Don't do the filter if there is no checkerboarding - which improves sharpness and reduces sparkles.
@@ -184,4 +194,9 @@ void main()
         imageStore(IMG_FLAT_MOTION, opos, imageLoad(IMG_PT_MOTION, ipos));
     else
         imageStore(IMG_FLAT_MOTION, opos, imageLoad(IMG_PT_MOTION, ipos + ivec2(other_side_offset, 0)));
+
+    // Hexenlicht: DLSS's inputs, the depth from the motion vector's field pixel
+    if(spec_dlss_inputs != 0)
+        dlss_write_inputs(opos, ipos, use_center_mv ? ipos : ipos + ivec2(other_side_offset, 0),
+                          other_side_offset, is_checkerboarded_surface, spec_dlss_inputs == 2);
 }

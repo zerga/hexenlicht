@@ -113,20 +113,20 @@ directory, or pass `-basedir D:\dev\Hexenlicht-data`.
 ## 5. DLSS (optional)
 
 DLSS runs through NVIDIA's Streamline with the player's own DLLs (PLAN §5;
-the engine code comes with 3.10, the 3.9 spike's prototype is the branch
-`spike/3.9-streamline`). For development, download
-`streamline-sdk-v<version>.zip` from
-<https://github.com/NVIDIA-RTX/Streamline/releases> and unpack it outside
-the repository. Its `bin\x64` holds the DLLs to copy next to
+RENDERER.md's DLSS section; the player's page is [DLSS.md](DLSS.md)). The
+build needs nothing for it: Streamline's headers are in `libs/streamline`.
+To run DLSS, download `streamline-sdk-v<version>.zip` (2.14.1 or newer)
+from <https://github.com/NVIDIA-RTX/Streamline/releases> and unpack it
+outside the repository. Its `bin\x64` holds the DLLs to copy next to
 `hexenlicht.exe` in `build\<preset>\bin` (the build folder is not tracked):
 `sl.interposer.dll`, `sl.common.dll`, `sl.dlss.dll`, `sl.dlss_d.dll`,
 `nvngx_dlss.dll`, `nvngx_dlssd.dll`, and `NvLowLatencyVk.dll` (without it
 Streamline logs an error about Reflex, harmlessly). They are never committed
 (PLAN §4 and §5): NVIDIA's licenses in the zip govern the NGX and Reflex DLLs
 (`nvngx_dlss.license.txt`, `reflex.license.txt`), Streamline's MIT
-`license.txt` the `sl.*` ones. The
-spike branch builds its Streamline code only with
-`-DHEXENLICHT_STREAMLINE_SDK=<the unpacked folder>`.
+`license.txt` the `sl.*` ones. `bin\x64\development` holds Streamline's
+development DLLs (signed as well; they log more). Remove the DLLs from
+the build folder after testing, so later runs test the default again.
 
 ## Useful command-line options
 

@@ -1,7 +1,10 @@
 /* vk_core.c -- Vulkan instance, device and memory allocator for Hexenlicht
  *
  * Vulkan functions are loaded at runtime with volk, so hexenlicht.exe has
- * no link-time dependency on vulkan-1.dll.
+ * no link-time dependency on vulkan-1.dll. When the player's NVIDIA
+ * Streamline DLLs are next to the exe (DLSS, vk_streamline.cpp), volk
+ * loads Vulkan through Streamline's interposer instead, and the device
+ * enables privateData for it.
  *
  * The device must support Vulkan 1.3 and hardware ray tracing (acceleration
  * structures and ray queries); see docs/hexenlicht/PLAN.md. Ray tracing
@@ -30,6 +33,7 @@
 #include "quakedef.h"
 #include "winquake.h"
 #include "vk_local.h"
+#include "vk_streamline.h"
 
 vk_state_t	vk;
 
@@ -129,7 +133,9 @@ static qboolean VK_HasInstanceLayer (const char *name)
 	return found;
 }
 
-static void VK_CreateInstance (void)
+/* false if it failed through Streamline's interposer (VK_Init retries
+ * without it); other failures end the game */
+static qboolean VK_CreateInstance (void)
 {
 	VkApplicationInfo	app;
 	VkInstanceCreateInfo	info;
@@ -137,6 +143,7 @@ static void VK_CreateInstance (void)
 	const char		*extensions[3];
 	const char		*layers[1];
 	uint32_t		num_extensions = 0, api_version = 0;
+	VkResult		result;
 
 	if (vkEnumerateInstanceVersion)
 		vkEnumerateInstanceVersion (&api_version);
@@ -185,7 +192,14 @@ static void VK_CreateInstance (void)
 		info.pNext = &debug_info;
 	}
 
-	VK_CHECK (vkCreateInstance (&info, NULL, &vk.instance));
+	result = vkCreateInstance (&info, NULL, &vk.instance);
+	if (result != VK_SUCCESS && VK_SLActive ())
+	{
+		vk.instance = VK_NULL_HANDLE;
+		return false;
+	}
+	if (result != VK_SUCCESS)
+		Sys_Error ("vkCreateInstance failed: %s", VK_ResultString (result));
 	volkLoadInstanceOnly (vk.instance);
 
 	if (vk.validation)
@@ -194,6 +208,7 @@ static void VK_CreateInstance (void)
 		VK_CHECK (vkCreateDebugUtilsMessengerEXT (vk.instance, &debug_info, NULL, &vk.messenger));
 		Con_Printf ("Vulkan: validation layer enabled\n");
 	}
+	return true;
 }
 
 
@@ -407,7 +422,9 @@ static void VK_SelectPhysicalDevice (vk_candidate_t *chosen)
  * Logical device and allocator
  * ========================================================================== */
 
-static void VK_CreateDevice (const vk_candidate_t *c)
+/* false if it failed through Streamline's interposer (VK_Init retries
+ * without it); other failures end the game */
+static qboolean VK_CreateDevice (const vk_candidate_t *c)
 {
 	VkDeviceCreateInfo	info;
 	VkDeviceQueueCreateInfo	queue_info;
@@ -415,6 +432,7 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	const char		*extensions[NUM_REQUIRED_DEVICE_EXTENSIONS + 3];
 	uint32_t		i, num_extensions = 0;
 	const float		priority = 1.0f;
+	VkResult		result;
 
 	for (i = 0; i < NUM_REQUIRED_DEVICE_EXTENSIONS; i++)
 		extensions[num_extensions++] = required_device_extensions[i];
@@ -447,6 +465,7 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	enable.v13.synchronization2 = VK_TRUE;
 	enable.v13.maintenance4 = VK_TRUE;
 	enable.v13.shaderDemoteToHelperInvocation = VK_TRUE;	/* GLSL discard with a 1.3 target */
+	enable.v13.privateData = VK_SLActive () ? VK_TRUE : VK_FALSE;	/* Streamline and NGX create private data slots */
 	enable.as.accelerationStructure = VK_TRUE;
 	enable.rq.rayQuery = VK_TRUE;
 	enable.rtp.rayTracingPipeline = c->has_rtp;
@@ -467,7 +486,14 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	info.enabledExtensionCount = num_extensions;
 	info.ppEnabledExtensionNames = extensions;
 
-	VK_CHECK (vkCreateDevice (c->device, &info, NULL, &vk.device));
+	result = vkCreateDevice (c->device, &info, NULL, &vk.device);
+	if (result != VK_SUCCESS && VK_SLActive ())
+	{
+		vk.device = VK_NULL_HANDLE;
+		return false;
+	}
+	if (result != VK_SUCCESS)
+		Sys_Error ("vkCreateDevice failed: %s", VK_ResultString (result));
 	volkLoadDevice (vk.device);	/* device functions without dispatch overhead */
 	vkGetDeviceQueue (vk.device, c->queue_family, 0, &vk.queue);
 
@@ -477,6 +503,7 @@ static void VK_CreateDevice (const vk_candidate_t *c)
 	vk.have_rt_pipeline = c->has_rtp;
 	vk.have_ser = c->has_ser;
 	vk.have_position_fetch = c->has_pf;
+	return true;
 }
 
 static void VK_CreateAllocator (void)
@@ -578,6 +605,7 @@ static vk_module_t	vk_modules[] =
 	{ "tonemap",	VK_InitToneMap,		VK_ShutdownToneMap,		VK_INIT_DEFAULT },
 	{ "tonemap|",	NULL,			VK_DestroyToneMapPipelines,	VK_INIT_RELOAD_SHADER },
 	{ "upscale",	VK_InitUpscale,		VK_ShutdownUpscale,		VK_INIT_DEFAULT },
+	{ "dlss",	VK_InitDLSS,		VK_ShutdownDLSS,		VK_INIT_DEFAULT },
 	{ "upscale|",	NULL,			VK_DestroyUpscalePipelines,	VK_INIT_RELOAD_SHADER },
 	{ "view",	VK_InitView,		VK_ShutdownView,		VK_INIT_DEFAULT },
 	{ "view|",	NULL,			VK_DestroyViewPipelines,	VK_INIT_RELOAD_SHADER },
@@ -655,26 +683,60 @@ void VK_Init (HINSTANCE hinstance, HWND hwnd)
 {
 	VkWin32SurfaceCreateInfoKHR	surface_info;
 	vk_candidate_t			chosen;
+	PFN_vkGetInstanceProcAddr	sl_gipa;
+	char				exe_dir[MAX_OSPATH];
+	size_t				len;
 
-	if (volkInitialize () != VK_SUCCESS)
+	/* NVIDIA Streamline (the player's DLLs, for DLSS; vk_streamline.cpp)
+	 * before the instance: Vulkan then comes through its interposer */
+	VK_ExePath ("", exe_dir, sizeof(exe_dir));
+	len = strlen (exe_dir);
+	if (len && (exe_dir[len - 1] == '\\' || exe_dir[len - 1] == '/'))
+		exe_dir[len - 1] = 0;
+	sl_gipa = VK_SLPreInit (exe_dir);
+	if (sl_gipa)
+		volkInitializeCustom (sl_gipa);
+	else if (volkInitialize () != VK_SUCCESS)
 		Sys_Error ("Vulkan is not available (vulkan-1.dll not found).\n"
 			   "Update the graphics driver.");
-
-	VK_CreateInstance ();
 
 	memset (&surface_info, 0, sizeof(surface_info));
 	surface_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
 	surface_info.hinstance = hinstance;
 	surface_info.hwnd = hwnd;
-	VK_CHECK (vkCreateWin32SurfaceKHR (vk.instance, &surface_info, NULL, &vk.surface));
-
-	VK_SelectPhysicalDevice (&chosen);
-	VK_CreateDevice (&chosen);
+	while (1)
+	{
+		if (VK_CreateInstance ())
+		{
+			VK_CHECK (vkCreateWin32SurfaceKHR (vk.instance, &surface_info, NULL, &vk.surface));
+			VK_SelectPhysicalDevice (&chosen);
+			if (VK_CreateDevice (&chosen))
+				break;
+		}
+		/* the instance or the device failed through Streamline's
+		 * interposer (DLLs of mixed versions, say): without Streamline,
+		 * shut down first as in VK_Shutdown */
+		VK_SLVulkanFailed ();
+		if (vk.surface)
+			vkDestroySurfaceKHR (vk.instance, vk.surface, NULL);
+		if (vk.messenger)
+			vkDestroyDebugUtilsMessengerEXT (vk.instance, vk.messenger, NULL);
+		if (vk.instance)
+			vkDestroyInstance (vk.instance, NULL);
+		vk.surface = VK_NULL_HANDLE;
+		vk.messenger = VK_NULL_HANDLE;
+		vk.instance = VK_NULL_HANDLE;
+		if (volkInitialize () != VK_SUCCESS)
+			Sys_Error ("Vulkan is not available (vulkan-1.dll not found).\n"
+				   "Update the graphics driver.");
+	}
+	VK_SLDeviceReady (vk.physical_device);
 	VK_CreateAllocator ();
 
 	Con_Printf ("Vulkan: using %s (Vulkan %u.%u, RT pipeline %s, SER %s)\n", vk.props.deviceName,
 			VK_API_VERSION_MAJOR(vk.props.apiVersion), VK_API_VERSION_MINOR(vk.props.apiVersion),
 			vk.have_rt_pipeline ? "yes" : "no", vk.have_ser ? "yes" : "no");
+	Con_Printf ("%s", VK_SLStartupMessage ());	/* empty without sl.interposer.dll */
 
 	Cmd_AddCommand ("vk_info", VK_Info_f);
 	Cmd_AddCommand ("vk_reload_shaders", VK_ReloadShaders_f);
@@ -692,6 +754,7 @@ void VK_Shutdown (void)
 	{
 		vk_modules_ready = false;
 		VK_ShutdownModules (VK_INIT_DEFAULT);
+		VK_SLShutdown ();	/* before the device and the instance */
 		if (vk.allocator)
 			vmaDestroyAllocator (vk.allocator);
 		vkDestroyDevice (vk.device, NULL);

@@ -203,6 +203,7 @@ void VK_DenoiseLighting (VkCommandBuffer cmd, uint32_t width, uint32_t height, q
 void VK_ResetDenoiserHistory (void)
 {
 	history_valid = false;
+	VK_ResetDLSSHistory ();	/* the same events drop DLSS's */
 }
 
 qboolean VK_DenoiserHistoryValid (void)
