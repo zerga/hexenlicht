@@ -10,6 +10,8 @@
 # compute shaders with KHR_RAY_QUERY defined: Hexenlicht traces with ray
 # queries only (docs/hexenlicht/Q2RTX.md). Files included with #include are tracked
 # through glslang's depfile, so editing an include rebuilds its users.
+# AMD's FSR 1 headers (libs/fsr1) are on the include path for the FSR
+# shaders.
 # Debug builds embed debug information (-g) for RenderDoc / Nsight.
 # VKPT_SHADER is defined in every shader, as in Quake II RTX's build: the
 # headers shared with C use it to tell shaders from C.
@@ -35,6 +37,7 @@ function(hexenlicht_add_shaders target)
 				-DVKPT_SHADER
 				$<$<CONFIG:Debug>:-g>
 				-I${HEXENLICHT_SHADER_DIR}
+				-I${CMAKE_SOURCE_DIR}/libs/fsr1
 				--depfile ${out}.d
 				-o ${out} ${src}
 			MAIN_DEPENDENCY ${src}

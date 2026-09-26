@@ -360,17 +360,54 @@ void VK_CreateViewMatrix (float m[16], const vec3_t origin, const vec3_t forward
 void VK_CreateProjectionMatrix (float m[16], float znear, float zfar, float fov_x, float fov_y);
 void VK_InverseMatrix (const float m[16], float inv[16]);
 
+/* vk_upscale.c: the upscaler interface (Quake II RTX's
+ * evaluate_taa_settings, TAA and FSR 1). VK_UpscaleEvaluate decides the
+ * 3D frame's sizes, jitter and passes for the view (r_scale, r_upscaler),
+ * which VK_PrepareUBO puts into the UBO; VK_UpscaleHDR runs the TAA pass
+ * on the lit image before bloom and tone mapping, VK_UpscaleDisplay FSR
+ * after them; the composite shows display_source's top left display_size
+ * over the view. DLSS (3.10) replaces the TAA pass. */
+typedef struct
+{
+	VkExtent2D	view;		/* the 3D view in the swapchain */
+	VkExtent2D	unscaled;	/* the view with the width rounded up to even: the upscalers' output,
+					 * shown 1:1 (an odd view width drops its last column) */
+	VkExtent2D	render;		/* what the path tracer renders: unscaled x r_scale, the width even */
+	VkExtent2D	taa_output;	/* what the TAA pass writes, bloom and tone mapping take: render
+					 * (TAA, FSR, the debug views) or unscaled (TAAU) */
+	float		jitter[2];	/* the primary rays' sub-pixel offset (TAAU, FSR; else 0) */
+	qboolean	taa;		/* the TAA pass runs: the lit image */
+	int		taa_mode;	/* its flt_taa: AA_MODE_UPSCALE (the blend) or AA_MODE_OFF (a copy) */
+	qboolean	fsr_easu, fsr_rcas;	/* FSR's steps, after tone mapping */
+	float		lod_bias;	/* added to pt_texture_lod_bias: log2 of the scale when upscaling */
+	uint32_t	easu_const[4][4];	/* FsrEasuCon's, for the UBO */
+	uint32_t	rcas_const[4];		/* FsrRcasCon's */
+	int		display_source;	/* what the composite shows: 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
+	VkExtent2D	display_size;	/* its top left part covering the view */
+	qboolean	display_lanczos;	/* scaled with Lanczos, else 1:1 or nearest */
+} vk_upscale_t;
+
+void VK_InitUpscale (void);
+void VK_ShutdownUpscale (void);
+void VK_DestroyUpscalePipelines (void);	/* rebuilt when next used */
+const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_height, int debug_view);	/* before VK_PrepareUBO */
+const vk_upscale_t *VK_Upscale (void);	/* this frame's */
+void VK_UpscaleHDR (VkCommandBuffer cmd);	/* the TAA pass */
+void VK_UpscaleDisplay (VkCommandBuffer cmd);	/* FSR */
+void VK_EndUpscaleFrame (void);		/* the frame's TAA output is the next one's history */
+
 /* vk_ubo.c: the global uniform buffer (shaders/global_ubo.h), one per frame
  * in flight: descriptor set 0 of the view passes. VK_PrepareUBO fills the
- * current frame's from r_scene for a width x height 3D view (rendered at
- * the width rounded up to even: global_ubo.width; the output's size is
- * taa_output_width x taa_output_height) and counts the 3D frames
- * (vk_render_frame, the UBO's current_frame_idx). */
+ * current frame's from r_scene and the frame's upscaling (the render size
+ * global_ubo.width x height, the TAA output's taa_output_width x height,
+ * the jitter) and counts the 3D frames (vk_render_frame, the UBO's
+ * current_frame_idx). */
 extern VkDescriptorSetLayout	vk_ubo_set_layout;
 extern uint32_t			vk_render_frame;
 void VK_InitUBO (void);
 void VK_ShutdownUBO (void);
-void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view);
+void VK_CheckDenoiserCvars (void);	/* before VK_UpscaleEvaluate: a change drops the history */
+void VK_PrepareUBO (const vk_upscale_t *up, int debug_view);
 void VK_ResetUBOHistory (void);	/* the next frame's _prev values are its own */
 const struct QVKUniformBuffer_s *VK_CurrentUBO (void);	/* this frame's, after VK_PrepareUBO */
 qboolean VK_ToneMappingEnabled (void);	/* tm_enable */
@@ -423,6 +460,7 @@ VkPipelineLayout VK_CreatePassLayout (VkShaderStageFlags push_stages, uint32_t p
 VkPipelineLayout VK_PathTracerLayout (void);	/* pt_push_constants_t */
 VkPipeline VK_CreateComputePipeline (const char *shader, VkPipelineLayout layout);
 VkPipeline VK_CreateComputePipelineSpec (const char *shader, VkPipelineLayout layout, uint32_t value);	/* constant_id 0 */
+VkPipeline VK_CreateComputePipelineSpecs (const char *shader, VkPipelineLayout layout, const uint32_t *values, int count);	/* constant_id 0..count-1 */
 void VK_BindPassSets (VkCommandBuffer cmd, VkPipelineBindPoint bind_point, VkPipelineLayout layout);
 void VK_DispatchRays (VkCommandBuffer cmd, VkPipeline pipeline, const pt_push_constants_t *push,
 		      uint32_t width, uint32_t height, uint32_t depth);
@@ -446,7 +484,8 @@ qboolean VK_DenoiserHistoryValid (void);	/* for VK_PrepareUBO */
 void VK_EndDenoiserFrame (qboolean denoised);	/* the frame's images are the next one's history */
 
 /* vk_bloom.c and vk_tonemap.c: Quake II RTX's bloom, tone mapping and auto
- * exposure, in place on TAA_OUTPUT's width x height view (r_debugview 0);
+ * exposure, in place on TAA_OUTPUT's width x height (the TAA output's
+ * size) after the TAA pass (r_debugview 0);
  * the adapted luminance comes back through a readback buffer per frame in
  * flight */
 void VK_InitBloom (void);
@@ -464,11 +503,11 @@ VkDeviceAddress VK_ToneMapBufferAddress (void);
 VkDeviceAddress VK_ReadbackAddress (float *adapted_luminance);	/* this frame's; the luminance read back from it */
 
 /* vk_view.c: the 3D view. R_RenderView calls VK_RenderView3D after the
- * TLAS: it fills the UBO and runs the view passes (primary_rays.rgen, the
- * G-buffer; for now r_debugview's debug_view.comp shows it) into the
- * TAA_OUTPUT render target;
- * GL_EndRendering calls VK_DrawView3D, which copies it into the
- * swapchain's 3D view rectangle before the 2D. */
+ * TLAS: it fills the UBO and runs the view passes (the G-buffer, the
+ * lighting, the denoiser, the upscaler, bloom, tone mapping; or
+ * r_debugview's debug_view.comp) into the TAA_OUTPUT render target (FSR's
+ * outputs with FSR); GL_EndRendering calls VK_DrawView3D, which scales it
+ * into the swapchain's 3D view rectangle before the 2D. */
 void VK_InitView (void);
 void VK_ShutdownView (void);
 void VK_DestroyViewPipelines (void);	/* rebuilt when next used */

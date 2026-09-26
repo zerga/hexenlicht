@@ -4,7 +4,8 @@
  * per frame in flight, descriptor set 0 of the view passes
  * (vk_pathtracer.c). VK_RenderView3D calls VK_PrepareUBO, which fills the
  * current frame's from r_scene: the camera's matrices and last frame's,
- * the render size, time, the medium the camera is in, the cvars of
+ * the sizes, jitter, TAA mode and FSR constants vk_upscale.c decided,
+ * time, the medium the camera is in, the cvars of
  * Quake II RTX's UBO_CVAR_LIST (registered here with its defaults; each
  * does something once the pass that reads it is imported) and the
  * Hexenlicht block: the frame's buffers and the debug view's values.
@@ -111,6 +112,14 @@ static qboolean DenoiserCvarsChanged (void)
 	return true;
 }
 
+/* before a 3D frame's VK_UpscaleEvaluate and VK_PrepareUBO: a change of the
+ * denoiser's cvars drops its history (and so the TAA's) */
+void VK_CheckDenoiserCvars (void)
+{
+	if (DenoiserCvarsChanged ())
+		VK_ResetDenoiserHistory ();
+}
+
 /* the next frame has no last frame: new images (vk_images.c), which the
  * passes would otherwise read at last frame's size */
 void VK_ResetUBOHistory (void)
@@ -130,7 +139,7 @@ static void KeepAsPrevious (void)
 	ubo.prev_taa_output_height = ubo.taa_output_height;
 }
 
-void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
+void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 {
 	const vk_effectsframe_t	*ef = VK_EffectsFrame ();
 
@@ -145,21 +154,22 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 	ubo.cam_pos[3] = 0.0f;
 
 	ubo.current_frame_idx = (int)++vk_render_frame;
-	/* rendered at the width rounded up to even, for the two checkerboard
-	 * fields (Quake II RTX's get_render_extent); the output is the view's */
-	ubo.width = (int)((width + 1) & ~1u);
-	ubo.height = (int)height;
+	/* the sizes vk_upscale.c decided (Quake II RTX's extent_render,
+	 * extent_unscaled, extent_taa_output): rendered at the view times
+	 * r_scale, the width even for the two checkerboard fields */
+	ubo.width = (int)up->render.width;
+	ubo.height = (int)up->render.height;
 	ubo.current_gpu_slice_width = ubo.width;
 	ubo.inv_width = 1.0f / (float)ubo.width;
-	ubo.inv_height = 1.0f / (float)height;
-	ubo.unscaled_width = (int)width;	/* no resolution scale until 3.8 */
-	ubo.unscaled_height = (int)height;
+	ubo.inv_height = 1.0f / (float)ubo.height;
+	ubo.unscaled_width = (int)up->unscaled.width;
+	ubo.unscaled_height = (int)up->unscaled.height;
 	ubo.screen_image_width = (int)vk_image_extent.width;
 	ubo.screen_image_height = (int)vk_image_extent.height;
 	ubo.taa_image_width = (int)vk_image_extent.width;
 	ubo.taa_image_height = (int)vk_image_extent.height;
-	ubo.taa_output_width = (int)width;
-	ubo.taa_output_height = (int)height;
+	ubo.taa_output_width = (int)up->taa_output.width;
+	ubo.taa_output_height = (int)up->taa_output.height;
 	if (!ubo_valid)
 		KeepAsPrevious ();	/* the first frame: no last frame */
 	ubo.pt_projection = PROJECTION_RECTILINEAR;
@@ -180,16 +190,26 @@ void VK_PrepareUBO (uint32_t width, uint32_t height, int debug_view)
 
 	/* as Quake II RTX's prepare_ubo in its real-time mode: no depth of field
 	 * (only when accumulating a reference image), whole aperture polygon
-	 * sides; no temporal AA until 3.8 (sub_pixel_jitter stays 0) */
+	 * sides */
 	ubo.pt_aperture = 0.0f;
 	ubo.pt_aperture_type = roundf (ubo.pt_aperture_type);
-	ubo.flt_taa = AA_MODE_OFF;
+	/* the TAA pass and the jitter (vk_upscale.c): flt_taa follows
+	 * r_upscaler (off without history); textures sharper when upscaling
+	 * (its LOD bias) and FSR's constants */
+	ubo.flt_taa = (float)up->taa_mode;
+	ubo.sub_pixel_jitter[0] = up->jitter[0];
+	ubo.sub_pixel_jitter[1] = up->jitter[1];
+	ubo.pt_texture_lod_bias += up->lod_bias;
+	memcpy (ubo.easu_const0, up->easu_const[0], sizeof(ubo.easu_const0));
+	memcpy (ubo.easu_const1, up->easu_const[1], sizeof(ubo.easu_const1));
+	memcpy (ubo.easu_const2, up->easu_const[2], sizeof(ubo.easu_const2));
+	memcpy (ubo.easu_const3, up->easu_const[3], sizeof(ubo.easu_const3));
+	memcpy (ubo.rcas_const0, up->rcas_const, sizeof(ubo.rcas_const0));
 	/* the denoiser (vk_asvgf.c); its temporal filters use no history when
-	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid) */
+	 * the last frame's images aren't (Quake II RTX's temporal_frame_valid;
+	 * VK_CheckDenoiserCvars has dropped it on a cvar change) */
 	ubo.flt_enable = VK_DenoiserEnabled () ? 1.0f : 0.0f;
 	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
-	if (DenoiserCvarsChanged ())
-		VK_ResetDenoiserHistory ();
 	if (!VK_DenoiserHistoryValid ())
 	{
 		ubo.flt_temporal_lf = 0.0f;

@@ -67,9 +67,11 @@ this repository) or one at a time with
   with Q2RTX's defaults (but `pt_particle_brightness`, 15 since 3.7); each
   does something once the pass that reads it is imported. `VK_PrepareUBO`
   overrides those Q2RTX's host code sets per
-  mode until their passes exist: `pt_aperture` 0 (no accumulation mode),
-  `flt_taa` off (3.8); since 3.6 it sets `flt_temporal_*` to 0 when the
-  denoiser has no history, as Q2RTX's `temporal_frame_valid` does.
+  mode until their passes exist: `pt_aperture` 0 (no accumulation mode);
+  since 3.6 it sets `flt_temporal_*` to 0 when the denoiser has no
+  history, as Q2RTX's `temporal_frame_valid` does; since 3.8 `flt_taa`
+  (off without history), the jitter and the sizes follow `vk_upscale.c`
+  (`r_upscaler`, `r_scale`).
 - Copyright lines stay; ours is added to files we change. `THIRD_PARTY.md`
   lists the files.
 - New modules join `vk_core.c`'s init table: `VK_INIT_DEFAULT` at
@@ -80,21 +82,21 @@ this repository) or one at a time with
 
 | Q2RTX | What it does | Hexenlicht | Story |
 |---|---|---|---|
-| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); dynamic resolution 3.8 | E1, E2, 3.1, … |
+| `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); `get_render_extent`, `evaluate_taa_settings` and the TAA jitter in `vk_upscale.c` (3.8: `r_scale` instead of `scr_viewsize`, our TAA mode without random sub-pixel offsets); dynamic resolution left out (3.11 or 7.2, see the open questions) | E1, E2, 3.1, 3.8, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
 | `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1; specialization constants 3.5a); the passes 3.2–3.5b (`vk_view.c`: the bounces 3.5a) | 2.6, 3.1, … |
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
-| `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag`; underwater warp 6.6 | 1.6, 6.6 |
+| `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag` (3.8: its Lanczos filter and scaling rule, nearest a texel fetch); underwater warp 6.6 | 1.6, 3.8, 6.6 |
 | `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3), map lights E4; cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.6 |
 | `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
-| `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); TAAU 3.8 | 3.6, 3.8 |
+| `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); `vkpt_taa` in `vk_upscale.c` (3.8) | 3.6, 3.8 |
 | `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | `vk_tonemap.c`, `vk_bloom.c` (3.7: SDR only; no under-water bloom or menu blur; the effects scaled by the exposure with one factor for particles and sprites, `pt_particle_brightness` 15) | 3.7 |
-| `fsr.c`, `fsr/` | AMD FSR 1 | 3.8 | 3.8 |
+| `fsr.c`, `fsr/` | AMD FSR 1 | `vk_upscale.c` (3.8: SDR and FP32 pipelines only; AMD's v1.0.2 headers in `libs/fsr1` instead of Q2RTX's `fsr/`, whose `ffx_fsr1.h` predates v1.0.2's RCAS fix) | 3.8 |
 | `profiler.c` | GPU timers | 3.11 | 3.11 |
 | `physical_sky.c`, `precomputed_sky.c` | physical sky, sun | 4.6 | 4.6 |
 | `conversion.c/.h`, `dds.h` | half floats, DDS | as needed; DDS 5.2 | 5.2 |
@@ -110,7 +112,7 @@ this repository) or one at a time with
 | `constants.h`, `shader_structs.h`, `utils.glsl`, `projection.glsl`, `path_tracer_transparency.glsl` | imported (`projection.glsl`, `path_tracer_transparency.glsl` unchanged; `utils.glsl`: `packRGBE` clamps, 3.3) | 3.1, 3.3 |
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
-| `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` | 1.6, 2.7 |
+| `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6) | 3.2, 3.3, 3.5b, 3.6 |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
 | `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6) | 3.3, 3.4 |
@@ -118,7 +120,8 @@ this repository) or one at a time with
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom (3.7: unchanged but `tone_mapping_curve.comp`'s launch check, removed; the tone mapping and readback buffers by device address, `vertex_buffer.h`; the apply shader's HDR variant and full screen blend unused) | 3.7 |
-| `asvgf_taau.comp`, `fsr_*` | upscaling | 3.8 |
+| `asvgf_taau.comp` | the TAA pass (3.8: threads past the TAA output write their zero only inside the images; `HQ_COLOR_INTERLEAVED` 1x1) | 3.8 |
+| `fsr_easu_fp32.comp`, `fsr_rcas_fp32.comp`, `fsr_easu.glsl`, `fsr_rcas.glsl`, `fsr_utils.glsl` | FSR 1 (3.8: the `.comp` files and `fsr_utils.glsl` unchanged; EASU's and RCAS's input clamped to the rendered part and the view, no writes past the view); the FP16 variants not imported (7.2) | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | 4.6 |
 | `normalize_normal_map.comp` | PBR materials | 5.3 |
 | `path_tracer_beam.*` | beams | 6.3 |
@@ -214,3 +217,19 @@ this repository) or one at a time with
   change every frame also need Q2RTX's light-count history
   (`light_counts_history`, left out in 3.6), so a gradient sample picks
   from the count its replayed frame had.
+- **Dynamic resolution (3.11, 7.2).** Q2RTX's `drs_*` steer the render
+  scale by the measured frame time; uHexen2 caps frames at 72 fps outside
+  timedemo, which hides it, and there are no GPU timers before 3.11. The
+  render size can already change every frame (`r_scale`; the denoiser and
+  the TAA reproject across it), so a controller is all it needs.
+- **Hot spots and the TAA's PQ clamp (4.9).** The TAA pass stores the lit
+  image PQ-encoded, which clamps at 10000 cd/m²: 78 in linear units before
+  the ×128 storage scale. Walls next to the test lights exceed it, and the
+  bloom around them is then up to 10/255 weaker than before 3.8. The
+  calibration (4.9) decides whether real lights stay below it.
+- **Reference shots by accumulation (4.9).** Q2RTX's reference mode
+  (`pt_accumulation_rendering`: `temporal_blend_factor`, the
+  `HQ_COLOR_INTERLEAVED` accumulator in `asvgf_taau.comp`, random primary
+  ray offsets) averages frames of a still scene into an unbiased image. The
+  shader path is imported; the host side and a full-size image would give
+  4.9 its reference shots.

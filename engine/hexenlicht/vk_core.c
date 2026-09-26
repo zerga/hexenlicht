@@ -577,6 +577,8 @@ static vk_module_t	vk_modules[] =
 	{ "bloom|",	NULL,			VK_DestroyBloomPipelines,	VK_INIT_RELOAD_SHADER },
 	{ "tonemap",	VK_InitToneMap,		VK_ShutdownToneMap,		VK_INIT_DEFAULT },
 	{ "tonemap|",	NULL,			VK_DestroyToneMapPipelines,	VK_INIT_RELOAD_SHADER },
+	{ "upscale",	VK_InitUpscale,		VK_ShutdownUpscale,		VK_INIT_DEFAULT },
+	{ "upscale|",	NULL,			VK_DestroyUpscalePipelines,	VK_INIT_RELOAD_SHADER },
 	{ "view",	VK_InitView,		VK_ShutdownView,		VK_INIT_DEFAULT },
 	{ "view|",	NULL,			VK_DestroyViewPipelines,	VK_INIT_RELOAD_SHADER },
 	{ "asvgf|",	NULL,			VK_DestroyASVGFPipelines,	VK_INIT_RELOAD_SHADER },
