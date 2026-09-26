@@ -144,7 +144,7 @@ this repository) or one at a time with
   real pools are rare (demo1 2 faces, demo3 8). The caustics trace
   (`path_tracer_rgen.h`, off until then) still treats vertical water as
   glass.
-- **Specular hit distance (3.9).** DLSS Ray Reconstruction wants the
+- **Specular hit distance (3.9, E5).** DLSS Ray Reconstruction wants the
   specular hit distance (or specular motion vectors). Since 3.5a the first
   bounce stores it where it traced a specular ray (`PT_SPECULAR_HIT_DIST`,
   0 elsewhere: half the pixels of rough surfaces, and the rows half
@@ -154,6 +154,12 @@ this repository) or one at a time with
   not want. The 3.9 spike finds out whether RR needs a value in every
   pixel, and whether 3.5b's mirror and glass paths need theirs (Q2RTX's
   reflection pass doesn't store it).
+  *3.9: RR accepts the zeros and needs no value in every pixel. With
+  Q2RTX's no-denoiser setting (`pt_fake_roughness_threshold` 1) every
+  specular ray counts; on demo1's floor made a metal mirror (roughness
+  0.02) or glossy metal (0.15) RR's reflections stay crisp during turns,
+  and zeroing the hit distance changes nothing visible (DECISIONS R55).
+  Revisit with E5's materials and the mirror and glass paths.*
 - **Smooth surfaces and sphere lights (E5, 4.5).** Sphere lights are not
   geometry, so no ray hits them. Surfaces smoother than
   `pt_direct_roughness_threshold` (0.18) get their specular only from the
@@ -168,9 +174,14 @@ this repository) or one at a time with
   2–3 % to the lit image, where lighter PBR textures would get tens of
   percent. The calibration (4.9) or the materials (E5) decide whether that
   stays.
-- **Checkerboard fields and RR (3.9).** At translucent surfaces Q2RTX puts one
+- **Checkerboard fields and RR (3.10, 3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.
+  *3.9: RR keeps that alternation (a fine checkerboard) where A-SVGF +
+  TAAU blends it, so its input must be resolved first, as
+  `checkerboard_interleave.comp` does for the denoiser (3.10; untested for
+  RR). That blur itself misses the see-through pixels at some views
+  (3.12, DECISIONS R56).*
 - **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
   the vertex light, then clamps); the G-buffer takes only the hue.
 - **Light styles and the gradients (4.2).** A gradient sample weighs the
