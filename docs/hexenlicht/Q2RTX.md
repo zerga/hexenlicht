@@ -114,7 +114,7 @@ this repository) or one at a time with
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6) | 3.2, 3.3, 3.5b, 3.6 |
-| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (the last two unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off) | 3.3 |
+| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too) | 3.3, 3.10 |
 | `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6) | 3.3, 3.4 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
@@ -174,14 +174,16 @@ this repository) or one at a time with
   2–3 % to the lit image, where lighter PBR textures would get tens of
   percent. The calibration (4.9) or the materials (E5) decide whether that
   stays.
-- **Checkerboard fields and RR (3.10, 3.12).** At translucent surfaces Q2RTX puts one
+- **Checkerboard fields and RR (3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.
   *3.9: RR keeps that alternation (a fine checkerboard) where A-SVGF +
   TAAU blends it, so its input must be resolved first, as
-  `checkerboard_interleave.comp` does for the denoiser (3.10; untested for
-  RR). That blur itself misses the see-through pixels at some views
-  (3.12, DECISIONS R56).*
+  `checkerboard_interleave.comp` does for the denoiser. That blur itself
+  misses the see-through pixels at some views (3.12, DECISIONS R56).
+  3.10: the interleave blurs RR's input and its guides alike; at the
+  cathedral's font the checkerboard is gone from RR's image where the blur
+  triggers and remains where it misses pixels (R62).*
 - **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
   the vertex light, then clamps); the G-buffer takes only the hue.
 - **Light styles and the gradients (4.2).** A gradient sample weighs the

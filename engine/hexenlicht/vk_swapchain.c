@@ -423,6 +423,7 @@ qboolean VK_BeginFrame (void)
 		VK_CreateSwapchain ();
 	if (!vk.swapchain)
 		return false;	/* minimized */
+	VK_DLSSBetweenFrames ();	/* the render targets follow DLSS's images (vk_dlss.c) */
 
 	f = &vk.frames[vk.frame_index];
 	VK_CHECK (vkWaitForFences (vk.device, 1, &f->fence, VK_TRUE, UINT64_MAX));

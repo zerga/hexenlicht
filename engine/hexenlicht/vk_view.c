@@ -15,8 +15,10 @@
  * pt_num_bounce_rays bounces (0, 0.5 = half resolution, 1, 2), the
  * denoiser (flt_enable 1) or compositing.comp combines the lighting with
  * the surfaces and checkerboard_interleave.comp puts the fields into the
- * screen layout; the TAA pass (vk_upscale.c) takes the lit image into
- * TAA_OUTPUT (TAA, or TAAU up to the view's size), which the bloom
+ * screen layout (and DLSS's inputs, dlss_inputs.glsl); the TAA pass
+ * (vk_upscale.c) or DLSS SR or RR (vk_dlss.c, RR also instead of the
+ * denoiser) takes the lit image into TAA_OUTPUT (TAA at the render size,
+ * TAAU and DLSS up to the view's size), which the bloom
  * (vk_bloom.c) and the tone mapping (vk_tonemap.c) follow, then FSR if
  * chosen; or debug_view.comp shows a G-buffer or lighting channel,
  * selected by r_debugview (the G-buffer's before the bounces: with two,
@@ -45,6 +47,7 @@
 #include "r_scene.h"
 #include "shaders/hl_shared.h"
 #include "shaders/global_textures.h"
+#include "vk_streamline.h"	/* VK_SL_* */
 
 /* 0 the path tracer's image (the lighting passes, bloom and tone mapping),
  * or the G-buffer's and lighting channels: 1 base color with the
@@ -63,7 +66,7 @@ static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction p
 static VkPipeline		direct_pipeline;	/* the same */
 static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
-static VkPipeline		interleave_pipeline;
+static VkPipeline		interleave_pipelines[3];	/* the same; without DLSS's inputs, SR's, RR's (spec_dlss_inputs) */
 static VkPipeline		debug_pipeline;		/* the same */
 static VkPipelineLayout		composite_layout;	/* the pass sets, composite_push_t */
 static VkPipeline		composite_pipeline;
@@ -193,15 +196,19 @@ void VK_DestroyViewPipelines (void)
 			vkDestroyPipeline (vk.device, indirect_pipelines[i], NULL);
 		indirect_pipelines[i] = VK_NULL_HANDLE;
 	}
+	for (i = 0; i < 3; i++)
+	{
+		if (interleave_pipelines[i])
+			vkDestroyPipeline (vk.device, interleave_pipelines[i], NULL);
+		interleave_pipelines[i] = VK_NULL_HANDLE;
+	}
 	if (compositing_pipeline)
 		vkDestroyPipeline (vk.device, compositing_pipeline, NULL);
-	if (interleave_pipeline)
-		vkDestroyPipeline (vk.device, interleave_pipeline, NULL);
 	if (debug_pipeline)
 		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
 	if (composite_pipeline)
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
-	primary_pipeline = direct_pipeline = compositing_pipeline = interleave_pipeline = VK_NULL_HANDLE;
+	primary_pipeline = direct_pipeline = compositing_pipeline = VK_NULL_HANDLE;
 	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
 }
 
@@ -266,7 +273,7 @@ void VK_RenderView3D (void)
 	uint32_t		width, height;
 	float			num_bounces;
 	int			num_reflect, i, mode = q_min (q_max (r_debugview.integer, DEBUGVIEW_LIT), DEBUGVIEW_MAX);
-	qboolean		denoise = VK_DenoiserEnabled ();
+	qboolean		denoise, dlss_ran = false;
 
 	view_drawn = false;
 	if (!ViewReady ())
@@ -283,6 +290,7 @@ void VK_RenderView3D (void)
 	up = VK_UpscaleEvaluate (view_rect.extent.width, view_rect.extent.height, mode);
 	width = up->render.width;
 	height = up->render.height;
+	denoise = up->denoise;	/* not with DLSS RR */
 	VK_PrepareUBO (up, mode);
 
 	if (!primary_pipeline)
@@ -301,8 +309,8 @@ void VK_RenderView3D (void)
 	}
 	if (!compositing_pipeline)
 		compositing_pipeline = VK_CreateComputePipeline ("compositing.comp", VK_PathTracerLayout ());
-	if (!interleave_pipeline)
-		interleave_pipeline = VK_CreateComputePipeline ("checkerboard_interleave.comp", VK_PathTracerLayout ());
+	if (!interleave_pipelines[up->dlss])
+		interleave_pipelines[up->dlss] = VK_CreateComputePipelineSpec ("checkerboard_interleave.comp", VK_PathTracerLayout (), (uint32_t)up->dlss);
 	if (!debug_pipeline)
 		debug_pipeline = VK_CreateComputePipeline ("debug_view.comp", VK_PathTracerLayout ());
 
@@ -360,7 +368,7 @@ void VK_RenderView3D (void)
 	 * ASVGF_COLOR: denoised (the denoiser's last filter composites) or as
 	 * it is (compositing.comp); then the fields interleaved into
 	 * FLAT_COLOR, the checkerboard of translucent surfaces blurred when
-	 * denoised */
+	 * denoised or for DLSS RR, with DLSS's inputs (vk_dlss.c) */
 	if (denoise)
 	{
 		VK_DenoiseLighting (cmd, width, height, num_bounces >= 0.5f);
@@ -370,17 +378,20 @@ void VK_RenderView3D (void)
 		VK_DispatchCompute (cmd, compositing_pipeline, width, height, 16);
 		VK_ComputeBarrier (cmd);
 	}
-	VK_DispatchCompute (cmd, interleave_pipeline, width, height, 16);
+	VK_DispatchCompute (cmd, interleave_pipelines[up->dlss], width, height, 16);
 	VK_ComputeBarrier (cmd);
 	if (mode == DEBUGVIEW_LIT)
 	{
 		/* the lit image into TAA_OUTPUT (TAA, TAAU; a copy without the
-		 * denoiser or history), in Quake II RTX's storage scale; then bloom,
-		 * tone mapping and exposure on the TAA output, and FSR (Quake II
-		 * RTX's order) */
+		 * denoiser or history; or DLSS, and the copy if it fails), in
+		 * Quake II RTX's storage scale; then bloom, tone mapping and
+		 * exposure on the TAA output, and FSR (Quake II RTX's order) */
 		const uint32_t	w = up->taa_output.width, h = up->taa_output.height;
 
-		VK_UpscaleHDR (cmd);
+		if (up->dlss)
+			dlss_ran = VK_DLSSRun (cmd, up);
+		if (!dlss_ran)
+			VK_UpscaleHDR (cmd);
 		if (VK_BloomEnabled ())
 			VK_Bloom (cmd, w, h);
 		if (VK_ToneMappingEnabled ())
@@ -401,6 +412,7 @@ void VK_RenderView3D (void)
 	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
 	VK_EndDenoiserFrame (denoise);
 	VK_EndUpscaleFrame ();
+	VK_EndDLSSFrame (dlss_ran);
 	view_drawn = true;
 }
 

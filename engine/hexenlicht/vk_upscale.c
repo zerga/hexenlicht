@@ -23,13 +23,18 @@
  *        (fsr_easu_fp32.comp, fsr_rcas_fp32.comp; flt_fsr_easu, _rcas,
  *        _sharpness); only below 100 % (Quake II RTX's flt_fsr_enable 1)
  *        and with tone mapping (FSR takes the tone-mapped image), else TAAU;
+ *      3 DLSS SR, 4 DLSS RR (vk_dlss.c): NVIDIA's, through Streamline with
+ *        the player's DLLs, instead of the TAA pass (RR also instead of the
+ *        denoiser), jittered as TAAU, into TAA_OUTPUT at the view's size;
+ *        the render size clamped to what DLSS accepts; TAAU when it can't
+ *        run (vk_upscale says why);
  *  - what the composite (vk_view.c) shows: TAA_OUTPUT or FSR's output, and
  *    how it scales it to the view.
  * Quake II RTX's AA_MODE_TAA (flt_taa 1) also moves each primary ray to a
  * random point in its pixel; the TAA here keeps the pixel centers (the
  * crisp look closest to GL), so every mode gives the UBO AA_MODE_UPSCALE
  * (the TAA shader blends alike in both), with the jitter and output size
- * deciding. DLSS (3.10) replaces the TAA pass. The debug views skip it:
+ * deciding. The debug views skip the upscalers:
  * no jitter, at the render size, scaled by the composite.
  *
  * Copyright (C) 2018 Christoph Schied
@@ -66,13 +71,15 @@
 #pragma warning(pop)
 #endif
 
+#include "vk_streamline.h"	/* VK_SL_SR, VK_SL_RR */
+
 #define NUM_TAA_SAMPLES	128	/* Quake II RTX's */
 
-enum { UPSCALER_TAA, UPSCALER_TAAU, UPSCALER_FSR };
+enum { UPSCALER_TAA, UPSCALER_TAAU, UPSCALER_FSR, UPSCALER_DLSS_SR, UPSCALER_DLSS_RR };
 
 /* the render size in percent of the view's: 25-100 */
 static cvar_t	r_scale = {"r_scale", "100", CVAR_ARCHIVE};
-/* 0 TAA, 1 TAAU, 2 FSR 1 */
+/* 0 TAA, 1 TAAU, 2 FSR 1, 3 DLSS SR, 4 DLSS RR */
 static cvar_t	r_upscaler = {"r_upscaler", "1", CVAR_ARCHIVE};
 /* Quake II RTX's FSR cvars (fsr.c): its steps, and RCAS's sharpness, 0-2
  * (0 the sharpest; AMD's recommended 0.2) */
@@ -113,10 +120,26 @@ static float Halton (int base, int index)
 	return r;
 }
 
+static int Upscaler (void)
+{
+	return q_max (UPSCALER_TAA, q_min (UPSCALER_DLSS_RR, r_upscaler.integer));
+}
+
+int VK_UpscaleDLSSFeature (void)
+{
+	switch (Upscaler ())
+	{
+	case UPSCALER_DLSS_SR:	return VK_SL_SR;
+	case UPSCALER_DLSS_RR:	return VK_SL_RR;
+	default:		return 0;
+	}
+}
+
 const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_height, int debug_view)
 {
-	float		scale = (float)q_max (25, q_min (100, r_scale.integer)) / 100.0f;
-	int		upscaler = q_max (UPSCALER_TAA, q_min (UPSCALER_FSR, r_upscaler.integer));
+	int		percent = q_max (25, q_min (100, r_scale.integer));
+	float		scale = (float)percent / 100.0f;
+	int		upscaler = Upscaler ();
 	qboolean	lit = debug_view == DEBUGVIEW_LIT;
 	qboolean	denoise = VK_DenoiserEnabled ();
 	qboolean	easu = flt_fsr_easu.integer != 0, rcas = flt_fsr_rcas.integer != 0;
@@ -133,6 +156,28 @@ const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_heigh
 	up.render.width = q_max (up.render.width, 2u);
 	up.render.height = q_max (up.render.height, 1u);
 	up.taa_output = up.render;
+	up.denoise = denoise;
+
+	/* DLSS (vk_dlss.c) for the lit image instead of the TAA pass: SR on
+	 * the denoiser's image, RR on the noisy one; jittered as TAAU, into
+	 * TAA_OUTPUT at the view's size, shown 1:1; the TAA pass's copy (no
+	 * history) runs only if DLSS fails */
+	if (VK_DLSSChoose (VK_UpscaleDLSSFeature (), lit, percent, &up))
+	{
+		int	i = (int)((vk_render_frame + 1) % NUM_TAA_SAMPLES);	/* the frame VK_PrepareUBO numbers next */
+
+		up.denoise = denoise && up.dlss != VK_SL_RR;
+		up.taa = true;
+		up.taa_mode = AA_MODE_OFF;
+		up.jitter[0] = taa_samples[i][0];
+		up.jitter[1] = taa_samples[i][1];
+		up.taa_output = up.unscaled;
+		up.lod_bias = log2f ((float)up.render.width / (float)up.unscaled.width);
+		up.display_size = up.unscaled;
+		return &up;
+	}
+	if (upscaler > UPSCALER_FSR)
+		upscaler = UPSCALER_TAAU;	/* DLSS can't run */
 
 	/* Quake II RTX's vkpt_fsr_is_enabled (flt_fsr_enable 1: only when it
 	 * upscales) and evaluate_taa_settings; RCAS alone needs TAAU's
@@ -236,7 +281,8 @@ void VK_DestroyUpscalePipelines (void)
 
 /* Quake II RTX's vkpt_taa: the lit image (FLAT_COLOR) into TAA_OUTPUT and
  * the history (ASVGF_TAA_A), after the lighting passes and the interleave,
- * before bloom and tone mapping; DLSS SR/RR replace it (3.10) */
+ * before bloom and tone mapping; DLSS SR/RR replace it (vk_dlss.c), which
+ * leaves it the copy if DLSS fails */
 void VK_UpscaleHDR (VkCommandBuffer cmd)
 {
 	uint32_t	w = up.taa_output.width, h = up.taa_output.height;
@@ -277,23 +323,28 @@ void VK_UpscaleDisplay (VkCommandBuffer cmd)
 /* after VK_RenderView3D's passes: whether the next frame has TAA history */
 void VK_EndUpscaleFrame (void)
 {
-	taa_history = up.taa;
+	taa_history = up.taa && !up.dlss;	/* DLSS keeps no TAA history */
 }
 
 static void VK_Upscale_f (void)
 {
-	static const char	*names[] = { "TAA", "TAAU", "FSR 1" };
-	const char		*pass;
+	static const char	*names[] = { "TAA", "TAAU", "FSR 1", "DLSS SR", "DLSS RR" };
+	int			feature = VK_UpscaleDLSSFeature ();
+	const char		*pass, *why;
 
 	if (!up.view.width)
 	{
 		Con_Printf ("No 3D view rendered yet\n");
 		return;
 	}
-	pass = !up.taa ? "none (a debug view)" : (up.taa_mode == AA_MODE_OFF) ? "copy (no history, or no denoiser)" : "TAA";
+	pass = (up.dlss == VK_SL_RR) ? "DLSS RR (no denoiser)" : (up.dlss == VK_SL_SR) ? "DLSS SR" : !up.taa ? "none (a debug view)" :
+	       (up.taa_mode == AA_MODE_OFF) ? "copy (no history, or no denoiser)" : "TAA";
 	Con_Printf ("r_upscaler %d (%s), r_scale %d: view %u x %u, render %u x %u\n",
-		    r_upscaler.integer, names[q_max (0, q_min (2, r_upscaler.integer))], r_scale.integer,
+		    r_upscaler.integer, names[Upscaler ()], r_scale.integer,
 		    up.view.width, up.view.height, up.render.width, up.render.height);
+	why = feature ? VK_DLSSUnavailable (feature) : NULL;
+	if (why && !up.dlss)
+		Con_Printf ("DLSS %s: TAAU instead, %s (vk_dlss)\n", (feature == VK_SL_RR) ? "RR" : "SR", why);
 	Con_Printf ("TAA pass: %s, output %u x %u, jitter %.3f %.3f, LOD bias %.2f\n",
 		    pass, up.taa_output.width, up.taa_output.height, up.jitter[0], up.jitter[1], up.lod_bias);
 	Con_Printf ("FSR: %s; shown: %s %u x %u, %s\n",
@@ -303,12 +354,18 @@ static void VK_Upscale_f (void)
 		    up.display_lanczos ? "Lanczos" : ExtentsEqual (up.display_size, up.unscaled) ? "1:1" : "nearest");
 }
 
+static void UpscalerChanged (cvar_t *var)
+{
+	VK_DLSSUpscalerChanged ();
+}
+
 void VK_InitUpscale (void)
 {
 	int	i;
 
 	Cvar_RegisterVariable (&r_scale);
 	Cvar_RegisterVariable (&r_upscaler);
+	Cvar_SetCallback (&r_upscaler, UpscalerChanged);
 	Cvar_RegisterVariable (&flt_fsr_easu);
 	Cvar_RegisterVariable (&flt_fsr_rcas);
 	Cvar_RegisterVariable (&flt_fsr_sharpness);

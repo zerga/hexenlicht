@@ -197,4 +197,14 @@ END_SHADER_STRUCT( EffectsCheckPush )
 					 (m) == DEBUGVIEW_DIRECT_SPECULAR || (m) == DEBUGVIEW_INDIRECT_DIFFUSE || \
 					 (m) == DEBUGVIEW_SPECULAR_HIT_DIST || (m) == DEBUGVIEW_HISTORY)
 
+
+/* ==========================================================================
+ * DLSS (vk_dlss.c, dlss_inputs.glsl): the depth range of the D3D-style
+ * projection DLSS gets, from GL's near plane to past the longest sight line
+ * in a Hexen II map (its coordinates stay within +-4096: under 14190)
+ * ========================================================================== */
+
+#define DLSS_Z_NEAR			4.0
+#define DLSS_Z_FAR			16384.0
+
 #endif	/* HL_SHARED_H */

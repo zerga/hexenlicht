@@ -69,7 +69,8 @@ client code, replaces the GL renderer files (`gl_rmain.c`, `gl_rsurf.c`,
 - New code under `engine/hexenlicht/` (renderer, vid layer) and
   `engine/hexenlicht/shaders/`.
 - Third-party libraries vendored under `libs/` (volk, VMA, stb_image,
-  DDS/KTX2 loader, FSR, Streamline headers/interposer), each with its license.
+  DDS/KTX2 loader, FSR, Streamline's headers; its interposer is one of the
+  player's DLLs, PLAN §5), each with its license.
 - Edits to shared engine files: minimal, guarded with `#ifdef HEXENLICHT`,
   so upstream merges stay easy.
 

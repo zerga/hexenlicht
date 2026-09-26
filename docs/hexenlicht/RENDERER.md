@@ -15,7 +15,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
-[Upscaling](#upscaling-vk_upscalec) ·
+[Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Other](#other) · [Console commands](#console-commands)
 
 ## Build target
@@ -39,7 +39,9 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   `vma_impl.cpp`, volk's loaders via `VMA_DYNAMIC_VULKAN_FUNCTIONS`),
   `stb_image` (`libs/stb`, PNG/TGA only, `STBI_NO_STDIO`); AMD's FSR 1
   headers (`libs/fsr1`, header-only: on the include path of `hexenlicht`
-  and of the shaders, 3.8). Versions and
+  and of the shaders, 3.8); NVIDIA Streamline's headers (`libs/streamline`,
+  header-only, C++: `vk_streamline.cpp`, the target's one C++ file, 3.10;
+  no NVIDIA binary is linked or in the repository). Versions and
   licenses are in `THIRD_PARTY.md`; update it when a vendored library changes.
 - Codec DLLs from `oslibs/windows/codecs/x64` are copied next to the exe
   post-build.
@@ -82,7 +84,11 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   acceleration structures, ray query, buffer device address, descriptor
   indexing, dynamic rendering, synchronization2, storage image extended
   formats; enables RT pipeline, NV SER, position fetch when present), VMA,
-  `vk_info`.
+  `vk_info`. Before the instance, `VK_SLPreInit` (`vk_streamline.cpp`)
+  loads NVIDIA Streamline when `sl.interposer.dll` is next to the exe and
+  its signature verifies: volk then loads Vulkan through the interposer's
+  `vkGetInstanceProcAddr` (else `vulkan-1.dll`), and the device enables
+  Vulkan 1.3 `privateData` for it (see [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)).
 - **Module table** (Q2RTX's `vkpt_initialize_all`): modules are initialized
   in table order and shut down in reverse. `VK_INIT_DEFAULT` entries run at
   startup, `VK_INIT_SWAPCHAIN` entries again after a swapchain recreation
@@ -91,8 +97,9 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   created ones are only destroyed). New modules join the table.
 - `vk_swapchain.c`: swapchain (UNORM with sRGB color space, so the final
   pass encodes with `linear_to_srgb()` from `srgb.glsl`; recreated lazily
-  when `vk.swapchain_dirty`: `WM_SIZE`, `vid_vsync`, out-of-date), two frames
-  in flight, per-image present semaphores, `VK_BeginFrame`/`VK_EndFrame`,
+  when `vk.swapchain_dirty`: `WM_SIZE`, `vid_vsync`, out-of-date; the
+  render targets also when DLSS's images change, `VK_DLSSBetweenFrames`),
+  two frames in flight, per-image present semaphores, `VK_BeginFrame`/`VK_EndFrame`,
   `VK_BeginSwapchainRendering(loadOp)`/`VK_EndSwapchainRendering()` between
   them. `screenshot` captures the next presented frame
   (`VK_RequestScreenshot`).
@@ -463,7 +470,11 @@ bindings.
   sampled linearly as `TAA_OUTPUT`) and the upscalers' (3.8: the TAA
   history `ASVGF_TAA_A/B`, sampled linearly, `FSR_EASU_OUTPUT`,
   `FSR_RCAS_OUTPUT`; `HQ_COLOR_INTERLEAVED`, which only Q2RTX's reference
-  mode writes, 1x1): about 320 bytes per pixel by their
+  mode writes, 1x1) and DLSS's inputs (3.10: `DLSS_DEPTH` r32f while DLSS
+  SR or RR is chosen, `DLSS_ALBEDO`, `DLSS_SPEC_ALBEDO`,
+  `DLSS_NORMAL_ROUGHNESS` rgba16f and `DLSS_SPEC_HIT` r16f while RR is,
+  else 1x1: `vk_dlss_images`, `IMG_WIDTH_DLSS`/`IMG_WIDTH_RR`; 4 or 30
+  bytes per pixel): about 320 bytes per pixel by their
   formats, 89 of them the denoiser's; 1201 MB allocated at 2560x1440 (3.8: +120). New
   images mean no denoiser history
   (`VK_ResetDenoiserHistory`) and no last frame in the UBO
@@ -694,9 +705,11 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   `compositing.comp` (Q2RTX's path without the denoiser, `flt_enable 0`:
   lighting × albedo + specular, × throughput, the effects and emission over
   it, into `ASVGF_COLOR`), then `checkerboard_interleave.comp` (the fields
-  into the screen layout: `FLAT_COLOR`, `FLAT_MOTION`; with the denoiser it
-  blurs checkerboarded surfaces, so translucent surfaces show their blend
-  instead of a fine checkerboard of the surface and what is behind it).
+  into the screen layout: `FLAT_COLOR`, `FLAT_MOTION`; with the denoiser or
+  DLSS RR it blurs checkerboarded surfaces, so translucent surfaces show
+  their blend instead of a fine checkerboard of the surface and what is
+  behind it; with DLSS it also writes DLSS's inputs, see
+  [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)).
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
   weapon shadows, no sunlight and the hit-distance clear. Without the
   denoiser the lit image is noisy at one sample per pixel. The TAA pass
@@ -746,11 +759,11 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   albedo = `get_reflectivity`'s albedo, specular albedo = Karis's
   environment-BRDF approximation of its reflectivity × the specular factor,
   normals `PT_NORMAL`, roughness `PT_METALLIC.g`, depth `PT_VIEW_DEPTH`,
-  motion `PT_MOTION.xy` (× the size in pixels), the specular hit distance
+  motion `PT_MOTION.xy` as it is (UV units, R53), the specular hit distance
   `PT_SPECULAR_HIT_DIST` where the pixel traced a specular bounce (3.5a;
-  whether RR needs one in every pixel is the 3.9 spike's). RR needs the
-  fields interleaved; at translucent surfaces they differ pixel by pixel
-  (3.9).
+  RR needs none in every pixel, DECISIONS R55). The interleave writes them
+  in the screen layout for RR (3.10, see
+  [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)).
 - `r_debugview` (default 1 until the maps have lights, 4.1) picks what the
   view shows: 0 the lit image (the TAA pass's, see
   [Upscaling](#upscaling-vk_upscalec), then bloom and tone mapping), or
@@ -869,7 +882,8 @@ default; 0 = the undenoised composite, as before). Its TAA pass
 ## Upscaling (`vk_upscale.c`)
 
 Story 3.8: Quake II RTX's resolution scale, TAA/TAAU and AMD FSR 1 behind
-one small interface, which DLSS (3.10) joins in the TAA pass's place.
+one small interface, which DLSS SR and RR (3.10, see
+[DLSS](#dlss-vk_dlssc-vk_streamlinecpp)) join in the TAA pass's place.
 
 - **Once per 3D frame** `VK_UpscaleEvaluate` (Q2RTX's `get_render_extent`
   and `evaluate_taa_settings`) decides, into `vk_upscale_t`:
@@ -899,7 +913,14 @@ one small interface, which DLSS (3.10) joins in the TAA pass's place.
   | 2 FSR 1 | TAAU's jittered TAA at the render size | EASU into `FSR_EASU_OUTPUT`, RCAS into `FSR_RCAS_OUTPUT` | 1:1 |
 
   FSR runs only below 100 % (Q2RTX's `flt_fsr_enable 1`) and with tone
-  mapping (it wants the tone-mapped image); elsewhere 2 is TAAU.
+  mapping (it wants the tone-mapped image); elsewhere 2 is TAAU. 3 DLSS SR
+  and 4 DLSS RR (3.10) replace the TAA pass for the lit image (RR the
+  denoiser too), jittered as TAAU, into `TAA_OUTPUT` at the unscaled size,
+  shown 1:1, the render size clamped to DLSS's range (`VK_DLSSChoose`);
+  where DLSS can't run, TAAU (`vk_upscale` says why); the debug views skip
+  it. `vk_upscale_t` carries `dlss`, `dlss_mode` and `denoise` (the
+  denoiser runs: `flt_enable`, not with RR), which `vk_view.c` and
+  `VK_PrepareUBO` follow.
   `flt_fsr_easu`, `flt_fsr_rcas` (Q2RTX's toggles; RCAS alone sharpens
   TAAU's output, so it needs the denoiser) and `flt_fsr_sharpness` (0.2;
   0 the sharpest, clamped to 2). Q2RTX's `flt_taa` is registered but
@@ -983,6 +1004,126 @@ one small interface, which DLSS (3.10) joins in the TAA pass's place.
   above 100 % (bigger images), the FP16 FSR variants (7.2), FSR's HDR
   variant (7.3), Q2RTX's reference accumulation mode (`HQ_COLOR_INTERLEAVED`,
   `pt_accumulation_rendering`: an option for 4.9's reference shots).
+
+## DLSS (`vk_dlss.c`, `vk_streamline.cpp`)
+
+Story 3.10: NVIDIA's DLSS Super Resolution and Ray Reconstruction through
+Streamline, optional at runtime with the player's DLLs (PLAN §5; the
+player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
+
+- **Files:** `vk_streamline.cpp` holds only the Streamline calls, behind
+  `vk_streamline.h`'s C interface (Streamline's headers are C++,
+  `libs/streamline`); `vk_dlss.c` decides what the renderer gives DLSS;
+  `dlss_inputs.glsl`, included by `checkerboard_interleave.comp`, writes
+  the inputs.
+- **Loading** (`VK_SLPreInit`, before the instance): `sl.interposer.dll`
+  next to the exe, its signature checked first with Streamline's
+  `sl::security::verifyEmbeddedSignature` (`WinVerifyTrust` without
+  revocation checks, and NVIDIA's second certificate; Windows may still
+  fetch missing certificates for the chain); a DLL that doesn't verify
+  isn't loaded. The signed interposer checks the other Streamline DLLs
+  itself. When the instance or the device fails through the interposer,
+  `VK_Init` shuts Streamline down (`VK_SLVulkanFailed`) and starts over
+  with `vulkan-1.dll`. `slInit`: engine
+  "custom", a version and the project's GUID (no NVIDIA application ID);
+  only the preference flags `eDisableCLStateTracking`,
+  `eUseFrameBasedResourceTagging` and `eDisableDebugText` (Streamline's
+  defaults would turn on over-the-air updates and downloaded plugins; the
+  development DLLs draw text over the view without the last); plugins only from the exe's
+  folder; no log files, Streamline's errors and warnings kept for
+  `vk_dlss`. volk then loads Vulkan through the interposer's
+  `vkGetInstanceProcAddr`, so Streamline's instance and device proxies add
+  DLSS's extensions and its present proxy keeps its frame bookkeeping; the
+  device enables `privateData`. `VK_SLDeviceReady` asks which features the
+  GPU supports and fetches their functions with `slGetFeatureFunction`
+  (`sl_dlss.h`'s helpers keep them in static variables). One console line
+  at startup says what was found (nothing without the DLL). Streamline
+  2.14.1's development DLLs are signed by NVIDIA too, whatever its guide
+  says, and load.
+- **Selection** (`VK_DLSSChoose`, from `VK_UpscaleEvaluate`): `r_upscaler`
+  3 or 4 for the lit image when the feature can run, else TAAU
+  (`VK_DLSSUnavailable`: no DLL, a bad signature, `slInit` failed, not
+  supported, it failed, its images not created yet). DLSS's mode follows
+  `r_scale`: 100 % DLAA, from 66 % Quality, from 58 % Balanced, from 50 %
+  Performance, below that Ultra Performance. The render size is clamped to
+  the mode's range from its optimal settings (at 1278x612: DLAA 1265–1278
+  pixels wide, Quality and Performance 639–1278, Ultra Performance only
+  426), the width even (the next mode up where the range has no even
+  width); between Ultra Performance's size and Performance's the nearer
+  (at 1278 pixels wide `r_scale` 25–41 renders at 33 %, 42–49 at 50 %;
+  where a third of the width is odd, Ultra Performance can't be used and
+  25–49 render at 50 %). RR reinitializes itself when the
+  render size changes (`r_scale` or the window).
+- **Inputs:** `checkerboard_interleave.comp`'s specialization constant
+  `spec_dlss_inputs` (three pipelines): 1 (SR) writes `DLSS_DEPTH`, 2 (RR)
+  also RR's guides, and blurs the checkerboard at translucent surfaces as
+  the denoiser's path does (R56). The depth is that of a D3D-style
+  projection, 0 at `DLSS_Z_NEAR` (4, GL's near plane) and 1 at
+  `DLSS_Z_FAR` (16384, past the longest sight line in a Hexen II map;
+  `hl_shared.h`): `PT_VIEW_DEPTH`, the distance along the ray, divided by
+  the length of the pixel's view-space direction at z = 1 (the jittered
+  pixel center), from the field pixel the motion vector comes from; 1
+  without a surface. The guides: `get_reflectivity`'s albedo, Karis's
+  environment-BRDF approximation of the reflectivity × the specular factor
+  (as debug view 12), the shading normal with the roughness in `.w`,
+  `PT_SPECULAR_HIT_DIST`; at blurred pixels half the pixel's and half the
+  mean of its other-field neighbours inside the view (the interleave's
+  cross). A pixel has no surface where `PT_VIEW_DEPTH` is
+  `PRIMARY_RAY_T_MAX`: with two bounces the first stores its hit in
+  `PT_SHADING_POSITION` before the interleave, material included. The
+  images are full size only while a feature is chosen
+  (`VK_DLSSImagesWanted`); `VK_DLSSBetweenFrames` (`VK_BeginFrame`, outside
+  frames) recreates the render targets on a change, as a resize does, and
+  frees what a feature no longer chosen holds (`slFreeResources` after
+  `vkDeviceWaitIdle`).
+- **Evaluation** (`VK_DLSSRun`, after the interleave, instead of
+  `VK_UpscaleHDR`): the common constants with R53's conventions (the
+  jitter negated; the motion vectors in UV units, scale 1; the UBO's
+  column-major matrices as Streamline's row-major ones; the depth row added
+  to `P` and `P_prev`; `clipToPrevClip` from the view matrices); the
+  options every frame (mode, output size, HDR, `preExposure` 1, SR with
+  DLSS's auto exposure; RR: normal and roughness packed, the view
+  matrices); the images tagged valid until present (`FLAT_COLOR`,
+  `TAA_OUTPUT`, `DLSS_*`, `FLAT_MOTION`, GENERAL layout, the render and
+  output extents); a memory barrier over all commands before and after.
+  RR takes the noisy image: no denoiser, and `pt_fake_roughness_threshold`
+  1, as in Q2RTX without the denoiser. DLSS's history resets on the
+  denoiser's reset events (`VK_ResetDenoiserHistory` calls
+  `VK_ResetDLSSHistory`), after a frame without DLSS, and on a change of
+  feature, mode or size. When an evaluation fails, the frame gets the TAA
+  pass's copy (DLSS frames give the UBO `AA_MODE_OFF`) and later frames
+  TAAU until `r_upscaler` (its callback), `r_scale` or the view's size
+  changes. With `pt_num_bounce_rays 0.5` RR gets bounce light in every
+  other row, alternating per frame (Q2RTX's half resolution without the
+  denoiser): use 1, the default.
+- **`r_dlss_preset`**: 0 (DLSS's default for the mode; with over-the-air
+  updates off it comes with the player's DLL version: RR's F in 2.14.1) or
+  a preset letter. RR's presets D, E and F cost the same (below).
+- **The look:** SR and RR are a little softer than TAAU at 67 %, RR stays
+  coherent down to 33 % and is steadier paused (temporal noise 0.019 at
+  67 %, as in 3.9). DLSS's output is unclamped HDR, where the TAA's PQ
+  encoding clamps at 10000 cd/m² (R51): stronger bloom around the test
+  lights' hot spots. At the cathedral's font RR's input is blurred where
+  the interleave blurs (without it RR shows the fine checkerboard); where
+  the blur misses pixels the checkerboard remains, as with TAA (3.12).
+- **Measured** (2560x1440, Release, temporary GPU timestamps, the 72 fps
+  cap and the unfocused window's sleep lifted; the GPU at its ~100 W power
+  cap, 0.9 GHz):
+
+  | 3D view, ms (demo1 / cathedral start) | 100 % | 67 % | 50 % |
+  |---|---|---|---|
+  | A-SVGF + TAAU | 14.2 / 13.7 | 6.3 / 6.1 | 3.4 / 3.3 |
+  | A-SVGF + DLSS SR | 15.8 / 15.7 | 7.8 / 8.1 | 5.7 / 6.0 |
+  | DLSS RR | 24.8 / 25.6 | 11.9 / 12.1 | 6.9 / 7.3 |
+
+  At 67 % on demo1: SR's evaluation 2.2 ms against the TAA pass's 0.36;
+  RR's 8.2 ms (presets D, E, F: 8.16, 8.12, 8.19), the interleave with
+  RR's inputs 0.21 ms (0.05 without, 0.07 with SR's depth), where the
+  denoiser, interleave and TAA took 2.7 ms. The 3.9 spike's separate input
+  pass is gone.
+- Left out: frame generation, Reflex, dynamic resolution, DLSS's
+  sharpening, RR's transparency layer (particles showed no smearing in
+  motion), HDR output (7.3), the menu (6.10).
 
 ## Bloom and tone mapping (`vk_bloom.c`, `vk_tonemap.c`)
 
@@ -1087,7 +1228,8 @@ mapper takes out; with `tm_enable 0` the composite takes it out and clamps
 | `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
 | `tm_enable 0/1`, `tm_debug 0-2`, `bloom_enable 0/1`, `bloom_debug 0-3` | tone mapping and auto exposure (Q2RTX's `tm_*` cvars tune them), their histogram or curve over the view; bloom (`bloom_sigma`, `bloom_intensity`) and its stages (see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)) |
 | `vk_exposure` | the adapted luminance read back (two frames old) |
-| `r_scale 25-100`, `r_upscaler 0-2`, `vk_upscale` | the render size in percent of the view's; 0 TAA, 1 TAAU, 2 FSR 1 (`flt_fsr_easu`, `flt_fsr_rcas`, `flt_fsr_sharpness`); the last frame's sizes, jitter and passes (see [Upscaling](#upscaling-vk_upscalec)) |
+| `r_scale 25-100`, `r_upscaler 0-4`, `vk_upscale` | the render size in percent of the view's; 0 TAA, 1 TAAU, 2 FSR 1 (`flt_fsr_easu`, `flt_fsr_rcas`, `flt_fsr_sharpness`), 3 DLSS SR, 4 DLSS RR; the last frame's sizes, jitter and passes (see [Upscaling](#upscaling-vk_upscalec)) |
+| `vk_dlss`, `r_dlss_preset` | Streamline's state (DLL, signature, support, versions, driver, evaluations, its log's warnings and errors), DLSS's images, mode and render sizes; DLSS's model: 0 its default, or a preset letter (see [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)) |
 | `pt_particle_brightness` | the effects' brightness under the exposure (15) |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |

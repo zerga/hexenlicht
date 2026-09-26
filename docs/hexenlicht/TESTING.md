@@ -179,7 +179,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   is visible from a map start. The cathedral's holy water font is one:
   `showpause 0`, `cl_yawspeed 100`, `cl_pitchspeed 100`, `noclip`, then
   `+right` 48 frames, `+forward` 143, `+moveup` 9, `+lookdown` 22 (at
-  `host_framerate 0.02`). Compare `pt_reflect_refract 0` and 2 (Q2RTX's
+  `host_framerate 0.02`, as the Necromancer, `playerclass 3`: the classes
+  move at different speeds; the font is then right of the crosshair). Compare `pt_reflect_refract 0` and 2 (Q2RTX's
   default): with 2 the odd field of `r_debugview 1` shows the stone floor
   under the font; mode 3 at 0 shows the purple translucent kind in a
   checkerboard. The lit image averages to the surface blended with what is
@@ -244,6 +245,27 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   village3's sheep. Robustness: `resize_test.ps1` with `r_upscaler 2`,
   `r_scale 67`; `vid_restart`, `viewsize`, `r_scale`/`r_upscaler` changes
   while turning, an odd view width (`-Width 1283` at UI scale 3: 1281).
+- **DLSS (3.10):** without the DLLs, `r_upscaler 0–2` must match `main`
+  pixel for pixel and 3 and 4 give TAAU (3.10: demo1 identical in 12
+  cases, the cathedral within ±1 as between two `main` runs; with
+  `tm_enable 0 bloom_enable 0`, since paused the exposure adapts in real
+  time and runs differ; print `vk_upscale` a few frames before
+  `screenshot`, or its lines are in the shot). With the DLLs (SETUP.md §5):
+  `r_upscaler 3` and 4 at `r_scale` 100, 67, 50, 33, 25 (`vk_upscale`,
+  `vk_dlss`: mode, render size, evaluations `eOk`, Streamline's three hook
+  warnings and no errors), switching while turning, `vid_restart`, a map
+  change, `resize_test.ps1`, `pt_num_bounce_rays 2` against 1 (RR: same
+  mean), particles in motion (Crusader's meteor staff while turning). RR's
+  image differs between runs of the same build (up to ±17 per channel:
+  NGX isn't bit-exact), so compare with a threshold (more than 8) and a
+  second run. A tampered `sl.interposer.dll` (a byte flipped in its DOS
+  stub keeps it loadable) must be refused; Streamline's development DLLs
+  are signed and load. Synchronization validation
+  (`VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1`, and
+  `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT` raised past 10): 3.10
+  found 19 hazards, all between NGX's own commands on its RR resources
+  (`nv.ngx.dlssd.resource`), none on ours; `main` has none. Remove the
+  DLLs afterwards.
 - **GPU cost:** until 3.11's timers, temporary timestamps
   (`vkCmdWriteTimestamp2` between the passes, read back when the frame's
   slot comes round, averaged over 100 frames by a console command; not
@@ -254,7 +276,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   --format=csv -lms 250`). uHexen2 caps frames at 72 fps outside timedemo,
   so a light setting runs partly idle at other clocks: lift the cap
   temporarily (`host.c`'s `1.0/72.0` check) so every setting runs at full
-  load.
+  load. Lift `sys_win.c`'s sleep for an unfocused window too (20 ms per
+  frame, 50 when paused): a game `hl_run.ps1` starts often isn't in front,
+  and then the GPU idles at 0.3–0.6 GHz (throttle reason 0x1) and a lower
+  render scale even measures slower (3.10's first run).
 - **`screenshot` captures the next frame:** a command in the same frame
   after it (e.g. `vk_testlight` changing the lights) is already in the
   shot; put waits after every `screenshot`.

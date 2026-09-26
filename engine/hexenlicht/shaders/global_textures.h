@@ -38,6 +38,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    (asvgf_taau.comp, temporal_blend_factor > 0, never set here), is 1 x 1;
  *  - PT_SPECULAR_HIT_DIST is Hexenlicht's: the specular bounce's hit
  *    distance, for DLSS Ray Reconstruction (indirect_lighting.rgen);
+ *  - the DLSS_* images are Hexenlicht's: DLSS's inputs in the screen layout
+ *    (checkerboard_interleave.comp, dlss_inputs.glsl), 1 x 1 unless DLSS
+ *    needs them (vk_dlss.c);
  *  - PT_VIEW_DEPTH is declared r16f, its format (Quake II RTX declares
  *    r32f, which the validation layer reports as undefined behaviour);
  *  - one GPU, so the _MGPU sizes are the full ones;
@@ -56,6 +59,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define IMG_WIDTH_MGPU IMG_WIDTH
 #define IMG_WIDTH_UNSCALED  IMG_WIDTH
 #define IMG_HEIGHT_UNSCALED IMG_HEIGHT
+/* DLSS's inputs (dlss_inputs.glsl): the images' size while DLSS SR or RR
+ * is chosen (vk_dlss_images 1: the depth; 2: RR's guides too), else 1 x 1 */
+#define IMG_WIDTH_DLSS  ((vk_dlss_images >= 1) ? IMG_WIDTH : 1)
+#define IMG_HEIGHT_DLSS ((vk_dlss_images >= 1) ? IMG_HEIGHT : 1)
+#define IMG_WIDTH_RR    ((vk_dlss_images >= 2) ? IMG_WIDTH : 1)
+#define IMG_HEIGHT_RR   ((vk_dlss_images >= 2) ? IMG_HEIGHT : 1)
 
 #define IMG_WIDTH_GRAD  ((IMG_WIDTH + GRAD_DWN - 1) / GRAD_DWN)
 #define IMG_HEIGHT_GRAD ((IMG_HEIGHT + GRAD_DWN - 1) / GRAD_DWN)
@@ -103,8 +112,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(FSR_EASU_OUTPUT,           34, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
 	IMG_DO(FSR_RCAS_OUTPUT,           35, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
 	IMG_DO(HQ_COLOR_INTERLEAVED,      36, R32G32B32A32_SFLOAT, rgba32f, 1,                   1              ) \
+	IMG_DO(DLSS_DEPTH,                37, R32_SFLOAT,          r32f,    IMG_WIDTH_DLSS,      IMG_HEIGHT_DLSS) \
+	IMG_DO(DLSS_ALBEDO,               38, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_RR,        IMG_HEIGHT_RR  ) \
+	IMG_DO(DLSS_SPEC_ALBEDO,          39, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_RR,        IMG_HEIGHT_RR  ) \
+	IMG_DO(DLSS_NORMAL_ROUGHNESS,     40, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_RR,        IMG_HEIGHT_RR  ) \
+	IMG_DO(DLSS_SPEC_HIT,             41, R16_SFLOAT,          r16f,    IMG_WIDTH_RR,        IMG_HEIGHT_RR  ) \
 
-#define NUM_IMAGES_BASE     37
+#define NUM_IMAGES_BASE     42
 
 /* images that exist twice: the _A names are this frame's, the _B names the
  * last frame's (vk_images.c's even and odd descriptor sets swap them) */
