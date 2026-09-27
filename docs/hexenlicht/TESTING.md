@@ -173,6 +173,19 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   ("at lights"), `vk_lights` the models; a temporary build whose light
   group has the mask `AS_FLAG_OPAQUE` shows what they would shadow (4.1:
   mode 15 averaged at meso1's and castle4's starts, 3.5 % darker).
+- **Light styles (4.2):** castle5's style 2 pulse (`'a'` to `'z'`, 5.1 s)
+  at (992 −1520 −216) is straight ahead of its start: `noclip`, `+forward`
+  150 frames at `host_framerate 0.02` ends at (992 −1338 −272); then 60
+  shots 4 frames apart in both engines (Hexenlicht `flt_enable 0`,
+  `r_debugview 15`, `r_maplight_scale 100`: raw direct light, unsaturated,
+  without the denoiser's or the exposure's lag; `glh2` its lit view) and
+  the per-shot mean luminance of the rows above the HUD: the two series
+  correlate (4.2: 0.95 at no lag; GL flattens at 1.30× on the bright phase,
+  its lightmaps clip). rider2c's switchable bank (styles 32–35) is off at
+  the start in both (`vk_lights`: 25 lights off; `r_dumpscene` shows the
+  styles at `"a"`). A camera inside a brush (noclip) shows GL the room
+  beyond (back faces culled) and Hexenlicht the brush's inside: check
+  `viewpos` and the view before comparing.
 - **Comparing noisy shots:** average them in linear light (sRGB → linear
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still
@@ -238,7 +251,9 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   4–10 % dark; and with `pt_fake_roughness_threshold 1` or
   `pt_num_bounce_rays 0`, because only the denoiser gives rough surfaces
   indirect specular (3.6: +2 % demo1, +5 % the cathedral's font). Paused,
-  `flt_show_gradients 1` must show no gradients and `r_debugview 20` full
+  `flt_show_gradients 1` must show no gradients (in directly lit views:
+  weakly lit, bounce-lit areas such as rider2c's arena ceiling show some,
+  4.1 too at a lower `r_maplight_scale`; story 4.13) and `r_debugview 20` full
   history (yellow); after adding a light (`vk_testlight sphere 8 2000` at
   the eye) the image follows within a frame or two. Moving: `+right`,
   `+forward` (demo1, romeric2), village3's sheep: `r_debugview 20` keeps

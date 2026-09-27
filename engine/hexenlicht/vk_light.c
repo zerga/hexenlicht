@@ -19,7 +19,8 @@
  * its opaque triangles'; vk_instance.c gives models and brush entities
  * the cluster of their center). Each frame in flight's light buffer
  * copies the lists when they have changed; the lights are written every
- * frame.
+ * frame, with their light style's scale and last frame's (4.2: GL's
+ * R_AnimateLight values).
  * The light statistics (Quake II RTX's, after G. Ward's "Adaptive Shadow
  * Testing for Ray Tracing"): get_direct_illumination counts unshadowed and
  * shadowed rays (of the primary surfaces and, as in Quake II RTX, of the
@@ -102,11 +103,13 @@ typedef struct
 	vec3_t		spot_dir;	/* a sphere's cone, 0 0 0 = none */
 	float		spot_cos;	/* the cosine of half its width */
 	vec3_t		color;		/* radiance */
+	int		style;		/* its light style (0-255), -1 = none (test lights) */
 } light_t;
 
 static light_t		lights[MAX_LIGHT_POLYS];
 static int		num_lights;
 static int		num_map_lights;		/* the first lights */
+static float		style_scales[2][256];	/* this frame's and last frame's (4.2) */
 
 /* the light lists: list c is list_nodes[list_offsets[c]] up to list_offsets[c + 1] */
 static uint32_t		list_offsets[MAX_LIGHT_LISTS];
@@ -390,6 +393,7 @@ void VK_UpdateLights (void)
 		VectorCopy (ml[i].spot_dir, l->spot_dir);
 		l->spot_cos = ml[i].spot_cos;
 		VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI, l->color);
+		l->style = ml[i].style;
 	}
 	for (i = 0; i < num_test_quads && num_lights + 2 <= MAX_LIGHT_POLYS; i++)
 	{
@@ -402,6 +406,7 @@ void VK_UpdateLights (void)
 			for (k = 0; k < 3; k++)
 				VectorCopy (test_quads[i].corners[tris[t][k]], l->p[k]);
 			VectorCopy (test_quads[i].color, l->color);
+			l->style = -1;
 		}
 	}
 	for (i = 0; i < num_test_spheres && num_lights < MAX_LIGHT_POLYS; i++)
@@ -414,6 +419,7 @@ void VK_UpdateLights (void)
 		l->radius = test_spheres[i].radius;
 		l->range = test_spheres[i].range;
 		VectorScale (test_spheres[i].color, 1.0f / (float)M_PI, l->color);
+		l->style = -1;
 	}
 	BuildLightLists ();
 	ResizeLightStats ();
@@ -424,10 +430,14 @@ void VK_UpdateLights (void)
  * and VK_LoadMapLights has read the new map's */
 void VK_ClearLights (void)
 {
+	int	i;
+
 	num_test_spheres = num_test_quads = num_test_dlights = 0;
 	num_lights = num_map_lights = 0;
 	num_cluster_bounds = 0;
 	VK_ClearMapLights ();
+	for (i = 0; i < (int)Q_COUNTOF(style_scales[0]); i++)
+		style_scales[0][i] = style_scales[1][i] = 1.0f;	/* until the new map's first frame */
 }
 
 
@@ -456,7 +466,8 @@ static void WriteLight (const light_t *l, float *p)
 	p[3] = l->color[0];
 	p[7] = l->color[1];
 	p[11] = l->color[2];
-	p[12] = p[13] = 1.0f;	/* no light style until 4.2 */
+	p[12] = (l->style < 0) ? 1.0f : style_scales[0][l->style];
+	p[13] = (l->style < 0) ? 1.0f : style_scales[1][l->style];
 	p[14] = (float)l->type;
 }
 
@@ -480,9 +491,21 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		d->type = DYNLIGHT_SPHERE;
 	}
 
-	/* the lights every frame (light styles, 4.2), the lists when they have changed */
+	/* the light styles (4.2): R_AnimateLight's value, GL's, relative to its normal
+	 * 'm' (264), so an unstyled light stays 1 and a style animates as in GL frame for
+	 * frame (no clamp: 'z' is 2.08); and last 3D frame's, which the denoiser's
+	 * gradient samples replay their light choice with (this frame's after its history
+	 * was dropped: Quake II RTX's temporal_frame_valid). A light at 0 stays in the
+	 * lists: the light CDF gives it no weight */
+	for (i = 0; i < (int)Q_COUNTOF(style_scales[0]); i++)
+		style_scales[0][i] = (float)q_max (d_lightstylevalue[i], 0) / 264.0f;
+	if (!VK_DenoiserHistoryValid ())
+		memcpy (style_scales[1], style_scales[0], sizeof(style_scales[0]));
+
+	/* the lights every frame (their styles), the lists when they have changed */
 	for (i = 0; i < num_lights; i++)
 		WriteLight (&lights[i], &lb->light_polys[i * LIGHT_POLY_VEC4S][0]);
+	memcpy (style_scales[1], style_scales[0], sizeof(style_scales[0]));
 	if (buffer_version[vk.frame_index] != lists_version)
 	{
 		memcpy (lb->light_list_offsets, list_offsets, (num_lists + 1) * sizeof(list_offsets[0]));
@@ -785,6 +808,22 @@ static void VK_Lights_f (void)
 		    num_lights, num_lights - spheres, spheres, build.ranged, range_culling ? "" : ", not culled by it",
 		    num_test_dlights);
 	VK_PrintMapLights ();
+	{
+		byte	used[256];
+		int	styled = 0, styles = 0, off = 0;
+
+		memset (used, 0, sizeof(used));
+		for (c = 0; c < num_lights; c++)
+		{
+			if (lights[c].style < 0)
+				continue;
+			styled += (lights[c].style > 0);
+			styles += (lights[c].style > 0 && !used[lights[c].style]);
+			used[lights[c].style] = 1;
+			off += (style_scales[1][lights[c].style] == 0.0f);	/* last frame's */
+		}
+		Con_Printf ("light styles: %d lights in %d styles other than 0, %d off last frame\n", styled, styles, off);
+	}
 	Con_Printf ("lists of %d clusters (of %d): %u entries (at most %d), mean %.1f, max %u (cluster %d), %d empty\n",
 		    num_lists, vk_pvs.num_clusters, num_nodes, MAX_LIGHT_LIST_NODES,
 		    num_lists ? (double)num_nodes / num_lists : 0.0, max_n, max_c, empty);

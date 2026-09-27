@@ -260,7 +260,7 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 		memset (l, 0, sizeof(*l));
 		VectorCopy (e->origin, l->origin);
 		l->level = e->level;
-		l->style = e->style;
+		l->style = (e->style > 0 && e->style < 256) ? e->style : 0;	/* utils/light allows 0-254 */
 		VectorSet (l->color, 1.0f, 1.0f, 1.0f);
 		if (e->target[0])
 		{

@@ -554,8 +554,8 @@ Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
   open leaf (inside solid) are in no list; a light that doesn't fit into
   `MAX_LIGHT_LIST_NODES` is left out whole (both counted by `vk_lights`).
   Each frame in flight's buffer copies the lists when their version
-  changed; the lights are written every frame (light styles, 4.2). The
-  map's lights (range = their level) on the 59 maps: up to 19020 list
+  changed; the lights are written every frame, with their light style (4.2,
+  below). The map's lights (range = their level) on the 59 maps: up to 19020 list
   entries (tibet1), mean 4.7–22 per cluster, the longest 249 (romeric6: 315
   lights in 70 clusters), built in at most 2 ms; by the PVS alone (3.4,
   with the test entity lights) mean 27–305, up to 73000 entries (keep2).
@@ -612,6 +612,22 @@ Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
 
   `VK_PrepareLights` (from `VK_PrepareUBO`) writes the buffer and the UBO
   fields every 3D frame.
+- **Light styles** (4.2): each map light's scale is `d_lightstylevalue[style]
+  / 264`, the value `R_AnimateLight` (HoT's, `r_scene.c`) sets for this
+  frame from the server's style strings (Hexen II's `1`/`2`/`3` speed
+  prefixes: 10/20/30 Hz; on `cl.time`, so frozen while paused), relative to
+  GL's normal `'m'`: an unstyled light stays 1 and a style animates as in GL
+  frame for frame; no clamp (`'z'` is 2.08; Q2RTX clamps to 2). The second
+  scale is last 3D frame's value of the style, for the denoiser's gradient
+  samples, which replay last frame's light choice with it; this frame's
+  after the denoiser's history was dropped (Q2RTX's `temporal_frame_valid`).
+  Test lights stay 1. A light at 0 (a switchable one off) stays in the
+  lists: the light CDF weighs it by its scale, so it is never picked and a
+  toggle needs no rebuild. `vk_lights` counts the styled lights, their
+  styles and those off last frame; `r_dumpscene` prints the styles' values.
+  Beside `glh2` (castle5's style 2 pulse, 60 shots 4 frames apart): the
+  same timing (correlation 0.95 at no lag); GL's bright phase flattens at
+  1.30× where its 8-bit lightmaps clip, ours goes on to 1.62×.
 - `vk_lights` prints the lights, the map's (below), the lists (entries, mean and longest,
   empty ones), lights inside solid or left out, the build time, the
   statistics buffers' sizes and the camera cluster's list; `vk_lights stats`
@@ -642,8 +658,8 @@ from `VK_LoadWorld` before the light lists):
   `light_thunderstorm` have `"light" "500"` before `"lightvalue1" "12"`).
 - **Style:** the `style` key; the compiler gave switchable lights (those
   with a `targetname`) 32 and up and wrote them into the lump. 254 lights
-  have one; animated with 4.2, until then every light is at full (lights
-  the game starts low show on).
+  have one, animated since 4.2 (see [Lights](#lights-vk_lightc)): the
+  switchable ones follow what the game sets (off at `'a'`).
 - **Spotlights:** a `target` makes one, towards the first entity of that
   `targetname` (its `origin`, 0 0 0 without one), its cone `angle` degrees
   wide (default 40); 42 on 10 maps (cath's nine aim down at a floor). See
@@ -981,7 +997,8 @@ default; 0 = the undenoised composite, as before). Its TAA pass
   (Q2RTX's `light_counts_history`) is left out: our light lists change
   only with the lights, and a change costs one frame of gradients where it
   happened (4.4 needs it if moving lights join the lists).
-  `prev_style_scale` is 1 until light styles (4.2).
+  `prev_style_scale` is last frame's light style (4.2, see
+  [Lights](#lights-vk_lightc)).
 - `flt_show_gradients 1` adds the gradients to the image (red indirect
   diffuse, green direct diffuse, blue specular); `r_debugview 20` shows
   the history length.
