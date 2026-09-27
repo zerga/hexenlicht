@@ -14,6 +14,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
+[Map lights](#map-lights-vk_maplightsc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -238,11 +239,15 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   primitive range in the world buffer; alpha 0.33 for
   `DRF_TRANSLUCENT`; entity frame (alternate animations). romeric2 has
   rotating brushes and egypt5 a lift, when walking forward from the start.
-- **Alias models** follow in three groups, Q2RTX's order (`MODEL_GROUP_*`,
-  `VK_ModelFrame` has their ranges): opaque; transparent (`DRF_TRANSLUCENT`,
-  `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`; kind `MATERIAL_KIND_TRANSP_MODEL`,
-  alpha = 0.33 for `DRF_TRANSLUCENT` times the texture's; blending is 6.4);
-  masked (`EF_HOLEY` cutouts).
+- **Alias models** follow in four groups, Q2RTX's order and one of ours
+  (`MODEL_GROUP_*`, `VK_ModelFrame` has their ranges): opaque; transparent
+  (`DRF_TRANSLUCENT`, `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`; kind
+  `MATERIAL_KIND_TRANSP_MODEL`, alpha = 0.33 for `DRF_TRANSLUCENT` times
+  the texture's; blending is 6.4); masked (`EF_HOLEY` cutouts); light
+  (4.1: opaque models at a map light's origin, `VK_MapLightAt`: the
+  torches, flames, candles and the like that the light entities' game code
+  spawns there, whose mesh surrounds the light; they cast no shadows, see
+  [Map lights](#map-lights-vk_maplightsc)).
 - **The first-person weapon** (`cl.viewent`, `SCENE_ENT_VIEWMODEL`) comes
   last, in `MODEL_GROUP_WEAPON` (Q2RTX's viewer weapon, triangles flagged
   `MATERIAL_FLAG_WEAPON`). It looks like the group it would otherwise be in
@@ -369,7 +374,9 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
     material's `mask_texture`, and so is the weapon's when it has cutouts
     (**a dynamic BLAS's geometry flags must not change between size query and
     builds**, hence the weapon's geometry is always non-opaque and its
-    instance flags decide); the weapon's mask is `AS_FLAG_VIEWER_WEAPON`;
+    instance flags decide); the weapon's mask is `AS_FLAG_VIEWER_WEAPON`,
+    the light group's ours, `AS_FLAG_LIGHT_MODELS` (bit 6: in the primary,
+    reflection and bounce rays' masks, not the shadow rays');
   - BLASes over the effects (particles non-indexed, sprites indexed;
     `NO_DUPLICATE_ANY_HIT` so each is blended once);
   - in one call, the TLAS (world BLASes + a submodel's BLASes per brush
@@ -499,8 +506,9 @@ bindings.
 
 ## Lights (`vk_light.c`)
 
-Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
-`light_lists.h`:
+Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
+`light_lists.h`; the map's lights come from
+[Map lights](#map-lights-vk_maplightsc):
 
 - **The light buffer's lights** (`LightBuffer` in `shaders/vertex_buffer.h`:
   Q2RTX's without its material table, light styles, cluster debug mask and
@@ -519,7 +527,12 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
     (`sphere_light_mass`); it contributes its radiance times its solid
     angle; the shadow ray goes to a point on it (Q2RTX's
     `compute_dynlight_sphere`); on bounces its solid angle has Q2RTX's
-    sphere-light limit.
+    sphere-light limit. A **spotlight** (4.1) also has a direction and the
+    cosine of half its cone's width (the second vec4's z, the third's
+    xyz; direction 0 = none): `sphere_light_spot` takes its light to 0
+    outside the cone, utils/light's hard edge softened over a degree to
+    each side, in its CDF weight as in its light. The lists don't cull by
+    the cone.
 
   A pixel samples the light list of its cluster (`PT_CLUSTER`): Q2RTX's up
   to `MAX_BRUTEFORCE_SAMPLING` (8) candidates, in `ceil(n / 8)` interleaved
@@ -541,12 +554,13 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   open leaf (inside solid) are in no list; a light that doesn't fit into
   `MAX_LIGHT_LIST_NODES` is left out whole (both counted by `vk_lights`).
   Each frame in flight's buffer copies the lists when their version
-  changed; the lights are written every frame (light styles, 4.2). Hexen
-  II's light entities as test spheres (below), range = their `light` value:
-  1500–18000 list entries, mean 8–22 per cluster, the longest 249
-  (romeric6: 317 lights in 70 clusters); by the PVS alone mean 27–305, up to
-  73000 entries (keep2). 3.3's every light in every list would not fit on
-  keep2, keep5 or tibet1 (clusters × lights > 524288).
+  changed; the lights are written every frame (light styles, 4.2). The
+  map's lights (range = their level) on the 59 maps: up to 19020 list
+  entries (tibet1), mean 4.7–22 per cluster, the longest 249 (romeric6: 315
+  lights in 70 clusters), built in at most 2 ms; by the PVS alone (3.4,
+  with the test entity lights) mean 27–305, up to 73000 entries (keep2).
+  3.3's every light in every list would not fit on keep2, keep5 or tibet1
+  (clusters × lights > 524288).
 - **Light statistics** (3.4, Q2RTX's, after G. Ward's "Adaptive Shadow
   Testing for Ray Tracing"): `get_direct_illumination` counts unshadowed
   and shadowed rays (of the primary surfaces and, as in Q2RTX, of the first
@@ -576,30 +590,29 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   color is its radiance, a dynamic sphere's π × its radiance (the sampling
   gives solid angle / π, the diffuse BRDF divides by π again); a polygon's
   color is its radiance with Q2RTX's sqrt(cos) emission lobe. Q2RTX's
-  `add_dlights` divides a dlight's intensity by 25; a test sphere's
+  `add_dlights` divides a dlight's intensity by 25; a test or map sphere's
   intensity is π × its radiance in both kinds (the same command looks the
   same as a list or a dynamic sphere). Calibrating to Hexen II's linear
   falloff is 4.9's. The lighting is stored RGBE-packed ×32
   (`STORAGE_SCALE_HF/SPEC`), which holds values up to 4088 / 32 ≈ 128:
   `packRGBE` clamps there (Q2RTX's wraps darker above it).
-- For now the lights are **test lights** (`VK_LoadWorld` clears them,
-  `VK_ClearLights`; colors below 0 become 0):
+- The light buffer holds the **map's lights** first (`VK_MapLights`,
+  none with `r_maplights 0`), then the **test lights** (`VK_LoadWorld`
+  clears them, `VK_ClearLights`; colors below 0 become 0), 4096 in all
+  (`MAX_LIGHT_POLYS`):
   - `vk_testlight sphere [radius] [intensity] [r g b] [range]`: a sphere
     light in the lists at the eye (8, 1000, white, 0 = unlimited);
   - `vk_testlight dlight [radius] [intensity] [r g b]`: a dynamic sphere
     light at the eye;
   - `vk_testlight quad [size] [intensity] [r g b]`: a square polygon light
     at the eye facing the view direction (32, 50, white; two triangles);
-  - `vk_testlight entities [intensity] [range scale]` replaces the test
-    lights with a white sphere (radius 8) at each light entity (classname
-    `light*`), its range the entity's `light` value (utils/light's hard
-    range; default 300) × the scale (1000, 1; 0 = unlimited); the real
-    lights come with 4.1;
-  - `vk_testlight list`, `vk_testlight clear`.
+  - `vk_testlight list`, `vk_testlight clear` (the test lights only).
+    3.4–3.12's `vk_testlight entities` (a 1000 sphere at every light
+    entity) is gone with 4.1: the map's lights are there.
 
   `VK_PrepareLights` (from `VK_PrepareUBO`) writes the buffer and the UBO
   fields every 3D frame.
-- `vk_lights` prints the lights, the lists (entries, mean and longest,
+- `vk_lights` prints the lights, the map's (below), the lists (entries, mean and longest,
   empty ones), lights inside solid or left out, the build time, the
   statistics buffers' sizes and the camera cluster's list; `vk_lights stats`
   reads back the shadow rays the last frame counted; `vk_lights cull 0|1`
@@ -607,6 +620,91 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   only noisier). `r_debugview 17` shows each pixel's list length: black
   none, blue to green up to 8 (every sample weighs them all), yellow to red
   at 64 and more.
+
+## Map lights (`vk_maplights.c`)
+
+Story 4.1: the lights `utils/light` (the compiler of Hexen II's lightmaps)
+lit each map from, as sphere lights, read from the entity lump with its
+rules (`entities.c`, `ltface.c`) when the map loads (`VK_LoadMapLights`,
+from `VK_LoadWorld` before the light lists):
+
+- **Which:** every entity with a level (the compiler's `LightFace` lights
+  from each); a classname starting with `light` has 300 without one:
+  plain `light`s, torches, flames, candles, burners, gems, lanterns. 12,928
+  on the 59 maps (9,512 plain), two of them other classnames (demo1's
+  glowing `obj_tree2`, tower's `trigger_multiple`, inside solid).
+- **Level:** `atoi` of a key starting with `light` (so `lightvalue1`/`2`
+  too, and `"2oo"` is 2); the sphere's range is the level (the compiler's
+  light reaches that far, falling off linearly). The compiler kept the
+  last such key it read, but wrote each entity's keys into the lump in
+  reverse (its epair lists): in the lump the first counts, for every key
+  (the styles it added are the first key; eidolon's and thomas's
+  `light_thunderstorm` have `"light" "500"` before `"lightvalue1" "12"`).
+- **Style:** the `style` key; the compiler gave switchable lights (those
+  with a `targetname`) 32 and up and wrote them into the lump. 254 lights
+  have one; animated with 4.2, until then every light is at full (lights
+  the game starts low show on).
+- **Spotlights:** a `target` makes one, towards the first entity of that
+  `targetname` (its `origin`, 0 0 0 without one), its cone `angle` degrees
+  wide (default 40); 42 on 10 maps (cath's nine aim down at a floor). See
+  [Lights](#lights-vk_lightc) for the cone. Aimed at its own origin it lit
+  nothing if narrower than 180°, else everywhere (an omni light here); none
+  on the maps. The cone is decided by the cosine of half its width, as the
+  compiler's (so `angle` −360 or 720 too): 179° or wider an omni light,
+  narrower than 1° made 1° (the soft edge's width).
+- **Dropped** (counted by `vk_lights`): a light whose origin is inside
+  solid (the compiler traces from the origin, and a trace starting in a
+  solid leaf is blocked, so it lit nothing). Its `TestLine` takes a start
+  point within `ON_EPSILON` (0.1) of a plane to the side of the trace's
+  other end, so a light on a solid's face lit the open side: dropped only
+  when every leaf that close is solid (`OriginInSolid`). 181 on the 59
+  maps (demo1 43, demo3 26, village1 26; the plain leaf test would drop 28
+  more). Also a level below 0, a narrow spot aimed at its own origin (none
+  on the maps) and lights past 4096.
+- **Color:** white; `_color` (0–1, or 0–255 when a component is above 1)
+  where a map has it, later compilers' key: no original map does. HoT's
+  colors are 4.3's.
+- **Brightness:** a sphere of radius 8 (the test spheres') whose intensity
+  (π × radiance, as `vk_testlight`'s) is `r_maplight_scale` × (level /
+  300)³: the one power under which inverse-square light scales with each
+  light's range as the compiler's linear falloff does (twice the level
+  and the distances, twice the light). `r_maplight_scale` 1000: a level
+  300 light is as bright as 3.4–3.12's test entity lights, and its direct
+  light 16 units from a wall stores ~85 of the ~128 the RGBE storage holds
+  (level 1000 lights clip next to walls). The curve and scale are 4.9's.
+- **Light models** (`VK_MapLightAt`): the light entities' game code spawns
+  their torch, flame or candle model at the light's origin (`makestatic`,
+  fullbright). Every flame mesh encloses its origin; from the 8-unit
+  sphere a light's own model blocks 4–10 % of directions (flames, castle
+  torches) up to 23–56 % (gems, candles, burners, meso torches). Opaque
+  alias models whose origin rounds to a map light's (a hash of the rounded
+  origins: the lump's are integers) go into `MODEL_GROUP_LIGHT`, which
+  shadow rays don't see (`AS_FLAG_LIGHT_MODELS`, see
+  [Instances](#instances-vk_instancec), [Acceleration
+  structures](#acceleration-structures-vk_accelc)); in the original no
+  model shadowed a map light. Without the group, meso1's and castle4's
+  starts get 3.5 % less direct light (up to 10–13 % in 60-pixel blocks),
+  the lit image 1–2 %. `vk_models` counts the group's triangles ("at
+  lights"), `vk_lights` its models. With `r_maplights 0` there is no such
+  group: the models shadow test lights as any model does. demo1's glowing
+  tree stands at its own light, so it casts no shadows either.
+- **Against GL** (4.9 calibrates): inverse-square falloff instead of
+  linear; the cosine instead of the compiler's 0.5 + 0.5 cos (surfaces
+  facing away get no light instead of half); no minimum light (the
+  compiler had none either); models (monsters, doors) shadow the map's
+  lights, as none did in the lightmaps. At the map starts beside `glh2`
+  the light is where the lightmaps are bright; Hexenlicht is brighter.
+- `r_maplights 0` turns them off (test lights only); a change of either
+  cvar rebuilds the lights (`VK_RebuildLights`: only while the client is in
+  the loaded world, as between `map` and the new world's load the old
+  one's memory is freed; else the next load takes them). `vk_lights` prints the
+  lights of the light entities, the dropped ones, spotlights (unmatched
+  targets), styled and colored ones, and last frame's models at a light's
+  origin.
+- **Cost** (4.1, measured the same day as `main` with the test entity
+  lights, `perf_baseline.ps1`): the frame is within the power-capped GPU's
+  run-to-run scatter (1920x1080, demo1 at 100 %: 8.48 → 8.59 ms; 2560x1440:
+  16.50 → 15.98 ms, the cathedral 14.54 → 15.34 ms).
 
 ## 3D view (`vk_view.c`)
 
@@ -777,7 +875,7 @@ Stories 3.3 and 3.4; Q2RTX's two kinds of lights, sampled in
   RR needs none in every pixel, DECISIONS R55). The interleave writes them
   in the screen layout for RR (3.10, see
   [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)).
-- `r_debugview` (default 1 until the maps have lights, 4.1) picks what the
+- `r_debugview` (default 0 since the maps have lights, 4.1; 1 before) picks what the
   view shows: 0 the lit image (the TAA pass's, see
   [Upscaling](#upscaling-vk_upscalec), then bloom and tone mapping), or
   what **`debug_view.comp`** writes into `TAA_OUTPUT` at the render size
@@ -1274,7 +1372,9 @@ overlay, and a measuring mode.
   cap, about 1 GHz). For measuring only: Hexen II's physics isn't meant for
   more than 72 frames a second.
 - **Baseline:** `tools/hexenlicht/perf_baseline.ps1` runs demo1's and the
-  cathedral's starts with test lights, paused, `vk_benchmark 1`,
+  cathedral's starts with the maps' lights (since 4.1; the tables below
+  had test lights at the light entities, whose cost 4.1 measured to be the
+  same within the scatter, see [Map lights](#map-lights-vk_maplightsc)), paused, `vk_benchmark 1`,
   `viewsize 100`, `fov 90`, at each window size, and prints the averages
   as markdown (TESTING.md's "GPU cost"). Runs agree within 5–10 %.
   Recorded 2026-09-26 (after the throttle fix of the review), Release,
@@ -1358,6 +1458,7 @@ overlay, and a measuring mode.
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
-| `vk_testlight sphere, dlight, quad, entities, list, clear` | test lights (see [Lights](#lights-vk_lightc)) |
+| `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
+| `r_maplights 0/1`, `r_maplight_scale` | the map's lights off/on (1), the intensity of a level 300 one (1000; see [Map lights](#map-lights-vk_maplightsc)) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1` | light lists, light statistics read back, range culling off/on |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

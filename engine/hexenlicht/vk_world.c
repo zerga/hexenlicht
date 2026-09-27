@@ -400,7 +400,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vkDeviceWaitIdle (vk.device);	/* frames in flight may still use the old buffers */
 	VK_FreeWorld ();
 	VK_ClearMaterials ();
-	VK_ClearLights ();	/* the test lights were the old map's */
+	VK_ClearLights ();	/* the lights were the old map's */
 	memset (&stats, 0, sizeof(stats));
 
 	vk_world.worldmodel = worldmodel;
@@ -441,6 +441,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vk_world.positions_offset = prims_size;
 
 	VK_FinishPVS ();
+	VK_LoadMapLights (worldmodel);	/* the light entities, before their lists */
 	VK_LoadLightClusters (worldmodel, prims, vk_world.num_primitives);	/* the lists need the final PVS */
 	free (data);
 	VK_UploadMaterials ();

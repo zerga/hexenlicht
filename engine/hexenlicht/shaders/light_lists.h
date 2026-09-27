@@ -204,6 +204,27 @@ sphere_light_solid_angle(float dist, float radius, float max_solid_angle)
 	return min(2 * M_PI * x2 / (1 + sqrt(1 - x2)), M_PI * max_solid_angle);
 }
 
+/* a spotlight's cone (4.1: the map's spotlights, vk_maplights.c): positions[2] its
+ * direction (0 = none), positions[1].z the cosine of half its width; utils/light's hard
+ * edge, softened over a degree to each side as its lightmaps' filtering did */
+float
+sphere_light_spot(LightPolygon light, vec3 p)
+{
+	vec3 dir = light.positions[2];
+	if(dot(dir, dir) == 0)
+		return 1;
+
+	// vk_maplights.c: half widths from 1 to below 179 degrees, so the edges differ
+	const float cos_edge = 0.99984770; // cos(1 degree)
+	const float sin_edge = 0.01745241;
+	float cos_half = light.positions[1].z;
+	float sin_half = sqrt(max(1 - square(cos_half), 0));
+	vec3 v = p - light.positions[0];
+	float d = length(v);
+	float c = (d > 0) ? dot(v, dir) / d : 1;
+	return smoothstep(cos_half * cos_edge - sin_half * sin_edge, cos_half * cos_edge + sin_half * sin_edge, c);
+}
+
 /* the sphere's weight in the light CDF, as spherical_tri_area's for a triangle */
 float
 sphere_light_mass(LightPolygon light, vec3 p, vec3 n, vec3 V, float phong_exp, float phong_scale, float phong_weight, float max_solid_angle)
@@ -215,7 +236,7 @@ sphere_light_mass(LightPolygon light, vec3 p, vec3 n, vec3 V, float phong_exp, f
 	if(dot(n, c) <= -radius)
 		return 0; // entirely below the horizon
 
-	float window = sphere_light_window(dist, light.positions[1].y);
+	float window = sphere_light_window(dist, light.positions[1].y) * sphere_light_spot(light, p);
 	if(window <= 0)
 		return 0;
 
@@ -408,7 +429,8 @@ sample_polygonal_lights(
 				pdfw = 0;
 
 			if(pdfw > 0)
-				light_color = light.color * (solid_angle * sphere_light_window(dist, light.positions[1].y) * light.light_style_scale);
+				light_color = light.color * (solid_angle * sphere_light_window(dist, light.positions[1].y) *
+				                             sphere_light_spot(light, p) * light.light_style_scale);
 
 			light_index = current_idx;
 			light_color /= pdf;

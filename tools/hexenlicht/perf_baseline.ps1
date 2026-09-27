@@ -1,8 +1,9 @@
 # Measures the renderer's performance baseline with the GPU profiler
 # (vk_profiler.c): for each window size, runs hexenlicht.exe once with a
 # generated test script that visits demo1's and the cathedral's starts with
-# test lights (vk_testlight entities; the maps have no lights before 4.1),
-# paused, with vk_benchmark 1 (no 72 fps cap, no sleeps), viewsize 100 and
+# the maps' lights (4.1; 3.11's baseline had test lights at the light
+# entities, vk_testlight entities, 1000 each and none dropped inside
+# solid), paused, with vk_benchmark 1 (no 72 fps cap, no sleeps), viewsize 100 and
 # fov 90, and for each setting prints vk_profiler's averages over -Samples
 # frames. The settings: TAAU at 100 % and 67 %, and DLSS RR at 67 % when
 # sl.interposer.dll is next to the exe (a column whose upscaler row isn't
@@ -55,7 +56,7 @@ try {
 	Set-Content -Path (Join-Path $data1 'hl_perf.cfg') -Value ($first -join "`r`n")
 	$n = 0
 	foreach ($scene in $scenes) {
-		$lines = @('pause', "map $scene", (Waits 150), 'notarget', 'god', (Waits 30), 'vk_testlight entities', (Waits 300), 'pause', (Waits 10))
+		$lines = @('pause', "map $scene", (Waits 150), 'notarget', 'god', (Waits 330), 'pause', (Waits 10))
 		foreach ($s in $settings.Keys) {
 			$lines += @($settings[$s], (Waits ([Math]::Max(300, $Samples + 100))), "echo ==== PERF $scene $s", 'vk_profiler', 'vk_upscale')
 			$lines += "exec hl_perf_$($n + 1).cfg"

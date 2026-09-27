@@ -642,7 +642,7 @@ static void VK_ModelsCheck (void)
 			if (g == NUM_MODEL_GROUPS || weapon != (g == MODEL_GROUP_WEAPON) ||
 			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
 			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture) ||
-			    (look == MODEL_GROUP_OPAQUE && mat->mask_texture))
+			    ((look == MODEL_GROUP_OPAQUE || look == MODEL_GROUP_LIGHT) && mat->mask_texture))
 				group_bad++;
 			if ((int)(gm[0] & 0xffff) != mat->base_texture || (int)(gm[1] >> 16) != mat->mask_texture)
 				table_bad++;
@@ -819,10 +819,10 @@ static void VK_Models_f (void)
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
 	VK_ProfilerTime (PROF_MODELS, &geometry_ms, &geometry_avg);
-	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u weapon triangles, "
+	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u at lights + %u weapon triangles, "
 		    "geometry pass %.3f ms on the GPU (average %.3f)\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
 			mf->groups[MODEL_GROUP_TRANSPARENT].count, mf->groups[MODEL_GROUP_MASKED].count,
-			mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
+			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 }

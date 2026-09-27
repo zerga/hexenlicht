@@ -133,6 +133,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define AS_FLAG_VIEWER_WEAPON   (1 << 3)
 #define AS_FLAG_SKY             (1 << 4)
 #define AS_FLAG_CUSTOM_SKY      (1 << 5)
+// Hexenlicht: the models at a map light's origin (torches, flames), which shadow rays don't see
+#define AS_FLAG_LIGHT_MODELS    (1 << 6)
 
 // Effects TLAS flags
 #define AS_FLAG_EFFECTS         (1 << 0)
