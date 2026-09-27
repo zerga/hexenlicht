@@ -52,8 +52,10 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   into real files. It still holds `R_InitTextures`/`r_notexture_mip` (GL's
   checkerboard), the rest of `R_Init`, `R_InitSky` (→ 4.6) and GL-named cvars
   kept so configs keep their settings (`gl_glows`, `gl_coloredlight`,
-  `gl_lightmapfmt`, …). To find what a renderer must provide, link without it
-  and read the unresolved externals.
+  `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` and
+  `gl_extra_dynamic_lights` for the dynamic lights (4.4, default 1 here, 0
+  in HoT; see [Lights](#lights-vk_lightc)). To find what a renderer must
+  provide, link without it and read the unresolved externals.
 
 ## Window and video modes (`vid_vk.c`)
 
@@ -506,7 +508,7 @@ bindings.
 
 ## Lights (`vk_light.c`)
 
-Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
+Stories 3.3, 3.4, 4.1 and 4.4; Q2RTX's two kinds of lights, sampled in
 `light_lists.h`; the map's lights come from
 [Map lights](#map-lights-vk_maplightsc):
 
@@ -576,9 +578,47 @@ Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
   this frame's before the passes, and all three after the lists changed
   (their entries moved). The UBO's sphere lights have none, as in Q2RTX.
 - **Dynamic sphere lights:** up to `MAX_LIGHT_SOURCES` (32) in the UBO's
-  `dyn_light_data`, one picked at random per pixel (Q2RTX's dynamic lights,
-  no culling), for lights that move (4.4); spot lights come with the code,
-  unused.
+  `dyn_light_data` (Q2RTX's dynamic lights), written every 3D frame: the
+  game's (4.4, below), then the test ones. A pixel picks one by its weight
+  (`dynlight_weight`: luminance × solid angle, faded by its range, 0
+  entirely below the horizon; Q2RTX picks uniformly), two passes over them;
+  a sphere's range is in the entry's `spot_data` (a float's bits, 0 =
+  unlimited; `dynlight_range`), where its light fades as a list sphere's
+  (`sphere_light_window`). Spot lights come with the code, unused.
+- **The game's dynamic lights** (4.4): the client's `cl_dlights` (32,
+  `MAX_DLIGHTS`), which `r_scene.c` copies into the scene: its entity
+  effects (`EF_MUZZLEFLASH` a 0.1 s flash 18 units ahead, `EF_BRIGHTLIGHT`
+  radius 400, `EF_DIMLIGHT` and `EF_LIGHT` 200, the torch artifact),
+  glowing projectiles by model flag (fireball, acid ball ~120; magic
+  missile, vorpal missile, scarab 240 with `gl_extra_dynamic_lights`),
+  `TE_EXPLOSION` (350, shrinking 300/s). GL added `radius − distance` to its
+  lightmaps and models, where utils/light had halved static light when
+  baking (`rangescale` 0.5): one of radius R is a sphere of 8 units with
+  twice a map light of level R's intensity, 2 × `r_maplight_scale` ×
+  (R/300)³, fading to 0 at R − minlight (GL's surfaces stop there; only the
+  muzzle flash has one); the radius changes as GL's (explosions shrink,
+  flames flicker by up to 31 per frame: ±20 % of the intensity). The
+  color is the client's (with `gl_colored_dynamic_lights`), converted to
+  linear as the map lights' (`VK_SRGBToLinear`). Left out: dark lights
+  (`EF_DARKLIGHT`, the Necromancer's darkness while invincible: 4.10) and
+  lights of a negative radius (the spit; GL lights nothing with them, the
+  software renderer darkens: 4.10). An alias model whose entity owns one
+  of them this frame (its key) within its bounds (a sphere around its
+  origin from the model's bounds, scaled) goes into the light group
+  (`VK_DynamicLightOwner`, see [Map lights](#map-lights-vk_maplightsc)):
+  the light is inside it, and it casts no shadows from any light while it
+  owns it (a projectile; also the Eidolon's and the Fallen Angel's muzzle
+  flashes, 0.1 s per attack, the chase-cam player with the torch).
+  `r_dlights 0` turns them off. The extra lights count in
+  `cl.light_level` ([Scene](#scene-r_scenec), GL's rule): with
+  `gl_extra_dynamic_lights 1` the player's own projectiles make monsters
+  see her better, as in HoT with the option on.
+  Cost (4.4, castle4, two lights from the magic missile, 1920x1080,
+  Release, `vk_benchmark 1`): direct lighting 0.52 → 0.72 ms, bounce
+  1.21 → 1.30 ms, the frame 7.5 → 7.7 ms. Without dynamic lights the
+  pick returns at once. The denoised image follows a flash on its first
+  frame (the anti-lag: castle4, the magic missile's frames beside
+  `flt_enable 0`).
 - Per pixel, `get_direct_illumination` picks a list light or a dynamic
   sphere sample by their estimated contributions and traces one shadow ray (opaque
   geometry; cutouts alpha-tested; translucent surfaces and effects don't
@@ -603,7 +643,7 @@ Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
   - `vk_testlight sphere [radius] [intensity] [r g b] [range]`: a sphere
     light in the lists at the eye (8, 1000, white, 0 = unlimited);
   - `vk_testlight dlight [radius] [intensity] [r g b]`: a dynamic sphere
-    light at the eye;
+    light at the eye (no range; in the UBO slots the game's lights leave);
   - `vk_testlight quad [size] [intensity] [r g b]`: a square polygon light
     at the eye facing the view direction (32, 50, white; two triangles);
   - `vk_testlight list`, `vk_testlight clear` (the test lights only).
@@ -629,7 +669,9 @@ Stories 3.3, 3.4 and 4.1; Q2RTX's two kinds of lights, sampled in
   same timing (correlation 0.95 at no lag); GL's bright phase flattens at
   1.30× where its 8-bit lightmaps clip, ours goes on to 1.62×.
 - `vk_lights` prints the lights, the map's (below), the lists (entries, mean and longest,
-  empty ones), lights inside solid or left out, the build time, the
+  empty ones), lights inside solid or left out, the last frame's dynamic
+  lights (those owned by an entity, left out dark / unlit / over 32, the
+  most in a frame and the brightest since the map loaded), the build time, the
   statistics buffers' sizes and the camera cluster's list; `vk_lights stats`
   reads back the shadow rays the last frame counted; `vk_lights cull 0|1`
   turns range culling off and on (a check: the image must stay the same,
@@ -711,8 +753,11 @@ from `VK_LoadWorld` before the light lists):
   model shadowed a map light. Without the group, meso1's and castle4's
   starts get 3.5 % less direct light (up to 10–13 % in 60-pixel blocks),
   the lit image 1–2 %. `vk_models` counts the group's triangles ("at
-  lights"), `vk_lights` its models. With `r_maplights 0` there is no such
-  group: the models shadow test lights as any model does. demo1's glowing
+  lights"), `vk_lights` its models. With `r_maplights 0` no model is at a
+  map light: the models shadow test lights as any model does. Since 4.4 an
+  alias model whose entity owns a dynamic light within its bounds this
+  frame (a glowing projectile) joins the group too, with `r_maplights 0`
+  as well ([Lights](#lights-vk_lightc)). demo1's glowing
   tree stands at its own light, so it casts no shadows either.
 - **Against GL** (4.9 calibrates): inverse-square falloff instead of
   linear; the cosine instead of the compiler's 0.5 + 0.5 cos (surfaces
@@ -1551,4 +1596,5 @@ overlay, and a measuring mode.
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (1000), white or HoT's colors (1, archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
+| `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors and the projectiles' extra ones (HoT's options, 1 here; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

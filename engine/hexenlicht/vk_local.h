@@ -333,7 +333,7 @@ enum
 	MODEL_GROUP_OPAQUE,
 	MODEL_GROUP_TRANSPARENT,	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_SPECIAL_TRANS */
 	MODEL_GROUP_MASKED,		/* EF_HOLEY: cutouts, alpha tested */
-	MODEL_GROUP_LIGHT,		/* opaque ones at a map light's origin (torches, flames): no shadows */
+	MODEL_GROUP_LIGHT,		/* opaque ones around a light (at a map light's origin: torches, flames; owning a dynamic light): no shadows */
 	MODEL_GROUP_WEAPON,		/* the first-person weapon (Quake II RTX's viewer weapon) */
 	NUM_MODEL_GROUPS
 };
@@ -495,7 +495,7 @@ int VK_ReflectRefractPasses (void);	/* pt_reflect_refract: 0 to 10 */
 /* vk_maplights.c: the map's light entities as lights (utils/light's
  * rules), loaded by VK_LoadWorld before the light lists; VK_MapLightAt:
  * is a map light at the origin (vk_instance.c's MODEL_GROUP_LIGHT; none with
- * r_maplights 0) */
+ * r_maplights 0, but models owning a dynamic light join it then too) */
 typedef struct
 {
 	vec3_t		origin;
@@ -511,6 +511,9 @@ void VK_LoadMapLights (qmodel_t *worldmodel);
 void VK_ClearMapLights (void);
 const vk_maplight_t *VK_MapLights (int *count);	/* none with r_maplights 0 */
 float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white */
+float VK_LightLevelIntensity (float level);	/* the same for a utils/light level */
+qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
+float VK_SRGBToLinear (float c);	/* a GL light color's linear value */
 qboolean VK_MapLightAt (const vec3_t origin);
 void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
 void VK_PrintMapLights (void);	/* vk_lights */

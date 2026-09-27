@@ -501,7 +501,9 @@ static void AddBrushInstance (const scene_entity_t *e)
  * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. Opaque models at
  * a map light's origin are the torches and flames the light entities'
  * game code spawns there, whose mesh surrounds the light: shadow rays
- * don't see their group (vk_maplights.c) */
+ * don't see their group (vk_maplights.c); nor those of an entity that
+ * owns a dynamic light this frame within its bounds (4.4: a glowing
+ * projectile, the light inside it; vk_light.c) */
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
@@ -510,6 +512,19 @@ static int AliasGroup (const scene_entity_t *e)
 		return MODEL_GROUP_MASKED;
 	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
 		return MODEL_GROUP_LIGHT;
+	if (e->kind == SCENE_ENT_DYNAMIC)
+	{
+		/* the model's bounds (Mod_LoadAliasModel's, 10 units past its frames) as a
+		 * sphere around its origin, scaled */
+		const float	*mins = e->model->mins, *maxs = e->model->maxs;
+		float		r2 = 0.0f;
+		int		k;
+
+		for (k = 0; k < 3; k++)
+			r2 += q_max (mins[k] * mins[k], maxs[k] * maxs[k]);
+		if (VK_DynamicLightOwner (e->num, e->origin, sqrtf (r2) * (e->scale ? e->scale / 100.0f : 1.0f)))
+			return MODEL_GROUP_LIGHT;
+	}
 	return MODEL_GROUP_OPAQUE;
 }
 

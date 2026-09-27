@@ -121,7 +121,7 @@ static struct
 	int		styled;		/* style other than 0 */
 	int		colored;	/* with _color */
 	int		orange, textured, warm;	/* jsh2color's torch orange, from textures, 255 225 200 */
-	int		on_models;	/* models at a light's origin last frame (vk_instance.c) */
+	int		on_models;	/* models in the light group last frame (vk_instance.c): at a light's origin, owning a dynamic light */
 } stats;
 
 
@@ -240,7 +240,9 @@ static qboolean OriginInSolid (const mnode_t *node, const vec3_t p)
 	return node->contents == CONTENTS_SOLID;
 }
 
-static float SRGBToLinear (float c)
+/* a color GL multiplied its lightmaps with (in sRGB space) as the light's
+ * linear color: the same hue on a wall (above 1 by the curve's power) */
+float VK_SRGBToLinear (float c)
 {
 	return (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
 }
@@ -261,12 +263,12 @@ static void ApplyColors (void)
 		{
 			if (maplight_colors[i].has_own)
 				for (k = 0; k < 3; k++)
-					c[k] = SRGBToLinear (maplight_colors[i].own[k]);
+					c[k] = VK_SRGBToLinear (maplight_colors[i].own[k]);
 		}
 		else if (colorinfo.colored)
 		{
 			for (k = 0; k < 3; k++)
-				c[k] = SRGBToLinear (maplight_colors[i].jsh[k] / 255.0f);
+				c[k] = VK_SRGBToLinear (maplight_colors[i].jsh[k] / 255.0f);
 		}
 	}
 }
@@ -421,11 +423,18 @@ const vk_maplight_t *VK_MapLights (int *count)
 	return maplights;
 }
 
-float VK_MapLightIntensity (const vk_maplight_t *l)
+/* the intensity (pi x radiance) of a white light of a utils/light level
+ * (see the top), also dynamic lights' (vk_light.c) */
+float VK_LightLevelIntensity (float level)
 {
-	float	x = (float)l->level / (float)DEFAULT_LIGHT_LEVEL;
+	float	x = level / (float)DEFAULT_LIGHT_LEVEL;
 
 	return q_max (r_maplight_scale.value, 0.0f) * x * x * x;
+}
+
+float VK_MapLightIntensity (const vk_maplight_t *l)
+{
+	return VK_LightLevelIntensity ((float)l->level);
 }
 
 void VK_CountMapLightModels (int n)
@@ -439,7 +448,7 @@ void VK_PrintMapLights (void)
 	Con_Printf ("map lights: %d of %d light entities (%d other classnames)%s, r_maplight_scale %g; dropped %d inside solid, %d unlit, %d over %d\n",
 		    num_maplights, stats.entities, stats.others, r_maplights.integer ? "" : ", off (r_maplights 0)",
 		    r_maplight_scale.value, stats.in_solid, stats.unlit, stats.over, MAX_LIGHT_POLYS);
-	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models at a light's origin last frame\n",
+	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models in the light group last frame (at a light's origin, owning a dynamic light)\n",
 		    stats.spots, stats.unmatched, stats.styled, stats.colored, stats.on_models);
 	if (!r_maplight_colors.integer)
 		Con_Printf ("  colors: white (r_maplight_colors 0)\n");

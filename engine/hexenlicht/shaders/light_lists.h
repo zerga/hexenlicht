@@ -36,9 +36,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    when the lights do (vk_light.c), so Quake II RTX's history of the
  *    counts, which keeps a gradient sample on last frame's count while its
  *    moving model lights change the lists every frame, is left out (3.6;
- *    needed if moving lights join the lists, 4.4); no sky lights until the
+ *    moving lights stay dynamic lights, 4.4); no sky lights until the
  *    sky (4.6);
  *  - no list lights for clusters past MAX_LIGHT_LISTS - 1;
+ *  - a dynamic light is picked by its weight (luminance x solid angle,
+ *    faded by its range), not uniformly, and a dynamic sphere may have a
+ *    range, in spot_data (4.4: the game's dynamic lights, vk_light.c);
  *  - the light buffer is read by device address (vertex_buffer.h). */
 
 #ifndef _LIGHT_LISTS_
@@ -543,6 +546,37 @@ compute_dynlight_spot(uint light_idx, uint spot_style, vec3 light_center, vec3 p
 	return irradiance;
 }
 
+/* Hexenlicht (4.4): a dynamic sphere's range, at which its light fades to 0
+ * as a list sphere's (sphere_light_window; 0 = unlimited): vk_light.c keeps
+ * it in the unused spot_data, a float's bits */
+float
+dynlight_range(uint light_idx)
+{
+	return uintBitsToFloat(global_ubo.dyn_light_data[light_idx].spot_data);
+}
+
+/* Hexenlicht (4.4): a dynamic light's weight in the pick, a list sphere's
+ * (sphere_light_mass without the specular lobe) times its luminance: its
+ * solid angle, faded by its range, 0 entirely below the horizon; a spot's
+ * its luminance */
+float
+dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle)
+{
+	float lum = luminance(global_ubo.dyn_light_data[light_idx].color);
+	if((global_ubo.dyn_light_data[light_idx].type & 0xffff) != DYNLIGHT_SPHERE)
+		return lum;
+
+	vec3 c = global_ubo.dyn_light_data[light_idx].center - p;
+	float radius = global_ubo.dyn_light_data[light_idx].radius;
+	float dist = max(length(c), 1e-3);
+	if(dot(n, c) <= -radius)
+		return 0;
+
+	float x2 = min(square(radius / dist), 1);
+	float solid_angle = min(2 * x2 / (1 + sqrt(1 - x2)), max_solid_angle); // / pi, as compute_dynlight_sphere's
+	return lum * solid_angle * sphere_light_window(dist, dynlight_range(light_idx));
+}
+
 void
 sample_dynamic_lights(
 		vec3 p,
@@ -559,8 +593,31 @@ sample_dynamic_lights(
 	if(global_ubo.num_dyn_lights == 0)
 		return;
 
-	float random_light = rng.x * global_ubo.num_dyn_lights;
-	uint light_idx = min(global_ubo.num_dyn_lights - 1, uint(random_light));
+	// Hexenlicht (4.4): the light picked by its weight (the game's lights spread over
+	// the map), where Quake II RTX picks uniformly
+	uint num = min(global_ubo.num_dyn_lights, MAX_LIGHT_SOURCES);
+	float total = 0;
+	for(uint i = 0; i < num; i++)
+		total += dynlight_weight(i, p, n, max_solid_angle);
+	if(total <= 0)
+		return;
+
+	float target = rng.x * total;
+	uint light_idx = ~0u;
+	float weight = 0;
+	for(uint i = 0; i < num; i++)
+	{
+		float w = dynlight_weight(i, p, n, max_solid_angle);
+		if(w <= 0)
+			continue;
+		light_idx = i; // the last with a weight, should rounding pass them all
+		weight = w;
+		if(target < w)
+			break;
+		target -= w;
+	}
+	if(light_idx == ~0u)
+		return; // the two passes' weights can't differ, but never index past the lights
 
 	vec3 light_center = global_ubo.dyn_light_data[light_idx].center;
 
@@ -571,12 +628,12 @@ sample_dynamic_lights(
 
 	float irradiance;
 	if(light_type == DYNLIGHT_SPHERE) {
-		irradiance = compute_dynlight_sphere(light_idx, light_center, p, position_light, rng);
+		irradiance = min(compute_dynlight_sphere(light_idx, light_center, p, position_light, rng), max_solid_angle);
+		irradiance *= sphere_light_window(length(light_center - p), dynlight_range(light_idx));
 	} else {
-		irradiance = compute_dynlight_spot(light_idx, light_style, light_center, p, position_light, rng);
+		irradiance = min(compute_dynlight_spot(light_idx, light_style, light_center, p, position_light, rng), max_solid_angle);
 	}
-	irradiance = min(irradiance, max_solid_angle);
-	irradiance *= float(global_ubo.num_dyn_lights); // 1 / pdf
+	irradiance *= total / weight; // 1 / pdf
 
 	light_color *= irradiance;
 

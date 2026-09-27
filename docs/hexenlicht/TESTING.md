@@ -224,6 +224,23 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   (the engine's `external_ents` loads it instead of the lump) with
   `_color` on a few lights: `vk_lights colors` shows them converted, the
   other lights white (4.3: castle5).
+- **Dynamic lights (4.4):** castle4's start at `host_framerate 0.02`,
+  `gl_colored_dynamic_lights 1` and `gl_extra_dynamic_lights 1` in the
+  script (without `hexenlicht.cfg` the engine reads `config.cfg`, whose
+  are 0), `notarget`, `impulse 43` (weapons, mana, artifacts, below skill 3; 42 only
+  prints coordinates), ~90 waits, `impulse 2`, ~150 waits (the weapon
+  change), `+attack`: the Necromancer's magic missile (muzzle flash, the
+  missile's blue extra light: `vk_lights` counts 1–3); `pause` 8 frames
+  after, ~120 waits for the denoiser, shots with `r_dlights` 1 and 0 and
+  `r_maplights 0` (the dynamic lights alone). As the Crusader
+  (`playerclass 2` before the map) the sun staff (`impulse 4`) lights the
+  room with `EF_BRIGHTLIGHT` (radius 400–431). The denoiser: a shot every
+  frame from `+attack` with `flt_enable` 1 and 0, the mean linear
+  luminance above the HUD: the denoised series follows the flash on its
+  first frame (4.4: 0.052 → 0.084, raw 0.091). Cost: `vk_benchmark 1`,
+  `vk_profiler` with `r_dlights` 1 and 0 on the paused frame. `glh2`
+  shows no dynamic light on surfaces (4.14, #136); with `gl_flashblend 1`
+  it draws their bubbles, a reference for where they are and their color.
 - **Comparing noisy shots:** average them in linear light (sRGB → linear
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still
