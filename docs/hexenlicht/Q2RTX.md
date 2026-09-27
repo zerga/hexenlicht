@@ -90,7 +90,7 @@ this repository) or one at a time with
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
 | `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag` (3.8: its Lanczos filter and scaling rule, nearest a texel fetch); underwater warp 6.6 | 1.6, 3.8, 6.6 |
 | `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3); the map's lights are Hexen II's light entities as spheres (`vk_maplights.c`, 4.1: Q2RTX has no such lights); cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.1, 4.6 |
-| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change; 4.1: a spotlight's cone in a sphere's entry); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4, 4.1 |
+| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change; 4.1: a spotlight's cone in a sphere's entry; 4.2: the style scales per frame); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4, 4.1, 4.2 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
@@ -193,12 +193,15 @@ this repository) or one at a time with
   larger throughput (R73).*
 - **Model tint brightness (E4).** `colorshade` tints reach 10 (GL multiplies
   the vertex light, then clamps); the G-buffer takes only the hue.
-- **Light styles and the gradients (4.2).** A gradient sample weighs the
+- **Light styles and the gradients (answered in 4.2).** A gradient sample weighs the
   lights with last frame's light style (`prev_style_scale`, light_lists.h),
   so it picks the light last frame picked. `vk_light.c` writes 1 for both
   until light styles exist; 4.2 must fill `prev_style_scale` from last
   frame's styles (Q2RTX's `prev_lightstyles`), or flickering lights make
   needless gradients (the denoiser drops history and is noisier near them).
+  *4.2: `vk_light.c` keeps last 3D frame's value per style (this frame's
+  after the denoiser's history was dropped, as Q2RTX's `prev_lightstyles`);
+  DECISIONS R79.*
 - **Denoiser brightness (4.9).** With noisy lighting the denoised image is
   2–5 % brighter than the average of the raw frames (3.6, direct lighting
   at a sixteenth of the test lights' intensity: demo1 +2 %, the cathedral

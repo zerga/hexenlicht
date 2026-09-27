@@ -283,6 +283,7 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.8 | Live light editing commands (select, move, color, intensity, radius, save) | M | Edit in game, saved to override file |
 | 4.9 | Calibration tooling: camera bookmarks, matched screenshots from `glhexen2` and Hexenlicht; global falloff/intensity curve | M | Side-by-side comparison per bookmark |
 | 4.10 | Darkness mechanics: total-darkness light style, darkness effects, dark puzzle areas | S | Gameplay darkness preserved |
+| 4.13 | Denoiser lags brightening light styles (a light whose last style was 0 is never picked by the gradient samples); paused gradients in bounce-lit areas (found in 4.2) | S | A pulsing or switched-on light's denoised brightness follows the undenoised within a few frames; no paused gradients |
 | 4.11 | Calibrate hubs: Blackmarsh, Mazaera, Thysis, Septimus, the Eidolon finale, Tulku (Praevus) — one story per hub | M each | Hub reviewed and approved by the owner |
 
 ### E5 — Materials and texture pipeline
