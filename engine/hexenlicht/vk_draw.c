@@ -1069,6 +1069,16 @@ void VK_DrawShade (int x, int y, int w, int h, float alpha)
 	Draw_Quad (x, y, x+w, y+h, 0, 0, 1, 1, 0, Draw_PackColor (0, 0, 0, (int)(alpha * 255.0f)), false);
 }
 
+/* a box of a color, sRGB 0-1 (vk_lightedit.c's markers) */
+void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba)
+{
+	int	c[4], k;
+
+	for (k = 0; k < 4; k++)
+		c[k] = (int)(q_min (q_max (rgba[k], 0.0f), 1.0f) * 255.0f + 0.5f);
+	Draw_Quad (x0, y0, x1, y1, 0, 0, 1, 1, 0, Draw_PackColor (c[0], c[1], c[2], c[3]), false);
+}
+
 void Draw_FadeScreen (void)
 {
 	int	bx, by, ex, ey;

@@ -16,7 +16,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
 [Emissive surfaces](#emissive-surfaces-vk_emissivec) · [Sky](#sky-vk_skyc) ·
-[Map file](#map-file-vk_mapfilec) ·
+[Map file](#map-file-vk_mapfilec) · [Light editor](#light-editor-vk_lighteditc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -808,6 +808,14 @@ from `VK_LoadWorld` before the light lists):
   replaces the light's with `r_maplight_colors 1`. `VK_MapLightAt` keeps
   the light entities' origins (where their models are) whatever the file
   does.
+- **Kept for editing** (4.8): the map load reads the lump's lights once,
+  with their jsh2color colors and the lava test at the entity origin, and
+  keeps them; `VK_ApplyMapEdits` copies them and applies the file's light
+  lines (at the load, after `vk_mapfile reload`, after each
+  [Light editor](#light-editor-vk_lighteditc) edit), repeating the lava test
+  only for a light moved elsewhere. `VK_EditableLights` lists every lump
+  light and addlight with the file's changes, also those taken out or
+  moved or added inside solid (dropped from the lights), for the editor.
 - **Light models** (`VK_MapLightAt`): the light entities' game code spawns
   their torch, flame or candle model at the light's origin (`makestatic`,
   fullbright). Every flame mesh encloses its origin; from the 8-unit
@@ -1190,6 +1198,135 @@ addlight 1000 2000 128 level 300 color 1 1 1
   on a jsh2color map; with demo1's 48 torch and flame lights taken out its
   48 torch models stayed in the light group. Not exercised: a `light` line
   naming a light the compiler dropped.
+- **Kept as lines** (4.8, for the [Light editor](#light-editor-vk_lighteditc)):
+  the file stays in memory as its lines (without their line ends), each
+  with an id that lasts while lines come and go. An edit of a light
+  (`VK_MapFileSetLight`) turns all the `light` lines of its entity origin
+  into one, where the first was (its trailing `//` or `/* */` comment
+  kept; a comment within the line goes, colors are written 0–1 unless a
+  component is above 1, then 0–255, which reads back the same), or removes
+  them when no change is left; an `addlight` line is rewritten in place.
+  Then the lines are parsed again, without setting the per-map cvars (what
+  the console set since the load stays), and applied (`VK_ApplyMapEdits`):
+  the lights are always what the lines say. A line that wouldn't parse (a
+  number past a million, too long with its comment, past 1024 light
+  lines) changes nothing: the old lines are put back and the reason
+  printed. An edit that changes a line's text counts as unsaved.
+- **Save** (`vk_editlight save`, `VK_SaveMapFile`): into the running game's
+  folder, `<game folder>\maps\<map>.hlmap` (`data1`, `portals` with
+  `-portals`, or the mod's; the folder is made when missing), which the
+  next load finds first (loose files come before the paks in Hexen II's
+  search order). The per-map cvars are saved as they are now: a line that
+  names one gets its value (a line that has it already stays as written),
+  one that differs from its default without a line gets one after the last
+  cvar line (else before the first light line). Comments, blank lines and
+  skipped lines stay as they were; a new file starts with a comment line;
+  CRLF line ends. It is written to `<file>.tmp`, which then replaces the
+  file: a failed write leaves the old file (and says where the lines
+  are). A file cut at 65,536 lines isn't saved. A shipped file is saved into the game folder whole, with
+  the edits, and that copy is used from then on. To ship a file, move it
+  into the repository's `data/hexenlicht/maps/` (a copy left in the game
+  folder hides later shipped versions; `vk_mapfile` says which is used). A
+  map load or `vk_mapfile reload` with unsaved edits says they were
+  dropped; `vk_mapfile` counts them.
+
+## Light editor (`vk_lightedit.c`)
+
+Story 4.8: the map's lights edited in the game, saved into the
+[Map file](#map-file-vk_mapfilec) with 4.7's vocabulary.
+
+- **`r_editlights 1`** (0, not archived) shows a marker at each light
+  within `r_editlights_distance` (1024 units) that the eye sees: a walk of
+  the world's BSP from the eye to 2 units short of the light (it prints
+  nothing, unlike `SV_RecursiveHullCheck` with `developer 1`, as it runs
+  in the frame), so models and doors don't hide one, and a light inside
+  its torch's mesh is shown; with the eye inside solid (`noclip`) every
+  light in reach is. One walk per light in reach and in view per frame
+  (tens to a few hundred), only with `r_editlights 1`. A marker is a square of
+  the light's hue at full brightness (white with `r_maplight_colors 0`) in
+  a black frame; hollow grey when the map file takes the light out; hollow
+  red when it was moved or added inside solid (dropped, but selectable, to
+  move it out; the walk stops 32 units short of it). The
+  selected light is bracketed white (also out of sight), the one `select`
+  would take grey. A panel at the view's top right, below the notify
+  lines, shows the selected light: classname, the entity origin its lines
+  name (an addlight's own), level, scale, style and the style's value now,
+  its sRGB color and where it comes from (jsh2color, `_color`, the map
+  file, white), a spotlight's width, where it was moved, off or inside
+  solid, whether the file changes it (or how many lights share its origin:
+  a light line changes them all), the distance, and the file's unsaved
+  edits. With `crosshair 0` (the default) a `+` marks the view's center.
+  Drawn from `R_RenderView` into the 2D batch, so under the HUD, menus and
+  console; nothing is printed in a frame.
+- **`vk_editlight select`**: the light nearest the crosshair within 10° of
+  it, in sight and within `r_editlights_distance` (the nearer on a tie);
+  `select x y z` by the entity origin (to the unit), as light lines and
+  `vk_lights colors` name them, else an addlight at that origin; `select
+  none`. It works without `r_editlights`. The selection is the light's
+  identity (a lump light's entity, an addlight's line), so it lasts
+  across edits and `vk_mapfile reload` (an addlight's line gets a new id
+  there: the selection goes); a new map clears it. Unsaved edits are
+  dropped at a map load, `vk_mapfile reload` (both say so) and quit.
+- **`vk_editlight <changes>`** changes the selected light, several changes
+  in one command, applied only if all parse: the map file's `off`, `level
+  n` (at least 1), `scale f`, `color r g b` (sRGB, 0–1 or 0–255), `style
+  n`, `origin x y z`; and the editor's `on` (clears `off`), `origin eye`,
+  `origin cursor` (the crosshair's world hit, 8 units out along the
+  surface's normal), `move dx dy dz` (world axes), `level *f` and `scale
+  *f` (times the current value: for key bindings, e.g. `bind KP_PLUS
+  "vk_editlight scale *1.1"`). Origins are rounded to the unit. A change
+  back to the map's own value (origin, level, style; scale 1; an addlight's
+  level 300, style 0) drops that key, and a light with no key left loses
+  its line. An added light has no `off` (`reset` removes it). Each edit
+  prints the light's line and how long it took.
+- **`vk_editlight add [changes]`**: a new light at the eye (or `origin
+  cursor`), level 300, white: an `addlight` line at the file's end,
+  selected. **`reset`**: the selected light's lines removed (the map's own
+  light again; an addlight deleted). **`save`**: the map file, see [Map
+  file](#map-file-vk_mapfilec). `vk_editlight` alone prints the panel's
+  lines, `vk_editlight help` the commands.
+- **How an edit applies:** it rewrites the light's lines in the map file
+  and applies the lines again onto the lump's lights as the map loaded
+  them ([Map lights](#map-lights-vk_maplightsc): no entity parse or
+  jsh2color, which takes up to 232 ms in Debug), then rebuilds the light
+  lists (`VK_RebuildLights`). Measured (Release, tibet1: the most list
+  entries, 19,020): 1–2 ms per edit, with the timer's 1 ms resolution;
+  egypt1 in Debug 2–4 ms.
+- Gameplay doesn't change: `cl.light_level` ([Scene](#scene-r_scenec),
+  4.12) comes from the baked lightmaps. The torch model stays where the
+  game spawned it, glowing and without shadows (4.7's rule).
+- Left out: dragging with the mouse or carrying a light with the camera
+  (a list rebuild and a statistics reset every frame), a 3D gizmo, range
+  spheres, an undo stack (`reset` per light, `vk_mapfile reload` for all),
+  what 4.7's vocabulary has no key for (a spotlight's direction or cone,
+  the 8-unit sphere, range without intensity: `level` sets both, `scale`
+  compensates; changes by classname), lights the compiler dropped, lava,
+  dynamic, test lights and emissive surfaces, a menu (6.10).
+- Tested (4.8, Debug and Release, temporary files in the data folder):
+  egypt1 with a hand-written file (comments, two cvar lines, two lines for
+  one light, a bad line, an `off` line, an addlight): select by origin,
+  `level *1.5` merged the two lines into the first (its comment kept),
+  `color 255 128 0` with `move`, `style 1` then `style 0` (dropped), `on`
+  removed the `off` line, an addlight moved (its comment kept), `add` at
+  the eye then `origin cursor`, a move into solid (reported, red marker)
+  and `reset`, bad input reported; `r_sun_elevation 30` in the console was
+  saved after the last cvar line; after `map egypt1` the saved file gave
+  the same lights; unsaved edits were reported dropped by `vk_mapfile
+  reload` and by a map load; no-op edits (`style 0` again, `reset` of an
+  unedited light) count nothing. After the code review: `color 300 200
+  100` stays 300 200 100 through the next edit's rewrite; a `move` past a
+  million was refused with the old line kept; a save onto a read-only file
+  left it as it was and the lines in `.tmp`. A map without a file got a new one with a
+  header (the `maps\` folder made); a shipped file (next to the exe) was
+  saved into `data1\maps\` whole with the edit; with `-portals` keep1's
+  went to `portals\maps\`. Crosshair `select` took the light 9.6° above
+  the crosshair at egypt1's start. Markers and panel at UI scales 1 and 2.
+  A pixel regression against `main` (demo1, egypt1 with a file of every
+  kind of change, meso2, castle4; Release, paused) was within `main`'s own
+  run-to-run noise, `vk_lights` identical. Not exercised: moving one of
+  the mappers' fake lava lights (the lava test is repeated where a moved
+  light goes), two light entities at one origin, a pak's map file saved
+  over (a loose file comes first).
 
 ## 3D view (`vk_view.c`)
 
@@ -1987,6 +2124,8 @@ overlay, and a measuring mode.
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
 | `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
-| `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines; read it again and apply it; per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
+| `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines, unsaved edits; read it again and apply it (unsaved edits dropped); per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
+| `r_editlights 0/1`, `r_editlights_distance` | markers at the lights in sight and the selected light's panel (0); how far they reach (1024) (see [Light editor](#light-editor-vk_lighteditc)) |
+| `vk_editlight select [x y z\|none]`, `vk_editlight <changes>`, `add`, `reset`, `save`, `help` | the light at the crosshair or by entity origin; `off`, `on`, `level n\|*f`, `scale f\|*f`, `color r g b`, `style n`, `origin x y z\|eye\|cursor`, `move dx dy dz`; a new light at the eye; the map's own light again; the map file into the game folder |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 here) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |
