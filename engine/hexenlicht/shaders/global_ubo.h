@@ -287,6 +287,7 @@ BEGIN_SHADER_STRUCT( DynLightData )
 	/* spot_data depends on spotlight emssion profile:
 	 * DYNLIGHT_SPOT_EMISSION_PROFILE_FALLOFF -> contains packed2x16 with cosTotalWidth, cosFalloffStart
 	 * DYNLIGHT_SPOT_EMISSION_PROFILE_AXIS_ANGLE_TEXTURE -> contains a half with cosTotalWidth and the texture index
+	 * Hexenlicht (4.4): a sphere's range, a float's bits (0 = unlimited; light_lists.h's dynlight_range)
 	 */
 	uint spot_data;
 }

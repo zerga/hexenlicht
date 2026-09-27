@@ -6,8 +6,9 @@
  * buffer's packed positions. Every frame, VK_BuildTLAS builds the dynamic
  * BLASes over this frame's alias model triangles (vk_model.c's instanced
  * buffer, already in world space: one each for the opaque, transparent and
- * masked (cutout) models, the models at a map light's origin (mask
- * AS_FLAG_LIGHT_MODELS, which shadow rays leave out) and the first-person
+ * masked (cutout) models, the models around a light (at a map light's
+ * origin or owning a dynamic light; mask AS_FLAG_LIGHT_MODELS, which shadow
+ * rays leave out) and the first-person
  * weapon, whose mask is Quake II RTX's AS_FLAG_VIEWER_WEAPON) and then the
  * top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per

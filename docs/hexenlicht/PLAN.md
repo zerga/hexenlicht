@@ -285,6 +285,7 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.10 | Darkness mechanics: total-darkness light style, darkness effects, dark puzzle areas | S | Gameplay darkness preserved |
 | 4.12 | Player light level for gameplay (`cl.light_level` from the baked lightmaps and dynamic lights, as GL's `R_DrawViewModel`; found in 1.7, done with 2.8, G9) | S | `cl.light_level` matches `glhexen2` at the same spots; the Assassin only cloaks in the dark |
 | 4.13 | Denoiser lags brightening light styles (a light whose last style was 0 is never picked by the gradient samples); paused gradients in bounce-lit areas (found in 4.2) | S | A pulsing or switched-on light's denoised brightness follows the undenoised within a few frames; no paused gradients |
+| 4.14 | `glh2` shows no dynamic lights on surfaces (its `gl_flashblend` bubbles show they exist; found in 4.4) | S | Cause known; fixed (upstream if it is theirs) or TESTING.md has a GL reference for dynamic lights |
 | 4.11 | Calibrate hubs: Blackmarsh, Mazaera, Thysis, Septimus, the Eidolon finale, Tulku (Praevus) — one story per hub | M each | Hub reviewed and approved by the owner |
 
 ### E5 — Materials and texture pipeline

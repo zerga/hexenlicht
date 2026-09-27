@@ -8,8 +8,24 @@
  *    lists hold only polygons), a sphere with an optional range at which
  *    its light fades to 0;
  *  - dynamic sphere lights: up to MAX_LIGHT_SOURCES in the global UBO's
- *    dyn_light_data, one picked at random per pixel (main.c's add_dlights),
- *    for lights that move (4.4).
+ *    dyn_light_data (main.c's add_dlights), the game's dynamic lights (4.4)
+ *    and test ones; a pixel picks one by its luminance times its solid
+ *    angle, faded by its range (Quake II RTX picks uniformly).
+ * The game's dynamic lights are the client's cl_dlights (r_scene.c): its
+ * entity effects (muzzle flashes, bright, dim lights, the torch), glowing
+ * projectiles, explosions. GL added radius - distance to its lightmaps,
+ * where utils/light had halved static light (rangescale 0.5), so one of
+ * radius R is a map light of level R at twice its intensity, fading to 0
+ * at R - minlight (GL's surfaces stop there); the radius changes as GL's
+ * (explosions shrink, flames flicker). The color is GL's (the client's,
+ * with gl_colored_dynamic_lights) converted to linear, as the map lights'.
+ * Dark lights (4.10) and those of a negative radius (GL lights nothing
+ * with them) are left out. An alias model whose entity owns one of them
+ * within the model's bounds casts no shadows while it does
+ * (VK_DynamicLightOwner: vk_instance.c's light group), as the map lights'
+ * torches: the light is inside it (a glowing projectile; also a monster's
+ * muzzle flash or an invincible player's light, whose shadows go while
+ * they last).
  * The light lists (Quake II RTX's bsp_mesh.c collect_cluster_lights) are
  * built when the lights change: a light goes into the list of every
  * cluster in the PVS of the open leafs its emitter touches (Quake II RTX
@@ -71,6 +87,24 @@
 #define TEST_SPHERE_RADIUS	8.0f
 #define TEST_SPHERE_INTENSITY	1000.0f
 #define MAP_LIGHT_RADIUS	8.0f	/* the test spheres' */
+#define DYNAMIC_LIGHT_RADIUS	8.0f	/* the map lights' */
+
+static cvar_t	r_dlights = {"r_dlights", "1", CVAR_NONE};
+
+/* the last 3D frame's dynamic lights, for vk_lights (VK_PrepareLights runs
+ * inside the frame, which can't print) */
+static struct
+{
+	int		lit;		/* in the UBO */
+	int		owned;		/* of them, keyed by an entity (the player's too) */
+	int		dark, negative;	/* left out: dark (4.10), a negative radius or none past minlight */
+	int		most;		/* the most lit in a frame since the map loaded */
+	float		largest;	/* the largest intensity (pi x radiance) since then */
+} dlight_stats;
+
+/* every game dynamic light has a UBO slot (test ones take those left), so
+ * one that owns its model's light group is always lit */
+COMPILE_TIME_ASSERT(dlights_fit, MAX_DLIGHTS <= MAX_LIGHT_SOURCES);
 
 typedef struct
 {
@@ -435,6 +469,7 @@ void VK_ClearLights (void)
 	num_test_spheres = num_test_quads = num_test_dlights = 0;
 	num_lights = num_map_lights = 0;
 	num_cluster_bounds = 0;
+	memset (&dlight_stats, 0, sizeof(dlight_stats));
 	VK_ClearMapLights ();
 	for (i = 0; i < (int)Q_COUNTOF(style_scales[0]); i++)
 		style_scales[0][i] = style_scales[1][i] = 1.0f;	/* until the new map's first frame */
@@ -471,25 +506,82 @@ static void WriteLight (const light_t *l, float *p)
 	p[14] = (float)l->type;
 }
 
+/* does a game dynamic light light anything: GL's surfaces get none from a
+ * dark one (4.10's), a negative radius or one at most its minlight */
+static qboolean DynamicLightLit (const scene_dlight_t *s)
+{
+	return r_dlights.integer && !s->dark && s->radius - s->minlight > 0;
+}
+
+/* does the entity own a dynamic light this frame (keyed by its number)
+ * within radius of its origin (its model's bounds, where the light would
+ * be inside it): vk_instance.c's light group */
+qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius)
+{
+	int	i;
+
+	for (i = 0; entnum > 0 && i < r_scene.num_dlights; i++)
+	{
+		const scene_dlight_t	*s = &r_scene.dlights[i];
+		vec3_t			d;
+
+		VectorSubtract (s->origin, origin, d);
+		if (s->key == entnum && DynamicLightLit (s) && DotProduct (d, d) <= radius * radius)
+			return true;
+	}
+	return false;
+}
+
+/* a dynamic sphere in the UBO (range 0 = unlimited, in spot_data's bits:
+ * light_lists.h's dynlight_range) */
+static void WriteDynamicLight (DynLightData *d, const vec3_t origin, float radius, const vec3_t color, float range)
+{
+	memset (d, 0, sizeof(*d));
+	VectorCopy (origin, d->center);
+	d->radius = radius;
+	VectorCopy (color, d->color);
+	d->type = DYNLIGHT_SPHERE;
+	memcpy (&d->spot_data, &range, sizeof(d->spot_data));
+}
+
 /* fills this frame's light buffer and the UBO's light fields */
 void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 {
 	vk_buffer_t	*buf = &light_buffers[vk.frame_index];
 	LightBuffer	*lb = (LightBuffer *) buf->mapped;
-	int		i, cur;
+	int		i, k, cur, n = 0;
 
-	/* dynamic sphere lights: Quake II RTX's add_dlights */
-	ubo->num_dyn_lights = num_test_dlights;
-	for (i = 0; i < num_test_dlights; i++)
+	/* dynamic sphere lights (Quake II RTX's add_dlights): the game's (see the
+	 * top), then the test ones */
+	dlight_stats.lit = dlight_stats.owned = dlight_stats.dark = dlight_stats.negative = 0;
+	for (i = 0; i < r_scene.num_dlights && r_dlights.integer; i++)
 	{
-		DynLightData	*d = &ubo->dyn_light_data[i];
+		const scene_dlight_t	*s = &r_scene.dlights[i];
+		float			intensity;
+		vec3_t			color;
 
-		memset (d, 0, sizeof(*d));
-		VectorCopy (test_dlights[i].origin, d->center);
-		d->radius = test_dlights[i].radius;
-		VectorCopy (test_dlights[i].color, d->color);
-		d->type = DYNLIGHT_SPHERE;
+		if (s->dark)
+		{
+			dlight_stats.dark++;
+			continue;
+		}
+		if (!DynamicLightLit (s))
+		{
+			dlight_stats.negative++;
+			continue;
+		}
+		intensity = 2.0f * VK_LightLevelIntensity (s->radius);
+		for (k = 0; k < 3; k++)
+			color[k] = VK_SRGBToLinear (q_max (s->color[k], 0.0f)) * intensity;
+		WriteDynamicLight (&ubo->dyn_light_data[n++], s->origin, DYNAMIC_LIGHT_RADIUS, color, s->radius - s->minlight);
+		dlight_stats.lit++;
+		dlight_stats.owned += (s->key > 0);
+		dlight_stats.largest = q_max (dlight_stats.largest, intensity);
 	}
+	dlight_stats.most = q_max (dlight_stats.most, dlight_stats.lit);
+	for (i = 0; i < num_test_dlights && n < MAX_LIGHT_SOURCES; i++)
+		WriteDynamicLight (&ubo->dyn_light_data[n++], test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f);
+	ubo->num_dyn_lights = n;
 
 	/* the light styles (4.2): R_AnimateLight's value, GL's, relative to its normal
 	 * 'm' (264), so an unstyled light stays 1 and a style animates as in GL frame for
@@ -809,7 +901,7 @@ static void VK_Lights_f (void)
 			max_c = c;
 		}
 	}
-	Con_Printf ("%d lights in the light lists: %d polygons, %d spheres (%d with a range%s); %d dynamic sphere lights\n",
+	Con_Printf ("%d lights in the light lists: %d polygons, %d spheres (%d with a range%s); %d test dynamic lights\n",
 		    num_lights, num_lights - spheres, spheres, build.ranged, range_culling ? "" : ", not culled by it",
 		    num_test_dlights);
 	VK_PrintMapLights ();
@@ -829,6 +921,9 @@ static void VK_Lights_f (void)
 		}
 		Con_Printf ("light styles: %d lights in %d styles other than 0, %d off last frame\n", styled, styles, off);
 	}
+	Con_Printf ("dynamic lights last frame%s: %d (%d keyed by an entity), left out %d dark (4.10), %d unlit (negative radius, minlight); since the map loaded at most %d in a frame, the brightest %.0f\n",
+		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.dark,
+		    dlight_stats.negative, dlight_stats.most, dlight_stats.largest);
 	Con_Printf ("lists of %d clusters (of %d): %u entries (at most %d), mean %.1f, max %u (cluster %d), %d empty\n",
 		    num_lists, vk_pvs.num_clusters, num_nodes, MAX_LIGHT_LIST_NODES,
 		    num_lists ? (double)num_nodes / num_lists : 0.0, max_n, max_c, empty);
@@ -869,6 +964,7 @@ void VK_InitLights (void)
 	}
 	Cmd_AddCommand ("vk_testlight", VK_TestLight_f);
 	Cmd_AddCommand ("vk_lights", VK_Lights_f);
+	Cvar_RegisterVariable (&r_dlights);
 	VK_InitMapLights ();
 }
 

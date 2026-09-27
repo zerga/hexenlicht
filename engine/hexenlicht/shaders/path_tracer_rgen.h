@@ -80,8 +80,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define RNG_SUNLIGHT_X(bounce)			  (4 + 7 + 9 * bounce)
 #define RNG_SUNLIGHT_Y(bounce)			  (4 + 8 + 9 * bounce)
 
-// Hexenlicht: the models at a map light's origin (AS_FLAG_LIGHT_MODELS) in every mask but the
-// shadow rays': their mesh surrounds the light (vk_maplights.c)
+// Hexenlicht: the models around a light (AS_FLAG_LIGHT_MODELS: at a map light's origin, owning a
+// dynamic light) in every mask but the shadow rays': their mesh surrounds the light (vk_instance.c)
 #define PRIMARY_RAY_CULL_MASK        (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_TRANSPARENT | AS_FLAG_VIEWER_WEAPON | AS_FLAG_SKY)
 #define REFLECTION_RAY_CULL_MASK     (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_SKY)
 #define BOUNCE_RAY_CULL_MASK         (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_SKY | AS_FLAG_CUSTOM_SKY)

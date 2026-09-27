@@ -115,7 +115,7 @@ this repository) or one at a time with
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6; 4.1: our `AS_FLAG_LIGHT_MODELS`, from `constants.h`, in every ray mask but the shadow rays') | 3.2, 3.3, 3.5b, 3.6, 4.1 |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too; 3.12: for RR the motion vector and depth of blurred pixels from the field with the larger throughput) | 3.3, 3.10, 3.12 |
-| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6); a spotlight's cone on spheres (4.1, `sphere_light_spot`) | 3.3, 3.4, 4.1 |
+| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6); a spotlight's cone on spheres (4.1, `sphere_light_spot`); dynamic spheres with a range (in `spot_data`), picked by weight instead of uniformly (4.4, `dynlight_weight`) | 3.3, 3.4, 4.1, 4.4 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
@@ -244,7 +244,10 @@ this repository) or one at a time with
   a second range of entries per list would keep them in place. Lists that
   change every frame also need Q2RTX's light-count history
   (`light_counts_history`, left out in 3.6), so a gradient sample picks
-  from the count its replayed frame had.
+  from the count its replayed frame had. *4.4: they stay in the UBO (the
+  client has at most 32, `MAX_DLIGHTS`), picked per pixel by their
+  weight (luminance × solid angle × range fade) instead of uniformly, with
+  a range; no list changes, statistics or history needed (DECISIONS R81).*
 - **Dynamic resolution (3.11, 7.2).** Q2RTX's `drs_*` steer the render
   scale by the measured frame time; uHexen2 caps frames at 72 fps outside
   timedemo, which hides it, and there are no GPU timers before 3.11. The
