@@ -266,7 +266,7 @@ Goal: a test map path-traced, denoised, 60+ fps at 1440p with upscaling.
 | 3.9 | **Spike:** Streamline on Vulkan with DLSS SR + RR, user-supplied DLLs | S | Go/no-go documented |
 | 3.10 | DLSS backend via Streamline (optional at runtime) + player docs | M | DLSS selectable when DLLs present |
 | 3.11 | GPU timers overlay, performance baseline | S | Per-pass timings on screen |
-| 3.12 | Translucent surfaces keep a fine checkerboard at some views (the interleave's blur misses pixels; found in 3.9) | S | Blend without a checkerboard from every view, also as DLSS RR's input |
+| 3.12 | Translucent surfaces keep a fine checkerboard at some views (found in 3.9; the cause: without the denoiser the fields didn't swap every frame as in Q2RTX) | S | Blend without a checkerboard from every view, also as DLSS RR's input |
 
 ### E4 — Hexen II lighting
 Goal: every map lit with no manual work; mood matches the original reasonably.

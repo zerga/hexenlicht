@@ -92,7 +92,8 @@ right before this shader is invoked, see function `vkpt_interleave`.
 // Hexenlicht: DLSS's inputs in the screen layout (vk_dlss.c, dlss_inputs.glsl):
 // spec_dlss_inputs 1 (DLSS SR) writes the depth, 2 (DLSS RR) also RR's guides,
 // and RR, which takes the noisy image, gets the checkerboard of translucent
-// surfaces blurred as the denoiser's image does (DECISIONS R56)
+// surfaces blurred as the denoiser's image does (DECISIONS R56, R62). Where
+// neither blurs, the fields swap every frame (vk_ubo.c, pt_swap_checkerboard)
 layout(constant_id = 0) const uint spec_dlss_inputs = 0;
 #include "hl_shared.h"
 #include "dlss_inputs.glsl"
@@ -176,7 +177,19 @@ void main()
 
         // Make sure that transparent surfaces contain motion vectors for the brightest component
         // (reflection or refraction), not a mix of both. Helps with TAA quality.
-        if(luminance(neighbors.rgb) > luminance(center.rgb))
+        // Hexenlicht: for DLSS RR, whose image is noisy, the component with the larger throughput
+        // (the split's share: noise-free), ties to the field that went through or refracted (the
+        // right half); the noisy color would flip RR's motion vector and depth per pixel between
+        // the surface and what is behind it (DECISIONS R73)
+        if(spec_dlss_inputs == 2)
+        {
+            float center_throughput = luminance(texelFetch(TEX_PT_THROUGHPUT, ipos, 0).rgb);
+            float other_throughput = luminance(texelFetch(TEX_PT_THROUGHPUT, ipos + ivec2(other_side_offset, 0), 0).rgb);
+            bool center_went_through = ipos.x >= global_ubo.width / 2;
+            if(center_went_through ? (other_throughput > center_throughput) : (other_throughput >= center_throughput))
+                use_center_mv = false;
+        }
+        else if(luminance(neighbors.rgb) > luminance(center.rgb))
             use_center_mv = false;
 
         // Blend the color, not the checkerboard flags.
