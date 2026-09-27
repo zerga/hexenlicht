@@ -145,6 +145,20 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   sun cvars and `r_map_*` to their defaults (then the map file sets them):
   set them after `map` and its waits (a `r_sun 1` before `map village2`
   is gone when the map has loaded).
+- **Light editing (4.8):** scripts select lights by entity origin
+  (`vk_editlight select x y z`, origins from `vk_lights colors`) rather
+  than by the crosshair; each edit prints its line and time, `vk_editlight`
+  the selected light, `vk_mapfile` the lines and unsaved edits.
+  `vk_editlight save` writes into the data folder's `data1\maps\` (or
+  `portals\maps\`, the running game's) and makes the folder: delete it
+  afterwards. Screenshots with `r_editlights 1` show the markers and the
+  panel (console output covers the panel's top in scripted shots).
+- **Calibrating with the editor (4.9, 4.11):** `r_editlights 1`, aim at a
+  light, `vk_editlight select`, then `level`, `scale *f`, `color`, `move`
+  or `off` until it matches `glh2`'s look; `vk_editlight save`, and move
+  the file from the game folder into the repository's
+  `data/hexenlicht/maps/` (don't copy: a game-folder file is used before
+  the shipped one).
 
 - **Window:** `resize_test.ps1` (resize, maximize, restore, too small) with a
   script that echoes `==== STEP1..5` and waits ~300 frames after each; also

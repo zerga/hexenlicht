@@ -44,7 +44,12 @@
  * direction), "addlight" adds one (white unless it has a color); moved or
  * added lights inside solid are dropped. A light's intensity is its
  * level's times its scale and the map's r_map_light_scale; a map file
- * color replaces its color with r_maplight_colors 1.
+ * color replaces its color with r_maplight_colors 1. The lump's lights,
+ * their jsh2color colors and lava test are kept from the map's load, so
+ * that the light editor (vk_lightedit.c, 4.8) applies the file's lines
+ * again at once (VK_ApplyMapEdits); VK_EditableLights lists every lump
+ * light and addlight with the file's changes, those it takes out or drops
+ * too.
  * VK_LoadWorld calls VK_LoadMapLights before the light lists are built;
  * vk_light.c's VK_UpdateLights takes these lights with the test lights.
  * VK_MapLightAt tells vk_instance.c which models stand at a light entity's
@@ -106,28 +111,41 @@ typedef struct
 	qboolean	has_color;
 } lightent_t;
 
-static vk_maplight_t	maplights[MAX_LIGHT_POLYS];
-static int		num_maplights;
-static int		at_points[MAX_LIGHT_POLYS][3];	/* the light entities' origins, to the unit: where their models are */
-static int		num_at_points;
-static short		at_hash[AT_HASH_SIZE];	/* at_points index + 1, 0 = empty */
-static int		dropped_points[MAX_LIGHT_POLYS][3];	/* light entities the compiler lit nothing from (vk_mapfile's report) */
-static int		num_dropped_points;
-
-/* what r_maplight_colors picks from, per map light */
-static struct
+/* what r_maplight_colors picks from, and where a light comes from */
+typedef struct
 {
 	char		classname[32];	/* vk_lights colors */
 	int		entity;		/* in the lump, -1 = the map file's addlight */
+	int		line_id;	/* an addlight's line (vk_mapfile.c) */
 	vec3_t		lump_origin;	/* the map file's light edits match it */
 	int		jsh[3];		/* jsh2color's 0-275 */
 	vec3_t		own;		/* _color, 0-1 */
 	qboolean	has_own;
 	vec3_t		edited;		/* the map file's color, sRGB 0-1 */
 	qboolean	has_edited;
-} maplight_colors[MAX_LIGHT_POLYS];
-static vk_lightcolors_t	colorinfo;	/* list NULL: not computed (the map's own colors) */
+} lightinfo_t;
 
+/* the lump's lights as the map loaded (VK_LoadMapLights), kept for the
+ * editor's VK_ApplyMapEdits */
+static vk_maplight_t	base_lights[MAX_LIGHT_POLYS];
+static lightinfo_t	base_info[MAX_LIGHT_POLYS];
+static int		num_base;
+/* with the map file's light lines: the lights */
+static vk_maplight_t	maplights[MAX_LIGHT_POLYS];
+static lightinfo_t	maplight_info[MAX_LIGHT_POLYS];
+static int		num_maplights;
+static vk_editablelight_t	editable[MAX_LIGHT_POLYS];	/* the lump's lights and the addlights, taken out or dropped ones too */
+static int		num_editable;
+
+static int		at_points[MAX_LIGHT_POLYS][3];	/* the light entities' origins, to the unit: where their models are */
+static int		num_at_points;
+static short		at_hash[AT_HASH_SIZE];	/* at_points index + 1, 0 = empty */
+static int		dropped_points[MAX_LIGHT_POLYS][3];	/* light entities the compiler lit nothing from (vk_mapfile's report) */
+static int		num_dropped_points;
+static vk_lightcolors_t	colorinfo;	/* list NULL: not computed (the map's own colors) */
+static int		on_models;	/* models in the light group last frame (vk_instance.c): at a light's origin, owning a dynamic light */
+
+/* the lump's */
 static struct
 {
 	int		entities;	/* light entities in the lump: a "light" classname or a level */
@@ -137,10 +155,14 @@ static struct
 	int		over;		/* dropped: more than MAX_LIGHT_POLYS */
 	int		spots;
 	int		unmatched;	/* a target no entity has: not a spot */
-	int		styled;		/* style other than 0 */
 	int		colored;	/* with _color */
+} stats;
+
+/* the lights with the map file's lines */
+static struct
+{
+	int		styled;		/* style other than 0 */
 	int		orange, textured, warm;	/* jsh2color's torch orange, from textures, 255 225 200 */
-	int		on_models;	/* models in the light group last frame (vk_instance.c): at a light's origin, owning a dynamic light */
 	int		over_lava;	/* plain lights close over lava (4.5) */
 	int		over_lava_styled;	/* of them, with a style */
 	int		edited;		/* changed by the map file's light lines (4.7) */
@@ -149,7 +171,7 @@ static struct
 	int		edit_added;	/* its addlight lines */
 	int		edit_in_solid;	/* moved or added inside solid: dropped */
 	int		edit_over;	/* addlights past MAX_LIGHT_POLYS */
-} stats;
+} applied;
 
 
 static unsigned AtHash (const int *p)
@@ -299,9 +321,39 @@ float VK_SRGBToLinear (float c)
 	return (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
 }
 
+/* a light's color as the map file gives colors (sRGB, jsh2color's 0-275 /
+ * 255 up to 1.08), with r_maplight_colors 1 (see the top), and where it
+ * comes from */
+static const char *LightColor (const lightinfo_t *c, vec3_t srgb)
+{
+	int	k;
+
+	VectorSet (srgb, 1.0f, 1.0f, 1.0f);
+	if (c->has_edited)	/* the map file's (4.7) */
+	{
+		VectorCopy (c->edited, srgb);
+		return "the map file";
+	}
+	if (c->entity < 0)
+		return "white (an addlight)";
+	if (stats.colored)
+	{
+		if (!c->has_own)
+			return "white (the map has _color, not this light)";
+		VectorCopy (c->own, srgb);
+		return "_color";
+	}
+	if (!colorinfo.colored)
+		return "white (no jsh2color colors)";
+	for (k = 0; k < 3; k++)
+		srgb[k] = c->jsh[k] / 255.0f;
+	return "jsh2color";
+}
+
 /* the lights' colors by r_maplight_colors (see the top) */
 static void ApplyColors (void)
 {
+	vec3_t	srgb;
 	int	i, k;
 
 	for (i = 0; i < num_maplights; i++)
@@ -311,49 +363,33 @@ static void ApplyColors (void)
 		VectorSet (c, 1.0f, 1.0f, 1.0f);
 		if (!r_maplight_colors.integer)
 			continue;
-		if (maplight_colors[i].has_edited)	/* the map file's (4.7) */
-		{
-			for (k = 0; k < 3; k++)
-				c[k] = VK_SRGBToLinear (maplight_colors[i].edited[k]);
-		}
-		else if (maplight_colors[i].entity < 0)
-		{
-			/* the map file's addlight without a color: white */
-		}
-		else if (stats.colored)
-		{
-			if (maplight_colors[i].has_own)
-				for (k = 0; k < 3; k++)
-					c[k] = VK_SRGBToLinear (maplight_colors[i].own[k]);
-		}
-		else if (colorinfo.colored)
-		{
-			for (k = 0; k < 3; k++)
-				c[k] = VK_SRGBToLinear (maplight_colors[i].jsh[k] / 255.0f);
-		}
+		LightColor (&maplight_info[i], srgb);
+		for (k = 0; k < 3; k++)
+			c[k] = VK_SRGBToLinear (srgb[k]);
 	}
 }
 
-/* the map file's light lines (vk_mapfile.c, 4.7): "light" changes the
- * lights whose entity origin it names, "addlight" adds one; lights taken
- * out, or moved or added inside solid, are dropped (as the compiler lit
- * nothing from inside solid) */
+/* the map file's light lines (vk_mapfile.c, 4.7) onto the lump's lights
+ * (copied into maplights): "light" changes the lights whose entity origin
+ * it names, "addlight" adds one; lights taken out, or moved or added
+ * inside solid, are dropped (as the compiler lit nothing from inside
+ * solid), but stay in the editor's list */
 static void ApplyEdits (qmodel_t *worldmodel)
 {
+	static qboolean	off[MAX_LIGHT_POLYS], solid[MAX_LIGHT_POLYS], edited[MAX_LIGHT_POLYS];
 	vk_mapedit_t	*edits;
-	qboolean	drop[MAX_LIGHT_POLYS];
-	int		num_edits, i, j, q[3], out;
+	int		num_edits, i, j, q[3], out, pass;
 
 	edits = VK_MapEdits (&num_edits);
-	memset (drop, 0, sizeof(drop));
 	for (j = 0; j < num_edits; j++)
 		edits[j].matched = 0;
 	for (i = 0; i < num_maplights; i++)
 	{
 		vk_maplight_t	*l = &maplights[i];
-		qboolean	edited = false, moved = false;
+		qboolean	moved = false;
 
-		RoundOrigin (maplight_colors[i].lump_origin, q);
+		off[i] = solid[i] = edited[i] = false;
+		RoundOrigin (maplight_info[i].lump_origin, q);
 		for (j = 0; j < num_edits; j++)
 		{
 			const vk_mapedit_t	*e = &edits[j];
@@ -361,9 +397,9 @@ static void ApplyEdits (qmodel_t *worldmodel)
 			if (e->add || e->at[0] != q[0] || e->at[1] != q[1] || e->at[2] != q[2])
 				continue;
 			edits[j].matched++;
-			edited = true;
+			edited[i] = true;
 			if (e->keys & MAPEDIT_OFF)
-				drop[i] = true;
+				off[i] = true;
 			if (e->keys & MAPEDIT_LEVEL)
 				l->level = e->level;
 			if (e->keys & MAPEDIT_SCALE)
@@ -372,8 +408,8 @@ static void ApplyEdits (qmodel_t *worldmodel)
 				l->style = e->style;
 			if (e->keys & MAPEDIT_COLOR)
 			{
-				VectorCopy (e->color, maplight_colors[i].edited);
-				maplight_colors[i].has_edited = true;
+				VectorCopy (e->color, maplight_info[i].edited);
+				maplight_info[i].has_edited = true;
 			}
 			if (e->keys & MAPEDIT_ORIGIN)
 			{
@@ -381,71 +417,143 @@ static void ApplyEdits (qmodel_t *worldmodel)
 				moved = true;
 			}
 		}
-		stats.edited += edited;
-		stats.edit_off += drop[i];
-		if (moved && !drop[i] && OriginInSolid (worldmodel->nodes, l->origin))
+		applied.edited += edited[i];
+		applied.edit_off += off[i];
+		if (moved)
 		{
-			drop[i] = true;
-			stats.edit_in_solid++;
+			solid[i] = OriginInSolid (worldmodel->nodes, l->origin);
+			/* the lava test again where it went (see VK_LoadMapLights) */
+			l->over_lava = !strcmp (maplight_info[i].classname, "light") && VK_OverLava (l->origin);
+			applied.edit_in_solid += (solid[i] && !off[i]);
+			applied.edit_moved += (!solid[i] && !off[i]);
 		}
-		stats.edit_moved += (moved && !drop[i]);
 	}
 
-	for (j = 0; j < num_edits; j++)
+	/* the addlights in the file's order: those outside solid, then (for
+	 * the editor's list only, where they fit) those inside */
+	for (pass = 0; pass < 2; pass++)
 	{
-		vk_mapedit_t	*e = &edits[j];
-		vk_maplight_t	*l;
+		for (j = 0; j < num_edits; j++)
+		{
+			vk_mapedit_t	*e = &edits[j];
+			vk_maplight_t	*l;
+			lightinfo_t	*c;
+			qboolean	in_solid;
 
-		if (!e->add)
-			continue;
-		if (OriginInSolid (worldmodel->nodes, e->origin))
-		{
-			stats.edit_in_solid++;
-			continue;
+			if (!e->add)
+				continue;
+			in_solid = OriginInSolid (worldmodel->nodes, e->origin);
+			if (in_solid != (pass == 1))
+				continue;
+			applied.edit_in_solid += in_solid;
+			if (num_maplights == MAX_LIGHT_POLYS)
+			{
+				applied.edit_over += !in_solid;
+				continue;
+			}
+			i = num_maplights++;
+			l = &maplights[i];
+			c = &maplight_info[i];
+			memset (l, 0, sizeof(*l));
+			memset (c, 0, sizeof(*c));
+			VectorCopy (e->origin, l->origin);
+			VectorCopy (e->origin, c->lump_origin);
+			l->level = e->level;
+			l->scale = e->scale;
+			l->style = e->style;
+			q_strlcpy (c->classname, "addlight", sizeof(c->classname));
+			c->entity = -1;
+			c->line_id = e->id;
+			if (e->keys & MAPEDIT_COLOR)
+			{
+				VectorCopy (e->color, c->edited);
+				c->has_edited = true;
+			}
+			off[i] = false;
+			edited[i] = true;
+			solid[i] = in_solid;
+			e->matched = !in_solid;
+			applied.edit_added += !in_solid;
 		}
-		if (num_maplights == MAX_LIGHT_POLYS)
-		{
-			stats.edit_over++;
-			continue;
-		}
-		l = &maplights[num_maplights];
-		memset (l, 0, sizeof(*l));
-		memset (&maplight_colors[num_maplights], 0, sizeof(maplight_colors[0]));
-		drop[num_maplights] = false;
-		VectorCopy (e->origin, l->origin);
-		VectorCopy (e->origin, maplight_colors[num_maplights].lump_origin);
-		l->level = e->level;
-		l->scale = e->scale;
-		l->style = e->style;
-		q_strlcpy (maplight_colors[num_maplights].classname, "addlight", sizeof(maplight_colors[0].classname));
-		maplight_colors[num_maplights].entity = -1;
-		if (e->keys & MAPEDIT_COLOR)
-		{
-			VectorCopy (e->color, maplight_colors[num_maplights].edited);
-			maplight_colors[num_maplights].has_edited = true;
-		}
-		e->matched = 1;
-		stats.edit_added++;
-		num_maplights++;
+	}
+
+	/* the editor's list, before the dropped ones go */
+	num_editable = num_maplights;
+	for (i = 0; i < num_maplights; i++)
+	{
+		vk_editablelight_t	*d = &editable[i];
+		const vk_maplight_t	*l = &maplights[i];
+		const lightinfo_t	*c = &maplight_info[i];
+
+		memset (d, 0, sizeof(*d));
+		d->entity = c->entity;
+		d->line_id = c->line_id;
+		d->classname = (c->entity >= 0) ? base_info[i].classname : "addlight";	/* base_info: stays put */
+		VectorCopy (c->lump_origin, d->lump_origin);
+		d->lump_level = (c->entity >= 0) ? base_lights[i].level : VK_DEFAULT_LIGHT_LEVEL;
+		d->lump_style = (c->entity >= 0) ? base_lights[i].style : 0;
+		VectorCopy (l->origin, d->origin);
+		d->level = l->level;
+		d->style = l->style;
+		d->scale = l->scale;
+		d->color_from = LightColor (c, d->srgb);
+		d->spot = VectorLength (l->spot_dir) > 0.0f;
+		d->spot_cos = l->spot_cos;
+		d->off = off[i];
+		d->in_solid = solid[i];
+		d->edited = edited[i];
 	}
 
 	/* the dropped ones out, the colors' table in step */
 	for (i = out = 0; i < num_maplights; i++)
 	{
-		if (drop[i])
+		if (off[i] || solid[i])
 			continue;
 		if (out != i)
 		{
 			maplights[out] = maplights[i];
-			maplight_colors[out] = maplight_colors[i];
+			maplight_info[out] = maplight_info[i];
 		}
 		out++;
 	}
 	num_maplights = out;
 }
 
+/* the map file's light lines onto the lump's lights as the map loaded
+ * them (VK_LoadMapLights; then the caller's VK_RebuildLights): at a load,
+ * and at once after the light editor changed the lines (4.8), without
+ * reading the lump or jsh2color again */
+void VK_ApplyMapEdits (qmodel_t *worldmodel)
+{
+	int	i;
+
+	memcpy (maplights, base_lights, num_base * sizeof(maplights[0]));
+	memcpy (maplight_info, base_info, num_base * sizeof(maplight_info[0]));
+	num_maplights = num_base;
+	memset (&applied, 0, sizeof(applied));
+	ApplyEdits (worldmodel);
+	for (i = 0; i < num_maplights; i++)
+	{
+		const vk_maplight_t	*l = &maplights[i];
+		const int		*c = maplight_info[i].jsh;
+
+		applied.styled += (l->style != 0);
+		applied.over_lava += l->over_lava;
+		applied.over_lava_styled += (l->over_lava && l->style != 0);
+		if (!colorinfo.colored || stats.colored || maplight_info[i].entity < 0)
+			continue;
+		if (c[0] == 255 && c[1] == 128 && c[2] == 64)
+			applied.orange++;
+		else if (c[0] == 255 && c[1] == 225 && c[2] == 200)
+			applied.warm++;
+		else
+			applied.textured++;
+	}
+	ApplyColors ();
+}
+
 /* a new map (VK_LoadWorld, before the light lists): its light entities,
- * with the map file's light lines (4.7) */
+ * then the map file's light lines (4.7) */
 void VK_LoadMapLights (qmodel_t *worldmodel)
 {
 	lightent_t	*ents;
@@ -454,12 +562,13 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 	memset (&stats, 0, sizeof(stats));
 	memset (&colorinfo, 0, sizeof(colorinfo));
 	memset (at_hash, 0, sizeof(at_hash));
-	num_maplights = num_at_points = num_dropped_points = 0;
+	num_base = num_maplights = num_editable = num_at_points = num_dropped_points = 0;
 	ents = ParseEntities (worldmodel->entities, &n);
 	for (i = 0; i < n; i++)
 	{
 		lightent_t	*e = &ents[i];
 		vk_maplight_t	*l;
+		lightinfo_t	*c;
 		unsigned	h;
 
 		/* utils/light's LoadEntities and LightFace: a "light" classname
@@ -482,21 +591,22 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			AddDroppedPoint (e->origin);
 			continue;
 		}
-		if (num_maplights == MAX_LIGHT_POLYS)
+		if (num_base == MAX_LIGHT_POLYS)
 		{
 			stats.over++;
 			continue;
 		}
-		l = &maplights[num_maplights];
+		l = &base_lights[num_base];
+		c = &base_info[num_base];
 		memset (l, 0, sizeof(*l));
-		memset (&maplight_colors[num_maplights], 0, sizeof(maplight_colors[0]));
+		memset (c, 0, sizeof(*c));
 		VectorCopy (e->origin, l->origin);
-		VectorCopy (e->origin, maplight_colors[num_maplights].lump_origin);
+		VectorCopy (e->origin, c->lump_origin);
 		l->level = e->level;
 		l->scale = 1.0f;
 		l->style = (e->style > 0 && e->style < 256) ? e->style : 0;	/* utils/light allows 0-254 */
-		q_strlcpy (maplight_colors[num_maplights].classname, e->classname, sizeof(maplight_colors[0].classname));
-		maplight_colors[num_maplights].entity = i;
+		q_strlcpy (c->classname, e->classname, sizeof(c->classname));
+		c->entity = i;
 		if (e->target[0])
 		{
 			/* utils/light's MatchTargets: the first entity of the targetname */
@@ -509,25 +619,25 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			else
 			{
 				float	half = ((e->angle != 0.0f) ? e->angle : DEFAULT_SPOT_ANGLE) * 0.5f;
-				float	c = cosf (half * (float)M_PI / 180.0f);
+				float	cs = cosf (half * (float)M_PI / 180.0f);
 
 				/* utils/light's cone test skips a point when
 				 * dot(towards the target, from the point to the light) > -cos(half) */
 				VectorSubtract (ents[j].origin, e->origin, l->spot_dir);
-				if (VectorNormalize (l->spot_dir) == 0.0f && c > 0.0f)
+				if (VectorNormalize (l->spot_dir) == 0.0f && cs > 0.0f)
 				{
 					stats.unlit++;	/* aimed at its own origin: every point skipped */
 					AddDroppedPoint (e->origin);
 					continue;
 				}
 				/* by the cosine, periodic as the compiler's (angle -360 or 720 too) */
-				if (VectorLength (l->spot_dir) == 0.0f || c <= SPOT_COS_OMNI)
+				if (VectorLength (l->spot_dir) == 0.0f || cs <= SPOT_COS_OMNI)
 				{
 					VectorClear (l->spot_dir);	/* lights everywhere: not a spot */
 				}
 				else
 				{
-					l->spot_cos = q_min (c, SPOT_COS_NARROWEST);
+					l->spot_cos = q_min (cs, SPOT_COS_NARROWEST);
 					stats.spots++;
 				}
 			}
@@ -537,10 +647,14 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			float	m = q_max (e->color[0], q_max (e->color[1], e->color[2]));
 
 			for (k = 0; k < 3; k++)
-				maplight_colors[num_maplights].own[k] = q_max ((m > 1.0f) ? e->color[k] / 255.0f : e->color[k], 0.0f);
-			maplight_colors[num_maplights].has_own = true;
+				c->own[k] = q_max ((m > 1.0f) ? e->color[k] / 255.0f : e->color[k], 0.0f);
+			c->has_own = true;
 			stats.colored++;
 		}
+		/* the mappers lit lava with plain lights just over it or in it:
+		 * left out while it emits (vk_emissive.c); a moved light is
+		 * tested again where it went (ApplyEdits) */
+		l->over_lava = !strcmp (c->classname, "light") && VK_OverLava (l->origin);
 		/* where the game spawns its model (VK_MapLightAt), whatever the
 		 * map file does with the light */
 		RoundOrigin (e->origin, at_points[num_at_points]);
@@ -548,37 +662,21 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			;
 		at_hash[h] = (short)(num_at_points + 1);
 		num_at_points++;
-		num_maplights++;
+		num_base++;
 	}
 	free (ents);
 
-	ApplyEdits (worldmodel);	/* the map file's light lines (4.7) */
-	for (i = 0; i < num_maplights; i++)
-	{
-		vk_maplight_t	*l = &maplights[i];
-
-		stats.styled += (l->style != 0);
-		/* the mappers lit lava with plain lights just over it or in it:
-		 * left out while it emits (vk_emissive.c) */
-		l->over_lava = !strcmp (maplight_colors[i].classname, "light") && VK_OverLava (l->origin);
-		stats.over_lava += l->over_lava;
-		stats.over_lava_styled += (l->over_lava && l->style != 0);
-	}
-
 	/* jsh2color's colors, unless the map has its own */
-	if (!stats.colored && num_maplights)
+	if (!stats.colored && num_base)
 	{
 		int	*rgb = VK_LightColors (worldmodel, &colorinfo);
 
 		if (colorinfo.entities != n)
 			colorinfo.colored = 0;	/* not the same entities: white (never with COM_Parse's lump) */
-		for (i = 0; i < num_maplights && colorinfo.colored; i++)
+		for (i = 0; i < num_base && colorinfo.colored; i++)
 		{
-			int	*c;
+			int	*c = &rgb[base_info[i].entity * 3];
 
-			if (maplight_colors[i].entity < 0)
-				continue;	/* the map file's addlight: white unless it has a color (ApplyColors) */
-			c = &rgb[maplight_colors[i].entity * 3];
 			/* 0 0 0: a light the tool has no level for (it reads the
 			 * last light key, utils/light the first), none on the maps */
 			if (!c[0] && !c[1] && !c[2])
@@ -588,24 +686,20 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 				c[2] = 200;
 			}
 			for (k = 0; k < 3; k++)
-				maplight_colors[i].jsh[k] = q_max (c[k], 0);	/* a non-light's _color may be negative */
-			if (c[0] == 255 && c[1] == 128 && c[2] == 64)
-				stats.orange++;
-			else if (c[0] == 255 && c[1] == 225 && c[2] == 200)
-				stats.warm++;
-			else
-				stats.textured++;
+				base_info[i].jsh[k] = q_max (c[k], 0);	/* a non-light's _color may be negative */
 		}
 		free (rgb);
 	}
-	ApplyColors ();
+
+	VK_ApplyMapEdits (worldmodel);	/* the map file's light lines (4.7) */
 }
 
 void VK_ClearMapLights (void)
 {
-	num_maplights = num_at_points = num_dropped_points = 0;
+	num_base = num_maplights = num_editable = num_at_points = num_dropped_points = 0;
 	memset (at_hash, 0, sizeof(at_hash));
 	memset (&stats, 0, sizeof(stats));
+	memset (&applied, 0, sizeof(applied));
 	memset (&colorinfo, 0, sizeof(colorinfo));
 }
 
@@ -615,6 +709,17 @@ const vk_maplight_t *VK_MapLights (int *count)
 {
 	*count = r_maplights.integer ? num_maplights : 0;
 	return maplights;
+}
+
+const vk_editablelight_t *VK_EditableLights (int *count)
+{
+	*count = num_editable;
+	return editable;
+}
+
+qboolean VK_MapLightColorsOn (void)
+{
+	return r_maplight_colors.integer != 0;
 }
 
 /* the intensity (pi x radiance) of a white light of a utils/light level
@@ -635,18 +740,18 @@ float VK_MapLightIntensity (const vk_maplight_t *l)
 
 void VK_CountMapLightModels (int n)
 {
-	stats.on_models = n;
+	on_models = n;
 }
 
 /* vk_lights's lines about them */
 void VK_PrintMapLights (void)
 {
 	Con_Printf ("map lights: %d (of %d light entities, %d other classnames; %d added by the map file)%s, r_maplight_scale %g; dropped %d inside solid, %d unlit, %d over %d\n",
-		    num_maplights, stats.entities, stats.others, stats.edit_added, r_maplights.integer ? "" : ", off (r_maplights 0)",
+		    num_maplights, stats.entities, stats.others, applied.edit_added, r_maplights.integer ? "" : ", off (r_maplights 0)",
 		    r_maplight_scale.value, stats.in_solid, stats.unlit, stats.over, MAX_LIGHT_POLYS);
 	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models in the light group last frame (at a light's origin, owning a dynamic light)\n",
-		    stats.spots, stats.unmatched, stats.styled, stats.colored, stats.on_models);
-	Con_Printf ("  %d plain lights over lava (%d with a style): %s\n", stats.over_lava, stats.over_lava_styled,
+		    stats.spots, stats.unmatched, applied.styled, stats.colored, on_models);
+	Con_Printf ("  %d plain lights over lava (%d with a style): %s\n", applied.over_lava, applied.over_lava_styled,
 		    VK_LavaLightsOn () ? "left out, the lava lights" : "lit (no lava lights)");
 	VK_PrintMapLightEdits ();
 	if (!r_maplight_colors.integer)
@@ -657,7 +762,7 @@ void VK_PrintMapLights (void)
 		Con_Printf ("  colors: white, jsh2color colors none (%s list; it writes no .lit)\n", colorinfo.list ? colorinfo.list : "no");
 	else
 		Con_Printf ("  colors: jsh2color's (%s list, %.0f ms): %d torch orange, %d from textures, %d 255 225 200\n",
-			    colorinfo.list, colorinfo.seconds * 1000.0, stats.orange, stats.textured, stats.warm);
+			    colorinfo.list, colorinfo.seconds * 1000.0, applied.orange, applied.textured, applied.warm);
 }
 
 /* vk_lights colors: each light's jsh2color color (0-275, as the tool
@@ -668,11 +773,11 @@ void VK_PrintMapLightColors (void)
 
 	for (i = 0; i < num_maplights; i++)
 	{
-		const int	*c = maplight_colors[i].jsh;
-		const float	*o = maplights[i].origin, *l = maplights[i].color, *f = maplight_colors[i].lump_origin;
+		const int	*c = maplight_info[i].jsh;
+		const float	*o = maplights[i].origin, *l = maplights[i].color, *f = maplight_info[i].lump_origin;
 
 		/* the map file's light lines name the entity's origin: a moved light's too */
-		Con_Printf ("%s %.0f %.0f %.0f %d %d %d -> %.3f %.3f %.3f%s\n", maplight_colors[i].classname, o[0], o[1], o[2],
+		Con_Printf ("%s %.0f %.0f %.0f %d %d %d -> %.3f %.3f %.3f%s\n", maplight_info[i].classname, o[0], o[1], o[2],
 			    c[0], c[1], c[2], l[0], l[1], l[2],
 			    VectorCompare (o, f) ? "" : va(" (moved from %.0f %.0f %.0f)", f[0], f[1], f[2]));
 	}
@@ -683,7 +788,7 @@ void VK_PrintMapLightColors (void)
 void VK_PrintMapLightEdits (void)
 {
 	Con_Printf ("  map file (4.7): %d lights changed (%d taken out, %d moved), %d added, %d moved or added inside solid dropped, %d past %d; r_map_light_scale %g\n",
-		    stats.edited, stats.edit_off, stats.edit_moved, stats.edit_added, stats.edit_in_solid, stats.edit_over,
+		    applied.edited, applied.edit_off, applied.edit_moved, applied.edit_added, applied.edit_in_solid, applied.edit_over,
 		    MAX_LIGHT_POLYS, VK_MapLightScale ());
 }
 

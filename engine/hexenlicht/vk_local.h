@@ -121,6 +121,7 @@ void Draw_ClearCachedPics (void);	/* after texture slots were purged */
 void VK_ShutdownDraw (void);
 void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
 void VK_DrawShade (int x, int y, int w, int h, float alpha);	/* a translucent black box, 2D coordinates */
+void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba);	/* a box of a color (sRGB 0-1), 2D coordinates */
 
 /* vk_profiler.c: GPU timers (Quake II RTX's profiler.c). A pass is
  * bracketed by VK_ProfilerStart and VK_ProfilerStop with its PROF_* entry
@@ -560,6 +561,34 @@ void VK_PrintMapLights (void);	/* vk_lights */
 void VK_PrintMapLightColors (void);	/* vk_lights colors */
 void VK_PrintMapLightEdits (void);	/* vk_mapfile: what the map file's light edits did */
 qboolean VK_MapLightDroppedAt (const int *p);	/* a light entity the compiler lit nothing from at the point (to the unit) */
+void VK_ApplyMapEdits (qmodel_t *worldmodel);	/* the map file's light lines again onto the lights VK_LoadMapLights read (then VK_RebuildLights) */
+qboolean VK_MapLightColorsOn (void);	/* r_maplight_colors */
+
+/* a light vk_lightedit.c (4.8) can select: each of the lump's lights and
+ * the map file's addlights, with the file's changes (VK_EditableLights,
+ * valid until the edits are applied again) */
+typedef struct
+{
+	int		entity;		/* in the lump, -1: an addlight */
+	int		line_id;	/* an addlight's line (vk_mapfile.c) */
+	const char	*classname;
+	vec3_t		lump_origin;	/* the entity's origin, which a light line names (an addlight's own) */
+	int		lump_level;	/* the map's own (an addlight: 300) */
+	int		lump_style;
+	vec3_t		origin;		/* now */
+	int		level;
+	int		style;
+	float		scale;
+	vec3_t		srgb;		/* its color as the map file gives colors (sRGB; jsh2color's up to 1.08), with r_maplight_colors 1 */
+	const char	*color_from;	/* where srgb comes from */
+	qboolean	spot;
+	float		spot_cos;	/* the cosine of half its cone's width */
+	qboolean	off;		/* taken out by the map file */
+	qboolean	in_solid;	/* moved or added inside solid: dropped */
+	qboolean	edited;		/* the map file changes it (an addlight: always) */
+} vk_editablelight_t;
+
+const vk_editablelight_t *VK_EditableLights (int *count);
 
 /* vk_mapfile.c: the per-map override file maps/<map>.hlmap (4.7): the
  * per-map cvars (sky, sun, r_map_light_scale, r_map_exposure), reset to
@@ -586,6 +615,7 @@ typedef struct
 	vec3_t		color;		/* sRGB 0-1 */
 	int		style;
 	int		line;		/* in the file */
+	int		id;		/* its line's, which lasts while lines come and go (4.8) */
 	int		matched;	/* set by vk_maplights.c: lights it changed; addlight: 1 if added */
 } vk_mapedit_t;
 
@@ -595,6 +625,23 @@ void VK_LoadMapFile (qmodel_t *worldmodel);	/* VK_LoadWorld, before the map's li
 vk_mapedit_t *VK_MapEdits (int *count);
 float VK_MapLightScale (void);	/* r_map_light_scale */
 float VK_MapExposure (void);	/* r_map_exposure: EV added to tm_exposure_bias */
+/* the light editor's (4.8): the file is kept as its lines, which the edits
+ * rewrite and VK_SaveMapFile writes */
+qboolean VK_MapFileLightEdit (const int *at, vk_mapedit_t *merged);	/* the light lines of the entity origin, merged in order; false: none */
+const vk_mapedit_t *VK_MapFileAddLight (int id);	/* the addlight line with this id, NULL = none */
+int VK_MapFileSetLight (const vk_mapedit_t *e, qboolean remove);	/* the light's lines become e (see vk_mapfile.c); its line's id, 0 = removed */
+qboolean VK_SaveMapFile (void);
+int VK_MapFileUnsaved (void);	/* editor changes since the file was read or saved */
+const char *VK_MapFileLine (int id, int *number);	/* the line's text and number, NULL = none */
+const char *VK_MapFileName (void);	/* maps/<map>.hlmap */
+const char *VK_MapFileUsed (void);	/* the file used and where from, "" = none */
+
+/* vk_lightedit.c: live light editing (4.8): r_editlights' markers and
+ * panel, the vk_editlight command */
+void VK_InitLightEditor (void);	/* after vk_mapfile.c */
+void VK_ShutdownLightEditor (void);
+void VK_ClearLightEditor (void);	/* a new map: nothing selected */
+void VK_DrawLightEditor (void);	/* R_RenderView, after the 3D view: its 2D under the HUD */
 
 /* vk_lightcolor.c: utils/jsh2color's colors of the map's lights (what
  * Hammer of Thyrion's .lit files are baked from) */

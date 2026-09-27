@@ -288,6 +288,7 @@ void R_RenderView (void)
 	VK_UpdateEffects ();		/* the particles' and sprites' triangles */
 	VK_BuildTLAS ();		/* the dynamic BLASes, the TLAS and the effects TLAS, in the command buffer */
 	VK_RenderView3D ();		/* the UBO, then the view pass into the TAA_OUTPUT render target */
+	VK_DrawLightEditor ();		/* r_editlights' markers and panel, in the 2D under the HUD */
 
 	/* r_debugview's pass for now; the path tracer comes with epic E3 */
 }
