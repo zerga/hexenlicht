@@ -64,7 +64,7 @@ this repository) or one at a time with
   formats. They are created at the swapchain's size; the 3D view renders
   into their top left `global_ubo.width x global_ubo.height`.
 - **Q2RTX's cvars** (`UBO_CVAR_LIST`: `pt_*`, `flt_*`, `tm_*`) are registered
-  with Q2RTX's defaults (but `pt_particle_brightness`, 15 since 3.7); each
+  with Q2RTX's defaults (but `pt_particle_brightness`, 15 since 3.7; Hexenlicht's `flt_antilag_style` joins them, 4.13); each
   does something once the pass that reads it is imported. `VK_PrepareUBO`
   overrides those Q2RTX's host code sets per
   mode until their passes exist: `pt_aperture` 0 (no accumulation mode);
@@ -114,11 +114,11 @@ this repository) or one at a time with
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
 | `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6; 4.1: our `AS_FLAG_LIGHT_MODELS`, from `constants.h`, in every ray mask but the shadow rays') | 3.2, 3.3, 3.5b, 3.6, 4.1 |
-| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too; 3.12: for RR the motion vector and depth of blurred pixels from the field with the larger throughput) | 3.3, 3.10, 3.12 |
-| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6); a spotlight's cone on spheres (4.1, `sphere_light_spot`); dynamic spheres with a range (in `spot_data`), picked by weight instead of uniformly (4.4, `dynlight_weight`) | 3.3, 3.4, 4.1, 4.4 |
+| `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too; 3.12: for RR the motion vector and depth of blurred pixels from the field with the larger throughput; 4.13: `direct_lighting.rgen` writes a gradient sample's light style change for `asvgf_gradient_img.comp`) | 3.3, 3.10, 3.12, 4.13 |
+| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6); a spotlight's cone on spheres (4.1, `sphere_light_spot`); dynamic spheres with a range (in `spot_data`), picked by weight instead of uniformly (4.4, `dynlight_weight`); gradient samples weigh a list light by max(last, current) style (4.13) | 3.3, 3.4, 4.1, 4.4, 4.13 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
-| `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
+| `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it; 4.13: `asvgf_gradient_img.comp` takes a light style's unsquared change, `direct_lighting.rgen` writes it, `ASVGF_GRAD_HF_SPEC_PING/PONG` RGBA16F, `PT_VISBUF_BARY_A/B` R32G32F, `flt_antilag_style`) | 3.6, 4.13 |
 | `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom (3.7: unchanged but `tone_mapping_curve.comp`'s launch check, removed; the tone mapping and readback buffers by device address, `vertex_buffer.h`; the apply shader's HDR variant and full screen blend unused) | 3.7 |
 | `asvgf_taau.comp` | the TAA pass (3.8: threads past the TAA output write their zero only inside the images; `HQ_COLOR_INTERLEAVED` 1x1) | 3.8 |
 | `fsr_easu_fp32.comp`, `fsr_rcas_fp32.comp`, `fsr_easu.glsl`, `fsr_rcas.glsl`, `fsr_utils.glsl` | FSR 1 (3.8: the `.comp` files and `fsr_utils.glsl` unchanged; EASU's and RCAS's input clamped to the rendered part and the view, no writes past the view); the FP16 variants not imported (7.2) | 3.8 |
@@ -204,7 +204,12 @@ this repository) or one at a time with
   needless gradients (the denoiser drops history and is noisier near them).
   *4.2: `vk_light.c` keeps last 3D frame's value per style (this frame's
   after the denoiser's history was dropped, as Q2RTX's `prev_lightstyles`);
-  DECISIONS R79.*
+  DECISIONS R79.* *4.13: gradient samples weigh by the larger of last
+  frame's and this frame's style (a light that was at 0 can be picked),
+  and a style's change drops history unsquared (`flt_antilag_style`), so
+  flickering lights now do drop it near them, by design; at meso8's
+  style-1 light no noise difference was measurable (a weak test: the
+  flicker moved that view's mean by ≤ 4 %); DECISIONS R84.*
 - **Denoiser brightness (4.9).** With noisy lighting the denoised image is
   2–5 % brighter than the average of the raw frames (3.6, direct lighting
   at a sixteenth of the test lights' intensity: demo1 +2 %, the cathedral

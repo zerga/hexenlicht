@@ -37,7 +37,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - caustics stay off (the specialization constant is 0): they need a
  *    water normal map;
  *  - it clears PT_SPECULAR_HIT_DIST, which indirect_lighting.rgen writes
- *    where it traces a specular ray. */
+ *    where it traces a specular ray;
+ *  - a gradient sample writes its sampled light's style change into its
+ *    stratum of ASVGF_GRAD_HF_SPEC_PING (4.13, asvgf_gradient_img.comp). */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -123,7 +125,18 @@ direct_lighting(ivec2 ipos, bool is_odd_checkerboard, out vec3 high_freq, out ve
 
     high_freq += direct_diffuse;
     o_specular += direct_specular;
-	
+
+	// Hexenlicht (4.13): a gradient sample hands its light's style change to
+	// asvgf_gradient_img.comp, in its stratum's third channel (one gradient sample
+	// per stratum; asvgf_gradient_reproject.comp wrote 0 there)
+	if(is_gradient)
+	{
+		ivec2 pos_grad = ipos / GRAD_DWN;
+		vec4 grad = imageLoad(IMG_ASVGF_GRAD_HF_SPEC_PING, pos_grad);
+		grad.z = nee_style_change;
+		imageStore(IMG_ASVGF_GRAD_HF_SPEC_PING, pos_grad, grad);
+	}
+
 	// Hexenlicht: sunlight (get_sunlight) comes with the sky and sun (4.6)
 
 	o_specular = demodulate_specular(primary_base_reflectivity, o_specular);

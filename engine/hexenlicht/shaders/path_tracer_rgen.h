@@ -30,7 +30,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - get_direct_illumination: the light statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); no sunlight until
- *    the sky and sun (get_sunlight, 4.6);
+ *    the sky and sun (get_sunlight, 4.6); for gradient samples the sampled
+ *    list light's style change (nee_style_change, 4.13);
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -648,6 +649,11 @@ get_specular_sampled_lighting_weight(float roughness, vec3 N, vec3 V, vec3 L, fl
     return clamp(pdfw / (pdfw + ggxVndfPdf), 0, 1);
 }
 
+/* Hexenlicht (4.13): set by get_direct_illumination for gradient samples: the relative
+ * change of the sampled list light's style since last frame (0 = none, or not sampled,
+ * shadowed); direct_lighting.rgen hands it to asvgf_gradient_img.comp */
+float nee_style_change = 0;
+
 void
 get_direct_illumination(
 	vec3 position, 
@@ -764,6 +770,17 @@ get_direct_illumination(
 	// fp16 PT_VIEW_DIRECTION) can be below t_min, which ray queries don't allow
 	if(!null_light)
 		vis *= trace_shadow_ray(shadow_ray, shadow_cull_mask);
+
+	// Hexenlicht (4.13): a gradient sample's exact relative change from its list light's
+	// style, when that light is the one sampled and it is unshadowed
+	nee_style_change = 0;
+	if(is_gradient && is_polygonal && !null_light && vis > 0 && polygonal_light_index >= 0)
+	{
+		LightPolygon chosen = get_light_polygon(uint(polygonal_light_index));
+		float style_max = max(chosen.light_style_scale, chosen.prev_style_scale);
+		if(style_max > 0)
+			nee_style_change = abs(chosen.light_style_scale - chosen.prev_style_scale) / style_max;
+	}
 #ifdef ENABLE_SHADOW_CAUSTICS
 	if(enable_caustics)
 	{

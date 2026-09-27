@@ -277,6 +277,7 @@ static const char *FormatName (VkFormat format)
 	case VK_FORMAT_R16G16B16A16_SFLOAT:	return "rgba16f";
 	case VK_FORMAT_R32G32B32A32_SFLOAT:	return "rgba32f";
 	case VK_FORMAT_R16G16_SFLOAT:		return "rg16f";
+	case VK_FORMAT_R32G32_SFLOAT:		return "rg32f";
 	case VK_FORMAT_R16_SFLOAT:		return "r16f";
 	case VK_FORMAT_R32_SFLOAT:		return "r32f";
 	case VK_FORMAT_R32_UINT:		return "r32ui";
