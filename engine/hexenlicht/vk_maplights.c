@@ -24,7 +24,17 @@
  * r_maplight_scale x (level / 300)^3: the power under which inverse-square
  * light scales with each light's range as the compiler's linear falloff
  * does (twice the level and the distances, twice the light); the curve is
- * calibrated in 4.9. White, or _color (0-1 or 0-255) where a map has it.
+ * calibrated in 4.9.
+ * Colors (r_maplight_colors 1; 0 white, the original's and Hammer of
+ * Thyrion's default): HoT's colored light, the colors utils/jsh2color baked
+ * its .lit files from (vk_lightcolor.c: torches orange, plain lights by the
+ * textures near them, the others 255 225 200; white on a map where none is
+ * colored), or on a map whose lights have _color (later compilers' key,
+ * 0-1 or 0-255; no original map has it) those, the others white, as that
+ * compiler's .lit. The 0-255 color multiplied GL's lightmap, which
+ * multiplies the texture in sRGB space: the light's color is its sRGB to
+ * linear conversion, which shows the same hue on a wall (no scaling to
+ * white's brightness: as in HoT, orange light is darker).
  * VK_LoadWorld calls VK_LoadMapLights before the light lists are built;
  * vk_light.c's VK_UpdateLights takes these lights with the test lights.
  * VK_MapLightAt tells vk_instance.c which models stand at a light's
@@ -60,9 +70,11 @@
 COMPILE_TIME_ASSERT(maplight_hash, AT_HASH_SIZE > MAX_LIGHT_POLYS && MAX_LIGHT_POLYS < 32767);
 
 static void MapLightsChanged (cvar_t *var);
+static void MapLightColorsChanged (cvar_t *var);
 
 static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
 static cvar_t	r_maplight_scale = {"r_maplight_scale", "1000", CVAR_NONE};	/* pi x radiance of a level 300 light */
+static cvar_t	r_maplight_colors = {"r_maplight_colors", "1", CVAR_ARCHIVE};	/* 0 white */
 
 /* an entity as utils/light parses it */
 enum { KEY_CLASSNAME = 1, KEY_TARGET = 2, KEY_TARGETNAME = 4, KEY_ORIGIN = 8, KEY_LEVEL = 16, KEY_STYLE = 32,
@@ -86,6 +98,17 @@ static vk_maplight_t	maplights[MAX_LIGHT_POLYS];
 static int		num_maplights;
 static short		at_hash[AT_HASH_SIZE];	/* maplights index + 1, 0 = empty */
 
+/* what r_maplight_colors picks from, per map light */
+static struct
+{
+	char		classname[32];	/* vk_lights colors */
+	int		entity;		/* in the lump */
+	int		jsh[3];		/* jsh2color's 0-275 */
+	vec3_t		own;		/* _color, 0-1 */
+	qboolean	has_own;
+} maplight_colors[MAX_LIGHT_POLYS];
+static vk_lightcolors_t	colorinfo;	/* list NULL: not computed (the map's own colors) */
+
 static struct
 {
 	int		entities;	/* light entities in the lump: a "light" classname or a level */
@@ -96,7 +119,8 @@ static struct
 	int		spots;
 	int		unmatched;	/* a target no entity has: not a spot */
 	int		styled;		/* style other than 0 */
-	int		colored;
+	int		colored;	/* with _color */
+	int		orange, textured, warm;	/* jsh2color's torch orange, from textures, 255 225 200 */
 	int		on_models;	/* models at a light's origin last frame (vk_instance.c) */
 } stats;
 
@@ -216,6 +240,37 @@ static qboolean OriginInSolid (const mnode_t *node, const vec3_t p)
 	return node->contents == CONTENTS_SOLID;
 }
 
+static float SRGBToLinear (float c)
+{
+	return (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
+}
+
+/* the lights' colors by r_maplight_colors (see the top) */
+static void ApplyColors (void)
+{
+	int	i, k;
+
+	for (i = 0; i < num_maplights; i++)
+	{
+		float	*c = maplights[i].color;
+
+		VectorSet (c, 1.0f, 1.0f, 1.0f);
+		if (!r_maplight_colors.integer)
+			continue;
+		if (stats.colored)
+		{
+			if (maplight_colors[i].has_own)
+				for (k = 0; k < 3; k++)
+					c[k] = SRGBToLinear (maplight_colors[i].own[k]);
+		}
+		else if (colorinfo.colored)
+		{
+			for (k = 0; k < 3; k++)
+				c[k] = SRGBToLinear (maplight_colors[i].jsh[k] / 255.0f);
+		}
+	}
+}
+
 /* a new map (VK_LoadWorld, before the light lists): its light entities */
 void VK_LoadMapLights (qmodel_t *worldmodel)
 {
@@ -223,6 +278,7 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 	int		n, i, j, k;
 
 	memset (&stats, 0, sizeof(stats));
+	memset (&colorinfo, 0, sizeof(colorinfo));
 	memset (at_hash, 0, sizeof(at_hash));
 	num_maplights = 0;
 	ents = ParseEntities (worldmodel->entities, &n);
@@ -258,10 +314,12 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 		}
 		l = &maplights[num_maplights];
 		memset (l, 0, sizeof(*l));
+		memset (&maplight_colors[num_maplights], 0, sizeof(maplight_colors[0]));
 		VectorCopy (e->origin, l->origin);
 		l->level = e->level;
 		l->style = (e->style > 0 && e->style < 256) ? e->style : 0;	/* utils/light allows 0-254 */
-		VectorSet (l->color, 1.0f, 1.0f, 1.0f);
+		q_strlcpy (maplight_colors[num_maplights].classname, e->classname, sizeof(maplight_colors[0].classname));
+		maplight_colors[num_maplights].entity = i;
 		if (e->target[0])
 		{
 			/* utils/light's MatchTargets: the first entity of the targetname */
@@ -301,7 +359,8 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			float	m = q_max (e->color[0], q_max (e->color[1], e->color[2]));
 
 			for (k = 0; k < 3; k++)
-				l->color[k] = q_max ((m > 1.0f) ? e->color[k] / 255.0f : e->color[k], 0.0f);
+				maplight_colors[num_maplights].own[k] = q_max ((m > 1.0f) ? e->color[k] / 255.0f : e->color[k], 0.0f);
+			maplight_colors[num_maplights].has_own = true;
 			stats.colored++;
 		}
 		stats.styled += (l->style != 0);
@@ -312,6 +371,38 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 		num_maplights++;
 	}
 	free (ents);
+
+	/* jsh2color's colors, unless the map has its own */
+	if (!stats.colored && num_maplights)
+	{
+		int	*rgb = VK_LightColors (worldmodel, &colorinfo);
+
+		if (colorinfo.entities != n)
+			colorinfo.colored = 0;	/* not the same entities: white (never with COM_Parse's lump) */
+		for (i = 0; i < num_maplights && colorinfo.colored; i++)
+		{
+			int	*c = &rgb[maplight_colors[i].entity * 3];
+
+			/* 0 0 0: a light the tool has no level for (it reads the
+			 * last light key, utils/light the first), none on the maps */
+			if (!c[0] && !c[1] && !c[2])
+			{
+				c[0] = 255;
+				c[1] = 225;
+				c[2] = 200;
+			}
+			for (k = 0; k < 3; k++)
+				maplight_colors[i].jsh[k] = q_max (c[k], 0);	/* a non-light's _color may be negative */
+			if (c[0] == 255 && c[1] == 128 && c[2] == 64)
+				stats.orange++;
+			else if (c[0] == 255 && c[1] == 225 && c[2] == 200)
+				stats.warm++;
+			else
+				stats.textured++;
+		}
+		free (rgb);
+	}
+	ApplyColors ();
 }
 
 void VK_ClearMapLights (void)
@@ -319,6 +410,7 @@ void VK_ClearMapLights (void)
 	num_maplights = 0;
 	memset (at_hash, 0, sizeof(at_hash));
 	memset (&stats, 0, sizeof(stats));
+	memset (&colorinfo, 0, sizeof(colorinfo));
 }
 
 /* the lights for the light lists (r_maplights 0: none) and the intensity
@@ -349,6 +441,32 @@ void VK_PrintMapLights (void)
 		    r_maplight_scale.value, stats.in_solid, stats.unlit, stats.over, MAX_LIGHT_POLYS);
 	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models at a light's origin last frame\n",
 		    stats.spots, stats.unmatched, stats.styled, stats.colored, stats.on_models);
+	if (!r_maplight_colors.integer)
+		Con_Printf ("  colors: white (r_maplight_colors 0)\n");
+	else if (stats.colored)
+		Con_Printf ("  colors: the map's _color, the other lights white\n");
+	else if (!colorinfo.colored)
+		Con_Printf ("  colors: white, jsh2color colors none (%s list; it writes no .lit)\n", colorinfo.list ? colorinfo.list : "no");
+	else
+		Con_Printf ("  colors: jsh2color's (%s list, %.0f ms): %d torch orange, %d from textures, %d 255 225 200\n",
+			    colorinfo.list, colorinfo.seconds * 1000.0, stats.orange, stats.textured, stats.warm);
+}
+
+/* vk_lights colors: each light's jsh2color color (0-275, as the tool
+ * computes it) and its linear color now */
+void VK_PrintMapLightColors (void)
+{
+	int	i;
+
+	for (i = 0; i < num_maplights; i++)
+	{
+		const int	*c = maplight_colors[i].jsh;
+		const float	*o = maplights[i].origin, *l = maplights[i].color;
+
+		Con_Printf ("%s %.0f %.0f %.0f %d %d %d -> %.3f %.3f %.3f\n", maplight_colors[i].classname, o[0], o[1], o[2],
+			    c[0], c[1], c[2], l[0], l[1], l[2]);
+	}
+	VK_PrintMapLights ();
 }
 
 static void MapLightsChanged (cvar_t *var)
@@ -357,10 +475,19 @@ static void MapLightsChanged (cvar_t *var)
 	VK_RebuildLights ();
 }
 
+static void MapLightColorsChanged (cvar_t *var)
+{
+	(void)var;
+	ApplyColors ();
+	VK_RebuildLights ();
+}
+
 void VK_InitMapLights (void)
 {
 	Cvar_RegisterVariable (&r_maplights);
 	Cvar_RegisterVariable (&r_maplight_scale);
+	Cvar_RegisterVariable (&r_maplight_colors);
 	Cvar_SetCallback (&r_maplights, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_scale, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_colors, MapLightColorsChanged);
 }

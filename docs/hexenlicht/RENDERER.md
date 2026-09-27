@@ -14,7 +14,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
-[Map lights](#map-lights-vk_maplightsc) ·
+[Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -677,9 +677,19 @@ from `VK_LoadWorld` before the light lists):
   maps (demo1 43, demo3 26, village1 26; the plain leaf test would drop 28
   more). Also a level below 0, a narrow spot aimed at its own origin (none
   on the maps) and lights past 4096.
-- **Color:** white; `_color` (0–1, or 0–255 when a component is above 1)
-  where a map has it, later compilers' key: no original map does. HoT's
-  colors are 4.3's.
+- **Color** (4.3, `r_maplight_colors` 1, archived): Hammer of Thyrion's
+  colored light, the colors `utils/jsh2color` baked HoT's `.lit` files
+  from (see [Map light colors](#map-light-colors-vk_lightcolorc)); on a
+  map whose lights have `_color` (0–1, or 0–255 when a component is above
+  1; later compilers' key, no original map has it) those, the other
+  lights white, as that compiler's `.lit` has them. The 0–255 color
+  multiplied GL's lightmap, which multiplies the texture in sRGB space, so
+  the light's color is its sRGB → linear conversion: the same hue on a
+  wall (HoT's orange 255 128 64 is (1, 0.22, 0.05)). Not scaled back to
+  white's brightness, as in HoT's colored mode: torch light has 0.37× the
+  luminance of white, 255 225 200 0.79× (the exposure adapts; 4.9
+  calibrates). `r_maplight_colors 0`: white (the original's and HoT's
+  default look); a change rebuilds the lights.
 - **Brightness:** a sphere of radius 8 (the test spheres') whose intensity
   (π × radiance, as `vk_testlight`'s) is `r_maplight_scale` × (level /
   300)³: the one power under which inverse-square light scales with each
@@ -710,17 +720,80 @@ from `VK_LoadWorld` before the light lists):
   compiler had none either); models (monsters, doors) shadow the map's
   lights, as none did in the lightmaps. At the map starts beside `glh2`
   the light is where the lightmaps are bright; Hexenlicht is brighter.
-- `r_maplights 0` turns them off (test lights only); a change of either
-  cvar rebuilds the lights (`VK_RebuildLights`: only while the client is in
+- `r_maplights 0` turns them off (test lights only); a change of
+  `r_maplights`, `r_maplight_scale` or `r_maplight_colors` rebuilds the lights (`VK_RebuildLights`: only while the client is in
   the loaded world, as between `map` and the new world's load the old
   one's memory is freed; else the next load takes them). `vk_lights` prints the
   lights of the light entities, the dropped ones, spotlights (unmatched
-  targets), styled and colored ones, and last frame's models at a light's
-  origin.
+  targets), styled ones and those with `_color`, last frame's models at a
+  light's origin, and where the colors come from (jsh2color's list and
+  time, torch orange / from textures / 255 225 200); `vk_lights colors`
+  lists each light's classname, origin, jsh2color color (0–275) and linear
+  color.
 - **Cost** (4.1, measured the same day as `main` with the test entity
   lights, `perf_baseline.ps1`): the frame is within the power-capped GPU's
   run-to-run scatter (1920x1080, demo1 at 100 %: 8.48 → 8.59 ms; 2560x1440:
   16.50 → 15.98 ms, the cathedral 14.54 → 15.34 ms).
+
+## Map light colors (`vk_lightcolor.c`)
+
+Story 4.3: HoT's colored light is `gl_coloredlight 1` (default 0, white)
+with `.lit` files, which the game doesn't ship; HoT publishes a set
+(`hexen2-litfiles-20140628`, the 42 maps of the original game) made by
+`utils/jsh2color` (jsh2colour 1.2.6). A `.lit` is the tool re-baking the
+lightmaps; `VK_LightColors` (from `VK_LoadMapLights`) is its step before
+the bake that gives each light its color (`tyrlite.c` LightWorld, `ltface.c`
+TestLightFace, CalcFaceVectors, CalcFaceExtents, CalcPoints, `trace.c`
+TestLine, `entities.c` LoadEntities, `jscolor.c`), for every entity of the
+lump:
+
+- **Torches, flames, the gem** (`light_torch*`, `light_flame*`,
+  `light_gem`, any case): orange 255 128 64 (2,893 on the 59 maps).
+- **Plain lights** (`light`, and `light_fluor*`): the sum of the colors of
+  the faces they reach, a face once when one of its sample points (the
+  lightmap grid at 8 units, `-extra`, moved towards the face's middle
+  where it can't see it) is in sight and gets at least a third of the
+  level (within 2/3 of the range); sky faces never; a texture not in the
+  list counts 1 1 1. In integers, scaled to a largest channel of 275
+  (brighter than 255: "colored lights can seem darker") unless it is 255;
+  a grey sum is 255 225 200 ("a faint orange tinge"). 2,595 of the 9,512
+  are colored by textures.
+- **Every other entity with a level** (candles, burners, lanterns, the
+  palace torches, demo1's tree): 255 225 200.
+- **A map where none ends up colored** got no `.lit`: white (tibet4, 5, 6,
+  10).
+- **The tool's own entity keys**, not utils/light's: the last of each
+  counts, a level is `atof`'s integer part (`_light*` too), `wait` is the
+  attenuation (1 without), `delay` the formula (0 linear; 1, 2, 3 don't
+  fade: tower has one). A `rotate_` entity's brush faces are at its
+  origin. Computed in double, as the tool.
+- **The texture list** (tables in the file, with their matching rules):
+  the tool's batch files (`utils/jsh2color/data_win/colour*.bat`) run
+  each hub with its own (`-extra -nodefault -external`: `hexen2.def` for
+  demo and village, `hexen2castle.def` for the castle hub and rider1a,
+  `hexen2egypt.def` for egypt and rider2c, `hexen2meso.def`,
+  `hexen2romeric.def`; a prefix, the first entry that matches), the
+  deathmatch maps with the built-in list (`colourDm.bat`; `jscolor.c`'s
+  chain, whole names or its prefix lengths); maps the batch files don't
+  name (the mission pack, others) get the built-in list.
+- **Faster, the same colors:** the tool tests every sample point of every
+  face against every plain light (one thread: 3.1 s on demo1, 17 s on
+  keep5). Here a point that would get less than a third of the level isn't
+  traced, a face is skipped by its plane and by its sample points' bounds
+  (the grid, and 8 units past it for points moved towards the middle),
+  the points are computed only for faces some light can reach, and the
+  colored faces come first: a light that reaches none is 255 225 200
+  whatever else it reaches. Release: at most 83 ms on the original
+  game's maps (egypt5), 183 ms on the mission pack's (keep5), median 14
+  ms.
+- **Checked** (4.3): every one of the 12,747 lights has the color a
+  build of `utils/jsh2color` with a print of each light's color computes
+  (TESTING.md "Light colors"). The tool adds to a light's sum from
+  several threads without a lock: its multi-threaded runs differ between
+  themselves (demo1: ~1,600 `.lit` bytes, up to 140), HoT's published set
+  among them; `.lit` files baked from these colors match HoT's but for
+  those and ±1 rounding (3 of 42 identical). This is the tool's
+  single-threaded result.
 
 ## 3D view (`vk_view.c`)
 
@@ -1476,6 +1549,6 @@ overlay, and a measuring mode.
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
-| `r_maplights 0/1`, `r_maplight_scale` | the map's lights off/on (1), the intensity of a level 300 one (1000; see [Map lights](#map-lights-vk_maplightsc)) |
-| `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1` | light lists, light statistics read back, range culling off/on |
+| `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (1000), white or HoT's colors (1, archived; see [Map lights](#map-lights-vk_maplightsc)) |
+| `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

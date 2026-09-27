@@ -1,0 +1,17 @@
+--- a/utils/jsh2color/tyrlite.c
++++ b/utils/jsh2color/tyrlite.c
+@@ -228,6 +228,14 @@
+ 	if (!num_colors)
+ 		COM_Error ("This BSP contains no light color modifying data!");
+
++	/* Hexenlicht 4.3 check (tools/hexenlicht/jsh2color_colors.patch): each
++	 * light's color, as vk_lights colors prints it; no .lit written */
++	for (i = 0; i < num_entities; i++)
++		if (entities[i].light)
++			printf ("LC %s %.0f %.0f %.0f %d %d %d\n", entities[i].classname, entities[i].origin[0],
++				entities[i].origin[1], entities[i].origin[2], entities[i].lightcolor[0],
++				entities[i].lightcolor[1], entities[i].lightcolor[2]);
++	exit (0);
+ 	bspfileface = 0;	// reset
+ 	RunThreadsOn (ColorLightThread);
+ }

@@ -792,6 +792,11 @@ static void VK_Lights_f (void)
 		PrintLightStats ();
 		return;
 	}
+	if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "colors"))
+	{
+		VK_PrintMapLightColors ();
+		return;
+	}
 	for (c = 0; c < num_lights; c++)
 		spheres += (lights[c].type == LIGHT_TYPE_SPHERE);
 	for (c = 0; c < num_lists; c++)
