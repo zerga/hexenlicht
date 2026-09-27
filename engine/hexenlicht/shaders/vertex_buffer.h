@@ -35,8 +35,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - the light buffer (vk_light.c) has only the lights and the light lists
  *    (3.3); a light is a polygon or, for Hexen II's point lights, a sphere
  *    (3.4); Quake II RTX's also holds the material table (ours is
- *    vk_material.c's), and the light styles of emissive materials, the
- *    cluster debug mask and the sky visibility come with their stories;
+ *    vk_material.c's) and the light styles of emissive materials (none of
+ *    Hexen II's emissive surfaces has one, 4.5), and the cluster debug mask
+ *    and the sky visibility come with their stories;
  *  - the light statistics are counted per light list entry (3.4), by
  *    device address; Quake II RTX's per cluster and light;
  *  - the tone mapping and readback buffers (3.7) by device address;
@@ -384,7 +385,7 @@ get_material_info(uint material_id)
 	minfo.emissive_factor = unpackHalf2x16(data[3]).y;
 	minfo.specular_factor = unpackHalf2x16(data[5]).x;
 	minfo.base_factor = unpackHalf2x16(data[5]).y;
-	minfo.light_style_scale = 1.0;	// Hexenlicht: light styles of emissive materials come with 4.5
+	minfo.light_style_scale = 1.0;	// Hexenlicht: no emissive material has a light style (4.5)
 	minfo.num_frames = data[4] & 0xffff;
 	minfo.next_frame = (data[4] >> 16) & (MAX_PBR_MATERIALS - 1);
 	minfo.alternate = data[6] & MATERIAL_INDEX_MASK;

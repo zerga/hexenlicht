@@ -5,8 +5,9 @@
  * the animation sequence it is in.
  * Materials are rebuilt on every map change (vk_world.c adds the world's
  * textures); VK_UploadMaterials writes them to the GPU table in Quake II
- * RTX's layout. For now only the base texture and the animation are set;
- * the PBR maps come with epic E5.
+ * RTX's layout. For now only the base texture, the cutout mask, the
+ * emission (4.5: lava and the light models' flames, vk_emissive.c) and the
+ * animation are set; the PBR maps come with epic E5.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -63,6 +64,24 @@ uint16_t VK_FloatToHalf (float f)
 	return (uint16_t)h;
 }
 
+float VK_HalfToFloat (uint16_t h)
+{
+	union { float f; uint32_t u; } v;
+	uint32_t	sign = (uint32_t)(h & 0x8000) << 16, exp = (h >> 10) & 0x1f, mant = h & 0x3ff;
+
+	if (exp == 0)			/* zero, subnormal */
+	{
+		v.f = mant * (1.0f / 16777216.0f);	/* 2^-24 */
+		v.u |= sign;
+		return v.f;
+	}
+	if (exp == 31)			/* inf, nan */
+		v.u = sign | 0x7f800000 | (mant << 13);
+	else
+		v.u = sign | ((exp + 112) << 23) | (mant << 13);
+	return v.f;
+}
+
 
 void VK_ClearMaterials (void)
 {
@@ -84,6 +103,7 @@ int VK_AddMaterial (const char *name, int base_texture)
 	memset (m, 0, sizeof(*m));
 	q_strlcpy (m->name, name, sizeof(m->name));
 	m->base_texture = base_texture;
+	m->emissive_factor = 1.0f;
 	m->num_frames = 1;
 	m->next_frame = index;
 	return index;
@@ -115,9 +135,9 @@ void VK_UploadMaterialRange (int first, int count)
 		/* the factors are Quake II RTX's defaults (MAT_Reset) */
 		d = table + (i - first) * MATERIAL_UINTS;
 		d[0] = (uint32_t)m->base_texture & 0xffff;
-		d[1] = ((uint32_t)m->mask_texture & 0xffff) << 16;
+		d[1] = ((uint32_t)m->emissive_texture & 0xffff) | (((uint32_t)m->mask_texture & 0xffff) << 16);
 		d[2] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (-1.0f) << 16);	/* bump scale, no roughness override */
-		d[3] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* metalness, emissive factor */
+		d[3] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (m->emissive_factor) << 16);	/* metalness, emissive factor */
 		d[4] = ((uint32_t)m->num_frames & 0xffff) | (((uint32_t)m->next_frame & 0xffff) << 16);
 		d[5] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular, base factor */
 		d[6] = (uint32_t)m->alternate;

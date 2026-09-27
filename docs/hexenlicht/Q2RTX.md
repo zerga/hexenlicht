@@ -84,12 +84,12 @@ this repository) or one at a time with
 |---|---|---|---|
 | `main.c` | instance, device, swapchain, frame loop, entities, UBO, dynamic lights, readback, dynamic resolution | `vk_core.c`, `vk_swapchain.c` (E1); `vk_instance.c` (E2); init table in `vk_core.c`, `prepare_ubo` in `vk_ubo.c` (3.1; the checkerboard swap without the denoiser 3.12); frame loop in `r_scene.c`/`vk_view.c`, grows per pass; `add_dlights` in `vk_light.c` (test dynamic sphere lights, 3.3), the game's dynamic lights 4.4; readback in `vk_tonemap.c` (3.7: only the adapted luminance, `prev_adapted_luminance`); `get_render_extent`, `evaluate_taa_settings` and the TAA jitter in `vk_upscale.c` (3.8: `r_scale` instead of `scr_viewsize`, our TAA mode without random sub-pixel offsets); dynamic resolution left out (3.11 or 7.2, see the open questions) | E1, E2, 3.1, 3.8, … |
 | `uniform_buffer.c` | global UBO | `vk_ubo.c` | 3.1 |
-| `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive 4.5; normalization 5.3 | 1.5, 3.1, 3.2, … |
+| `textures.c` | texture upload, bindless set, render targets, blue noise, env map, fake emissive, normal map normalization | `vk_texture.c` (1.5); render targets `vk_images.c` (3.1); blue noise `vk_images.c` (3.2, CC0 textures, see the open questions); env map 4.6; fake emissive `vk_emissive.c` (4.5: `apply_fake_emissive_threshold` with its filter and 2x upsampling, for the light models' skins; the lava's `light_color` as the average of all its texels, Q2RTX's of the non-black texels' bounding box: the same for lava); normalization 5.3 | 1.5, 3.1, 3.2, 4.5, … |
 | `path_tracer.c` | acceleration structures, pipelines, dispatch | `vk_accel.c` (2.6); pass layouts and ray-query dispatch `vk_pathtracer.c` (3.1; specialization constants 3.5a); the passes 3.2–3.5b (`vk_view.c`: the bounces 3.5a) | 2.6, 3.1, … |
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
 | `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag` (3.8: its Lanczos filter and scaling rule, nearest a texel fetch); underwater warp 6.6 | 1.6, 3.8, 6.6 |
-| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3); the map's lights are Hexen II's light entities as spheres (`vk_maplights.c`, 4.1: Q2RTX has no such lights); cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.1, 4.6 |
+| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3); the map's lights are Hexen II's light entities as spheres (`vk_maplights.c`, 4.1: Q2RTX has no such lights); cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); lava light polygons (`collect_sky_and_lava_light_polys`, one per fan triangle, the lava's triangles `MATERIAL_FLAG_LIGHT`) in `vk_emissive.c` and `vk_world.c` (4.5: of the world lava triangles whose front leaf isn't lava, Q2RTX's `is_sky_or_lava_cluster` takes those facing up; without its `remove_collinear_edges`: degenerate fan triangles are dropped by their area, near-collinear slivers stay); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.1, 4.5, 4.6 |
 | `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change; 4.1: a spotlight's cone in a sphere's entry; 4.2: the style scales per frame); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4, 4.1, 4.2 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
@@ -160,7 +160,7 @@ this repository) or one at a time with
   0.02) or glossy metal (0.15) RR's reflections stay crisp during turns,
   and zeroing the hit distance changes nothing visible (DECISIONS R55).
   Revisit with E5's materials and the mirror and glass paths.*
-- **Smooth surfaces and sphere lights (E5, 4.5).** Sphere lights are not
+- **Smooth surfaces and sphere lights (E5).** Sphere lights are not
   geometry, so no ray hits them. Surfaces smoother than
   `pt_direct_roughness_threshold` (0.18) get their specular only from the
   specular bounce and show no highlight of a sphere (Q2RTX's dynamic lights
@@ -168,7 +168,10 @@ this repository) or one at a time with
   (the rough surfaces' direct specular is as strong as their diffuse there).
   Options when E5 brings smooth materials: direct specular for spheres at
   every roughness (no double counting, since bounces can't hit them, but
-  noisy for mirrors), or visible emitters (4.5's emissive flames).
+  noisy for mirrors), or visible emitters. *4.5: the torches' and flames'
+  models emit (DECISIONS R82), so smooth surfaces reflect them (castle5's
+  start with `pt_roughness_override 0.05`); plain lights without a model
+  (most of them) still show no highlight there.*
 - **Dark albedo (E4, E5).** Hexen II's textures are dark in linear light:
   the cathedral's mean diffuse albedo is 0.04 (sRGB ~55), so one bounce adds
   2–3 % to the lit image, where lighter PBR textures would get tens of

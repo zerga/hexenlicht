@@ -693,7 +693,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
 	scene_entity_t		shown;		/* e where r_lerpmove shows it */
-	qboolean		continues, jumped, bad_skin;
+	qboolean		continues, jumped, bad_skin, emissive;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
@@ -766,13 +766,23 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 
 	/* the skin GL would bind; translucent ones are Quake II RTX's
 	 * transparent models; the weapon's triangles are flagged, as Quake II
-	 * RTX's viewer weapon */
-	material = VK_SkinMaterial (e, hdr, &bad_skin);
+	 * RTX's viewer weapon. A model at a map light's origin that GL draws
+	 * with MLS_ABSLIGHT shows its skin's emissive texture (4.5,
+	 * vk_emissive.c: the flames of torches and the like, lit; not what
+	 * passes that point), flagged as a light: the map light is its light */
+	emissive = group == MODEL_GROUP_LIGHT && VK_ModelsEmit () && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
+		   VK_MapLightAt (e->origin);
+	material = VK_SkinMaterial (e, hdr, emissive, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |
 		       (uint32_t)material;
 	if (e->kind == SCENE_ENT_VIEWMODEL)
 		mi->material |= MATERIAL_FLAG_WEAPON;
+	if (emissive && VK_GetMaterial (material)->emissive_texture)
+	{
+		mi->material |= MATERIAL_FLAG_LIGHT;
+		model_frame.emissive++;
+	}
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;
 	mi->prim_count = (uint32_t)am->num_tris;
@@ -786,7 +796,9 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha);
 	mi->drawflags = (uint32_t)e->drawflags;
-	mi->light = AliasLight (&shown);
+	/* a half's value: model_geometry.comp packs it into the triangles'
+	 * emissive factor exactly, as vk_models check expects */
+	mi->light = VK_HalfToFloat (VK_FloatToHalf (AliasLight (&shown)));
 	mi->entity = ((uint32_t)e->kind << 16) | ((uint32_t)e->num & 0xffff);
 	mi->colorshade = (uint32_t)(e->colorshade & 0xff);
 	if (mi->colorshade)

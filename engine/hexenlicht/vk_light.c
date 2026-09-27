@@ -49,7 +49,9 @@
  * Quake II RTX counts per cluster and light: 50 MB per buffer on Hexen
  * II's largest maps.
  * The lights are the map's (vk_maplights.c, 4.1: spheres, some of them
- * spotlights with a cone) and test lights placed with vk_testlight:
+ * spotlights with a cone; but its fake lava lights while lava emits), the
+ * lava's (vk_emissive.c, 4.5: polygons, a fan triangle each) and test
+ * lights placed with vk_testlight:
  * spheres at the eye, quads (two polygon lights each) that emit towards
  * where the camera looked, and dynamic spheres; VK_LoadWorld clears them
  * (a new map). Units are Quake II RTX's shaders': a polygon's color is its
@@ -127,8 +129,8 @@ static int		num_test_dlights;
 static test_quad_t	test_quads[MAX_TEST_QUADS];
 static int		num_test_quads;
 
-/* the light buffer's lights, in its order: the map's spheres, the quads'
- * triangles, the test spheres */
+/* the light buffer's lights, in its order: the map's spheres, the lava's
+ * triangles, the quads' triangles, the test spheres */
 typedef struct
 {
 	int		type;		/* LIGHT_TYPE_* */
@@ -142,7 +144,10 @@ typedef struct
 
 static light_t		lights[MAX_LIGHT_POLYS];
 static int		num_lights;
-static int		num_map_lights;		/* the first lights */
+static int		num_map_lights;		/* vk_maplights.c's */
+static int		num_fixed_lights;	/* the first lights: the map's (but its fake lava lights while lava emits), the lava's */
+static int		first_lava_light, num_lava_lights;	/* the lava's polygons (4.5) */
+static int		lava_over;		/* lava triangles left out: with the map's lights past MAX_LIGHT_POLYS (the fake lava lights stay) */
 static float		style_scales[2][256];	/* this frame's and last frame's (4.2) */
 
 /* the light lists: list c is list_nodes[list_offsets[c]] up to list_offsets[c + 1] */
@@ -162,6 +167,7 @@ static struct
 {
 	int		homeless;	/* lights touching no open leaf (inside solid) */
 	int		dropped;	/* left out: the lists were full */
+	int		lava_dropped;	/* of them, lava triangles (their emission lights nothing) */
 	int		ranged;		/* spheres with a range */
 	double		build_time;
 } build;
@@ -357,6 +363,7 @@ static void BuildLightLists (void)
 		{
 			num_pairs = first;
 			build.dropped++;
+			build.lava_dropped += (l >= first_lava_light && l < first_lava_light + num_lava_lights);
 		}
 	}
 	free (row);
@@ -412,13 +419,24 @@ void VK_UpdateLights (void)
 {
 	static const int	tris[2][3] = { { 0, 1, 2 }, { 2, 1, 3 } };
 	const vk_maplight_t	*ml = VK_MapLights (&num_map_lights);
-	int			i, t, k;
+	int			i, t, k, n = VK_NumLavaLights (), kept = 0;
+
+	/* the lava's lights replace the fake lava lights if they all fit (a
+	 * lava triangle is flagged as a light: bounces don't add its emission) */
+	for (i = 0; i < num_map_lights; i++)
+		kept += !ml[i].over_lava;
+	lava_over = (n > 0 && kept + n > MAX_LIGHT_POLYS) ? n : 0;
+	if (lava_over)
+		n = 0;		/* the fake lights stay */
 
 	num_lights = 0;
 	for (i = 0; i < num_map_lights; i++)
 	{
-		light_t	*l = &lights[num_lights++];
+		light_t	*l;
 
+		if (n && ml[i].over_lava)
+			continue;	/* a fake lava light: the lava lights (vk_emissive.c) */
+		l = &lights[num_lights++];
 		memset (l, 0, sizeof(*l));
 		l->type = LIGHT_TYPE_SPHERE;
 		VectorCopy (ml[i].origin, l->p[0]);
@@ -429,6 +447,19 @@ void VK_UpdateLights (void)
 		VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI, l->color);
 		l->style = ml[i].style;
 	}
+	/* the lava's polygons (4.5), unstyled */
+	first_lava_light = num_lights;
+	for (i = 0; i < n; i++)
+	{
+		light_t	*l = &lights[num_lights++];
+
+		memset (l, 0, sizeof(*l));
+		l->type = LIGHT_TYPE_POLYGON;
+		VK_GetLavaLight (i, l->p, l->color);
+		l->style = -1;
+	}
+	num_lava_lights = n;
+	num_fixed_lights = num_lights;
 	for (i = 0; i < num_test_quads && num_lights + 2 <= MAX_LIGHT_POLYS; i++)
 	{
 		for (t = 0; t < 2; t++)
@@ -459,6 +490,12 @@ void VK_UpdateLights (void)
 	ResizeLightStats ();
 }
 
+/* the lava's lights are in the light buffer, so the fake lava lights are out */
+qboolean VK_LavaLightsOn (void)
+{
+	return num_lava_lights > 0;
+}
+
 /* a new map (VK_LoadWorld): no test lights, and the old map's lights are
  * gone; VK_LoadLightClusters builds the lists once the new PVS is final
  * and VK_LoadMapLights has read the new map's */
@@ -467,7 +504,7 @@ void VK_ClearLights (void)
 	int	i;
 
 	num_test_spheres = num_test_quads = num_test_dlights = 0;
-	num_lights = num_map_lights = 0;
+	num_lights = num_map_lights = num_fixed_lights = first_lava_light = num_lava_lights = lava_over = 0;
 	num_cluster_bounds = 0;
 	memset (&dlight_stats, 0, sizeof(dlight_stats));
 	VK_ClearMapLights ();
@@ -725,7 +762,7 @@ static void VK_TestLight_f (void)
 		if (!WorldReady ())
 			return;
 		if (dlight ? (num_test_dlights == MAX_LIGHT_SOURCES) :
-			     (num_map_lights + num_test_spheres + num_test_quads * 2 >= MAX_LIGHT_POLYS))
+			     (num_fixed_lights + num_test_spheres + num_test_quads * 2 >= MAX_LIGHT_POLYS))
 		{
 			Con_Printf ("vk_testlight: at most %d %s\n", dlight ? MAX_LIGHT_SOURCES : MAX_LIGHT_POLYS,
 				    dlight ? "dynamic sphere lights" : "lights in the light lists, the map's included");
@@ -751,7 +788,7 @@ static void VK_TestLight_f (void)
 
 		if (!WorldReady ())
 			return;
-		if (num_test_quads == MAX_TEST_QUADS || num_map_lights + num_test_spheres + (num_test_quads + 1) * 2 > MAX_LIGHT_POLYS)
+		if (num_test_quads == MAX_TEST_QUADS || num_fixed_lights + num_test_spheres + (num_test_quads + 1) * 2 > MAX_LIGHT_POLYS)
 		{
 			Con_Printf ("vk_testlight: at most %d quads\n", MAX_TEST_QUADS);
 			return;
@@ -905,6 +942,13 @@ static void VK_Lights_f (void)
 		    num_lights, num_lights - spheres, spheres, build.ranged, range_culling ? "" : ", not culled by it",
 		    num_test_dlights);
 	VK_PrintMapLights ();
+	VK_PrintEmissive ();
+	Con_Printf ("  %d lava polygons in the light buffer\n", num_lava_lights);
+	if (lava_over)
+		Con_Printf ("  the lava's %d triangles don't fit with the map's lights (%d at most): no lava lights, the fake lava lights stay\n",
+			    lava_over, MAX_LIGHT_POLYS);
+	if (build.lava_dropped)
+		Con_Printf ("  %d lava triangles left out of the full lists: they light nothing\n", build.lava_dropped);
 	{
 		byte	used[256];
 		int	styled = 0, styles = 0, off = 0;
@@ -966,6 +1010,7 @@ void VK_InitLights (void)
 	Cmd_AddCommand ("vk_lights", VK_Lights_f);
 	Cvar_RegisterVariable (&r_dlights);
 	VK_InitMapLights ();
+	VK_InitEmissive ();
 }
 
 void VK_ShutdownLights (void)
@@ -981,6 +1026,7 @@ void VK_ShutdownLights (void)
 	free (cluster_bounds);
 	cluster_bounds = NULL;
 	VK_ClearLights ();
+	VK_ShutdownEmissive ();
 	num_lists = 0;
 	num_nodes = 0;
 }

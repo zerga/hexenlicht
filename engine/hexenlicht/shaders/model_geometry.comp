@@ -132,7 +132,8 @@ main()
 			t = (dot(t, t) > 1e-12) ? normalize(t) : any_tangent(nrm[k]);
 			prim.tangents[k] = encode_normal(t);
 		}
-		prim.emissive_and_alpha = packHalf2x16(vec2(1.0, alpha));
+		/* an emissive skin (4.5: the light models' flames) shows at GL's fixed light level */
+		prim.emissive_and_alpha = packHalf2x16(vec2((mi.light >= 0.0) ? mi.light : 1.0, alpha));
 		prim.uv0 = tri.uv0;
 		prim.uv1 = tri.uv1;
 		prim.uv2 = tri.uv2;

@@ -158,8 +158,10 @@ textures/<name>.mat          optional parameters (see below)
     e.g. `textures/models/paladin.mdl_0.png`.
   - Sprite frames: `textures/<sprite path>_<frame>.png`.
 - Defaults when a map is missing: albedo from the original palettized
-  texture, constant roughness, metallic 0, emissive from the original's
-  bright/fullbright texels, normal = flat.
+  texture, constant roughness, metallic 0, normal = flat; emissive: lava
+  (its texture) and the flames of the models at the map's lights (their
+  skins' bright texels). Hexen II has no fullbright texels (4.5, DECISIONS
+  R82); other emissive surfaces come from `.mat` files.
 - `.mat` example:
 
 ```
@@ -277,7 +279,7 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.2 | Light styles: flicker, pulse, switchable lights per frame | S | Matches `glhexen2` animation |
 | 4.3 | Light colors from `jsh2color` heuristic / `.lit` data | S | Colored lights plausibly match HoT's |
 | 4.4 | Dynamic lights: dlights, effect flags, muzzle flashes, torch-lit models, projectiles; light pool | M | Spells and projectiles light the scene |
-| 4.5 | Emissive surfaces: lava, fire, runes, fullbright texels | M | Lava lights rooms |
+| 4.5 | Emissive surfaces: lava (lights instead of the mappers' fake lava lights), the flames of the map lights' models (Hexen II has no fullbright texels; runes and fire textures aren't emissive in GL) | M | Lava lights rooms |
 | 4.6 | Sky rendering (two-layer scrolling skies) + faithful / sky-light modes (Q2RTX physical sky) | M | Both modes switchable per map |
 | 4.7 | Per-map override file: add/remove/tune lights, sky mode, sun, exposure | S | Overrides load with the map |
 | 4.8 | Live light editing commands (select, move, color, intensity, radius, save) | M | Edit in game, saved to override file |

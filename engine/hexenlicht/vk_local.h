@@ -111,6 +111,9 @@ void VK_InitTextures (void);
 void VK_ShutdownTextures (void);
 int VK_FindTexture (const char *identifier);	/* its slot, -1 = none */
 const char *VK_TextureName (int slot);
+unsigned short VK_TextureCRC (int slot);	/* of its data (the cache key) */
+#define VK_EMISSIVE_THRESHOLD	215	/* Quake II RTX's pt_surface_lights_threshold: a skin texel with a channel this bright (sRGB) emits */
+unsigned int *VK_TextureRGBA (int slot, int *width, int *height);	/* a bright skin's pixels (malloc'd), NULL = none kept */
 
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
@@ -212,6 +215,8 @@ typedef struct
 	char		name[16];	/* texture name */
 	int		base_texture;	/* texture slot */
 	int		mask_texture;	/* cutout: texture slot whose alpha < 0.5 are holes, 0 = none */
+	int		emissive_texture;	/* texture slot of the emitted radiance, 0 = none (vk_emissive.c) */
+	float		emissive_factor;	/* times the emissive texture (1) */
 	int		num_frames;	/* animation: frames in the sequence (1 = none) */
 	int		next_frame;	/* material of the next frame */
 	int		alternate;	/* first material of the alternate animation, 0 = none */
@@ -228,6 +233,7 @@ vk_material_t *VK_GetMaterial (int index);
 void VK_UploadMaterials (void);
 void VK_UploadMaterialRange (int first, int count);	/* new materials, while others are in use */
 uint16_t VK_FloatToHalf (float f);
+float VK_HalfToFloat (uint16_t h);
 
 /* vk_world.c: the BSP world and its brush submodels in one GPU buffer:
  * num_primitives VboPrimitives (shaders/vertex_buffer.h), then their
@@ -316,13 +322,33 @@ VkDeviceAddress VK_InstancedPositionsAddress (void);
 
 /* vk_skin.c: alias model skins: GL's choice of skin per entity, as a
  * material (one per skin texture; the skin is the cutout mask of EF_HOLEY
- * models), and R_TranslatePlayerSkin */
+ * models; emissive: with the skin's emissive texture, 4.5), and
+ * R_TranslatePlayerSkin */
 struct scene_entity_s;
 void R_InitSkins (void);
 void VK_ClearSkins (void);			/* on map change, after VK_LoadWorld */
 void VK_AddSkinMaterials (qmodel_t *model);	/* on map load; the caller uploads the materials */
 qboolean VK_ModelHasCutouts (const qmodel_t *model);
-int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboolean *bad_skin);
+int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboolean emissive, qboolean *bad_skin);
+
+/* vk_emissive.c: emissive surfaces (4.5): lava, whose world triangles facing
+ * out of it are polygon lights, and the flames of the models at the map's
+ * lights (vk_instance.c's light group) */
+void VK_InitEmissive (void);			/* its cvars, from VK_InitLights */
+void VK_ShutdownEmissive (void);		/* from VK_ShutdownLights */
+void VK_ClearLava (void);			/* VK_LoadWorld, before the surfaces */
+void VK_AddLavaMaterial (int material, const texture_t *tx);	/* the material of a lava surface */
+struct VboPrimitive;
+qboolean VK_AddLavaLight (const struct VboPrimitive *p);	/* a world lava triangle facing out of the lava; false: not a light (degenerate, or its material past the lava table) */
+void VK_FinishLava (void);			/* after the surfaces: the lava materials' emission */
+int VK_NumLavaLights (void);			/* the lava's polygon lights, none with r_lava_light 0 */
+void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color);	/* its corners (emitting along cross(p1 - p0, p2 - p0)) and radiance */
+qboolean VK_OverLava (const vec3_t origin);	/* within 16 units of a lava light, either side (vk_maplights.c: a fake lava light) */
+qboolean VK_LavaLightsOn (void);		/* vk_light.c: the lava's lights are in the light buffer (the fake lava lights out) */
+qboolean VK_ModelsEmit (void);			/* r_emissive_models */
+int VK_EmissiveSkin (int slot);			/* the skin's emissive texture, made on first use; 0 = none */
+float VK_EmissiveScale (void);			/* r_emissive_scale: the emissive materials' factor */
+void VK_PrintEmissive (void);			/* vk_lights */
 
 /* vk_instance.c: the frame's model instances (ModelInstance in
  * shaders/global_ubo.h): the brush entities, then the alias entities group
@@ -348,6 +374,7 @@ typedef struct
 	int		dropped_total;	/* the same since the map loaded */
 	int		bad_frames;	/* entities with a frame number the model doesn't have */
 	int		bad_skins;	/* the same for skin numbers */
+	int		emissive;	/* instances with an emissive skin (4.5: the light models' flames) */
 } vk_modelframe_t;
 
 void VK_InitInstances (void);
@@ -504,6 +531,7 @@ typedef struct
 	vec3_t		color;		/* linear (r_maplight_colors; jsh2color's up to 1.19) */
 	vec3_t		spot_dir;	/* towards its target; 0 0 0: not a spot */
 	float		spot_cos;	/* the cosine of half the cone's width */
+	qboolean	over_lava;	/* a plain light close over lava: left out while lava emits (4.5) */
 } vk_maplight_t;
 
 void VK_InitMapLights (void);	/* its cvars, from VK_InitLights */

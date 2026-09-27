@@ -35,6 +35,9 @@
  * multiplies the texture in sRGB space: the light's color is its sRGB to
  * linear conversion, which shows the same hue on a wall (no scaling to
  * white's brightness: as in HoT, orange light is darker).
+ * Plain lights just over lava or under its surface (vk_emissive.c's
+ * VK_OverLava) are the mappers' stand-ins for the lava's light: vk_light.c
+ * leaves them out while the lava emits (4.5).
  * VK_LoadWorld calls VK_LoadMapLights before the light lists are built;
  * vk_light.c's VK_UpdateLights takes these lights with the test lights.
  * VK_MapLightAt tells vk_instance.c which models stand at a light's
@@ -122,6 +125,8 @@ static struct
 	int		colored;	/* with _color */
 	int		orange, textured, warm;	/* jsh2color's torch orange, from textures, 255 225 200 */
 	int		on_models;	/* models in the light group last frame (vk_instance.c): at a light's origin, owning a dynamic light */
+	int		over_lava;	/* plain lights close over lava (4.5) */
+	int		over_lava_styled;	/* of them, with a style */
 } stats;
 
 
@@ -366,6 +371,11 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 			stats.colored++;
 		}
 		stats.styled += (l->style != 0);
+		/* the mappers lit lava with plain lights just over it or in it:
+		 * left out while it emits (vk_emissive.c) */
+		l->over_lava = !strcmp (e->classname, "light") && VK_OverLava (l->origin);
+		stats.over_lava += l->over_lava;
+		stats.over_lava_styled += (l->over_lava && l->style != 0);
 		RoundOrigin (l->origin, p);
 		for (h = AtHash (p); at_hash[h]; h = (h + 1) & (AT_HASH_SIZE - 1))
 			;
@@ -450,6 +460,8 @@ void VK_PrintMapLights (void)
 		    r_maplight_scale.value, stats.in_solid, stats.unlit, stats.over, MAX_LIGHT_POLYS);
 	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models in the light group last frame (at a light's origin, owning a dynamic light)\n",
 		    stats.spots, stats.unmatched, stats.styled, stats.colored, stats.on_models);
+	Con_Printf ("  %d plain lights over lava (%d with a style): %s\n", stats.over_lava, stats.over_lava_styled,
+		    VK_LavaLightsOn () ? "left out, the lava lights" : "lit (no lava lights)");
 	if (!r_maplight_colors.integer)
 		Con_Printf ("  colors: white (r_maplight_colors 0)\n");
 	else if (stats.colored)

@@ -15,6 +15,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
+[Emissive surfaces](#emissive-surfaces-vk_emissivec) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -145,6 +146,12 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   cache (`Draw_ClearCachedPics`), like `gl_rmisc.c`.
 - `TEX_SPECIAL_TRANS` alpha is stored as opacity (GL blends those inverted),
   so alpha means opacity in every texture.
+- The 8-bit pixels of alias model skins (`gl_model.c` names them
+  `<model>_<skin>`) with a texel whose channel reaches
+  `VK_EMISSIVE_THRESHOLD` (215) stay with their slot (4.5, freed with it):
+  `VK_TextureRGBA` converts them again for the light models' emissive
+  textures ([Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+  `vk_textures` prints how many (meso9: 100 skins, 2.6 MB).
 
 ## 2D (`vk_draw.c`)
 
@@ -198,7 +205,10 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 
 - Rebuilt per map, uploaded with `VK_UploadMaterials`. Layout
   (`MATERIAL_UINTS` 8): Q2RTX's 6 uints + Hexen II's alternate animation
-  (`+a..+j`).
+  (`+a..+j`). Set: the base texture, the cutout mask, the animation and
+  (4.5) the emissive texture and factor (Q2RTX's; the lava's and the light
+  models' skins', see [Emissive surfaces](#emissive-surfaces-vk_emissivec));
+  the other factors are Q2RTX's defaults.
 - `vertex_buffer.h`'s `get_material_info`/`animate_material`: frame =
   `int(cl.time*5)` (`global_ubo.anim_frame`); surfaces reference their
   animation's first frame.
@@ -211,8 +221,12 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 - World triangles carry their vis leaf (`cluster` = leaf number - 1);
   triangles facing into solid (qbsp leftovers) are dropped. Winding is
   reversed for the ray tracer.
-- `vk_world [materials]` prints statistics and checks the animation table
-  against `R_TextureAnimation`.
+- Lava (4.5): its materials emit, and a world lava triangle whose front
+  leaf isn't lava is a light, flagged `MATERIAL_FLAG_LIGHT` (see
+  [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+- `vk_world [materials]` prints statistics (with the lava lights) and
+  checks the animation table against `R_TextureAnimation`; `materials`
+  lists each material with its emissive texture and factor.
 
 ## PVS (`vk_pvs.c`)
 
@@ -250,7 +264,9 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   (4.1: opaque models at a map light's origin, `VK_MapLightAt`: the
   torches, flames, candles and the like that the light entities' game code
   spawns there, whose mesh surrounds the light; they cast no shadows, see
-  [Map lights](#map-lights-vk_maplightsc)).
+  [Map lights](#map-lights-vk_maplightsc); since 4.5 they show their
+  skin's emissive texture, flagged `MATERIAL_FLAG_LIGHT`, see
+  [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
 - **The first-person weapon** (`cl.viewent`, `SCENE_ENT_VIEWMODEL`) comes
   last, in `MODEL_GROUP_WEAPON` (Q2RTX's viewer weapon, triangles flagged
   `MATERIAL_FLAG_WEAPON`). It looks like the group it would otherwise be in
@@ -322,7 +338,12 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `custom0-2`) writes VboPrimitives and packed positions into this frame's
   instanced buffer (`VERTEX_BUFFER_INSTANCED`, `MAX_INSTANCED_PRIMITIVES`, one
   per frame in flight; overflow is counted, never printed inside a frame).
-- `vk_models [list|check]` (the geometry pass's GPU time from the profiler);
+  The triangles' emissive factor is the instance's `light` (GL's fixed
+  light level, rounded to a half so the packing is exact; 1 when lit by
+  the world): an emissive skin (4.5, the light models' flames) shows at
+  GL's abslight.
+- `vk_models [list|check]` (the geometry pass's GPU time from the profiler,
+  the instances with an emissive skin);
   `check` compares every triangle of the last frame
   with the same computation on the CPU (`CpuTriangle` — keep it in step with
   the shader).
@@ -336,7 +357,10 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `VK_FindTexture`) unless `gl_nocolors`.
 - One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
   precache on map load, others on demand); for `EF_HOLEY` models the skin is
-  its own `mask_texture`.
+  its own `mask_texture`. A third key (4.5): emissive, for models at a map
+  light's origin, a material with the skin's emissive texture (made on first
+  use, `VK_EmissiveSkin`), or the plain one where the skin has no bright
+  texels (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
 - `R_TranslatePlayerSkin` is `gl_rmisc.c`'s per-class translation
   (`gfx/player.lmp`, `color_offsets`) but translates the 8-bit skin and loads
   it with the model's texture mode (so the Demoness keeps her cutouts, which
@@ -509,9 +533,10 @@ bindings.
 
 ## Lights (`vk_light.c`)
 
-Stories 3.3, 3.4, 4.1 and 4.4; Q2RTX's two kinds of lights, sampled in
+Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
 `light_lists.h`; the map's lights come from
-[Map lights](#map-lights-vk_maplightsc):
+[Map lights](#map-lights-vk_maplightsc), the lava's from
+[Emissive surfaces](#emissive-surfaces-vk_emissivec):
 
 - **The light buffer's lights** (`LightBuffer` in `shaders/vertex_buffer.h`:
   Q2RTX's without its material table, light styles, cluster debug mask and
@@ -647,9 +672,11 @@ Stories 3.3, 3.4, 4.1 and 4.4; Q2RTX's two kinds of lights, sampled in
   (`STORAGE_SCALE_HF/SPEC`), which holds values up to 4088 / 32 ≈ 128:
   `packRGBE` clamps there (Q2RTX's wraps darker above it).
 - The light buffer holds the **map's lights** first (`VK_MapLights`,
-  none with `r_maplights 0`), then the **test lights** (`VK_LoadWorld`
+  none with `r_maplights 0`; without the fake lava lights while lava
+  emits), then the **lava's** polygons (4.5, unstyled; none with
+  `r_lava_light 0`), then the **test lights** (`VK_LoadWorld`
   clears them, `VK_ClearLights`; colors below 0 become 0), 4096 in all
-  (`MAX_LIGHT_POLYS`):
+  (`MAX_LIGHT_POLYS`; lava triangles past it are left out and counted):
   - `vk_testlight sphere [radius] [intensity] [r g b] [range]`: a sphere
     light in the lists at the eye (8, 1000, white, 0 = unlimited);
   - `vk_testlight dlight [radius] [intensity] [r g b]`: a dynamic sphere
@@ -678,7 +705,8 @@ Stories 3.3, 3.4, 4.1 and 4.4; Q2RTX's two kinds of lights, sampled in
   Beside `glh2` (castle5's style 2 pulse, 60 shots 4 frames apart): the
   same timing (correlation 0.95 at no lag); GL's bright phase flattens at
   1.30× where its 8-bit lightmaps clip, ours goes on to 1.62×.
-- `vk_lights` prints the lights, the map's (below), the lists (entries, mean and longest,
+- `vk_lights` prints the lights, the map's (below), the lava's and the
+  light models' emission ([Emissive surfaces](#emissive-surfaces-vk_emissivec)), the lists (entries, mean and longest,
   empty ones), lights inside solid or left out, the last frame's dynamic
   lights (those owned by an entity, left out dark / unlit / over 32, the
   most in a frame and the brightest since the map loaded), the build time, the
@@ -729,6 +757,12 @@ from `VK_LoadWorld` before the light lists):
   maps (demo1 43, demo3 26, village1 26; the plain leaf test would drop 28
   more). Also a level below 0, a narrow spot aimed at its own origin (none
   on the maps) and lights past 4096.
+- **Fake lava lights** (4.5): plain `light`s at most 16 units from a lava
+  light triangle, over the lava or under its surface (`VK_OverLava`), are
+  marked (`over_lava`); `vk_light.c` leaves them out while the lava emits
+  (`r_lava_light 1`): 405 on 13 maps, see
+  [Emissive surfaces](#emissive-surfaces-vk_emissivec). `vk_lights` counts
+  them.
 - **Color** (4.3, `r_maplight_colors` 1, archived): Hammer of Thyrion's
   colored light, the colors `utils/jsh2color` baked HoT's `.lit` files
   from (see [Map light colors](#map-light-colors-vk_lightcolorc)); on a
@@ -849,6 +883,106 @@ lump:
   among them; `.lit` files baked from these colors match HoT's but for
   those and ±1 rounding (3 of 42 identical). This is the tool's
   single-threaded result.
+
+## Emissive surfaces (`vk_emissive.c`)
+
+Story 4.5. Hexen II has no fullbright texels (`colormap.lmp` keeps only
+indices 0 and 255 constant) and `utils/light` gave lava no light: the
+mappers put plain lights over it, or just under its surface, which the
+compiler lit through. GL draws the turbulent textures unlit and the light
+entities' torches, flames and candles with `MLS_ABSLIGHT` (abslight 0.75).
+Two things emit, at GL's brightness times `r_emissive_scale` (32: the
+radiance of a texture color of 1):
+
+- **Lava** (`r_lava_light 1`): the lava materials' emissive texture is
+  their base texture (warped, linear), their emissive factor the scale
+  (Q2RTX's primary emission into `PT_TRANSPARENT`, not denoised; lava
+  keeps Q2RTX's no bounce light on it). Each world lava triangle whose
+  front leaf isn't lava (not the undersides; lava walls too) is a polygon
+  light (Q2RTX's `collect_sky_and_lava_light_polys`: one per fan
+  triangle, degenerate ones left out) of the texture's average linear
+  color times the scale (Q2RTX's emissive `light_color`), and is flagged
+  `MATERIAL_FLAG_LIGHT` (Q2RTX's `bsp_mesh.c`): diffuse bounce rays that
+  hit it add nothing, since the direct light samples it; specular ones
+  add it with Q2RTX's weight. Submodel lava emits but isn't a light (none
+  on the maps). `r_lava_light 0`: no emission and the fake lights (GL's
+  look); the flag stays (it only matters with emission). If the lava's
+  triangles don't fit into the 4096 lights with the map's, there are no
+  lava lights and the fake lights stay; triangles the full lists leave
+  out light nothing (`vk_lights` reports both; neither on the maps).
+- **Fake lava lights:** while lava emits, plain `light`s at most 16 units
+  from a lava light triangle (`VK_OverLava`: the closest point on it) are
+  left out ([Map lights](#map-lights-vk_maplightsc)): the mappers' grids
+  8, 14 or 16 units over the lava or under its surface (castle4, castle5,
+  meso5, romeric3 and part of meso8 have them inside); the next nearest
+  light is 40 away. On the 16 lava maps (15 of the game's, the mission
+  pack's `monsters`): 405 on 13 maps (castle4 12, castle5 53, meso1 16,
+  meso2 149, meso5 23, meso6 6, meso8 39, meso9 63, romeric1 1, romeric3
+  18, romeric4 15, village2 2, monsters 8), none with a style. Lava light
+  triangles: castle4 11, castle5 220, meso1 58, meso2 492, meso5 20,
+  meso6 27, meso8 117, meso9 44, ravdm1 42, ravdm5 39, romeric1 5,
+  romeric3 50, romeric4 59, village2 2, village3 4, monsters 8; the most
+  list entries meso2's 80,233 (mean 94, longest 212; 524,288 fit), built
+  in at most 7 ms (Debug).
+- **The scale** (4.9 calibrates it): in linear light (`tm_enable 0`)
+  meso9's walls lit by the map's lights are about as bright as GL's
+  lightmapped ones (0.024, 0.026, 0.015 against GL's 0.023, 0.020, 0.021
+  in three blocks), so 1 is GL's fullbright. But lava at 1 lights its rooms
+  25–33 times less than the fake lights it replaces (the light it adds per
+  unit of scale on meso9's side wall and meso2's cave walls): 32 lights
+  them about as they did. The lava is then 32 times GL's relation to the
+  walls: the exposure adapts to it and it clips towards orange-white
+  (meso9's start: sRGB 254 74 1 where GL shows 141 27 1; the shown lava
+  hardly changes from 2 to 64, the walls do).
+- **The light models' flames** (`r_emissive_models 1`): models at a map
+  light's origin that GL draws with `MLS_ABSLIGHT` (the light group's
+  `VK_MapLightAt` part, lit torches and flames; not dynamic light owners,
+  nor a monster passing that point) show their skin's emissive texture: Q2RTX's
+  `apply_fake_emissive_threshold` (the luminance of the texels with a
+  channel of at least 215 in sRGB, `VK_EMISSIVE_THRESHOLD`, blurred with
+  an 11-tap filter and normalized, times the texel's color and its
+  normalized luminance squared; twice the size, bilinear with wrapping,
+  then a 3-tap filter), the texture `<skin>*E<the skin's CRC>`, made when
+  a model at a light first shows the skin (`VK_EmissiveSkin`, inside the
+  frame: two uploads that wait for the GPU, the texture's and the new
+  material's). The instance takes the skin's
+  emissive material ([Skins](#skins-vk_skinc)), flagged
+  `MATERIAL_FLAG_LIGHT` (the map light is its light), at GL's abslight
+  (`model_geometry.comp`'s emissive factor) times the scale. On the paks
+  the lit flame models' skins have 6–33 % bright texels (`flame.mdl` 12 %,
+  `flame2.mdl` 33 %, `cflmtrch.mdl` 7 %; `newfire.mdl` 61 %), the unlit
+  ones none (`castrch`, `egtorch`, `mesotrch`, `rometrch`, `burner`, and
+  `palight`, which stays dark); 234 of the 476 models have some, so only
+  the light models get one. Seen at castle5's start: the flames glow (the
+  look hardly changes from scale 2 to 16), and a glossy surface
+  (`pt_roughness_override 0.05`) reflects them (the ceiling over a torch
+  +26–33 % in 32-pixel blocks; rough surfaces change only at the flames).
+  Left out: the burner's flame (an entity 6 units over its light, not at
+  its origin), glowing projectiles and other dynamic light owners, sprites
+  and particles (effects).
+- **Left out** (not emissive in GL): runes, `+0fire` and `+0sun`
+  (buttons), water, slime and the other turbulent textures (unlit in GL
+  because they are turbulent; E5's `.mat` files can make `*skulls`,
+  `*rtex386`, `*rtex153`, `*rtex346` lava), the sky (4.6); no emissive
+  surface has a light style (`vertex_buffer.h`'s `light_style_scale`
+  stays 1).
+- **Against GL:** the lava lights its rooms through light instead of the
+  mappers' grids (their hot spots on meso2's lava are gone; castle5's lava,
+  lit from inside by them, is dark and banded without emission); the
+  exposure adapts to bright lava (its surroundings darker than GL's);
+  flames glow instead of GL's flat 0.75.
+- **Cost** (meso2, 1920x1080, Release, the GPU at its power cap, `main`
+  the same day): at the start on the bridge, its walls lit by the lava
+  below, the frame 8.1 → 9.2–9.5 ms (direct light 0.72 → 1.15, bounce 1.64
+  → 2.3: polygon lights in lists of 94 entries); over the lava field no
+  change (6.5 → 6.3–6.5; lava gets no bounce); `r_lava_light 0` as `main`.
+- `vk_lights` prints the lava's triangles per material with their color,
+  the fake lights left out, the lava polygons in the light buffer (and any
+  past 4096), the emissive skins made; `vk_world` the lava lights, `vk_world
+  materials` each material's emissive texture and factor; `vk_models` the
+  instances with an emissive skin; `vk_textures` the kept skin pixels. A
+  change of `r_lava_light` or `r_emissive_scale` rewrites the materials
+  (after the GPU is idle) and rebuilds the lights.
 
 ## 3D view (`vk_view.c`)
 
@@ -1606,5 +1740,6 @@ overlay, and a measuring mode.
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (1000), white or HoT's colors (1, archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
+| `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 here) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

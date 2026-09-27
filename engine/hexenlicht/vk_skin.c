@@ -7,7 +7,8 @@
  * translated colors show their own skin. It returns the material of that
  * texture: one per skin texture, created on demand (the precached models'
  * on map load, VK_AddSkinMaterials), with the skin as its cutout mask for
- * EF_HOLEY models.
+ * EF_HOLEY models, and one more with the skin's emissive texture for the
+ * light models' flames (4.5, vk_emissive.c), made when first shown.
  *
  * R_TranslatePlayerSkin is gl_rmisc.c's per-class color translation of the
  * player skins (gfx/player.lmp), with two differences: the translated
@@ -55,8 +56,9 @@ cvar_t		gl_nocolors = {"gl_nocolors", "0", CVAR_NONE};
 extern qmodel_t	*player_models[MAX_PLAYER_CLASS];		/* cl_parse.c */
 extern byte	player_8bit_texels[MAX_PLAYER_CLASS][620*245];	/* gl_model.c */
 
-/* [cutout][texture slot]: the skin's material, 0 = none yet */
-static short	skin_materials[2][VK_MAX_TEXTURES];
+/* [emissive][cutout][texture slot]: the skin's material, 0 = none yet; an
+ * emissive one is the plain one where the skin has no emissive texture */
+static short	skin_materials[2][2][VK_MAX_TEXTURES];
 static qboolean	batch_materials;	/* VK_AddSkinMaterials: the caller uploads them */
 
 
@@ -84,17 +86,25 @@ qboolean VK_ModelHasCutouts (const qmodel_t *model)
 	return (SkinTextureMode (model->flags) & TEX_HOLEY) != 0;
 }
 
-/* name: for textures loaded without one (pictures) */
-static int SkinMaterial (int slot, qboolean cutout, const char *name)
+/* name: for textures loaded without one (pictures); emissive: with the
+ * skin's emissive texture (vk_emissive.c: the light models' flames), made
+ * when first asked for */
+static int SkinMaterial (int slot, qboolean cutout, const char *name, qboolean emissive)
 {
 	const char	*slash;
-	int		m;
+	int		m, e = 0;
 
 	if (slot < 0 || slot >= VK_MAX_TEXTURES)
 		slot = 0;
-	m = skin_materials[cutout][slot];
+	m = skin_materials[emissive][cutout][slot];
 	if (m)
 		return m;
+	if (emissive && !(e = VK_EmissiveSkin (slot)))
+	{
+		m = SkinMaterial (slot, cutout, name, false);	/* nothing bright */
+		skin_materials[emissive][cutout][slot] = (short)m;
+		return m;
+	}
 
 	if (VK_TextureName (slot)[0])
 		name = VK_TextureName (slot);	/* e.g. models/paladin.mdl_0 -> paladin.mdl_0 */
@@ -102,7 +112,12 @@ static int SkinMaterial (int slot, qboolean cutout, const char *name)
 	m = VK_AddMaterial (slash ? slash + 1 : name, slot);
 	if (cutout)
 		VK_GetMaterial (m)->mask_texture = slot;
-	skin_materials[cutout][slot] = (short)m;
+	if (e)
+	{
+		VK_GetMaterial (m)->emissive_texture = e;
+		VK_GetMaterial (m)->emissive_factor = VK_EmissiveScale ();
+	}
+	skin_materials[emissive][cutout][slot] = (short)m;
 	if (!batch_materials)
 		VK_UploadMaterialRange (m, 1);
 	return m;
@@ -125,7 +140,7 @@ void VK_AddSkinMaterials (qmodel_t *model)
 	for (i = 0; i < hdr->numskins && i < MAX_SKINS; i++)
 	{
 		for (j = 0; j < 4; j++)
-			SkinMaterial ((int)hdr->gl_texturenum[i][j], cutout, model->name);
+			SkinMaterial ((int)hdr->gl_texturenum[i][j], cutout, model->name, false);
 	}
 	batch_materials = false;
 }
@@ -147,10 +162,11 @@ static qboolean IsPlayerModel (const qmodel_t *model)
 	return false;
 }
 
-/* R_DrawAliasModel's choice of texture, as a material index; *bad_skin is
- * set for skin numbers the model doesn't have (GL prints them with
- * developer 1; nothing may print inside a frame) */
-int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, qboolean *bad_skin)
+/* R_DrawAliasModel's choice of texture, as a material index (emissive: with
+ * the skin's emissive texture, if it has one); *bad_skin is set for skin
+ * numbers the model doesn't have (GL prints them with developer 1; nothing
+ * may print inside a frame) */
+int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, qboolean emissive, qboolean *bad_skin)
 {
 	char	name[MAX_QPATH] = "skin";
 	int	skinnum = e->skinnum, slot, player;
@@ -184,7 +200,7 @@ int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, qboolean *b
 				slot = player;
 		}
 	}
-	return SkinMaterial (slot, VK_ModelHasCutouts (e->model), name);
+	return SkinMaterial (slot, VK_ModelHasCutouts (e->model), name, emissive);
 }
 
 
