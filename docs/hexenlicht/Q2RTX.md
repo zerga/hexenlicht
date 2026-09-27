@@ -89,8 +89,8 @@ this repository) or one at a time with
 | `matrix.c` | view and projection matrices | `vk_matrix.c` | 3.1 |
 | `vk_util.c/.h` | buffers, barriers, labels | `vk_buffer.c` (VMA); image barriers in `vk_pathtracer.c` | E1, 3.1 |
 | `draw.c` | 2D, final blit | `vk_draw.c` (1.6); final blit = `view_composite.frag` (3.8: its Lanczos filter and scaling rule, nearest a texel fetch); underwater warp 6.6 | 1.6, 3.8, 6.6 |
-| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3), map lights E4; cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.6 |
-| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4 |
+| `bsp_mesh.c` | BSP primitives, PVS, light polygons, cluster light lists, sky clusters | `vk_world.c`, `vk_pvs.c` (2.1, 2.2); light polygons: test lights in `vk_light.c` (3.3); the map's lights are Hexen II's light entities as spheres (`vk_maplights.c`, 4.1: Q2RTX has no such lights); cluster light lists in `vk_light.c` (3.4: by the PVS of the leafs a light touches, a polygon's plane and a sphere's range; spheres in the lists; cluster bounds with the leaf's); sky 4.6 | 2.1, 2.2, 3.3, 3.4, 4.1, 4.6 |
+| `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change; 4.1: a spotlight's cone in a sphere's entry); light stats `vk_light.c` (3.4, per list entry) | E2, 3.3, 3.4, 4.1 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
 | `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
@@ -113,9 +113,9 @@ this repository) or one at a time with
 | `global_ubo.h`, `global_textures.h`, `vertex_buffer.h`, `path_tracer.h`, `path_tracer_hit_shaders.h` | imported, adapted to our bindings (see the rules) | 3.1 |
 | `instance_geometry.comp` | `model_geometry.comp` | 2.4a |
 | `stretch_pic.*`, `final_blit.*` | `draw2d.*`, `fullscreen.vert` + `view_composite.frag` (3.8: `filter_lanczos` with its taps clamped to the input; no water warp until 6.6, no debug lines) | 1.6, 2.7, 3.8 |
-| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6) | 3.2, 3.3, 3.5b, 3.6 |
+| `primary_rays.rgen`, `path_tracer_rgen.h`; `brdf.glsl`, `water.glsl`, `asvgf.glsl` (unchanged, included by `path_tracer_rgen.h`) | G-buffer in Q2RTX's checkerboard fields (3.5b: vertical water stays water); `path_tracer_rgen.h` (its lighting functions since 3.3, `get_is_gradient` since 3.6; 4.1: our `AS_FLAG_LIGHT_MODELS`, from `constants.h`, in every ray mask but the shadow rays') | 3.2, 3.3, 3.5b, 3.6, 4.1 |
 | `direct_lighting.rgen`, `compositing.comp`, `checkerboard_interleave.comp` | first lit image, without the denoiser (`compositing.comp` unchanged; `direct_lighting.rgen`: launch check, the specular hit distance cleared (3.5a), the weapon only shadows itself, no sunlight, caustics off; `checkerboard_interleave.comp` (3.10): a specialization constant makes it write DLSS's inputs (`dlss_inputs.glsl`, ours) and blur translucent surfaces for DLSS RR too; 3.12: for RR the motion vector and depth of blurred pixels from the field with the larger throughput) | 3.3, 3.10, 3.12 |
-| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6) | 3.3, 3.4 |
+| `light_lists.h` | imported (3.3); spheres in the lists and the light statistics per list entry, no pick of a light without mass (Q2RTX's at `rng.x` 0: NaN), a sphere's solid angle in a form precise far away (3.4); without the light-count history (3.6: our lists change only with the lights; see the open questions) and sky lights (4.6); a spotlight's cone on spheres (4.1, `sphere_light_spot`) | 3.3, 3.4, 4.1 |
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored, no sunlight) | 3.5a |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it) | 3.6 |
@@ -221,14 +221,19 @@ this repository) or one at a time with
   one exposure factor (`pt_particle_brightness` 15, measured on meteor
   staff particles); Q2RTX has separate ones for sprites, beams and
   explosions. Beams (6.3) and the effect groups (6.2) check it against GL.
-- **Lights inside solid (4.1).** Some light entities have their origin
+- **Lights inside solid (answered in 4.1).** Some light entities have their origin
   inside a wall: demo1 43 of 332, demo3 26, village1 26, village2 11, a few
   elsewhere; nearly all plain `light` entities (a `light_torch_meso`,
   `light_torch_rome`, two `light_torch_castle` and a
   `light_flame_small_yellow` too). Their 8-unit test spheres touch no open
   leaf, so 3.4's lists leave them out (`vk_lights` counts them). 4.1 decides
   whether the original lit anything from them (utils/light traces from the
-  origin) and moves or drops them.
+  origin) and moves or drops them. *4.1: it lit nothing (utils/light's
+  trace starts in the solid leaf, which blocks it), so such a light is
+  dropped, by its origin rather than the 8-unit sphere, and only when
+  every leaf within `ON_EPSILON` (0.1) of it is solid (a light on a
+  solid's face lit the open side): 181 on the 59 maps (demo1 43, demo3 26,
+  village1 26; DECISIONS R74).*
 - **Dynamic lights in the light lists (4.4).** The game's moving lights
   stay the UBO's up to 32 dynamic spheres, picked uniformly with no
   culling; Q2RTX injects its moving model lights into the lists every frame

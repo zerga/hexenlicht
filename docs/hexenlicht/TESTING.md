@@ -138,24 +138,41 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   animated textures and liquids; dark blue where the point was off the
   screen. A wrong vector shows the texture shifted (double edges).
 - **Liquids near a start:** romeric1 (`*skulls`, look down), meso9 (lava).
-- **Lighting (until E4's map lights):** `r_debugview 0`, `vk_testlight
-  sphere 8 2000` at the start, `+forward` ~60 frames, `+right` 90 frames
+- **Lighting with one test light:** `r_maplights 0` (the map's lights
+  off), `vk_testlight sphere 8 2000` at the start, `+forward` ~60 frames, `+right` 90 frames
   (180° with `cl_yawspeed 100`): the light's shadows face the camera
   (demo1: tombstones, tree, statue). A quad lights only what is in front of
   it: after `+back` the camera is behind it. Modes 15 and 16 show the
   direct diffuse and specular lighting. With `flt_enable 0` the image is
   noisy (one sample per pixel), and low-poly models show grainy
   self-shadowing at grazing angles.
-- **Many lights and the light lists:** `vk_testlight entities` puts a
-  sphere at every light entity; `vk_lights` prints the lists (demo1: 8270
-  entries, mean 10.4, longest 62, 43 lights inside solid; keep2 16472;
-  romeric6 the longest list, 249), `r_debugview 17` shows the list lengths.
+- **Many lights and the light lists:** the map's lights load with it
+  (4.1); `vk_lights` prints them and the lists (demo1: 290 of 333 light
+  entities, 43 dropped inside solid, 8329 entries, mean 10.5, longest 63;
+  keep2 16472, tibet1 the most, 19020; romeric6 the longest list, 249),
+  `r_debugview 17` shows the list lengths.
   Checks, paused, averaging 8–16 screenshots per case: `vk_testlight dlight
   8 2000` and `vk_testlight sphere 8 2000` at the same spot give the same
   image (a dynamic and a list sphere); `vk_lights cull 0` (no range
   culling) gives the same image, only noisier (demo1's start: +1.4 %, noise
   ×1.6). `vk_lights stats` shows the shadow rays the last frame counted
   (0 with `pt_light_stats 0`).
+- **Map lights (4.1):** `vk_lights` on every map (a script with `map`,
+  ~180 waits and `vk_lights` per map: the 42 of pak0/pak1, then the 17 of
+  pak3 with `-Portals`, scripts in `portals\`): 12,747 of 12,928 light
+  entities, 181 dropped inside solid, 42 spotlights (every target
+  matched), at most 19,020 list entries, built in at most 2 ms.
+  Placement: the same script's start views in `glh2` (`-Exe glh2`) show
+  light where GL's lightmaps are bright (Hexenlicht is brighter until
+  4.9). Spotlights: cath's nine hang at z −468 and aim down at −696; from
+  cath's start as the Necromancer at `host_framerate 0.02`: `noclip`,
+  `cl_yawspeed 100`, `cl_pitchspeed 100`, `+right` 27 frames, `+lookdown`
+  8, `+forward` 550, `+lookdown` 27 ends at (1091 1671 −525), where
+  `r_maplight_scale 50` and `r_debugview 15` (not saturated) show their
+  pools. Models at a light's origin: `vk_models` counts their triangles
+  ("at lights"), `vk_lights` the models; a temporary build whose light
+  group has the mask `AS_FLAG_OPAQUE` shows what they would shadow (4.1:
+  mode 15 averaged at meso1's and castle4's starts, 3.5 % darker).
 - **Comparing noisy shots:** average them in linear light (sRGB → linear
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still
@@ -170,7 +187,7 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   adds nothing until emissive surfaces and the sky (the second bounce takes
   no light samples); 0.5 averages to the same as 1. Reflections: paused,
   looking down at demo1's floor (`cl_pitchspeed 100`, `+lookdown` 8
-  frames), `vk_testlight entities 4000`, then `pt_roughness_override 0.02`
+  frames), `r_maplight_scale 4000`, then `pt_roughness_override 0.02`
   with `pt_metallic_override 0` (mirror: the statue and tombstones
   reflected in the floor), 0.15 (glossy, blurred); `r_debugview 16` shows
   the specular alone, 19 the specular rays' hit distances. Reset the
@@ -212,10 +229,11 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   cath's and romeric2's lighting modes differ between runs of the same
   build in a few dozen to a few hundred pixels, in `main` too, and
   `-Noise` can't mask it: compare several runs of each). Checks, paused
-  with test lights, `r_debugview 0`, `tm_enable 0`, `bloom_enable 0`
+  with the map's lights, `r_debugview 0`, `tm_enable 0`, `bloom_enable 0`
   (linear light; since 3.7): a denoised shot against the average
   of 16–24 `flt_enable 0` shots (`tga_mean.ps1`), **at a sixteenth of the
-  lights' intensity** (`vk_testlight entities 62.5`): at full intensity the
+  lights' intensity** (`r_maplight_scale 62.5`; before 4.1 `vk_testlight
+  entities 62.5`): at full intensity the
   raw frames clip at 1 before the screenshot and their average reads
   4–10 % dark; and with `pt_fake_roughness_threshold 1` or
   `pt_num_bounce_rays 0`, because only the denoiser gives rough surfaces
@@ -234,9 +252,9 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   9 13) with them on too (3.7: the same maps and modes as the denoiser's,
   `flt_enable 0`; `con_notifytime 0`, or the old build's "Unknown
   command" lines for new cvars differ in the top rows). Exposure: paused
-  at demo1's start with `vk_testlight entities`, then `vk_testlight
-  entities 62.5`: `vk_exposure` and the image mean (`tga_mean.ps1 -A n`)
-  come back over ~6 s to 1/16 and ~75 % of before; `vk_testlight entities
+  at demo1's start, then `r_maplight_scale 62.5`: `vk_exposure` and the
+  image mean (`tga_mean.ps1 -A n`) come back over ~6 s to 1/16 and ~75 %
+  of before (3.7, with test lights at the light entities); `r_maplight_scale
   1`: the exposure stops at `tm_min_luminance` 0.0002, dark. Effects:
   Crusader (`playerclass 2`), `impulse 9`, ~120 waits, `impulse 3`, face
   the wall (`+right` 45 frames), `+attack` 24 frames, `pause`; compare

@@ -6,8 +6,10 @@
  * buffer's packed positions. Every frame, VK_BuildTLAS builds the dynamic
  * BLASes over this frame's alias model triangles (vk_model.c's instanced
  * buffer, already in world space: one each for the opaque, transparent and
- * masked (cutout) models and the first-person weapon, whose mask is Quake
- * II RTX's AS_FLAG_VIEWER_WEAPON) and then the top level (TLAS), in the frame's command
+ * masked (cutout) models, the models at a map light's origin (mask
+ * AS_FLAG_LIGHT_MODELS, which shadow rays leave out) and the first-person
+ * weapon, whose mask is Quake II RTX's AS_FLAG_VIEWER_WEAPON) and then the
+ * top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per
  * brush entity (vk_instance.c) and the dynamic BLASes, with Quake II RTX's
  * instance masks and shader binding table offsets (SBTO_*: its ray query
@@ -75,15 +77,16 @@ static VkDeviceSize	blas_scratch_size;
  * every effect hit is a candidate. The effects' masks are the effects
  * TLAS's own. */
 enum { DYN_PARTICLES = NUM_MODEL_GROUPS, DYN_SPRITES, NUM_DYN };
-static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "weapon", "particles", "sprites" };
+static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "light", "weapon", "particles", "sprites" };
 static const uint32_t dyn_masks[NUM_DYN] =
 {
-	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_VIEWER_WEAPON, AS_FLAG_EFFECTS, AS_FLAG_EFFECTS
+	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_LIGHT_MODELS, AS_FLAG_VIEWER_WEAPON,
+	AS_FLAG_EFFECTS, AS_FLAG_EFFECTS
 };
 static const uint32_t dyn_max[NUM_DYN] =	/* triangles */
 {
 	MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES,
-	MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES * 2
+	MAX_INSTANCED_PRIMITIVES, MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES * 2
 };
 
 #define NO_OPAQUE_INSTANCE	(VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)

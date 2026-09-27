@@ -10,8 +10,9 @@
  *
  * Brush entities (doors, lifts, trains, rotating brushes; dynamic and
  * static ones) come first; their primitives are in the world buffer
- * (vk_world.c). The alias model entities follow, in three groups (opaque,
- * transparent, masked = cutouts): their primitives are written every frame
+ * (vk_world.c). The alias model entities follow, in four groups (opaque,
+ * transparent, masked = cutouts, and the opaque ones at a map light's
+ * origin, which cast no shadows): their primitives are written every frame
  * by vk_model.c's geometry pass into the instanced buffer, from two poses
  * of the model that the instance blends (r_lerpmodels); stepping monsters
  * glide between their moves (r_lerpmove). The instance
@@ -497,13 +498,18 @@ static void AddBrushInstance (const scene_entity_t *e)
 
 /* The groups of the instanced buffer, in Quake II RTX's order. GL draws
  * all but the opaque ones in its translucent pass (R_DrawEntitiesOnList);
- * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. */
+ * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. Opaque models at
+ * a map light's origin are the torches and flames the light entities'
+ * game code spawns there, whose mesh surrounds the light: shadow rays
+ * don't see their group (vk_maplights.c) */
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
 		return MODEL_GROUP_TRANSPARENT;
 	if (e->model->flags & EF_HOLEY)
 		return MODEL_GROUP_MASKED;
+	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
+		return MODEL_GROUP_LIGHT;
 	return MODEL_GROUP_OPAQUE;
 }
 
@@ -826,6 +832,7 @@ void VK_UpdateInstances (void)
 	for (group = 0; group < NUM_MODEL_GROUPS; group++)
 	{
 		vk_primrange_t	*range = &model_frame.groups[group];
+		int		first_instance = num_instances;
 
 		range->first = next_prim;
 		for (i = 0; i < r_scene.num_entities; i++)
@@ -845,6 +852,8 @@ void VK_UpdateInstances (void)
 			}
 		}
 		range->count = next_prim - range->first;
+		if (group == MODEL_GROUP_LIGHT)
+			VK_CountMapLightModels (num_instances - first_instance);
 	}
 	model_frame.num_instances = num_instances - model_frame.first_instance;
 	model_frame.dropped_total += model_frame.dropped;

@@ -333,6 +333,7 @@ enum
 	MODEL_GROUP_OPAQUE,
 	MODEL_GROUP_TRANSPARENT,	/* DRF_TRANSLUCENT, EF_TRANSPARENT, EF_SPECIAL_TRANS */
 	MODEL_GROUP_MASKED,		/* EF_HOLEY: cutouts, alpha tested */
+	MODEL_GROUP_LIGHT,		/* opaque ones at a map light's origin (torches, flames): no shadows */
 	MODEL_GROUP_WEAPON,		/* the first-person weapon (Quake II RTX's viewer weapon) */
 	NUM_MODEL_GROUPS
 };
@@ -491,8 +492,31 @@ float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
 qboolean VK_DenoiserEnabled (void);	/* flt_enable */
 int VK_ReflectRefractPasses (void);	/* pt_reflect_refract: 0 to 10 */
 
-/* vk_light.c: the path tracer's lights (test lights, vk_testlight, for now)
- * and their per-cluster lists, built when the lights change (VK_UpdateLights);
+/* vk_maplights.c: the map's light entities as lights (utils/light's
+ * rules), loaded by VK_LoadWorld before the light lists; VK_MapLightAt:
+ * is a map light at the origin (vk_instance.c's MODEL_GROUP_LIGHT; none with
+ * r_maplights 0) */
+typedef struct
+{
+	vec3_t		origin;
+	int		level;		/* utils/light's: also the range */
+	int		style;		/* animated with 4.2 */
+	vec3_t		color;		/* 0-1 */
+	vec3_t		spot_dir;	/* towards its target; 0 0 0: not a spot */
+	float		spot_cos;	/* the cosine of half the cone's width */
+} vk_maplight_t;
+
+void VK_InitMapLights (void);	/* its cvars, from VK_InitLights */
+void VK_LoadMapLights (qmodel_t *worldmodel);
+void VK_ClearMapLights (void);
+const vk_maplight_t *VK_MapLights (int *count);	/* none with r_maplights 0 */
+float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white */
+qboolean VK_MapLightAt (const vec3_t origin);
+void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
+void VK_PrintMapLights (void);	/* vk_lights */
+
+/* vk_light.c: the path tracer's lights (the map's, test lights from
+ * vk_testlight) and their per-cluster lists, built when the lights change (VK_UpdateLights);
  * VK_PrepareLights fills this frame's light buffer (the lights, the lists
  * when they changed), the UBO's dynamic sphere lights and the light
  * statistics buffers, which VK_ClearLightStats clears before the passes */
@@ -502,6 +526,7 @@ void VK_ClearLights (void);	/* a new map (VK_LoadWorld) */
 struct VboPrimitive;
 void VK_LoadLightClusters (qmodel_t *worldmodel, const struct VboPrimitive *prims, uint32_t num_prims);	/* after the PVS */
 void VK_UpdateLights (void);	/* after the lights change, outside frames */
+void VK_RebuildLights (void);	/* the same from cvars and commands: only in a loaded world */
 struct QVKUniformBuffer_s;
 void VK_PrepareLights (struct QVKUniformBuffer_s *ubo);	/* shaders/global_ubo.h */
 void VK_ClearLightStats (VkCommandBuffer cmd);	/* after VK_PrepareUBO, before the passes */

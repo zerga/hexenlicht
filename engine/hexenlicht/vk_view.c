@@ -58,8 +58,8 @@
  * effects, 14 blue noise, 15 direct diffuse and 16 specular lighting
  * (direct and bounced), 17 light list lengths, 18 indirect diffuse
  * lighting, 19 specular hit distances, 20 the denoiser's history length
- * (shaders/hl_shared.h's DEBUGVIEW_*); 1 until the maps have lights (4.1) */
-static cvar_t	r_debugview = {"r_debugview", "1", CVAR_NONE};
+ * (shaders/hl_shared.h's DEBUGVIEW_*); 0 since the maps have lights (4.1) */
+static cvar_t	r_debugview = {"r_debugview", "0", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
 static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction pass, the others */

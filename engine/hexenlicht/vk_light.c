@@ -31,14 +31,15 @@
  * frame's before the passes, and all three after the lists were rebuilt.
  * Quake II RTX counts per cluster and light: 50 MB per buffer on Hexen
  * II's largest maps.
- * For now (stories 3.3, 3.4) the lights are test lights placed with
- * vk_testlight: spheres (at the eye, or at the map's light entities),
- * quads (two polygon lights each) that emit towards where the camera
- * looked, and dynamic spheres; VK_LoadWorld clears them (a new map). Units
- * are Quake II RTX's shaders': a polygon's color is its radiance, with
- * Quake II RTX's sqrt(cos) emission lobe; a sphere contributes its
- * radiance times its solid angle, falling off with the inverse square of
- * the distance. A test sphere's intensity is pi times its radiance, as a
+ * The lights are the map's (vk_maplights.c, 4.1: spheres, some of them
+ * spotlights with a cone) and test lights placed with vk_testlight:
+ * spheres at the eye, quads (two polygon lights each) that emit towards
+ * where the camera looked, and dynamic spheres; VK_LoadWorld clears them
+ * (a new map). Units are Quake II RTX's shaders': a polygon's color is its
+ * radiance, with Quake II RTX's sqrt(cos) emission lobe; a sphere
+ * contributes its radiance times its solid angle, falling off with the
+ * inverse square of the distance (and outside a spotlight's cone to 0). A
+ * test or map sphere's intensity is pi times its radiance, as a
  * UBO sphere light's color is (the sampling gives its solid angle / pi,
  * the diffuse BRDF divides by pi again); Quake II RTX's add_dlights divides
  * a dlight's intensity by 25 first. VK_PrepareUBO calls VK_PrepareLights
@@ -68,7 +69,7 @@
 #define MAX_TEST_QUADS		16	/* two polygon lights each */
 #define TEST_SPHERE_RADIUS	8.0f
 #define TEST_SPHERE_INTENSITY	1000.0f
-#define DEFAULT_LIGHT_LEVEL	300	/* utils/light's DEFAULTLIGHTLEVEL */
+#define MAP_LIGHT_RADIUS	8.0f	/* the test spheres' */
 
 typedef struct
 {
@@ -91,17 +92,21 @@ static int		num_test_dlights;
 static test_quad_t	test_quads[MAX_TEST_QUADS];
 static int		num_test_quads;
 
-/* the light buffer's lights, in its order: the quads' triangles, then the spheres */
+/* the light buffer's lights, in its order: the map's spheres, the quads'
+ * triangles, the test spheres */
 typedef struct
 {
 	int		type;		/* LIGHT_TYPE_* */
 	vec3_t		p[3];		/* a polygon's corners, a sphere's center in p[0] */
 	float		radius, range;	/* a sphere's; range 0 = unlimited */
+	vec3_t		spot_dir;	/* a sphere's cone, 0 0 0 = none */
+	float		spot_cos;	/* the cosine of half its width */
 	vec3_t		color;		/* radiance */
 } light_t;
 
 static light_t		lights[MAX_LIGHT_POLYS];
 static int		num_lights;
+static int		num_map_lights;		/* the first lights */
 
 /* the light lists: list c is list_nodes[list_offsets[c]] up to list_offsets[c + 1] */
 static uint32_t		list_offsets[MAX_LIGHT_LISTS];
@@ -164,7 +169,7 @@ void VK_LoadLightClusters (qmodel_t *worldmodel, const VboPrimitive *prims, uint
 			b[2] = q_min (b[2], v[k][2]);	b[5] = q_max (b[5], v[k][2]);
 		}
 	}
-	VK_UpdateLights ();	/* the test lights were cleared: empty lists */
+	VK_UpdateLights ();	/* the map's lights (VK_LoadMapLights) into their lists */
 }
 
 /* adds the PVS of the open leafs the box touches to row; returns their number */
@@ -364,15 +369,29 @@ static void ResizeLightStats (void)
 	}
 }
 
-/* the test lights into the light buffer's order, then their lists: after
- * every change of the lights (outside frames) */
+/* the map's lights and the test lights into the light buffer's order,
+ * then their lists: after every change of the lights (outside frames) */
 void VK_UpdateLights (void)
 {
 	static const int	tris[2][3] = { { 0, 1, 2 }, { 2, 1, 3 } };
+	const vk_maplight_t	*ml = VK_MapLights (&num_map_lights);
 	int			i, t, k;
 
 	num_lights = 0;
-	for (i = 0; i < num_test_quads; i++)
+	for (i = 0; i < num_map_lights; i++)
+	{
+		light_t	*l = &lights[num_lights++];
+
+		memset (l, 0, sizeof(*l));
+		l->type = LIGHT_TYPE_SPHERE;
+		VectorCopy (ml[i].origin, l->p[0]);
+		l->radius = MAP_LIGHT_RADIUS;
+		l->range = (float)ml[i].level;
+		VectorCopy (ml[i].spot_dir, l->spot_dir);
+		l->spot_cos = ml[i].spot_cos;
+		VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI, l->color);
+	}
+	for (i = 0; i < num_test_quads && num_lights + 2 <= MAX_LIGHT_POLYS; i++)
 	{
 		for (t = 0; t < 2; t++)
 		{
@@ -400,13 +419,15 @@ void VK_UpdateLights (void)
 	ResizeLightStats ();
 }
 
-/* a new map (VK_LoadWorld): no test lights; VK_LoadLightClusters builds
- * the (empty) lists once the new PVS is final */
+/* a new map (VK_LoadWorld): no test lights, and the old map's lights are
+ * gone; VK_LoadLightClusters builds the lists once the new PVS is final
+ * and VK_LoadMapLights has read the new map's */
 void VK_ClearLights (void)
 {
 	num_test_spheres = num_test_quads = num_test_dlights = 0;
-	num_lights = 0;
+	num_lights = num_map_lights = 0;
 	num_cluster_bounds = 0;
+	VK_ClearMapLights ();
 }
 
 
@@ -423,6 +444,8 @@ static void WriteLight (const light_t *l, float *p)
 		VectorCopy (l->p[0], p);
 		p[4] = l->radius;
 		p[5] = l->range;
+		p[6] = l->spot_cos;
+		VectorCopy (l->spot_dir, p + 8);
 	}
 	else
 	{
@@ -555,44 +578,14 @@ static float ArgFloat (int n, float def)
 	return (Cmd_Argc () > n) ? (float)atof (Cmd_Argv (n)) : def;
 }
 
-/* a white sphere at each light entity, its range the entity's light value
- * (utils/light's hard range) times range_scale (0 = unlimited): the real
- * lights come with 4.1 */
-static int AddEntitySpheres (float intensity, float range_scale)
+/* after a change of the lights' cvars or commands: now if vk_world has the
+ * client's world (between "map" and the new world's load the old one's
+ * memory is freed and cl cleared; during signon the lists can be built),
+ * else the next VK_LoadWorld takes them */
+void VK_RebuildLights (void)
 {
-	const char	*data = vk_world.worldmodel->entities;
-	int		n = 0;
-
-	while (data && (data = COM_Parse (data)) != NULL && com_token[0] == '{')
-	{
-		qboolean	is_light = false, has_origin = false;
-		vec3_t		origin;
-		int		level = 0;
-
-		while ((data = COM_Parse (data)) != NULL && com_token[0] != '}')
-		{
-			int	key = !strcmp (com_token, "classname") ? 1 : !strcmp (com_token, "origin") ? 2 :
-				      !strncmp (com_token, "light", 5) ? 3 : 0;	/* utils/light's keys */
-
-			if ((data = COM_Parse (data)) == NULL)
-				break;
-			if (key == 1)
-				is_light = !strncmp (com_token, "light", 5);
-			else if (key == 2)
-				has_origin = sscanf (com_token, "%f %f %f", &origin[0], &origin[1], &origin[2]) == 3;
-			else if (key == 3)
-				level = atoi (com_token);
-		}
-		if (!is_light || !has_origin || num_test_spheres == MAX_LIGHT_POLYS)
-			continue;
-		test_spheres[num_test_spheres].radius = TEST_SPHERE_RADIUS;
-		test_spheres[num_test_spheres].range = (float)(level ? level : DEFAULT_LIGHT_LEVEL) * range_scale;
-		VectorCopy (origin, test_spheres[num_test_spheres].origin);
-		VectorSet (test_spheres[num_test_spheres].color, intensity, intensity, intensity);
-		num_test_spheres++;
-		n++;
-	}
-	return n;
+	if (cl.worldmodel && vk_world.worldmodel == cl.worldmodel)
+		VK_UpdateLights ();
 }
 
 static void PrintBuild (void)
@@ -617,10 +610,10 @@ static void VK_TestLight_f (void)
 		if (!WorldReady ())
 			return;
 		if (dlight ? (num_test_dlights == MAX_LIGHT_SOURCES) :
-			     (num_test_spheres + num_test_quads * 2 >= MAX_LIGHT_POLYS))
+			     (num_map_lights + num_test_spheres + num_test_quads * 2 >= MAX_LIGHT_POLYS))
 		{
 			Con_Printf ("vk_testlight: at most %d %s\n", dlight ? MAX_LIGHT_SOURCES : MAX_LIGHT_POLYS,
-				    dlight ? "dynamic sphere lights" : "lights in the light lists");
+				    dlight ? "dynamic sphere lights" : "lights in the light lists, the map's included");
 			return;
 		}
 		s = dlight ? &test_dlights[num_test_dlights++] : &test_spheres[num_test_spheres++];
@@ -643,7 +636,7 @@ static void VK_TestLight_f (void)
 
 		if (!WorldReady ())
 			return;
-		if (num_test_quads == MAX_TEST_QUADS || num_test_spheres + (num_test_quads + 1) * 2 > MAX_LIGHT_POLYS)
+		if (num_test_quads == MAX_TEST_QUADS || num_map_lights + num_test_spheres + (num_test_quads + 1) * 2 > MAX_LIGHT_POLYS)
 		{
 			Con_Printf ("vk_testlight: at most %d quads\n", MAX_TEST_QUADS);
 			return;
@@ -666,21 +659,10 @@ static void VK_TestLight_f (void)
 		PrintBuild ();
 		return;
 	}
-	if (!q_strcasecmp (what, "entities"))
-	{
-		if (!WorldReady ())
-			return;
-		num_test_spheres = num_test_quads = num_test_dlights = 0;
-		i = AddEntitySpheres (ArgFloat (2, TEST_SPHERE_INTENSITY), q_max (ArgFloat (3, 1.0f), 0.0f));
-		VK_UpdateLights ();
-		Con_Printf ("%d sphere lights at the light entities, %u light list entries\n", i, num_nodes);
-		PrintBuild ();
-		return;
-	}
 	if (!q_strcasecmp (what, "clear"))
 	{
 		num_test_spheres = num_test_quads = num_test_dlights = 0;
-		VK_UpdateLights ();
+		VK_RebuildLights ();
 		return;
 	}
 	if (!q_strcasecmp (what, "list"))
@@ -713,9 +695,7 @@ static void VK_TestLight_f (void)
 		    "  (8, 1000, 1 1 1, 0 = unlimited); the intensity is pi x its radiance\n"
 		    "vk_testlight dlight [radius] [intensity] [r g b]: the same as a dynamic sphere light\n"
 		    "vk_testlight quad [size] [intensity] [r g b]: a square light at the eye, facing the view (32, 50, 1 1 1)\n"
-		    "vk_testlight entities [intensity] [range scale]: replaces the test lights with a sphere at each\n"
-		    "  light entity, its range the entity's light value x range scale (1000, 1; 0 = unlimited)\n"
-		    "vk_testlight list | clear\n");
+		    "vk_testlight list | clear: the test lights (the map's: vk_lights, r_maplights)\n");
 }
 
 /* vk_lights stats: the light statistics the last 3D frame counted, read back */
@@ -804,6 +784,7 @@ static void VK_Lights_f (void)
 	Con_Printf ("%d lights in the light lists: %d polygons, %d spheres (%d with a range%s); %d dynamic sphere lights\n",
 		    num_lights, num_lights - spheres, spheres, build.ranged, range_culling ? "" : ", not culled by it",
 		    num_test_dlights);
+	VK_PrintMapLights ();
 	Con_Printf ("lists of %d clusters (of %d): %u entries (at most %d), mean %.1f, max %u (cluster %d), %d empty\n",
 		    num_lists, vk_pvs.num_clusters, num_nodes, MAX_LIGHT_LIST_NODES,
 		    num_lists ? (double)num_nodes / num_lists : 0.0, max_n, max_c, empty);
@@ -844,6 +825,7 @@ void VK_InitLights (void)
 	}
 	Cmd_AddCommand ("vk_testlight", VK_TestLight_f);
 	Cmd_AddCommand ("vk_lights", VK_Lights_f);
+	VK_InitMapLights ();
 }
 
 void VK_ShutdownLights (void)

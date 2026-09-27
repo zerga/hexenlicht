@@ -120,9 +120,11 @@ END_SHADER_STRUCT( VboPrimitive )
  * LIGHT_POLY_VEC4S vec4s,
  *  - a polygon: the three corners with the color (radiance) in their w,
  *    then (style scale, last frame's style scale, LIGHT_TYPE_POLYGON, 0);
- *  - a sphere: (center, red), (radius, range, 0, green), (0, 0, 0, blue),
- *    then (style scale, last frame's, LIGHT_TYPE_SPHERE, 0); range 0 =
- *    unlimited, else its light fades to 0 there (sphere_light_window);
+ *  - a sphere: (center, red), (radius, range, spot cosine, green), (spot
+ *    direction, blue), then (style scale, last frame's, LIGHT_TYPE_SPHERE,
+ *    0); range 0 = unlimited, else its light fades to 0 there
+ *    (sphere_light_window); a spotlight (direction not 0) lights the cone
+ *    whose half width has that cosine (sphere_light_spot);
  * light list n, the lights of vis cluster n, is
  * light_list_lights[light_list_offsets[n]] up to light_list_offsets[n + 1] */
 BEGIN_SHADER_STRUCT( LightBuffer )
@@ -228,7 +230,8 @@ struct LightPolygon
 	vec3 color;
 	float light_style_scale;
 	float prev_style_scale;
-	uint type;		/* Hexenlicht: LIGHT_TYPE_*; a sphere: positions[0] center, [1].x radius, [1].y range */
+	uint type;		/* Hexenlicht: LIGHT_TYPE_*; a sphere: positions[0] center, [1].x radius, [1].y range,
+				 * [1].z a spotlight's cosine of half its width, [2] its direction (0 = none) */
 };
 
 VboPrimitive
