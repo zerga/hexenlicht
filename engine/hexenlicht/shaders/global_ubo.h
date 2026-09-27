@@ -29,6 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    tlas_instance_* arrays);
  *  - pt_particle_brightness defaults to 15 (3.7: Hexen II's particles and
  *    sprites at GL's colors under the tone mapper's exposure);
+ *  - flt_antilag_style is Hexenlicht's (4.13, asvgf_gradient_img.comp);
  *  - the shader part is only declared when the shader defines
  *    GLOBAL_UBO_DESC_SET_IDX, so shaders without the UBO can include the
  *    structs (define it before including any of these headers). */
@@ -54,6 +55,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	UBO_CVAR_DO(flt_antilag_lf, 0.2) \
 	UBO_CVAR_DO(flt_antilag_spec, 2) \
 	UBO_CVAR_DO(flt_antilag_spec_motion, 0.004) /* scaler for motion vector scaled specular anti-blur adjustment */ \
+	UBO_CVAR_DO(flt_antilag_style, 4) /* Hexenlicht (4.13): scale of a light style's unsquared gradient (asvgf_gradient_img.comp), 0 = Quake II RTX's gradient formula */ \
 	UBO_CVAR_DO(flt_atrous_depth, 0.5) /* wavelet fitler sensitivity to depth, [0..inf) */ \
 	UBO_CVAR_DO(flt_atrous_deflicker_lf, 2) /* max brightness difference between adjacent pixels in the LF channel, (0..inf) */ \
 	UBO_CVAR_DO(flt_atrous_hf, 4) /* number of a-trous wavelet filter iterations on the LF channel, [0..4] */ \

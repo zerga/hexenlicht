@@ -365,6 +365,20 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   as water (blue) instead of glass. romeric2's centre isn't repeatable
   between runs (its rotating brushes): mask it with a second run
   (`tga_diff.ps1 -Noise`).
+- **Denoiser and light styles (4.13):** castle5's pulse as in "Light
+  styles (4.2)" (`noclip`, `+forward` 150 frames, then 60 shots 4 frames
+  apart) with `tm_enable 0`, `bloom_enable 0`, `r_maplight_scale 100`,
+  once with `flt_enable 1` and once with 0; the per-shot mean linear
+  luminance above the HUD, the ratio denoised / raw (4.13: rise
+  0.93–0.97, fall 1.17–1.64; `main` 0.70–0.72 and 1.48–2.34;
+  `flt_antilag_style 0` gives `main`'s gradient formula: 0.73–0.76 against `main`'s 0.70–0.73, the light choice stays). A bias check: `pause` and
+  ~250 waits, then shots with `flt_enable` 1 and 0 must agree. Paused
+  gradients: rider2c, `+lookup` 20 frames, paused, `flt_show_gradients 1`:
+  no green or blue along the lit wall's upper edge (16-bit barycentrics
+  put a band there); the red (LF) there is below 1 % — the overlay is added
+  before the exposure: read its size with `tm_enable 0` (the red channel's
+  linear difference to a shot without the overlay). Noise: the spatial
+  noise of the same shots against `main`'s.
 - **Denoiser (3.6):** `flt_enable 0` must match the build before it
   (3.6: demo1, cath, romeric2 × modes 0 1 2 3 9 15 16 18, paused, `vk_testlight
   entities`: the G-buffer modes identical everywhere, demo1 in all modes;

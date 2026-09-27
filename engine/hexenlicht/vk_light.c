@@ -622,8 +622,8 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 
 	/* the light styles (4.2): R_AnimateLight's value, GL's, relative to its normal
 	 * 'm' (264), so an unstyled light stays 1 and a style animates as in GL frame for
-	 * frame (no clamp: 'z' is 2.08); and last 3D frame's, which the denoiser's
-	 * gradient samples replay their light choice with (this frame's after its history
+	 * frame (no clamp: 'z' is 2.08); and last 3D frame's, with which (the larger of the two, 4.13) the denoiser's
+	 * gradient samples weigh the lights (this frame's after its history
 	 * was dropped: Quake II RTX's temporal_frame_valid). A light at 0 stays in the
 	 * lists: the light CDF gives it no weight */
 	for (i = 0; i < (int)Q_COUNTOF(style_scales[0]); i++)

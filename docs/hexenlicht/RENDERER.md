@@ -512,7 +512,7 @@ bindings.
   `DLSS_NORMAL_ROUGHNESS` rgba16f and `DLSS_SPEC_HIT` r16f while RR is,
   else 1x1: `vk_dlss_images`, `IMG_WIDTH_DLSS`/`IMG_WIDTH_RR`; 4 or 30
   bytes per pixel): about 320 bytes per pixel by their
-  formats, 89 of them the denoiser's; 1201 MB allocated at 2560x1440 (3.8: +120). New
+  formats, 89 of them the denoiser's; 1201 MB allocated at 2560x1440 (3.8: +120; 4.13: +9 bytes per pixel, ~32 MB, for 32-bit barycentrics and RGBA16F gradients). New
   images mean no denoiser history
   (`VK_ResetDenoiserHistory`) and no last frame in the UBO
   (`VK_ResetUBOHistory`: the `_prev` sizes would point past smaller
@@ -696,7 +696,7 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   GL's normal `'m'`: an unstyled light stays 1 and a style animates as in GL
   frame for frame; no clamp (`'z'` is 2.08; Q2RTX clamps to 2). The second
   scale is last 3D frame's value of the style, for the denoiser's gradient
-  samples, which replay last frame's light choice with it; this frame's
+  samples, which weigh lights by the larger of it and this frame's (4.13); this frame's
   after the denoiser's history was dropped (Q2RTX's `temporal_frame_valid`).
   Test lights stay 1. A light at 0 (a switchable one off) stays in the
   lists: the light CDF weighs it by its scale, so it is never picked and a
@@ -1100,7 +1100,8 @@ radiance of a texture color of 1):
   check reads last frame's in that layout, so it is misaligned for the
   one frame after a swapped one.
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
-  weapon shadows, no sunlight and the hit-distance clear. Without the
+  weapon shadows, no sunlight, the hit-distance clear and a gradient
+  sample's light style change (4.13, [Denoiser](#denoiser-vk_asvgfc)). Without the
   denoiser the lit image is noisy at one sample per pixel. The TAA pass
   (3.8), the bloom and tone mapping (3.7) and FSR (3.8) follow; without
   tone mapping (`tm_enable 0`) the composite clamps.
@@ -1214,8 +1215,14 @@ default; 0 = the undenoised composite, as before). Its TAA pass
   metallic, and its position becomes that surface's position now, found
   through the visibility buffer and `model_prev_to_current` (the instance
   map, [Instances](#instances-vk_instancec)). The lighting passes shade it
-  as last frame did (`get_is_gradient`: last frame's light style scale,
-  the light statistics of two frames ago), with this frame's lights.
+  as last frame did (`get_is_gradient`: the light statistics of two
+  frames ago; a list light weighed by the larger of last frame's and this
+  frame's style, 4.13, Q2RTX by last frame's, so a light that comes on
+  can be picked), with this frame's lights. The visibility buffer's
+  barycentrics are 32-bit (`PT_VISBUF_BARY_A/B` R32G32F, 4.13; Q2RTX's
+  16-bit ones moved the rebuilt point on Hexen II's large world triangles,
+  and penumbra samples flipped: paused gradients along shadow edges,
+  rider2c looking up).
   Only with history: without, the last frame's visibility buffer and
   instance map may belong to another map or instance list, whose
   primitives the shader would read by device address unchecked (Q2RTX
@@ -1247,6 +1254,29 @@ default; 0 = the undenoised composite, as before). Its TAA pass
   (the cathedral), measured with direct lighting only against the average
   of 20 raw frames at a sixteenth of the intensity (Q2RTX.md open
   questions).
+- **Light styles** (4.13): Q2RTX squares the relative change
+  (`get_gradient`), so a style's small steps (castle5's pulse: ~7 % every
+  0.1 s, a gradient of 0.005) never trigger the anti-lag, and the HF
+  history (up to 50 frames, `flt_min_alpha_color_hf` 0.02) smooths them:
+  the denoised pulse ended 0.70× the raw image, ~16 shots (1.3 s) behind.
+  A gradient sample whose sampled list light changed its style and is
+  unshadowed records the exact relative change
+  (`path_tracer_rgen.h`'s `nee_style_change`; `direct_lighting.rgen`
+  writes it into its stratum's third channel of `ASVGF_GRAD_HF_SPEC_PING`,
+  RGBA16F); `asvgf_gradient_img.comp`'s HF and specular gradients take
+  the larger of it times `flt_antilag_style` (4; 0: only the squared one) and the
+  squared one. Measured (castle5's pulse, 60 shots 4 frames apart, the
+  lit image with `tm_enable 0`, `bloom_enable 0`, `r_maplight_scale 100`,
+  against `flt_enable 0`): the rise at 0.93–0.97× raw (scale 1:
+  0.88–0.91, 2: 0.90–0.94; `main` 0.70–0.72), the fall 1.17–1.64× (`main`
+  1.48–2.34); paused, denoised and raw agree (no bias); the denoised
+  image's spatial noise +1–16 % (`main` 0.032–0.062, scale 4
+  0.037–0.063; raw 0.23–0.26). Cost about +0.1 ms (castle5,
+  1920x1080, Release: the frame 7.34 → 7.48 ms moving, 7.37 → 7.47 paused; direct light +0.01, the
+  denoiser +0.04–0.07). The paused LF (red) gradients on dark bounce-lit
+  surfaces are below 1 % (≤ 0.004 in linear light, `tm_enable 0`): the
+  overlay is added before the exposure, which brightens them in a dark
+  view.
 - **History** is the last 3D frame's images. `VK_EndDenoiserFrame` marks
   them valid after a frame with the denoiser; `VK_ResetDenoiserHistory`
   drops them on a new map (`R_NewMap`), with new images (`VK_CreateImages`),
@@ -1716,6 +1746,7 @@ overlay, and a measuring mode.
 |---|---|
 | `r_debugview 0-20` | 0 the lit image, 1-20 the G-buffer's, lighting and denoiser channels (see [3D view](#3d-view-vk_viewc)) |
 | `flt_enable 0/1`, `flt_show_gradients 0/1` | the denoiser (Q2RTX's cvar, 1), its gradients over the image (see [Denoiser](#denoiser-vk_asvgfc)); Q2RTX's other `flt_*` cvars tune it |
+| `flt_antilag_style` | how strongly a light style's change drops the denoiser's history (4; 0 = only Quake II RTX's squared gradient, the 4.13 light choice stays; see [Denoiser](#denoiser-vk_asvgfc)) |
 | `tm_enable 0/1`, `tm_debug 0-2`, `bloom_enable 0/1`, `bloom_debug 0-3` | tone mapping and auto exposure (Q2RTX's `tm_*` cvars tune them), their histogram or curve over the view; bloom (`bloom_sigma`, `bloom_intensity`) and its stages (see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)) |
 | `vk_exposure` | the adapted luminance read back (two frames old) |
 | `profiler 0/1`, `profiler_samples`, `vk_profiler`, `vk_benchmark 0/1` | the GPU timers over the screen, the frames they average (60); printed; full load for measuring (no 72 fps cap, no sleep when unfocused) (see [Profiler](#profiler-vk_profilerc)) |

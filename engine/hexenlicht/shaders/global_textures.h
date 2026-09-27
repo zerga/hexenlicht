@@ -43,6 +43,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    needs them (vk_dlss.c);
  *  - PT_VIEW_DEPTH is declared r16f, its format (Quake II RTX declares
  *    r32f, which the validation layer reports as undefined behaviour);
+ *  - PT_VISBUF_BARY_A/B are R32G32F (Quake II RTX: R16G16F, which moved a
+ *    gradient sample's rebuilt point on Hexen II's large world triangles)
+ *    and ASVGF_GRAD_HF_SPEC_PING/PONG RGBA16F (the third channel: a light
+ *    style's change, asvgf_gradient_img.comp) (4.13);
  *  - one GPU, so the _MGPU sizes are the full ones;
  *  - a shader that defines GLOBAL_TEXTURES_SAMPLED_ONLY gets only the
  *    sampled TEX_* images (the composite: a fragment shader);
@@ -105,8 +109,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	IMG_DO(ASVGF_ATROUS_PONG_MOMENTS, 27, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(ASVGF_GRAD_LF_PING,        28, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(ASVGF_GRAD_LF_PONG,        29, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
-	IMG_DO(ASVGF_GRAD_HF_SPEC_PING,   30, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
-	IMG_DO(ASVGF_GRAD_HF_SPEC_PONG,   31, R16G16_SFLOAT,       rg16f,   IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
+	IMG_DO(ASVGF_GRAD_HF_SPEC_PING,   30, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
+	IMG_DO(ASVGF_GRAD_HF_SPEC_PONG,   31, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_GRAD_MGPU, IMG_HEIGHT_GRAD) \
 	IMG_DO(BLOOM_HBLUR,               32, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
 	IMG_DO(BLOOM_VBLUR,               33, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_TAA / 4,   IMG_HEIGHT_TAA / 4 ) \
 	IMG_DO(FSR_EASU_OUTPUT,           34, R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH,           IMG_HEIGHT     ) \
@@ -125,8 +129,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LIST_IMAGES_A_B \
 	IMG_DO(PT_VISBUF_PRIM_A,          NUM_IMAGES_BASE + 0,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_VISBUF_PRIM_B,          NUM_IMAGES_BASE + 1,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
-	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 2,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
-	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 3,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 2,  R32G32_SFLOAT,       rg32f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 3,  R32G32_SFLOAT,       rg32f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_CLUSTER_A,              NUM_IMAGES_BASE + 4,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_CLUSTER_B,              NUM_IMAGES_BASE + 5,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_BASE_COLOR_A,           NUM_IMAGES_BASE + 6,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
@@ -157,8 +161,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LIST_IMAGES_B_A \
 	IMG_DO(PT_VISBUF_PRIM_B,          NUM_IMAGES_BASE + 0,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_VISBUF_PRIM_A,          NUM_IMAGES_BASE + 1,  R32G32_UINT,         rg32ui,  IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
-	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 2,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
-	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 3,  R16G16_SFLOAT,       rg16f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_B,          NUM_IMAGES_BASE + 2,  R32G32_SFLOAT,       rg32f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
+	IMG_DO(PT_VISBUF_BARY_A,          NUM_IMAGES_BASE + 3,  R32G32_SFLOAT,       rg32f,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_CLUSTER_B,              NUM_IMAGES_BASE + 4,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_CLUSTER_A,              NUM_IMAGES_BASE + 5,  R16_UINT,            r16ui,   IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \
 	IMG_DO(PT_BASE_COLOR_B,           NUM_IMAGES_BASE + 6,  R16G16B16A16_SFLOAT, rgba16f, IMG_WIDTH_MGPU,      IMG_HEIGHT     ) \

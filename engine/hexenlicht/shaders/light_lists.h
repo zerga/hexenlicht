@@ -42,6 +42,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - a dynamic light is picked by its weight (luminance x solid angle,
  *    faded by its range), not uniformly, and a dynamic sphere may have a
  *    range, in spot_data (4.4: the game's dynamic lights, vk_light.c);
+ *  - a gradient sample weighs a list light by the larger of last frame's
+ *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
+ *    light that comes on can be picked;
  *  - the light buffer is read by device address (vertex_buffer.h). */
 
 #ifndef _LIGHT_LISTS_
@@ -345,7 +348,10 @@ sample_polygonal_lights(
 		// in order to keep the CDF consistent and make sure that the same light is picked,
 		// regardless of animations. This makes the image more stable around blinking lights,
 		// especially in shadowed areas.
-		light_lum *= is_gradient ? light.prev_style_scale : light.light_style_scale;	
+		// Hexenlicht: the larger of last frame's and this frame's (4.13): a light that was at 0
+		// and comes on can be picked, so its gradient shows (asvgf_gradient_img.comp); the
+		// choice differs from last frame's only while a style rises
+		light_lum *= is_gradient ? max(light.prev_style_scale, light.light_style_scale) : light.light_style_scale;
 
 		// Hexenlicht: sky lights (negative color) with the physical sky's luminance
 		// limits come with the sky (4.6)
