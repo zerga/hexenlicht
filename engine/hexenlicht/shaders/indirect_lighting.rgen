@@ -42,7 +42,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    Reconstruction, 3.10) in PT_SPECULAR_HIT_DIST, which
  *    direct_lighting.rgen clears (so it stays 0 without a specular ray: a
  *    diffuse bounce, no surface, lava, the rows half resolution skips);
- *  - no sunlight until the sky and sun (4.6). */
+ *  - the sun at bounce hits (4.6, get_sunlight): the models around a light
+ *    cast its shadows, as in direct_lighting.rgen;
+ *  - a specular bounce that hits the sky sees it as primary rays do
+ *    (env_map's GL sky), a diffuse one gathers the dome (4.6: Quake II
+ *    RTX's env_map with remove_sun for both). */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -302,7 +306,8 @@ indirect_lighting(
 
 		if(!is_analytic_light || is_specular_ray)
 		{
-			vec3 env = env_map(bounce_direction, true);
+			// Hexenlicht: a specular ray sees the sky, a diffuse one gathers the dome (see the top)
+			vec3 env = env_map(bounce_direction, !is_specular_ray);
 
 			env *= global_ubo.pt_env_scale;
 			
@@ -407,7 +412,11 @@ indirect_lighting(
 		bounce_throughput *= bounce_base_color;
 		bounce_throughput *= indirect_specular_weight;
 
-		// Hexenlicht: the sun's range for bounces comes with the sun (4.6)
+		float sun_bounce_range = global_ubo.pt_sun_bounce_range;
+		if(is_specular_ray)
+			sun_bounce_range *= (1 - sqrt(primary_roughness));
+
+		float sun_attenuation = square(clamp(1.0 - square(square(ray_payload_geometry.hit_distance / sun_bounce_range)), 0, 1));
 
 		if(spec_bounce_index == 0)
 		{
@@ -439,7 +448,27 @@ indirect_lighting(
 			bounce_contrib += bounce_throughput * bounce_diffuse;
 		}
 
-		// Hexenlicht: sunlight on the bounce (get_sunlight) comes with the sky and sun (4.6)
+		if(sun_attenuation > 0)
+		{
+			// Hexenlicht: the models around a light cast the sun's shadows (see the top)
+			vec3 bounce_sun_diffuse, bounce_sun_specular;
+			get_sunlight(
+				bounce_cluster_idx,
+				bounce_material_id,
+				bounce_position,
+				bounce_normal,
+				bounce_geo_normal,
+				bounce_direction,
+				vec3(0), // base_reflectivity
+				0.0, // specular_factor
+				1.0, // roughness
+				MEDIUM_NONE,
+				false, // enable_caustics
+				bounce_sun_diffuse,
+				bounce_sun_specular,
+				shadow_cull_mask | AS_FLAG_LIGHT_MODELS);
+			bounce_contrib += bounce_throughput * bounce_sun_diffuse * global_ubo.sun_bounce_scale * sun_attenuation;
+		}
 
 		if(spec_bounce_index < global_ubo.pt_num_bounce_rays - 1)
 		{

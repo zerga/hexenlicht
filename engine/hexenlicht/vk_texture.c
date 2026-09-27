@@ -15,7 +15,8 @@
  *   space thanks to the sRGB format.
  * - Filtering follows the flags: mipmapped textures (world, models,
  *   sprites) are trilinear + anisotropic with repeat addressing; TEX_NEAREST
- *   is point sampled, everything else bilinear, both clamped to the edge.
+ *   is point sampled, everything else bilinear, both clamped to the edge
+ *   (repeating with Hexenlicht's TEX_REPEAT: the 2D backtile, the sky).
  * - Slot 0 is a 1x1 white texture; freed slots point back to it, so the
  *   array never references a destroyed image.
  * - TEX_SPECIAL_TRANS alpha is stored as opacity (GL blends those skins
@@ -102,6 +103,7 @@ const unsigned int ColorPercent[16] = {
 static VkSampler	sampler_nearest;	/* point, clamp */
 static VkSampler	sampler_nearest_repeat;	/* point, repeat (TEX_REPEAT: the 2D backtile) */
 static VkSampler	sampler_linear;		/* bilinear, no mips, clamp */
+static VkSampler	sampler_linear_repeat;	/* bilinear, no mips, repeat (TEX_REPEAT: the sky, 4.6) */
 static VkSampler	sampler_trilinear;	/* trilinear + anisotropy, repeat */
 static VkDescriptorPool	texture_pool;
 static VkCommandBuffer	upload_cmd;		/* while uploading: from VK_BeginUpload */
@@ -158,7 +160,7 @@ static VkSampler VK_SamplerForFlags (int flags)
 		return (flags & TEX_REPEAT) ? sampler_nearest_repeat : sampler_nearest;
 	if (flags & TEX_MIPMAP)
 		return sampler_trilinear;
-	return sampler_linear;
+	return (flags & TEX_REPEAT) ? sampler_linear_repeat : sampler_linear;
 }
 
 
@@ -660,6 +662,8 @@ void VK_InitTextures (void)
 						   VK_SAMPLER_ADDRESS_MODE_REPEAT, 1.0f);
 	sampler_linear = VK_CreateSampler (VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, false,
 					   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
+	sampler_linear_repeat = VK_CreateSampler (VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, false,
+						  VK_SAMPLER_ADDRESS_MODE_REPEAT, 1.0f);
 	sampler_trilinear = VK_CreateSampler (VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, true,
 					      VK_SAMPLER_ADDRESS_MODE_REPEAT, q_min (gl_max_anisotropy, 16.0f));
 
@@ -735,10 +739,12 @@ void VK_ShutdownTextures (void)
 		vkDestroySampler (vk.device, sampler_nearest_repeat, NULL);
 	if (sampler_linear)
 		vkDestroySampler (vk.device, sampler_linear, NULL);
+	if (sampler_linear_repeat)
+		vkDestroySampler (vk.device, sampler_linear_repeat, NULL);
 	if (sampler_trilinear)
 		vkDestroySampler (vk.device, sampler_trilinear, NULL);
 	texture_pool = VK_NULL_HANDLE;
 	vk.texture_set_layout = VK_NULL_HANDLE;
 	vk.texture_set = VK_NULL_HANDLE;
-	sampler_nearest = sampler_nearest_repeat = sampler_linear = sampler_trilinear = VK_NULL_HANDLE;
+	sampler_nearest = sampler_nearest_repeat = sampler_linear = sampler_linear_repeat = sampler_trilinear = VK_NULL_HANDLE;
 }

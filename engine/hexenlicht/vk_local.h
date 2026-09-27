@@ -350,6 +350,15 @@ int VK_EmissiveSkin (int slot);			/* the skin's emissive texture, made on first 
 float VK_EmissiveScale (void);			/* r_emissive_scale: the emissive materials' factor */
 void VK_PrintEmissive (void);			/* vk_lights */
 
+/* vk_sky.c: Hexen II's sky as GL draws it (env_map), faithful or lighting
+ * the scene (r_sky_light: a constant dome, an optional sun), 4.6 */
+void VK_InitSky (void);
+void VK_ShutdownSky (void);
+void VK_LoadSky (qmodel_t *worldmodel, const struct VboPrimitive *prims, uint32_t num_prims);	/* VK_LoadWorld, after the PVS */
+const uint32_t *VK_SkyVisibility (uint32_t *version);	/* LightBuffer's sky_visibility; the version counts the maps */
+struct QVKUniformBuffer_s;
+void VK_PrepareSky (struct QVKUniformBuffer_s *ubo);	/* VK_PrepareUBO */
+
 /* vk_instance.c: the frame's model instances (ModelInstance in
  * shaders/global_ubo.h): the brush entities, then the alias entities group
  * by group, the first-person weapon last; rebuilt from r_scene by

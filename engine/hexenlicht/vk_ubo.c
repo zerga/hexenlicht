@@ -9,7 +9,7 @@
  * cvars of Quake II RTX's UBO_CVAR_LIST (registered here with its
  * defaults; each does something once the pass that reads it is imported)
  * and the Hexenlicht block: the frame's buffers and the debug view's
- * values.
+ * values; vk_sky.c fills the sky's fields and the sun's (4.6).
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -39,7 +39,8 @@
  * includes the UBO) and update these. */
 COMPILE_TIME_ASSERT(ubo_tlas, offsetof(QVKUniformBuffer_t, tlas) == 3640);
 COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3780);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3784);
+COMPILE_TIME_ASSERT(ubo_sky_dome, offsetof(QVKUniformBuffer_t, sky_dome) == 3792);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3816);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -253,6 +254,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.particles = ef->particles;
 	ubo.sprites = ef->sprites;
 	VK_PrepareLights (&ubo);	/* light_buffer, the sphere lights, num_static_lights */
+	VK_PrepareSky (&ubo);		/* the sky's textures, the dome, the sun, pt_env_scale */
 	/* the tone mapper's buffers (vk_tonemap.c), the adapted luminance read
 	 * back and the bloom's intensity (vk_bloom.c; Quake II RTX's
 	 * vkpt_bloom_update without its under-water and menu variants) */

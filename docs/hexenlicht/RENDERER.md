@@ -15,7 +15,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
-[Emissive surfaces](#emissive-surfaces-vk_emissivec) ·
+[Emissive surfaces](#emissive-surfaces-vk_emissivec) · [Sky](#sky-vk_skyc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -51,7 +51,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 - `engine/hexenlicht/stubs.c` provides the renderer symbols not implemented
   yet, sectioned by the story that replaces them; a story moves its section
   into real files. It still holds `R_InitTextures`/`r_notexture_mip` (GL's
-  checkerboard), the rest of `R_Init`, `R_InitSky` (→ 4.6) and GL-named cvars
+  checkerboard), the rest of `R_Init` and GL-named cvars
   kept so configs keep their settings (`gl_glows`, `gl_coloredlight`,
   `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` (4.4:
   default 1 here, 0 in HoT) and `gl_extra_dynamic_lights` (0 as in HoT:
@@ -146,6 +146,10 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   cache (`Draw_ClearCachedPics`), like `gl_rmisc.c`.
 - `TEX_SPECIAL_TRANS` alpha is stored as opacity (GL blends those inverted),
   so alpha means opacity in every texture.
+- Samplers by the flags: mipmapped textures trilinear and anisotropic,
+  repeating; `TEX_NEAREST` point sampled, the rest bilinear, both clamped,
+  or repeating with Hexenlicht's `TEX_REPEAT` (the 2D backtile, the sky's
+  layers, 4.6).
 - The 8-bit pixels of alias model skins (`gl_model.c` names them
   `<model>_<skin>`) with a texel whose channel reaches
   `VK_EMISSIVE_THRESHOLD` (215) stay with their slot (4.5, freed with it):
@@ -450,7 +454,9 @@ bindings.
   instanced primitives, materials, PVS, particles, sprites, the light
   buffer and the three light statistics buffers (3.4), the tone mapping
   and readback buffers (3.7) — the particle
-  texture slot, `anim_frame`, `debug_view`, `view_cluster`; our
+  texture slot, `anim_frame`, `debug_view`, `view_cluster`, and the sky's
+  fields (4.6: its textures, scroll, `r_skyalpha`, the dome; the sun uses
+  Q2RTX's `sun_*` fields); our
   `ModelInstance`; `TlasInstanceInfo` instead of Q2RTX's `InstanceBuffer`;
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
   buffer-reference macros), `global_textures.h` (render-target lists; set 1:
@@ -466,15 +472,18 @@ bindings.
   `pt_logic_sprite` with GL's look; beams and explosions come with 6.3),
   `path_tracer_rgen.h` (3.2: the passes' common code — `trace_geometry_ray`,
   `trace_effects_ray`, `get_material`, `get_rng`, `env_map` — with the TLASes
-  by device address; `env_map` is black until 4.6; `get_material` tints a
+  by device address; `env_map` is Hexen II's sky and the sky light's dome
+  since 4.6 ([Sky](#sky-vk_skyc)); `get_material` tints a
   model's base color with its `colorshade` hue; 3.3: shadow and caustic rays
   and `get_direct_illumination`, since 3.4 with the light statistics per
-  list entry; no sunlight until 4.6; 3.6: Q2RTX's `get_is_gradient`, the
+  list entry; 4.6: `get_sunlight`, its shadow ray ending at the first sky
+  face (`trace_sky_distance`); 3.6: Q2RTX's `get_is_gradient`, the
   denoiser's gradient samples),
   `light_lists.h` (3.3: Q2RTX's polygon and sphere light sampling; 3.4:
   spheres in the light lists, the statistics per list entry; a list's
   current light count instead of Q2RTX's light-count history, which only
-  lists that change every frame need, no sky lights),
+  lists that change every frame need, no sky lights: 4.6's sky light is a
+  dome that bounce rays gather),
   `brdf.glsl` (GGX, `get_reflectivity`, `composite_color`).
 - **Random numbers:** Q2RTX's `get_rng` over blue noise: Christoph Peters'
   CC0 textures (`libs/bluenoise`, 64 of 64x64, 16-bit RGBA; copied next to
@@ -539,8 +548,8 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
 [Emissive surfaces](#emissive-surfaces-vk_emissivec):
 
 - **The light buffer's lights** (`LightBuffer` in `shaders/vertex_buffer.h`:
-  Q2RTX's without its material table, light styles, cluster debug mask and
-  sky visibility; one host-visible buffer per frame in flight,
+  Q2RTX's without its material table, light styles and cluster debug mask;
+  with its sky visibility since 4.6; one host-visible buffer per frame in flight,
   `global_ubo.lights`; the shaders' `light_buffer`), `LIGHT_POLY_VEC4S`
   vec4s each, of two types (`LIGHT_TYPE_*` in the fourth vec4's z):
   - **polygons** (Q2RTX's light polygons): the corners with the color in
@@ -582,7 +591,8 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   open leaf (inside solid) are in no list; a light that doesn't fit into
   `MAX_LIGHT_LIST_NODES` is left out whole (both counted by `vk_lights`).
   Each frame in flight's buffer copies the lists when their version
-  changed; the lights are written every frame, with their light style (4.2,
+  changed (and `vk_sky.c`'s sky visibility, the sun's clusters, with a new
+  map, 4.6); the lights are written every frame, with their light style (4.2,
   below). The map's lights (range = their level) on the 59 maps: up to 19020 list
   entries (tibet1), mean 4.7–22 per cluster, the longest 249 (romeric6: 315
   lights in 70 clusters), built in at most 2 ms; by the PVS alone (3.4,
@@ -963,7 +973,8 @@ radiance of a texture color of 1):
 - **Left out** (not emissive in GL): runes, `+0fire` and `+0sun`
   (buttons), water, slime and the other turbulent textures (unlit in GL
   because they are turbulent; E5's `.mat` files can make `*skulls`,
-  `*rtex386`, `*rtex153`, `*rtex346` lava), the sky (4.6); no emissive
+  `*rtex386`, `*rtex153`, `*rtex346` lava), the sky (its own modes,
+  [Sky](#sky-vk_skyc)); no emissive
   surface has a light style (`vertex_buffer.h`'s `light_style_scale`
   stays 1).
 - **Against GL:** the lava lights its rooms through light instead of the
@@ -983,6 +994,105 @@ radiance of a texture color of 1):
   instances with an emissive skin; `vk_textures` the kept skin pixels. A
   change of `r_lava_light` or `r_emissive_scale` rewrites the materials
   (after the GPU is idle) and rebuilds the lights.
+
+## Sky (`vk_sky.c`)
+
+Story 4.6. Hexen II's sky as GL draws it, and the two modes of PLAN §1:
+faithful (the sky lights nothing) and sky light (a dome and an optional
+sun). Q2RTX's physical sky is not imported (its data has no license, see
+[Q2RTX.md](Q2RTX.md)).
+
+- **GL's sky** (HoT's `gl_warp.c`: `R_InitSky`, `EmitSkyPolys`; its
+  default path, `gl_multitexture 0`): a 256x128 texture, the right half the
+  back layer (scrolling at `realtime` × 8), the left half the front layer
+  (× 16; color index 0 transparent, those texels given the back layer's
+  average color so bilinear filtering leaves no dark fringe; the palette's
+  transparent 255 transparent with its own color), blended over the back at `r_skyalpha` (0.67; 1 is GL's
+  multitexture look, an opaque front). The texture coordinates depend on
+  the direction only: height counts three times, the direction scaled to
+  6 × 63 units, plus the scroll, in texels of the 128x128 layers; bilinear,
+  no mipmaps. One sky per map: the world's last sky texture (castle5, tower
+  and thomas also have a sky000; GL shows their sky001 on every sky face).
+  The game has five: a grey storm (sky001 of 28 maps: demo, castle4,
+  castle5, cath, tower, village, keep, tibet, ravdm2, thomas), a blue day
+  (egypt, rider2c, ravdm4), red (meso), a night (romeric, ravdm1) and a
+  grey-blue one (rider1a, eidolon); keep4, ravdm3, ravdm5 and monsters have
+  none.
+- **Drawn** (`path_tracer_rgen.h`'s `env_map` and `hexen2_sky`): per pixel
+  from the ray's direction, as the software renderer does (`d_sky.c`, the
+  same formula); GL computes the coordinates at the vertices of its polygon
+  pieces and interpolates, which warps the sky seen up close. The layers
+  are two textures made at map load (`VK_LoadSky`: `upsky`, `lowsky`,
+  `TEX_RGBA | TEX_LINEAR | TEX_REPEAT`, bilinear and repeating), blended in
+  sRGB as GL blends the framebuffer's bytes (the sRGB textures filter in
+  linear light: a sub-texel difference). Primary rays, reflections,
+  refractions and specular bounces see it, in both modes; as in Q2RTX it
+  goes into `PT_TRANSPARENT` (not denoised) with a rotation-only motion
+  vector (the moving clouds looked sharp with TAAU and DLSS SR/RR in 4.6's
+  shots). `R_InitSky` does nothing: the sky is taken from the world at map
+  load. It scrolls on GL's `realtime` (the clock: it runs while paused and
+  differs between runs); with `host_framerate` on game time, so that test
+  runs repeat (TESTING.md).
+- **Brightness:** the blended color is the radiance (times 1: GL's
+  fullbright relation to the walls, measured in 4.5), under the auto
+  exposure like everything else: at demo1's start looking up, the sky is
+  2.6 times GL's in linear light and the walls 5.6 times (the map lights'
+  calibration is 4.9's), at egypt1's 0.72 times; a view filled with sky is
+  exposed for it (a night sky looks brighter than GL's). Scaling the sky by
+  the exposure as the effects are (R41) was rejected: a view filled with
+  sky would make the exposure chase itself to its limits.
+- **Up close:** flying up (`noclip`) under meso9's sky face (z 704), the
+  sky matches `glh2`'s from 328 to 98 units below; 17 units below `glh2`
+  draws black, Hexenlicht the sky.
+- **Modes:** `r_sky_light 0` (faithful, the default until calibration
+  picks per map; per-map values with 4.7): the sky lights nothing, as
+  before (glossy surfaces reflect it: specular bounces see it). `r_sky_light
+  1`: diffuse bounce rays that hit the sky gather a dome of constant
+  radiance (`env_map` with `remove_sun`, Q2RTX's path for a sky without
+  portal lights): the sky's average color as GL shows it (both layers
+  blended at `r_skyalpha`, averaged over all pairs of their texels, linear;
+  `vk_sky` prints it: grey storm 0.065, blue 0.28 0.28 0.45, red 0.12 0 0,
+  night 0.017 0.018 0.024, grey-blue 0.056 0.057 0.067) times
+  `r_sky_light_scale` (1: the sky lights with the light it shows). Constant,
+  not the scrolling layers: the light doesn't flicker as clouds pass and
+  the denoiser's gradients see no change. The sky's faces are no polygon
+  lights (Q2RTX's portal lights): they would fit (at most 138,000 list
+  entries, tibet1, with the map lights' 19,000; 524,288 fit), but an
+  outdoor cluster's list would hold up to ~1000 sky triangles, and a pixel
+  weighs 8 candidates of one partition of its list, so the map's lights
+  would seldom be among them. Measured at egypt1's courtyard: the floor
+  takes the sky's blue (sRGB blue 20 → 28, → 41 at scale 4).
+- **The sun** (`r_sun 1`, only in the sky light mode): Q2RTX's
+  `get_sunlight` (a disc of `r_sun_angle` degrees, 1; sampled in direct
+  lighting and at bounce hits, `pt_direct_sun_light`, `pt_sun_bounce_range`,
+  `pt_sun_specular` as Q2RTX's) from `r_sun_elevation` and
+  `r_sun_azimuth` (degrees; the azimuth from +x towards +y, as a yaw;
+  placeholders 45 and 45), of `r_sun_color` (sRGB, white) at
+  `r_sun_intensity` (1: its irradiance is π, a white surface facing it is
+  lit as GL's fullbright; measured with the bounces off, egypt1's floor of
+  albedo 0.055 gains 0.051). Its shadow ray ends at the first sky face it
+  meets (`trace_sky_distance`, a ray of the sky's instances only): Hexen II
+  has world geometry above some skies (rays up and at 45° from the sky
+  ceilings reach other world geometry within Q2RTX's 10000 units: village2
+  77 %, cath 65 %, demo3 25 %); with Q2RTX's rule village2's sunlit yard
+  seen from the start is dark. Only clusters that can see a sky triangle
+  trace it (Q2RTX's sky visibility: the PVS rows of the clusters holding
+  one, `LightBuffer.sky_visibility`, copied by `vk_light.c` with a new
+  map). The models around a light (torches, flames, glowing projectiles)
+  cast its shadows; they are only out of the shadow rays of the lights
+  inside them. No visible disc (the painted skies have none) and no sun in
+  `env_map`. With the denoiser a change of the sun takes 1–2 s to show
+  fully (the HF history).
+- **Cost** (1920x1080, Release, TAAU 100 %, the GPU at its power cap, each
+  setting twice in one run): the visible sky and the dome none measurable
+  (egypt1: the frame 7.71 / 7.69 ms, primary rays 1.19); the sun +0.3 ms at
+  egypt1 (direct light 0.58 → 0.68, bounce 1.36 → 1.56), +0.4 at village1
+  (0.64 → 0.83, 1.46 → 1.72).
+- **Against GL:** no warping up close; the sky in reflections, refractions
+  and glossy bounces; its brightness under the exposure; the sky light
+  mode (opt-in).
+- `vk_sky` prints the sky's texture, its average color, the clusters with
+  sky and those that see it, the mode, the dome and the sun.
 
 ## 3D view (`vk_view.c`)
 
@@ -1026,8 +1136,9 @@ radiance of a texture color of 1):
   its geometric normal while there is no water normal map; vertical water
   and slime stay water (3.5b: Q2RTX makes them glass for its force fields;
   Hexen II's vertical turbulent surfaces are walls). The sky (and
-  nothing) is an empty surface: black until 4.6 (`pt_show_sky 1` shows the
-  sky polygons). Translucent surfaces (alpha < 1) split the fields as in
+  nothing) is an empty surface whose color, Hexen II's sky since 4.6
+  ([Sky](#sky-vk_skyc)), goes into `PT_TRANSPARENT` (`pt_show_sky 1` shows
+  the sky polygons instead). Translucent surfaces (alpha < 1) split the fields as in
   Q2RTX: the even field stays on the surface, the odd one goes through it
   (their material kind), which `reflect_refract.rgen` follows (3.5b, below).
   Textures are sampled with Q2RTX's anisotropic ray-cone gradients; liquids
@@ -1100,7 +1211,8 @@ radiance of a texture color of 1):
   check reads last frame's in that layout, so it is misaligned for the
   one frame after a swapped one.
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
-  weapon shadows, no sunlight, the hit-distance clear and a gradient
+  weapon shadows, the sun's shadow rays (4.6: ending at the first sky face,
+  the models around a light in them), the hit-distance clear and a gradient
   sample's light style change (4.13, [Denoiser](#denoiser-vk_asvgfc)). Without the
   denoiser the lit image is noisy at one sample per pixel. The TAA pass
   (3.8), the bloom and tone mapping (3.7) and FSR (3.8) follow; without
@@ -1125,8 +1237,8 @@ radiance of a texture color of 1):
   - 2: the second bounce continues from the first one's hit (which
     overwrites `PT_SHADING_POSITION` and `PT_BOUNCE_THROUGHPUT`, with
     `PT_VIEW_DIRECTION2` and `PT_GEO_NORMAL2`); as in Q2RTX it gathers only
-    emission and the sky, no light samples, so it adds nothing until
-    emissive surfaces (4.5) and the sky (4.6).
+    emission, the sky and the sun, no light samples (the sky's dome and the
+    sun only in the sky light mode, 4.6).
   - 0.5: the first bounce for every other row, alternating per frame, ×2.
 
   Hexenlicht's changes: the launch check; the weapon is only in its own
@@ -1136,7 +1248,10 @@ radiance of a texture color of 1):
   distance in `PT_SPECULAR_HIT_DIST` (r16f; 0 without a specular ray: a
   diffuse bounce, no surface, lava, the rows 0.5 skips, no bounces); at 0.5
   the rows are (h + 1) / 2, so an odd height's last row is traced too
-  (Q2RTX: h / 2); no sunlight (4.6). Sphere lights are not geometry: bounce rays
+  (Q2RTX: h / 2); 4.6: the sun at bounce hits with the models around a
+  light in its shadow rays, and a specular bounce that hits the sky sees
+  GL's sky, a diffuse one the dome (Q2RTX: `env_map` with `remove_sun` for
+  both). Sphere lights are not geometry: bounce rays
   never hit them, so surfaces smoother than `pt_direct_roughness_threshold`
   (0.18), whose specular comes only from the specular bounce, reflect lit
   surfaces but show no highlight of a sphere (Q2RTX's dynamic lights
@@ -1772,5 +1887,7 @@ overlay, and a measuring mode.
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (1000), white or HoT's colors (1, archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
+| `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°) |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 here) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

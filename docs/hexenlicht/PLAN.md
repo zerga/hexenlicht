@@ -280,7 +280,7 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.3 | Light colors from `jsh2color` heuristic / `.lit` data | S | Colored lights plausibly match HoT's |
 | 4.4 | Dynamic lights: dlights, effect flags, muzzle flashes, torch-lit models, projectiles; light pool | M | Spells and projectiles light the scene |
 | 4.5 | Emissive surfaces: lava (lights instead of the mappers' fake lava lights), the flames of the map lights' models (Hexen II has no fullbright texels; runes and fire textures aren't emissive in GL) | M | Lava lights rooms |
-| 4.6 | Sky rendering (two-layer scrolling skies) + faithful / sky-light modes (Q2RTX physical sky) | M | Both modes switchable per map |
+| 4.6 | Sky rendering (GL's two-layer scrolling skies, per pixel) + faithful / sky-light modes (a dome of the sky's color, optional sun; not Q2RTX's physical sky: its data has no license) | M | Both modes switchable (per map with 4.7's file) |
 | 4.7 | Per-map override file: add/remove/tune lights, sky mode, sun, exposure | S | Overrides load with the map |
 | 4.8 | Live light editing commands (select, move, color, intensity, radius, save) | M | Edit in game, saved to override file |
 | 4.9 | Calibration tooling: camera bookmarks, matched screenshots from `glhexen2` and Hexenlicht; global falloff/intensity curve | M | Side-by-side comparison per bookmark |

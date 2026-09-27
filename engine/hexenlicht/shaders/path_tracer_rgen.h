@@ -24,14 +24,20 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    its descriptor array topLevelAS[TLAS_COUNT]; the render targets are
  *    set 1 (GLOBAL_TEXTURES_DESC_SET_IDX), the vertex buffers are read by
  *    device address (VERTEX_BUFFER_DESC_SET_IDX's value is unused);
- *  - no environment until the sky (4.6): env_map returns black;
+ *  - env_map is Hexen II's sky (4.6, hexen2_sky) and the dome of the sky
+ *    light mode, not Quake II RTX's physical sky or environment map;
  *  - trace_effects_ray: pt_logic_sprite takes the hit distance, beams and
  *    explosions come with their story (6.3), no effects TLAS = no effects;
  *  - get_direct_illumination: the light statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
- *    without a light (Quake II RTX's has t_max < t_min); no sunlight until
- *    the sky and sun (get_sunlight, 4.6); for gradient samples the sampled
- *    list light's style change (nee_style_change, 4.13);
+ *    without a light (Quake II RTX's has t_max < t_min); for gradient
+ *    samples the sampled list light's style change (nee_style_change, 4.13);
+ *  - get_sunlight (4.6): the shadow ray ends at the first sky face it meets
+ *    (trace_sky_distance: Hexen II has world geometry above some skies,
+ *    which Quake II RTX's 10000-unit ray would hit; a point at the sky's
+ *    face is lit without a ray), the sun's color is the UBO's (no physical
+ *    sky to integrate it from), clusters past the sky visibility's bits
+ *    trace it;
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -120,15 +126,38 @@ struct Ray {
 	float t_min, t_max;
 };
 
+/* Hexenlicht: Hexen II's sky as GL draws it (vk_sky.c), computed per pixel from
+ * the direction as the software renderer does (d_sky.c; GL interpolates it from
+ * its polygons' vertices, which warps the sky up close): height counts three
+ * times, the direction scaled to 6 * 63 units, plus each layer's scroll, in
+ * texels of the 128x128 layers; the front layer over the back at r_skyalpha,
+ * blended in sRGB as GL blends the framebuffer, as radiance (GL's fullbright) */
+vec3
+hexen2_sky(vec3 direction)
+{
+	if(global_ubo.sky_front_texture == 0)
+		return vec3(0);
+
+	vec3 d = vec3(direction.xy, direction.z * 3.0);
+	vec2 st = d.xy * ((6.0 * 63.0 / 128.0) / max(length(d), 1e-6));
+
+	vec3 back = linear_to_srgb(global_textureLod(global_ubo.sky_back_texture, st + global_ubo.sky_back_scroll, 0).rgb);
+	vec4 front = global_textureLod(global_ubo.sky_front_texture, st + global_ubo.sky_front_scroll, 0);
+
+	return srgb_to_linear(mix(back, linear_to_srgb(front.rgb), front.a * global_ubo.sky_alpha));
+}
+
+/* Hexenlicht: Hexen II's sky instead of Quake II RTX's physical sky and
+ * environment map (4.6): what is seen (primary rays, reflections, refractions,
+ * specular bounces: remove_sun false) is GL's sky; what diffuse bounces gather
+ * (remove_sun true) the dome's constant radiance, 0 in the faithful mode. The
+ * sun is never in it (get_sunlight samples it), and the sky doesn't rotate */
 vec3
 env_map(vec3 direction, bool remove_sun)
 {
-	direction = (global_ubo.environment_rotation_matrix * vec4(direction, 0)).xyz;
-
-    vec3 envmap = vec3(0);
-	// Hexenlicht: no environment until the sky (4.6), which brings Quake II
-	// RTX's physical sky (TEX_PHYSICAL_SKY) and environment map (TEX_ENVMAP)
-	return envmap;
+	if(remove_sun)
+		return global_ubo.sky_dome;
+	return hexen2_sky(direction);
 }
 
 // depends on env_map
@@ -526,6 +555,41 @@ trace_shadow_ray(Ray ray, int cull_mask)
 #endif
 }
 
+/* Hexenlicht: how far the ray goes before it meets a sky face (the sky's
+ * instances only; they are opaque), t_max if it meets none (4.6: the sun's
+ * shadow ray ends there) */
+float
+trace_sky_distance(vec3 origin, vec3 direction, float t_max)
+{
+#ifdef KHR_RAY_QUERY
+
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, TLAS_GEOMETRY, gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipProceduralPrimitives,
+		AS_FLAG_SKY, origin, 0, direction, t_max);
+
+	while (rayQueryProceedEXT(rayQuery))
+		;
+
+	if(rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+		return rayQueryGetIntersectionTEXT(rayQuery, true);
+	return t_max;
+
+#else
+
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.primitive_id = ~0u;
+	ray_payload_geometry.buffer_and_instance_idx = 0;
+	ray_payload_geometry.hit_distance = -1;
+
+	traceRayEXT( topLevelAS[TLAS_INDEX_GEOMETRY], gl_RayFlagsOpaqueEXT, AS_FLAG_SKY,
+			SBT_RCHIT_GEOMETRY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_EMPTY /*missIndex*/,
+			origin, 0, direction, t_max, RT_PAYLOAD_GEOMETRY);
+
+	return found_intersection(ray_payload_geometry) ? ray_payload_geometry.hit_distance : t_max;
+
+#endif
+}
+
 vec3
 trace_caustic_ray(Ray ray, int surface_medium)
 {
@@ -855,7 +919,85 @@ get_direct_illumination(
 	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);
 }
 
-// Hexenlicht: get_sunlight comes with the sky and sun (4.6)
+void
+get_sunlight(
+	uint cluster_idx,
+	uint material_id,
+	vec3 position,
+	vec3 normal,
+	vec3 geo_normal,
+	vec3 view_direction,
+	vec3 base_reflectivity,
+	float specular_factor,
+	float roughness,
+	int surface_medium,
+	bool enable_caustics,
+	out vec3 diffuse,
+	out vec3 specular,
+	int shadow_cull_mask)
+{
+	diffuse = vec3(0);
+	specular = vec3(0);
+
+	if(global_ubo.sun_visible == 0)
+		return;
+
+	// Hexenlicht: clusters past the visibility's bits (none on Hexen II's maps) trace it
+	bool visible = (cluster_idx >= MAX_LIGHT_LISTS) || (light_buffer.sky_visibility[cluster_idx >> 5] & (1 << (cluster_idx & 31))) != 0;
+
+	if(!visible)
+		return;
+
+	vec2 rng3 = vec2(get_rng(RNG_SUNLIGHT_X(0)), get_rng(RNG_SUNLIGHT_Y(0)));
+	vec2 disk = sample_disk(rng3);
+	disk.xy *= global_ubo.sun_tan_half_angle;
+
+	vec3 direction = normalize(global_ubo.sun_direction + global_ubo.sun_tangent * disk.x + global_ubo.sun_bitangent * disk.y);
+
+	float NdotL = dot(direction, normal);
+	float GNdotL = dot(direction, geo_normal);
+
+	if(NdotL <= 0 || GNdotL <= 0)
+		return;
+
+	// Hexenlicht: the ray ends at the first sky face (see the top); Quake II RTX's goes 10000 units.
+	// A point at the sky's face is lit: no ray there (get_shadow_ray's t_max would be below its t_min)
+	vec3 origin = position - view_direction * 0.01;
+	float sky_distance = trace_sky_distance(origin, direction, 10000);
+	bool shadow_traced = sky_distance > 0.02;
+	Ray shadow_ray;
+
+	if(shadow_traced)
+	{
+		shadow_ray = get_shadow_ray(origin, origin + direction * sky_distance, 0);
+
+		if(trace_shadow_ray(shadow_ray, shadow_cull_mask) == 0)
+			return;
+	}
+
+	// Hexenlicht: the sun's irradiance from the UBO (vk_sky.c), no sun color buffer
+	vec3 radiance = global_ubo.sun_color;
+
+#ifdef ENABLE_SHADOW_CAUSTICS
+	if(enable_caustics && shadow_traced)
+	{
+    	radiance *= trace_caustic_ray(shadow_ray, surface_medium);
+	}
+#endif
+
+	vec3 F = vec3(0);
+
+    if(global_ubo.pt_sun_specular > 0)
+    {
+		float NoH_offset = 0.5 * square(global_ubo.sun_tan_half_angle);
+		vec3 specular_brdf = GGX_times_NdotL(view_direction, global_ubo.sun_direction,
+			normal,roughness, base_reflectivity, NoH_offset, specular_factor, F);
+    	specular = radiance * specular_brdf;
+	}
+
+	float diffuse_brdf = NdotL / M_PI;
+	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);
+}
 
 vec3 clamp_output(vec3 c)
 {

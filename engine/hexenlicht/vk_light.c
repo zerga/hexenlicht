@@ -34,9 +34,9 @@
  * cluster's bounds are its leaf's and its world triangles' (Quake II RTX:
  * its opaque triangles'; vk_instance.c gives models and brush entities
  * the cluster of their center). Each frame in flight's light buffer
- * copies the lists when they have changed; the lights are written every
- * frame, with their light style's scale and last frame's (4.2: GL's
- * R_AnimateLight values).
+ * copies the lists when they have changed (and vk_sky.c's sky visibility
+ * with a new map, 4.6); the lights are written every frame, with their
+ * light style's scale and last frame's (4.2: GL's R_AnimateLight values).
  * The light statistics (Quake II RTX's, after G. Ward's "Adaptive Shadow
  * Testing for Ray Tracing"): get_direct_illumination counts unshadowed and
  * shadowed rays (of the primary surfaces and, as in Quake II RTX, of the
@@ -158,6 +158,7 @@ static int		num_lists;		/* the clusters with a list */
 static uint32_t		num_nodes;
 static uint32_t		lists_version = 1;	/* counts the builds */
 static uint32_t		buffer_version[VK_FRAMES_IN_FLIGHT];	/* the lists each light buffer holds, 0 = none */
+static uint32_t		sky_version[VK_FRAMES_IN_FLIGHT];	/* the sky visibility each holds (vk_sky.c's version), 0 = none */
 
 static float		(*cluster_bounds)[6];	/* mins, maxs per cluster */
 static int		num_cluster_bounds;
@@ -586,6 +587,8 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 {
 	vk_buffer_t	*buf = &light_buffers[vk.frame_index];
 	LightBuffer	*lb = (LightBuffer *) buf->mapped;
+	const uint32_t	*sky_visibility;
+	uint32_t	version;
 	int		i, k, cur, n = 0;
 
 	/* dynamic sphere lights (Quake II RTX's add_dlights): the game's (see the
@@ -640,6 +643,12 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		memcpy (lb->light_list_offsets, list_offsets, (num_lists + 1) * sizeof(list_offsets[0]));
 		memcpy (lb->light_list_lights, list_nodes, num_nodes * sizeof(list_nodes[0]));
 		buffer_version[vk.frame_index] = lists_version;
+	}
+	sky_visibility = VK_SkyVisibility (&version);	/* the clusters that trace the sun's rays (4.6) */
+	if (sky_version[vk.frame_index] != version)
+	{
+		memcpy (lb->sky_visibility, sky_visibility, sizeof(lb->sky_visibility));
+		sky_version[vk.frame_index] = version;
 	}
 	ubo->num_static_lights = num_lights;
 	ubo->lights = buf->address;
@@ -1004,7 +1013,7 @@ void VK_InitLights (void)
 				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 				 VK_MEMORY_UPLOAD);
 		memset (light_buffers[i].mapped, 0, sizeof(LightBuffer));	/* no stale lists */
-		buffer_version[i] = 0;
+		buffer_version[i] = sky_version[i] = 0;
 	}
 	Cmd_AddCommand ("vk_testlight", VK_TestLight_f);
 	Cmd_AddCommand ("vk_lights", VK_Lights_f);
