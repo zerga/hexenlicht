@@ -346,24 +346,6 @@ void VK_UpdateModelGeometry (void)
  * vk_models, and the check against the CPU
  * ========================================================================== */
 
-static float HalfToFloat (uint16_t h)
-{
-	union { float f; uint32_t u; } v;
-	uint32_t	sign = (uint32_t)(h & 0x8000) << 16, exp = (h >> 10) & 0x1f, mant = h & 0x3ff;
-
-	if (exp == 0)			/* zero, subnormal */
-	{
-		v.f = mant * (1.0f / 16777216.0f);	/* 2^-24 */
-		v.u |= sign;
-		return v.f;
-	}
-	if (exp == 31)			/* inf, nan */
-		v.u = sign | 0x7f800000 | (mant << 13);
-	else
-		v.u = sign | ((exp + 112) << 23) | (mant << 13);
-	return v.f;
-}
-
 /* utils.glsl's decode_normal */
 static void DecodeNormal (uint32_t enc, vec3_t n)
 {
@@ -594,7 +576,7 @@ static void VK_ModelsCheck (void)
 		int			index = (int)mi->source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL;
 		const vk_aliasmodel_t	*am;
 		const aliashdr_t	*hdr;
-		float			nm[3][3], alpha = HalfToFloat ((uint16_t)(mi->alpha_and_frame & 0xffff));
+		float			nm[3][3], alpha = VK_HalfToFloat ((uint16_t)(mi->alpha_and_frame & 0xffff));
 		int			num_tris, max_pose;
 
 		if (index < 0 || index >= num_alias_models)
@@ -659,7 +641,7 @@ static void VK_ModelsCheck (void)
 			const float		*gpu_uv[3] = { g->uv0, g->uv1, g->uv2 };
 			const float		*cpu_uv[3] = { tris[k].uv0, tris[k].uv1, tris[k].uv2 };
 			cpu_triangle_t		c;
-			uint32_t		expect_emissive = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (alpha) << 16);
+			uint32_t		expect_emissive = VK_FloatToHalf ((mi->light >= 0.0f) ? mi->light : 1.0f) | ((uint32_t)VK_FloatToHalf (alpha) << 16);
 			qboolean		bad = false;
 			int			v, j;
 
@@ -721,9 +703,9 @@ static void VK_ModelsCheck (void)
 					bad = true;
 				}
 
-				motion[0] = HalfToFloat ((uint16_t)(gpu_motion[v][0] & 0xffff));
-				motion[1] = HalfToFloat ((uint16_t)(gpu_motion[v][0] >> 16));
-				motion[2] = HalfToFloat ((uint16_t)(gpu_motion[v][1] & 0xffff));
+				motion[0] = VK_HalfToFloat ((uint16_t)(gpu_motion[v][0] & 0xffff));
+				motion[1] = VK_HalfToFloat ((uint16_t)(gpu_motion[v][0] >> 16));
+				motion[2] = VK_HalfToFloat ((uint16_t)(gpu_motion[v][1] & 0xffff));
 				for (j = 0; j < 3; j++)
 				{
 					float	expect = c.pos_prev[v][j] - c.pos[v][j];
@@ -825,6 +807,7 @@ static void VK_Models_f (void)
 			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
+	Con_Printf ("%d instances with an emissive skin (the light models' flames)\n", mf->emissive);
 }
 
 

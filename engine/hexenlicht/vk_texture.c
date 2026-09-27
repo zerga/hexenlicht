@@ -22,6 +22,10 @@
  *   with inverted alpha), so alpha means opacity in every texture.
  * - The array is updated after bind, so textures can be loaded while a
  *   frame is being recorded (the 2D code loads pics lazily while drawing).
+ * - The 8-bit pixels of alias model skins with bright texels (a channel of
+ *   at least VK_EMISSIVE_THRESHOLD) are kept with the slot (4.5): the
+ *   light models' flames get an emissive texture made from them when
+ *   first shown (vk_emissive.c, VK_TextureRGBA).
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -56,6 +60,7 @@ typedef struct
 	VmaAllocation	allocation;
 	VkImageView	view;
 	VkSampler	sampler;
+	byte		*pixels8;	/* a bright skin's 8-bit pixels (see the top), NULL = not kept */
 } vk_texture_t;
 
 static vk_texture_t	textures[VK_MAX_TEXTURES];
@@ -193,7 +198,8 @@ static void VK_ImageBarrier (VkImage image, uint32_t base_mip, uint32_t num_mips
 }
 
 /* create t's image and view, upload RGBA data and generate the mipmaps;
- * waits for the GPU, so it is only for load time */
+ * waits for the GPU: load time, or the first use of a picture or of an
+ * emissive skin while a frame is recorded */
 static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 {
 	VkImageCreateInfo		image_info;
@@ -313,6 +319,7 @@ static void VK_DestroyTexture (int slot)
 		vkDestroyImageView (vk.device, t->view, NULL);
 	if (t->image)
 		vmaDestroyImage (vk.allocator, t->image, t->allocation);
+	free (t->pixels8);
 	memset (t, 0, sizeof(*t));
 }
 
@@ -392,6 +399,42 @@ static void VK_Convert8 (const byte *data, unsigned int *trans, vk_texture_t *t)
 }
 
 
+/* does a texel have a channel of at least VK_EMISSIVE_THRESHOLD (sRGB)? */
+static qboolean HasBrightTexels (const unsigned int *rgba, int count)
+{
+	int	i;
+
+	for (i = 0; i < count; i++)
+	{
+		unsigned int	c = rgba[i];	/* R,G,B,A in memory */
+
+		if ((c & 0xff) >= VK_EMISSIVE_THRESHOLD || ((c >> 8) & 0xff) >= VK_EMISSIVE_THRESHOLD ||
+		    ((c >> 16) & 0xff) >= VK_EMISSIVE_THRESHOLD)
+			return true;
+	}
+	return false;
+}
+
+/* the kept pixels of a bright skin (see the top) as GL_LoadTexture converted
+ * them, R,G,B,A in memory (free them); NULL = none kept */
+unsigned int *VK_TextureRGBA (int slot, int *width, int *height)
+{
+	vk_texture_t	t;
+	unsigned int	*rgba;
+
+	if (slot <= 0 || slot >= numgltextures || !textures[slot].pixels8)
+		return NULL;
+	t = textures[slot];	/* VK_Convert8 settles the flags: its copy */
+	rgba = (unsigned int *) malloc ((size_t)t.width * t.height * sizeof(unsigned int));
+	if (!rgba)
+		return NULL;
+	VK_Convert8 (t.pixels8, rgba, &t);
+	*width = t.width;
+	*height = t.height;
+	return rgba;
+}
+
+
 /* ==========================================================================
  * GL_LoadTexture
  * ========================================================================== */
@@ -463,6 +506,11 @@ GLuint GL_LoadTexture (const char *identifier, byte *data, int width, int height
 		rgba = (unsigned int *) Hunk_AllocName (width * height * sizeof(unsigned int), "texbuf_upload8");
 		VK_Convert8 (data, rgba, t);
 		VK_UploadRGBA (t, rgba);
+		/* an alias model skin (gl_model.c names them <model>_<skin>) with bright
+		 * texels: its pixels for an emissive texture (see the top) */
+		if ((flags & TEX_MIPMAP) && strstr (identifier, ".mdl_") && HasBrightTexels (rgba, width * height) &&
+		    (t->pixels8 = (byte *) malloc (width * height)) != NULL)
+			memcpy (t->pixels8, data, width * height);
 		Hunk_FreeToLowMark (mark);
 	}
 
@@ -488,6 +536,12 @@ int VK_FindTexture (const char *identifier)
 const char *VK_TextureName (int slot)
 {
 	return (slot >= 0 && slot < numgltextures) ? textures[slot].identifier : "";
+}
+
+/* the CRC of the data the slot was loaded from (GL_LoadTexture's cache key) */
+unsigned short VK_TextureCRC (int slot)
+{
+	return (slot >= 0 && slot < numgltextures) ? textures[slot].crc : 0;
 }
 
 GLuint GL_LoadPicTexture (qpic_t *pic)
@@ -533,8 +587,8 @@ void D_FlushCaches (void)
 
 static void VK_Textures_f (void)
 {
-	int		i, mipped = 0, alpha = 0;
-	double		bytes = 0;
+	int		i, mipped = 0, alpha = 0, kept = 0;
+	double		bytes = 0, kept_bytes = 0;
 	qboolean	list = (Cmd_Argc() > 1 && !q_strcasecmp (Cmd_Argv(1), "list"));
 
 	for (i = 0; i < numgltextures; i++)
@@ -547,12 +601,18 @@ static void VK_Textures_f (void)
 			mipped++;
 		if (t->flags & TEX_ALPHA)
 			alpha++;
+		if (t->pixels8)
+		{
+			kept++;
+			kept_bytes += (double)t->width * t->height;
+		}
 		if (list)
 			Con_Printf ("%4d %4dx%-4d %2u mips %s %s\n", i, t->width, t->height, t->mip_levels,
 					(t->flags & TEX_ALPHA) ? "a" : " ", t->identifier[0] ? t->identifier : "(unnamed)");
 	}
 	Con_Printf ("%d textures (%d mipmapped, %d with alpha), %.1f MB; %d kept across maps\n",
 			numgltextures, mipped, alpha, bytes / (1024.0 * 1024.0), gl_texlevel);
+	Con_Printf ("8-bit pixels of %d bright skins kept for emissive textures, %.1f KB\n", kept, kept_bytes / 1024.0);
 }
 
 

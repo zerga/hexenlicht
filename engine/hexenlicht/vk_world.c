@@ -9,6 +9,8 @@
  * structures. The world's textures become materials, with their animation
  * sequences (+0..+9) and alternate sequences (+a..+j). Transparent world
  * triangles connect the PVS of the leaves on their two sides (vk_pvs.c).
+ * Lava emits, and its world triangles whose front leaf isn't lava are
+ * lights, flagged MATERIAL_FLAG_LIGHT (4.5, vk_emissive.c).
  *
  * The structure follows Quake II RTX's bsp_mesh.c; encode_normal and
  * get_triangle_off_center are ported from it.
@@ -46,6 +48,7 @@ vk_world_t	vk_world;
 static struct
 {
 	uint32_t	into_solid;		/* world triangles left out: facing into solid */
+	uint32_t	lava_lights;		/* lava triangles facing out of the lava: lights (4.5) */
 	uint32_t	kinds[16];		/* triangles per MATERIAL_KIND */
 	int		num_textures;		/* world textures that became materials */
 	double		build_time;
@@ -321,6 +324,14 @@ static uint32_t EmitSurface (qmodel_t *m, msurface_t *surf, uint32_t material_id
 		}
 		if (world && SurfacePass (material_id) == PASS_TRANSPARENT)
 			VK_ConnectPVSAcross (out->cluster, TriangleLeaf (m, out, -1.0f));
+		/* lava facing out of the lava is a light (vk_emissive.c); bounce rays
+		 * that hit it don't add what the direct light samples */
+		if (world && (material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_LAVA &&
+		    m->leafs[out->cluster + 1].contents != CONTENTS_LAVA && VK_AddLavaLight (out))
+		{
+			out->material_id |= MATERIAL_FLAG_LIGHT;
+			stats.lava_lights++;
+		}
 		stats.kinds[(material_id & MATERIAL_KIND_MASK) >> 28]++;
 		out++;
 		n++;
@@ -361,6 +372,8 @@ static uint32_t EmitModels (qmodel_t *world, VboPrimitive *out)
 				if (SurfacePass (kind) != pass)
 					continue;
 				material = out ? (uint32_t)MaterialForTexture (world, FirstFrame (surf->texinfo->texture)) : 0;
+				if (out && (kind & MATERIAL_KIND_MASK) == MATERIAL_KIND_LAVA)
+					VK_AddLavaMaterial ((int)material, FirstFrame (surf->texinfo->texture));
 				n += EmitSurface (world, surf, kind | (material & MATERIAL_INDEX_MASK),
 						  mi == 0, out ? out + n : NULL);
 			}
@@ -400,6 +413,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vkDeviceWaitIdle (vk.device);	/* frames in flight may still use the old buffers */
 	VK_FreeWorld ();
 	VK_ClearMaterials ();
+	VK_ClearLava ();
 	VK_ClearLights ();	/* the lights were the old map's */
 	memset (&stats, 0, sizeof(stats));
 
@@ -420,6 +434,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	prims = (VboPrimitive *) data;
 
 	vk_world.num_primitives = EmitModels (worldmodel, prims);
+	VK_FinishLava ();	/* the lava materials' emission */
 	prims_size = vk_world.num_primitives * sizeof(VboPrimitive);
 	size = prims_size + vk_world.num_primitives * 9 * sizeof(float);
 	positions = (float *) (data + prims_size);
@@ -558,9 +573,9 @@ static void VK_World_f (void)
 	Con_Printf ("buffer %.2f MB (primitives %.2f MB, positions %.2f MB), materials %d\n",
 			vk_world.buffer.size / (1024.0 * 1024.0), vk_world.positions_offset / (1024.0 * 1024.0),
 			(vk_world.buffer.size - vk_world.positions_offset) / (1024.0 * 1024.0), vk_num_materials - 1);
-	Con_Printf ("world:     opaque %u, transparent %u, sky %u; %u facing into solid left out\n",
+	Con_Printf ("world:     opaque %u, transparent %u, sky %u; %u facing into solid left out; %u lava lights\n",
 			vk_world.models[0].opaque.count, vk_world.models[0].transparent.count,
-			vk_world.models[0].sky.count, stats.into_solid);
+			vk_world.models[0].sky.count, stats.into_solid, stats.lava_lights);
 	for (i = 1; i < vk_world.num_models; i++)
 	{
 		sub[PASS_OPAQUE] += vk_world.models[i].opaque.count;
@@ -604,8 +619,9 @@ static void VK_World_f (void)
 		{
 			const vk_material_t	*m = VK_GetMaterial (i);
 
-			Con_Printf ("%4d %-16s texture %4d frames %d next %4d alternate %4d\n", i, m->name,
-					m->base_texture, m->num_frames, m->next_frame, m->alternate);
+			Con_Printf ("%4d %-16s texture %4d frames %d next %4d alternate %4d emissive %4d x %g\n", i, m->name,
+					m->base_texture, m->num_frames, m->next_frame, m->alternate, m->emissive_texture,
+					m->emissive_factor);
 		}
 	}
 }

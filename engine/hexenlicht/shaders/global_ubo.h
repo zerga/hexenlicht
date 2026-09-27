@@ -331,7 +331,8 @@ BEGIN_SHADER_STRUCT( ModelInstance )
 	/* Hexen II */
 	uint drawflags;		/* the entity's MLS_*, SCALE_*, DRF_* bits */
 	float light;		/* GL's fixed light level for the model (255 = 1): MLS_ABSLIGHT's abslight,
-				 * the MLS_* light styles, spinning items' pulse; -1 = lit by the world */
+				 * the MLS_* light styles, spinning items' pulse; -1 = lit by the world;
+				 * an emissive skin's factor (4.5, model_geometry.comp; -1: 1) */
 	uint entity;		/* scene_entkind_t << 16 | entity number, for debugging */
 	uint colorshade;	/* the entity's colorshade, 0 = none */
 	vec3 tint;		/* GL's colorshade tint (RTint/GTint/BTint), which multiplies the light; 1 1 1 = none */

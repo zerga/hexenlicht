@@ -3,7 +3,8 @@
  * VK_CreateBuffer/VK_DestroyBuffer wrap VMA. Uploads (textures, the world
  * geometry, the material table) record into one command buffer between
  * VK_BeginUpload and VK_EndUpload, which submits and waits: they happen at
- * load time, outside frames.
+ * load time, outside frames, or when something is first used while a frame
+ * is recorded (an alias model, a picture, an emissive skin).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *

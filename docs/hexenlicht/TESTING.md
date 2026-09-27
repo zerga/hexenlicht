@@ -242,6 +242,25 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   `vk_profiler` with `r_dlights` 1 and 0 on the paused frame. `glh2`
   shows no dynamic light on surfaces (4.14, #136); with `gl_flashblend 1`
   it draws their bubbles, a reference for where they are and their color.
+- **Emissive surfaces (4.5):** `vk_lights` on the 16 lava maps (castle4,
+  castle5, meso1, meso2, meso5, meso6, meso8, meso9, ravdm1, ravdm5,
+  romeric1, romeric3, romeric4, village2, village3; `monsters` with
+  `-Portals`): lava triangles, fake lights left out (RENDERER.md's counts),
+  list entries. Views at `host_framerate 0.02`, `cl_yawspeed 100`,
+  `god`, `notarget`, paused, shots with `r_lava_light` 1 and 0 beside
+  `glh2` (the same script: its `noclip` moves the same): meso9's start;
+  meso2's lava field (`noclip`, `+forward` 232 frames, `+right` 15,
+  `+lookdown` 14: `viewpos` (0 961 0) 40 60 0); castle5's lava by the
+  walkway (`noclip`, `+moveright` 207, `+back` 25, `+moveup` 23,
+  `+lookdown` 14: (99 −705 −99) 40 270 0; higher up the camera is inside a
+  block, where Hexenlicht shows the block's back faces and GL culls them).
+  Noclip speeds per frame: forward 4 units, sideways ~4.3, up ~7.5; there
+  is no `setpos`. Flames: castle5's start with `r_emissive_models` 1 and
+  0, and with `pt_roughness_override 0.05` for their reflections. The
+  scale in linear light: `tm_enable 0` shows the raw radiance, directly
+  comparable with `glh2`'s shots (texture × lightmap); the light the lava
+  adds to a block is linear in `r_emissive_scale` (shots at 0, 4, 8 and
+  `r_lava_light 0` for the fake lights).
 - **Comparing noisy shots:** average them in linear light (sRGB → linear
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still
