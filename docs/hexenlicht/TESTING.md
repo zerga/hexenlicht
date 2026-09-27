@@ -225,9 +225,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   `_color` on a few lights: `vk_lights colors` shows them converted, the
   other lights white (4.3: castle5).
 - **Dynamic lights (4.4):** castle4's start at `host_framerate 0.02`,
-  `gl_colored_dynamic_lights 1` and `gl_extra_dynamic_lights 1` in the
-  script (without `hexenlicht.cfg` the engine reads `config.cfg`, whose
-  are 0), `notarget`, `impulse 43` (weapons, mana, artifacts, below skill 3; 42 only
+  `gl_colored_dynamic_lights 1` in the script (without `hexenlicht.cfg`
+  the engine reads `config.cfg`, whose is 0; `gl_extra_dynamic_lights`
+  stays 0: the renderer makes the missile's light, `r_dumpscene`'s
+  dlights include it, `cl.light_level` doesn't), `notarget`, `impulse 43` (weapons, mana, artifacts, below skill 3; 42 only
   prints coordinates), ~90 waits, `impulse 2`, ~150 waits (the weapon
   change), `+attack`: the Necromancer's magic missile (muzzle flash, the
   missile's blue extra light: `vk_lights` counts 1–3); `pause` 8 frames

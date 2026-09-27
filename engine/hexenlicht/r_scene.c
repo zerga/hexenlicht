@@ -131,6 +131,69 @@ static void R_AddSceneEntity (entity_t *e, scene_entkind_t kind, int num)
 		s->angles[0] *= 0.3f;
 }
 
+/* the client's model flags before each of the three in CL_RelinkEntities'
+ * chain: an entity gets the first of the chain's flags it has */
+#define CHAIN_BEFORE_VORP	(EF_GIB | EF_ZOMGIB | EF_BLOODSHOT | EF_TRACER | EF_TRACER2 | EF_ROCKET | EF_FIREBALL | \
+				 EF_ACIDBALL | EF_ICE | EF_SPIT | EF_SPELL | EF_GRENADE | EF_TRACER3)
+#define CHAIN_BEFORE_MAGIC	(CHAIN_BEFORE_VORP | EF_VORP_MISSILE | EF_SET_STAFF)
+#define CHAIN_BEFORE_SCARAB	(CHAIN_BEFORE_MAGIC | EF_MAGICMISSILE | EF_BONESHARD)
+
+/* 4.4: the client's "extra dynamic lights" (gl_extra_dynamic_lights, off
+ * as in HoT: in cl_dlights they count in cl.light_level, which the server
+ * uses for how well monsters see the player) as the renderer's own, only
+ * in the scene: the lights CL_RelinkEntities makes with the option for
+ * vorpal missiles, magic missiles and scarabs, which replace the entity's
+ * own light (the same key); its flicker from a random stream of their own,
+ * so the game's rand() stays as without them */
+static void R_AddExtraDynamicLights (void)
+{
+	static unsigned	seed = 1;
+	int		i, j;
+
+	if (gl_extra_dynamic_lights.integer)
+		return;	/* the client makes them */
+	for (i = 0; i < r_scene.num_entities; i++)
+	{
+		const scene_entity_t	*e = &r_scene.entities[i];
+		int			flags;
+		const float		*color;
+		scene_dlight_t		*sdl;
+		static const float	vorpal[3] = {0.3f, 0.3f, 0.8f}, magic[3] = {0.1f, 0.1f, 0.8f}, scarab[3] = {0.9f, 0.6f, 0.1f};
+		static const float	white[3] = {1.0f, 1.0f, 1.0f};
+
+		if (e->kind != SCENE_ENT_DYNAMIC || !e->model || e->num <= 0)
+			continue;
+		flags = e->model->flags;
+		if ((flags & EF_VORP_MISSILE) && !(flags & CHAIN_BEFORE_VORP))
+			color = vorpal;
+		else if ((flags & EF_MAGICMISSILE) && !(flags & CHAIN_BEFORE_MAGIC))
+			color = magic;
+		else if ((flags & EF_SCARAB) && !(flags & CHAIN_BEFORE_SCARAB))
+			color = scarab;
+		else
+			continue;
+		if (!gl_colored_dynamic_lights.integer)
+			color = white;
+
+		for (j = 0; j < r_scene.num_dlights && r_scene.dlights[j].key != e->num; j++)
+			;
+		if (j == r_scene.num_dlights)
+		{
+			if (r_scene.num_dlights == MAX_DLIGHTS)
+				continue;
+			r_scene.num_dlights++;
+		}
+		sdl = &r_scene.dlights[j];
+		memset (sdl, 0, sizeof(*sdl));
+		seed = seed * 1664525u + 1013904223u;
+		VectorCopy (cl_entities[e->num].origin, sdl->origin);	/* the client's (G6: attached lights at the server position) */
+		sdl->radius = 240.0f - (float)((seed >> 16) % 20);
+		VectorCopy (color, sdl->color);
+		sdl->key = e->num;
+		sdl->die = (float)cl.time + 0.01f;
+	}
+}
+
 static void R_BuildScene (void)
 {
 	int		i;
@@ -191,6 +254,7 @@ static void R_BuildScene (void)
 		sdl->key = dl->key;
 		sdl->die = dl->die;
 	}
+	R_AddExtraDynamicLights ();
 
 	for (i = 0; i < MAX_LIGHTSTYLES; i++)
 		r_scene.lightstyles[i] = d_lightstylevalue[i] / 256.0f;
