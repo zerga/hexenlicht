@@ -128,7 +128,7 @@ void R_Init (void)
 	R_InitSkins ();		/* gl_nocolors, gfx/player.lmp */
 }
 
-void R_InitSky (texture_t *mt) { (void)mt; }
+/* R_InitSky moved to vk_sky.c (story 4.6). */
 
 /* called by the model loader for warped (water/sky) surfaces */
 void GL_SubdivideSurface (qmodel_t *m, msurface_t *fa) { (void)m; (void)fa; }

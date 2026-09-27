@@ -46,7 +46,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 - With these, **the 3D view is bit-identical between runs of the same build**:
   a pixel regression test for renderer refactors (see below). Not repeatable
   between runs, in `main` too: where particles and explosions land, patrolling
-  monsters' AI, and the HUD's health number.
+  monsters' AI, and the HUD's health number. The sky (4.6) scrolls on GL's
+  `realtime`, the clock (it runs while paused), but on game time while
+  `host_framerate` is set, so it repeats too (and stands still while
+  paused); `glh2`'s sky always scrolls on the clock.
 - The engines' `screenshot` capture different frames (Hexenlicht the next
   presented one, glh2 an already drawn one): anything that changes per frame
   (beams, effects, animation) must be compared paused (story 2.10 was a false
@@ -76,7 +79,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
    ..\hexenlicht-main\build\windows-debug\bin` runs the old build). Set
    `flt_enable 0` unless the denoiser is what is compared: with it the
    G-buffer modes hold the gradient samples' last-frame values in up to
-   one pixel per 3x3, and mode 14 changes every frame.
+   one pixel per 3x3, and mode 14 changes every frame. A change that
+   brightens part of the view (e.g. the sky, 4.6) moves the auto exposure
+   and so every pixel: compare the lit image with `tm_enable 0` and
+   `bloom_enable 0` too.
 3. `tga_diff.ps1 -A old -B new -MaxY 470` compares above the HUD rows;
    `-Noise old2` skips pixels that differ between two old runs; `-DiffDir`
    writes images with differing pixels in red. Expect "identical" or ±1
@@ -93,6 +99,13 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 - Walking monsters: village3's patrolling archers move right away
   (`patrols.ps1`).
 - Praevus snow: tibet9, walk forward and look up under the ceiling opening.
+- Skies (4.6; `+lookup` frames at `host_framerate 0.02`): egypt1's start
+  (4: the blue sky over the courtyard, good for the sky light and the sun),
+  demo1's (12: the storm), meso9's (12: red; its sky face is at z 704 over
+  the start, reached with `noclip` and `+moveup`), romeric6's (12: night).
+  village2 has world geometry above its sky: the sun's shadow rays must
+  stop at the sky (its yard through the opening right of the start).
+  `vk_sky` prints the sky and the mode.
 - `edict 1` shows the server's player fields (e.g. `light_level`) in both
   engines.
 

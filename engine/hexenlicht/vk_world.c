@@ -456,6 +456,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vk_world.positions_offset = prims_size;
 
 	VK_FinishPVS ();
+	VK_LoadSky (worldmodel, prims, vk_world.num_primitives);	/* its textures; the sun's clusters need the final PVS */
 	VK_LoadMapLights (worldmodel);	/* the light entities, before their lists */
 	VK_LoadLightClusters (worldmodel, prims, vk_world.num_primitives);	/* the lists need the final PVS */
 	free (data);

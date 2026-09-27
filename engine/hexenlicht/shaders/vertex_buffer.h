@@ -36,14 +36,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    (3.3); a light is a polygon or, for Hexen II's point lights, a sphere
  *    (3.4); Quake II RTX's also holds the material table (ours is
  *    vk_material.c's) and the light styles of emissive materials (none of
- *    Hexen II's emissive surfaces has one, 4.5), and the cluster debug mask
- *    and the sky visibility come with their stories;
+ *    Hexen II's emissive surfaces has one, 4.5), and the cluster debug mask;
+ *    its sky visibility since the sky (4.6);
  *  - the light statistics are counted per light list entry (3.4), by
  *    device address; Quake II RTX's per cluster and light;
  *  - the tone mapping and readback buffers (3.7) by device address;
  *  - left out: the light count history (3.6), the IQM matrices, the sun
- *    color buffers (4.6), store_triangle (model_geometry.comp writes the
- *    instanced buffer). */
+ *    color buffer (4.6: the sun's color is the UBO's sun_color, there is no
+ *    physical sky to integrate it from), store_triangle (model_geometry.comp
+ *    writes the instanced buffer). */
 
 #ifndef _VERTEX_BUFFER_H_
 #define _VERTEX_BUFFER_H_
@@ -117,7 +118,9 @@ BEGIN_SHADER_STRUCT( VboPrimitive )
 END_SHADER_STRUCT( VboPrimitive )
 
 /* Hexenlicht: Quake II RTX's light buffer without its material table, light
- * styles, cluster debug mask and sky visibility (see the top): a light is
+ * styles and cluster debug mask (see the top); its sky visibility since the
+ * sky (4.6: a bit per cluster that can see a sky triangle, vk_sky.c,
+ * get_sunlight's clusters). A light is
  * LIGHT_POLY_VEC4S vec4s,
  *  - a polygon: the three corners with the color (radiance) in their w,
  *    then (style scale, last frame's style scale, LIGHT_TYPE_POLYGON, 0);
@@ -133,6 +136,7 @@ BEGIN_SHADER_STRUCT( LightBuffer )
 	vec4 light_polys[MAX_LIGHT_POLYS * LIGHT_POLY_VEC4S];
 	uint light_list_offsets[MAX_LIGHT_LISTS];
 	uint light_list_lights[MAX_LIGHT_LIST_NODES];
+	uint sky_visibility[MAX_LIGHT_LISTS / 32];
 }
 END_SHADER_STRUCT( LightBuffer )
 
@@ -149,7 +153,7 @@ END_SHADER_STRUCT( ToneMappingBuffer )
 
 
 /* Hexenlicht: only adapted_luminance is written (3.7); Quake II RTX's
- * sun and sky luminance may come with the sky (4.6), hdr_color with its
+ * sun and sky luminance aren't (4.6: its physical sky's), hdr_color with its
  * TAA (3.8); the material and cluster under the crosshair aren't needed */
 BEGIN_SHADER_STRUCT( ReadbackBuffer )
 {

@@ -22,7 +22,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * one per frame in flight), with these changes:
  *  - a Hexenlicht block before the cvars: the frame's buffers by device
  *    address, which Quake II RTX binds as descriptors (the instance buffer,
- *    the TLASes, shaders/vertex_buffer.h's buffers), and debug view values;
+ *    the TLASes, shaders/vertex_buffer.h's buffers), debug view values and
+ *    the sky's (4.6, vk_sky.c; the sun is Quake II RTX's sun_* fields);
  *  - ModelInstance has Hexen II's fields at the end; Quake II RTX's
  *    InstanceBuffer is our instance buffer (instance_buffer.model_instances,
  *    .model_prev_to_current) and the TLAS's TlasInstanceInfo (its
@@ -276,6 +277,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(int,             anim_frame)           /* int(cl.time * 5), R_TextureAnimation's frame */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            debug_view)           /* r_debugview: DEBUGVIEW_* */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             view_cluster)         /* the camera's cluster (vis leaf - 1), -1 = none */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           sky_alpha)            /* r_skyalpha: the front layer's opacity (vk_sky.c) */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           sky_back_scroll)      /* GL's realtime * 8 in texels of 128, mod 1 */ \
+	GLOBAL_UBO_VAR_LIST_DO(vec3,            sky_dome)             /* the radiance diffuse bounces gather from the sky, 0 = faithful */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           sky_front_scroll)     /* realtime * 16 */ \
+	GLOBAL_UBO_VAR_LIST_DO(uint,            sky_back_texture)     /* texture slots of the layers, 0 = no sky */ \
+	GLOBAL_UBO_VAR_LIST_DO(uint,            sky_front_texture) \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

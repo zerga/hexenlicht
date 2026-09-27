@@ -36,8 +36,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    when the lights do (vk_light.c), so Quake II RTX's history of the
  *    counts, which keeps a gradient sample on last frame's count while its
  *    moving model lights change the lists every frame, is left out (3.6;
- *    moving lights stay dynamic lights, 4.4); no sky lights until the
- *    sky (4.6);
+ *    moving lights stay dynamic lights, 4.4); no sky lights (4.6: the
+ *    sky's faces would crowd the lists; its light is the dome that bounce
+ *    rays gather, vk_sky.c), so the branch for their negative color is
+ *    unused;
  *  - no list lights for clusters past MAX_LIGHT_LISTS - 1;
  *  - a dynamic light is picked by its weight (luminance x solid angle,
  *    faded by its range), not uniformly, and a dynamic sphere may have a
@@ -353,8 +355,8 @@ sample_polygonal_lights(
 		// choice differs from last frame's only while a style rises
 		light_lum *= is_gradient ? max(light.prev_style_scale, light.light_style_scale) : light.light_style_scale;
 
-		// Hexenlicht: sky lights (negative color) with the physical sky's luminance
-		// limits come with the sky (4.6)
+		// Hexenlicht: no sky lights (negative color, see the top), so no physical sky's
+		// luminance limits for them
 		m *= abs(light_lum); // abs because sky lights have negative color
 
 		// Apply CDF adjustment based on light shadowing statistics from one of the previous frames.
