@@ -52,9 +52,10 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   into real files. It still holds `R_InitTextures`/`r_notexture_mip` (GL's
   checkerboard), the rest of `R_Init`, `R_InitSky` (→ 4.6) and GL-named cvars
   kept so configs keep their settings (`gl_glows`, `gl_coloredlight`,
-  `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` and
-  `gl_extra_dynamic_lights` for the dynamic lights (4.4, default 1 here, 0
-  in HoT; see [Lights](#lights-vk_lightc)). To find what a renderer must
+  `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` (4.4:
+  default 1 here, 0 in HoT) and `gl_extra_dynamic_lights` (0 as in HoT:
+  the renderer makes those lights itself, see [Lights](#lights-vk_lightc))
+  for the dynamic lights. To find what a renderer must
   provide, link without it and read the unresolved externals.
 
 ## Window and video modes (`vid_vk.c`)
@@ -609,10 +610,19 @@ Stories 3.3, 3.4, 4.1 and 4.4; Q2RTX's two kinds of lights, sampled in
   the light is inside it, and it casts no shadows from any light while it
   owns it (a projectile; also the Eidolon's and the Fallen Angel's muzzle
   flashes, 0.1 s per attack, the chase-cam player with the torch).
-  `r_dlights 0` turns them off. The extra lights count in
-  `cl.light_level` ([Scene](#scene-r_scenec), GL's rule): with
-  `gl_extra_dynamic_lights 1` the player's own projectiles make monsters
-  see her better, as in HoT with the option on.
+  `r_dlights 0` turns them off. **Extra lights:** the client's
+  `cl_dlights` count in `cl.light_level` ([Scene](#scene-r_scenec), GL's
+  rule, which the server uses for how well monsters see the player and
+  the Assassin's cloak), so `gl_extra_dynamic_lights` stays 0 as in HoT
+  and `r_scene.c` (`R_AddExtraDynamicLights`) adds the lights the client
+  would make with it to the scene only: vorpal missiles, magic missiles
+  and scarabs (the first flag of `CL_RelinkEntities`' model flag chain;
+  radius 240 − 0–19, the client's colors with
+  `gl_colored_dynamic_lights`), at the entity's server position,
+  replacing its own light (the same key), flickering from a random stream
+  of their own (the game's `rand()` stays as without them). With
+  `gl_extra_dynamic_lights 1` the client makes them (and they count, as in
+  HoT with the option) and the renderer doesn't.
   Cost (4.4, castle4, two lights from the magic missile, 1920x1080,
   Release, `vk_benchmark 1`): direct lighting 0.52 → 0.72 ms, bounce
   1.21 → 1.30 ms, the frame 7.5 → 7.7 ms. Without dynamic lights the
@@ -1596,5 +1606,5 @@ overlay, and a measuring mode.
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (1000), white or HoT's colors (1, archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
-| `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors and the projectiles' extra ones (HoT's options, 1 here; see [Lights](#lights-vk_lightc)) |
+| `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 here) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

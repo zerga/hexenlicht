@@ -100,17 +100,17 @@ int		gl_coloredstatic;
 /* same cvars as the GL renderer, so config files keep their settings; the
  * client gives dynamic lights their colors and makes the extra ones
  * (projectiles) by gl_colored_dynamic_lights and gl_extra_dynamic_lights
- * (the OpenGL options menu), which Hexenlicht's lights use (4.4, vk_light.c):
- * on by default, as the map lights' colors (HoT: off). The extra lights
- * count in cl.light_level (r_light.c, GL's rule), which the server uses
- * for how well monsters see the player and the Assassin's cloak: as in
- * HoT with the option on */
+ * (the OpenGL options menu), which Hexenlicht's lights use (4.4, vk_light.c).
+ * Colors on by default, as the map lights' (HoT: off); extra lights off as
+ * in HoT: the client's count in cl.light_level (r_light.c, GL's rule),
+ * which the server uses for how well monsters see the player and the
+ * Assassin's cloak, so the renderer makes its own (r_scene.c) */
 cvar_t		gl_glows = {"gl_glows", "0", CVAR_ARCHIVE};
 cvar_t		gl_other_glows = {"gl_other_glows", "0", CVAR_ARCHIVE};
 cvar_t		gl_missile_glows = {"gl_missile_glows", "1", CVAR_ARCHIVE};
 cvar_t		gl_coloredlight = {"gl_coloredlight", "0", CVAR_ARCHIVE};
 cvar_t		gl_colored_dynamic_lights = {"gl_colored_dynamic_lights", "1", CVAR_ARCHIVE};
-cvar_t		gl_extra_dynamic_lights = {"gl_extra_dynamic_lights", "1", CVAR_ARCHIVE};
+cvar_t		gl_extra_dynamic_lights = {"gl_extra_dynamic_lights", "0", CVAR_ARCHIVE};
 cvar_t		gl_lightmapfmt = {"gl_lightmapfmt", "GL_RGBA", CVAR_ARCHIVE};
 
 void R_Init (void)
