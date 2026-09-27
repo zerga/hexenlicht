@@ -239,9 +239,63 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   frame from `+attack` with `flt_enable` 1 and 0, the mean linear
   luminance above the HUD: the denoised series follows the flash on its
   first frame (4.4: 0.052 → 0.084, raw 0.091). Cost: `vk_benchmark 1`,
-  `vk_profiler` with `r_dlights` 1 and 0 on the paused frame. `glh2`
-  shows no dynamic light on surfaces (4.14, #136); with `gl_flashblend 1`
-  it draws their bubbles, a reference for where they are and their color.
+  `vk_profiler` with `r_dlights` 1 and 0 on the paused frame. For `glh2`
+  see the next entry (4.4 saw no dynamic light there: castle4's start
+  corridor is at GL's lightmap ceiling); with `gl_flashblend 1` it draws
+  their bubbles instead of lighting surfaces, a reference for where they
+  are and their color.
+- **A GL reference for dynamic lights (4.14):** `glh2` adds them to the
+  lightmaps, but uHexen2's GL has no overbright: a lightmap texel is
+  `min(255, byte × 264 >> 7)` (the normal style value 264 over 128;
+  styles are summed before the clip; with `gl_lightmapfmt GL_RGBA` and
+  `gl_coloredlight 0`, the data folder's, it stores 0.33 × the sum of the
+  clipped channels, so its ceiling is 252), the texture at most at its own
+  color: a texel whose compiled byte is about 124 or more is already at
+  that ceiling and a dynamic light adds nothing there. Models (GL_RGBA)
+  add `radius − distance` times the light's color to their light, which
+  the 128/192 clamp doesn't limit, but GL clamps the vertex color at 1, so
+  they stop at the texture's color too; pickups (`EF_ROTATE`) and models
+  with an `MLS_*` light mode (the torches) get no dynamic light, the
+  first-person weapon gets it too. How to see GL's dynamic light:
+  - `r_lightmap 1` shows the lightmaps alone, with `gl_multitexture 0`
+    and `gl_lightmapfmt GL_RGBA` (the defaults and the data folder's:
+    with multitexture it does nothing, with GL_LUMINANCE it shows them
+    inverted): white is the ceiling, grey has room. `gl_coloredlight 1`
+    colors them only with HoT's `.lit` files, set before `map` (see "Light
+    colors (4.3)"); the data folder's configs have `gl_coloredlight`,
+    `gl_colored_dynamic_lights` and `gl_extra_dynamic_lights` at 0;
+  - measure where both shots are below it, paused, with the light minus
+    without, averaged in linear light (`tga_mean.ps1`'s blocks; not over
+    the first-person weapon, whose animation changes between the shots);
+  - bright lights show best: the Crusader's sun staff (`EF_BRIGHTLIGHT`,
+    radius 400–431), explosions. The magic missile's light exists only
+    with `gl_extra_dynamic_lights 1` in `glh2` and is blue only with
+    `gl_colored_dynamic_lights 1`; in grey lightmaps (`gl_coloredlight 0`)
+    a blue light counts a third of a white one (the channels' mean;
+    GL_LUMINANCE ignores light colors);
+  - GL's surface light adds `2 × (radius − |plane distance| − in-plane
+    distance) × color` on the 0–255 scale, the in-plane distance to the
+    lightmap sample as max(|ds|, |dt|) + min / 2 in texture units (at
+    most ~12 % over the Euclidean), only where it is above `minlight`
+    (a hard edge: only the muzzle flash has one, 32), cut off at the
+    ceiling: for the brightness compare with that formula (R81) rather
+    than with clipped pixels.
+
+  Example (castle4's start, `host_framerate 0.02`, `gl_flashblend 0`,
+  `gl_colored_dynamic_lights 1`, `gl_extra_dynamic_lights 1`, the
+  Necromancer's magic missile; shots paused about 15–20 frames after the
+  attack, when the muzzle flash, 0.1 s = 5 frames, is gone. 4.14 counted
+  in an instrumented build that the missile's light marks ~120 surfaces
+  and `R_BuildLightMap` adds it to ~85 of them, the drawn ones, each
+  frame): the start corridor is white in `r_lightmap 1` before the
+  missile, so nothing shows there; a grey block (x 288–384, y 160–256 at
+  960x540) goes from 0.21 to 0.46 in the lightmap view, 0.0058 to 0.0099
+  textured (sRGB 17 to 25 on the dark stone, easy to miss). The
+  Crusader's sun staff makes the side walls about 4–6 times brighter
+  (0.0043 → 0.019 and 0.0030 → 0.019, 12 frames after `+attack`).
+  Measure walls, not the whole frame: its mean includes the weapon and the
+  effects' sprites (a whole-frame +44 % 8 frames after the Necromancer's
+  attack was the missile and the hand).
 - **Emissive surfaces (4.5):** `vk_lights` on the 16 lava maps (castle4,
   castle5, meso1, meso2, meso5, meso6, meso8, meso9, ravdm1, ravdm5,
   romeric1, romeric3, romeric4, village2, village3; `monsters` with
