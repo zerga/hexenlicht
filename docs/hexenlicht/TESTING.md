@@ -134,6 +134,18 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 
 ## Other checks
 
+- **Map files (4.7):** a test `maps/<map>.hlmap` goes into the data
+  folder's `data1\maps\` (or `portals\maps\`), not the repository: it is
+  used before a shipped one. `vk_mapfile` shows what it did, `vk_mapfile
+  reload` applies an edited file without reloading the map; `vk_lights
+  colors` lists each light's origin (for `light` lines). Delete the test
+  files afterwards (and any under `build\<preset>\bin\maps\` that aren't
+  in `data/hexenlicht/maps/`).
+- **Per-map cvars in scripts (4.7):** every map load resets the sky and
+  sun cvars and `r_map_*` to their defaults (then the map file sets them):
+  set them after `map` and its waits (a `r_sun 1` before `map village2`
+  is gone when the map has loaded).
+
 - **Window:** `resize_test.ps1` (resize, maximize, restore, too small) with a
   script that echoes `==== STEP1..5` and waits ~300 frames after each; also
   `viewsize`, `vid_restart`.

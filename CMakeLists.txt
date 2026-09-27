@@ -236,6 +236,28 @@ add_custom_command(
 )
 add_custom_target(hexenlicht_blue_noise ALL DEPENDS ${HEXENLICHT_BLUE_NOISE_OUT})
 
+# The shipped per-map override files (data/hexenlicht/maps/*.hlmap, story
+# 4.7) next to the executable, in maps\, where vk_mapfile.c looks after the
+# game's folders; there may be none. A file deleted from the repository
+# stays in the output folder until removed there.
+file(GLOB HEXENLICHT_MAP_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/data/hexenlicht/maps/*.hlmap)
+set(HEXENLICHT_MAP_FILES_OUT)
+foreach(f IN LISTS HEXENLICHT_MAP_FILES)
+	get_filename_component(name ${f} NAME)
+	list(APPEND HEXENLICHT_MAP_FILES_OUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/maps/${name})
+endforeach()
+if(HEXENLICHT_MAP_FILES)
+	add_custom_command(
+		OUTPUT ${HEXENLICHT_MAP_FILES_OUT}
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/maps
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HEXENLICHT_MAP_FILES} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/maps
+		DEPENDS ${HEXENLICHT_MAP_FILES}
+		COMMENT "Copying the per-map override files"
+		VERBATIM
+	)
+endif()
+add_custom_target(hexenlicht_map_files ALL DEPENDS ${HEXENLICHT_MAP_FILES_OUT})
+
 add_executable(hexenlicht WIN32
 	${H2_COMMON_SOURCES}
 	${H2_HEXENLICHT_REUSED_SOURCES}
@@ -263,6 +285,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_lightcolor.c
 	${HEXENLICHT_DIR}/vk_emissive.c
 	${HEXENLICHT_DIR}/vk_sky.c
+	${HEXENLICHT_DIR}/vk_mapfile.c
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_asvgf.c
@@ -281,7 +304,7 @@ target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1
 target_compile_features(hexenlicht PRIVATE cxx_std_17)	# vk_streamline.cpp
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
-add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise)	# building the exe also builds its shaders and data
+add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise hexenlicht_map_files)	# building the exe also builds its shaders and data
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

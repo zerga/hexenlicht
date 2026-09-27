@@ -598,6 +598,7 @@ static vk_module_t	vk_modules[] =
 	{ "accel",	VK_InitAccel,		VK_ShutdownAccel,		VK_INIT_DEFAULT },
 	{ "lights",	VK_InitLights,		VK_ShutdownLights,		VK_INIT_DEFAULT },
 	{ "sky",	VK_InitSky,		VK_ShutdownSky,			VK_INIT_DEFAULT },
+	{ "mapfile",	VK_InitMapFile,		VK_ShutdownMapFile,		VK_INIT_DEFAULT },
 	{ "ubo",	VK_InitUBO,		VK_ShutdownUBO,			VK_INIT_DEFAULT },
 	{ "images",	VK_InitImages,		VK_ShutdownImages,		VK_INIT_DEFAULT },
 	{ "images|",	VK_CreateImages,	VK_DestroyImages,		VK_INIT_SWAPCHAIN },

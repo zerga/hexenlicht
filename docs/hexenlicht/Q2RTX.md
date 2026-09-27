@@ -220,14 +220,17 @@ this repository) or one at a time with
   against GL (4.9) measures the
   denoised image; a random pick (the A-SVGF paper's) would remove the rest
   but lose Q2RTX's anti-lag for moving lights.
-- **Exposure and the mood (4.9, 4.10, 4.7).** Since 3.7 Q2RTX's tone
+- **Exposure and the mood (4.9, 4.10).** Since 3.7 Q2RTX's tone
   mapper and auto exposure run with its defaults: its curve lifts the
   shadows of Hexen II's dark scenes, and the exposure brightens a dark
   place over a few seconds down to `tm_min_luminance` (0.0002; the test
   lights' demo1 start adapts to ~0.04–0.07). The calibration against GL
   (4.9) picks `tm_exposure_bias`, `tm_reinhard` and the rest; the
   darkness mechanics (4.10) need a `tm_min_luminance` that keeps dark
-  puzzle areas dark; per-map exposure is 4.7's.
+  puzzle areas dark (a per-map value would be one more line in 4.7's map
+  file list). Since 4.7 the map file's `r_map_exposure` adds a per-map EV
+  to `tm_exposure_bias` (Q2RTX's per-map `maps/<map>.cfg` scripts are not
+  imported: DECISIONS R89).
 - **Effects brightness (6.3, 6.2).** Since 3.7 particles and sprites share
   one exposure factor (`pt_particle_brightness` 15, measured on meteor
   staff particles); Q2RTX has separate ones for sprites, beams and
