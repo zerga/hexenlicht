@@ -260,6 +260,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_ubo.c
 	${HEXENLICHT_DIR}/vk_light.c
 	${HEXENLICHT_DIR}/vk_maplights.c
+	${HEXENLICHT_DIR}/vk_lightcolor.c
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_asvgf.c

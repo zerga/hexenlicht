@@ -501,7 +501,7 @@ typedef struct
 	vec3_t		origin;
 	int		level;		/* utils/light's: also the range */
 	int		style;		/* animated with 4.2 */
-	vec3_t		color;		/* 0-1 */
+	vec3_t		color;		/* linear (r_maplight_colors; jsh2color's up to 1.19) */
 	vec3_t		spot_dir;	/* towards its target; 0 0 0: not a spot */
 	float		spot_cos;	/* the cosine of half the cone's width */
 } vk_maplight_t;
@@ -514,6 +514,18 @@ float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white */
 qboolean VK_MapLightAt (const vec3_t origin);
 void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
 void VK_PrintMapLights (void);	/* vk_lights */
+void VK_PrintMapLightColors (void);	/* vk_lights colors */
+
+/* vk_lightcolor.c: utils/jsh2color's colors of the map's lights (what
+ * Hammer of Thyrion's .lit files are baked from) */
+typedef struct
+{
+	const char	*list;		/* the texture list the tool's batch files use for the map */
+	int		entities;	/* in the lump */
+	int		colored;	/* entities not grey: with none the tool wrote no .lit */
+	double		seconds;
+} vk_lightcolors_t;
+int *VK_LightColors (qmodel_t *worldmodel, vk_lightcolors_t *info);	/* 0-275 per entity (3 ints), freed by the caller */
 
 /* vk_light.c: the path tracer's lights (the map's, test lights from
  * vk_testlight) and their per-cluster lists, built when the lights change (VK_UpdateLights);

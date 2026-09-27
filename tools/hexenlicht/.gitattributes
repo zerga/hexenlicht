@@ -1,0 +1,2 @@
+# patches keep LF lines: core.autocrlf would check them out CRLF, which git apply rejects
+*.patch text eol=lf

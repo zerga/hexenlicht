@@ -186,6 +186,44 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   styles at `"a"`). A camera inside a brush (noclip) shows GL the room
   beyond (back faces culled) and Hexenlicht the brush's inside: check
   `viewpos` and the view before comparing.
+- **Light colors (4.3):** every map light must have the color
+  `utils/jsh2color` computes for it.
+  1. `pak_bsp.ps1 -Paks <pak0>,<pak1>,<pak3> -Out <dir>` extracts the 59
+     maps (outside the repository; delete them afterwards).
+  2. Build the tool with `jsh2color_colors.patch` (prints each light's
+     color, writes no `.lit`): `git archive HEAD utils/jsh2color | tar -x
+     -C <scratch>`, `patch -p3 < <repo>/tools/hexenlicht/jsh2color_colors.patch`
+     in its `utils/jsh2color`, then in the MSVC environment `cl -nologo
+     -O2 -DNDEBUG -DDOUBLEVEC_T -DWIN32_LEAN_AND_MEAN
+     -D_CRT_SECURE_NO_WARNINGS -I. -I<repo>\utils\common -I<repo>\common
+     -I<repo>\oslibs\windows\misc\include -Fejsh2colour.exe *.c` plus
+     `utils\common\` `cmdlib.c byteordr.c util_io.c pathutil.c threads.c
+     mathlib.c bspfile.c` and `common\` `q_endian.c qsnprint.c strlcat.c
+     strlcpy.c`, with `-link -STACK:67108864`: with one thread the tool
+     runs on the main thread, whose default stack its 2.6 MB per-face
+     struct overflows (it exits silently).
+  3. `jsh2color_colors.ps1 -Exe <it> -Bsp <dir> -Out <ref>` runs each map
+     with the options the tool's batch files give it, one thread (its
+     threads add to the sums without a lock: multi-threaded runs differ
+     between themselves). One thread takes 0.2–17 s a map.
+  4. A script per map (`map`, ~180 waits, `vk_lights colors`; the 42 of
+     pak0/pak1, then the 17 of pak3 with `-Portals`), then
+     `light_colors_compare.ps1 -Log <debug_h2.log> -Ref <ref> -Maps <the
+     same order>`. 4.3: all 12,747 lights as the tool's (Debug and
+     Release); tibet4, 5, 6, 10 white (the tool colors none there);
+     Release at most 83 ms per map on the original game's maps (egypt5),
+     183 ms on the mission pack's (keep5; `vk_lights` prints the time).
+  Look: HoT's published `.lit` files (`hexen2-litfiles-20140628.zip`
+  from the uhexen2 SourceForge project, "HoT - Other content/extra
+  data") in the data copy's `data1\maps\` (delete them afterwards; never
+  in the repository: derived from Raven's maps), `glh2` with
+  `gl_coloredlight 1` before the `map`, beside Hexenlicht with
+  `r_maplight_colors` 1 and 0 at `host_framerate 0.02` starts (4.3:
+  castle4, egypt1, meso2, romeric1, village1, demo1 — the hues match;
+  Hexenlicht is brighter until 4.9). `_color`: a `data1\maps\<map>.ent`
+  (the engine's `external_ents` loads it instead of the lump) with
+  `_color` on a few lights: `vk_lights colors` shows them converted, the
+  other lights white (4.3: castle5).
 - **Comparing noisy shots:** average them in linear light (sRGB → linear
   before averaging): averaged sRGB values make a noisier image look darker
   (a false 27 % in 3.4's first check). The frames of a paused scene still

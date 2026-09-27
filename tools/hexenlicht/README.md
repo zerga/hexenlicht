@@ -1,6 +1,6 @@
 # Hexenlicht test tools
 
-PowerShell scripts for testing Hexenlicht; how to use them is in
+PowerShell scripts (and a patch) for testing Hexenlicht; how to use them is in
 [docs/hexenlicht/TESTING.md](../../docs/hexenlicht/TESTING.md). Run them
 from a PowerShell 7 (`pwsh`) prompt: through `pwsh -File`/`powershell -File`
 (e.g. from Git Bash) array parameters (`-Files`, `-Paks`) arrive as one
@@ -21,6 +21,8 @@ or `Hexenlicht-data` next to the repository.
 | `tga_checkerboard.ps1` | averages screenshots of a paused frame and scores a fine checkerboard (unresolved checkerboard fields) per block, with a heat map |
 | `ubo_layout_check.ps1` | checks every global UBO member's C offset against glslang's reflection |
 | `pak_entities.ps1` | lists entities of a classname pattern per map in the paks |
+| `pak_bsp.ps1` | extracts the paks' maps (`.bsp`) into a folder |
+| `jsh2color_colors.patch`, `jsh2color_colors.ps1`, `light_colors_compare.ps1` | `utils/jsh2color` printing each light's color; runs it on the maps with its batch files' options; compares with `vk_lights colors` |
 | `monsters_near_start.ps1` | monsters near each map's `info_player_start` |
 | `patrols.ps1` | monsters with a patrol route near the start |
 | `bsp_models.ps1` | bounds of brush submodels of a map and the player starts |
