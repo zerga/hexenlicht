@@ -16,6 +16,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
 [Emissive surfaces](#emissive-surfaces-vk_emissivec) · [Sky](#sky-vk_skyc) ·
+[Map file](#map-file-vk_mapfilec) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
 [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
@@ -47,7 +48,8 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   no NVIDIA binary is linked or in the repository). Versions and
   licenses are in `THIRD_PARTY.md`; update it when a vendored library changes.
 - Codec DLLs from `oslibs/windows/codecs/x64` are copied next to the exe
-  post-build.
+  post-build; the shipped per-map files `data/hexenlicht/maps/*.hlmap` into
+  `maps\` next to it (4.7, [Map file](#map-file-vk_mapfilec)).
 - `engine/hexenlicht/stubs.c` provides the renderer symbols not implemented
   yet, sectioned by the story that replaces them; a story moves its section
   into real files. It still holds `R_InitTextures`/`r_notexture_mip` (GL's
@@ -794,6 +796,18 @@ from `VK_LoadWorld` before the light lists):
   300 light is as bright as 3.4–3.12's test entity lights, and its direct
   light 16 units from a wall stores ~85 of the ~128 the RGBE storage holds
   (level 1000 lights clip next to walls). The curve and scale are 4.9's.
+  The map file (4.7) multiplies it by a light's `scale` and the map's
+  `r_map_light_scale`.
+- **Map file** (4.7, [Map file](#map-file-vk_mapfilec)): its light lines
+  apply whenever the lights are built, after the entities are read and
+  before the lava test and the colors: `light` changes the lights whose
+  entity origin it names (off, level, scale, color, style, origin),
+  `addlight` adds lights, white unless given a color (`vk_lights colors`
+  lists them as `addlight`, and a moved light with the origin it was moved
+  from); moved or added lights inside solid are dropped; a map file color
+  replaces the light's with `r_maplight_colors 1`. `VK_MapLightAt` keeps
+  the light entities' origins (where their models are) whatever the file
+  does.
 - **Light models** (`VK_MapLightAt`): the light entities' game code spawns
   their torch, flame or candle model at the light's origin (`makestatic`,
   fullbright). Every flame mesh encloses its origin; from the 8-unit
@@ -1045,7 +1059,8 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
   sky matches `glh2`'s from 328 to 98 units below; 17 units below `glh2`
   draws black, Hexenlicht the sky.
 - **Modes:** `r_sky_light 0` (faithful, the default until calibration
-  picks per map; per-map values with 4.7): the sky lights nothing, as
+  picks per map; the sky and sun cvars are per-map settings of the
+  [map file](#map-file-vk_mapfilec), reset at every map load): the sky lights nothing, as
   before (glossy surfaces reflect it: specular bounces see it). `r_sky_light
   1`: diffuse bounce rays that hit the sky gather a dome of constant
   radiance (`env_map` with `remove_sun`, Q2RTX's path for a sky without
@@ -1067,7 +1082,7 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
   lighting and at bounce hits, `pt_direct_sun_light`, `pt_sun_bounce_range`,
   `pt_sun_specular` as Q2RTX's) from `r_sun_elevation` and
   `r_sun_azimuth` (degrees; the azimuth from +x towards +y, as a yaw;
-  placeholders 45 and 45), of `r_sun_color` (sRGB, white) at
+  placeholders 45 and 45 until a map file sets them), of `r_sun_color` (sRGB, white) at
   `r_sun_intensity` (1: its irradiance is π, a white surface facing it is
   lit as GL's fullbright; measured with the bounces off, egypt1's floor of
   albedo 0.055 gains 0.051). Its shadow ray ends at the first sky face it
@@ -1093,6 +1108,88 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
   mode (opt-in).
 - `vk_sky` prints the sky's texture, its average color, the clusters with
   sky and those that see it, the mode, the dome and the sun.
+
+## Map file (`vk_mapfile.c`)
+
+Story 4.7. A map's calibrated settings and light fixes, in
+`maps/<map>.hlmap`: plain text, one command per line, `//` comments (after
+a space: `64//x` is one word; C-style comments within a line too), the
+same commands the console takes, numbers within a million. Only these are
+taken; any other line, a bad value, more than 32 words or a word over 63
+characters is reported (at map load and by `vk_mapfile`) and the line
+skipped:
+
+```
+// meso9
+r_sky_light 1
+r_sun 1
+r_sun_elevation 60
+r_sun_azimuth 135
+r_sun_color "1 0.9 0.8"
+r_map_exposure -0.5
+r_map_light_scale 1.2
+light 1152 2720 64 level 400 color 1 0.5 0.2
+light 1100 2700 64 off
+light 900 2600 40 origin 900 2600 72 scale 0.5 style 0
+addlight 1000 2000 128 level 300 color 1 1 1
+```
+
+- **Per-map cvars:** 4.6's `r_sky_light`, `r_sky_light_scale`, `r_sun`,
+  `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`,
+  `r_sun_angle`, and `r_map_light_scale` (every map light's intensity times
+  it, 1) and `r_map_exposure` (EV added to the global `tm_exposure_bias`,
+  0; `vk_ubo.c`). Every map load resets them to their defaults (their values
+  when the renderer started) before the map's file sets them: they don't
+  carry over from map to map (a `r_sky_light 1` typed in the console lasts
+  until the next map, and a test script sets them after `map` and its
+  waits). The global calibration (`r_maplight_scale`, the `tm_*` cvars,
+  `r_skyalpha`) isn't per map.
+- **Light lines** ([Map lights](#map-lights-vk_maplightsc) applies them
+  when it builds the lights; the lights keep them through `r_maplights`
+  and color changes): `light x y z <changes>` changes the map lights whose
+  entity origin is x y z (to the unit; the entity lump's origins are
+  integers, and an external `.ent` file's reordering doesn't matter):
+  `off`, `level n` (at least 1: range and intensity, the mapper's key),
+  `scale f` (intensity only), `color r g b` (sRGB, 0–1 or 0–255 as the
+  `_color` key; shown with `r_maplight_colors 1`, 0 keeps the original's
+  white), `style n`, `origin x y z` (moved there; a spotlight keeps its
+  direction). `addlight x y z <changes>` adds a light (level 300, white,
+  style 0 unless changed). Lights moved or added inside solid are dropped,
+  as the compiler lit nothing from there; lights the compiler dropped
+  (inside solid, unlit) can't be changed (`vk_mapfile` says so). The light
+  entity's torch or flame model stays where the game spawned it, glowing
+  and without shadows, whatever the file does with its light. Up to 1024
+  light lines.
+- **Where:** first the game's filesystem, `maps/<map>.hlmap` (loose in
+  `data1\maps\`, `portals\maps\`, a mod's folder, or in a pak): a player's
+  or mod's own file, taken only from the map's game folder or one of higher
+  priority (as uHexen2's external `.ent` files: data1's file isn't used for
+  a Praevus map); then the file shipped next to the exe (`<exe
+  folder>\maps\`, which the build copies from the repository's
+  `data/hexenlicht/maps/`), only for maps from the game's own folders
+  (data1, portals: a mod's map of the same name doesn't get it). The first
+  found is used whole.
+- `vk_mapfile` prints the file used (or why one wasn't: a lower game
+  folder, not the game's own map), its settings that differ from the
+  defaults, each light line and how many lights it changed, and the lines
+  skipped; `vk_mapfile reload` reads it again and applies it (the per-map
+  cvars reset first) and rebuilds the lights, for calibration without
+  reloading the map. `vk_lights` has a line on the light edits; a `light`
+  line that matched nothing says whether the compiler had dropped a light
+  there.
+- Tested (4.7, temporary files): egypt1's start with the sky light, a sun,
+  exposure and light scale, a light taken out, one recolored at twice the
+  level, one moved, one added, one moved outside the map (dropped), an
+  unmatched origin and three bad lines (reported); `vk_mapfile reload`
+  after `r_sun 0` gave 1 back; demo1 without a file had the defaults; a
+  game-folder file won over a shipped one; with `-portals`, data1's
+  `keep1.hlmap` was skipped and the shipped one used; a mod's copy of demo1
+  got neither; an empty file loads (no lines); `level 0`, `inf`, `1e99`,
+  a coordinate past a million, a non-number `r_sun`, a four-number color
+  and a 33-word line were reported; an `addlight` without a color is white
+  on a jsh2color map; with demo1's 48 torch and flame lights taken out its
+  48 torch models stayed in the light group. Not exercised: a `light` line
+  naming a light the compiler dropped.
 
 ## 3D view (`vk_view.c`)
 
@@ -1747,7 +1844,8 @@ mapper takes out; with `tm_enable 0` the composite takes it out and clamps
 - The look: Q2RTX's curve lifts the shadows and flattens the contrast of
   Hexen II's dark scenes compared with the clamped image before 3.7; the
   calibration against GL (4.9) and keeping dark places dark (4.10:
-  `tm_min_luminance`, per-map exposure 4.7) decide the settings.
+  `tm_min_luminance`) decide the settings; the map file's `r_map_exposure`
+  (4.7) adds a per-map EV to `tm_exposure_bias`.
 
 ## Profiler (`vk_profiler.c`)
 
@@ -1888,6 +1986,7 @@ overlay, and a measuring mode.
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
-| `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°) |
+| `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
+| `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines; read it again and apply it; per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 here) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

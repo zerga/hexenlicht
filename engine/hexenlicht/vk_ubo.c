@@ -190,6 +190,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 #define UBO_CVAR_DO(name, default_value) ubo.name = cvar_##name.value;
 	UBO_CVAR_LIST
 #undef UBO_CVAR_DO
+	ubo.tm_exposure_bias += VK_MapExposure ();	/* the map file's r_map_exposure (4.7) */
 
 	/* as Quake II RTX's prepare_ubo in its real-time mode: no depth of field
 	 * (only when accumulating a reference image), whole aperture polygon

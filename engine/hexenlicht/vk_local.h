@@ -532,6 +532,8 @@ int VK_ReflectRefractPasses (void);	/* pt_reflect_refract: 0 to 10 */
  * rules), loaded by VK_LoadWorld before the light lists; VK_MapLightAt:
  * is a map light at the origin (vk_instance.c's MODEL_GROUP_LIGHT; none with
  * r_maplights 0, but models owning a dynamic light join it then too) */
+#define VK_DEFAULT_LIGHT_LEVEL	300	/* utils/light's DEFAULTLIGHTLEVEL */
+
 typedef struct
 {
 	vec3_t		origin;
@@ -541,6 +543,7 @@ typedef struct
 	vec3_t		spot_dir;	/* towards its target; 0 0 0: not a spot */
 	float		spot_cos;	/* the cosine of half the cone's width */
 	qboolean	over_lava;	/* a plain light close over lava: left out while lava emits (4.5) */
+	float		scale;		/* the intensity times this (4.7: the map file's scale, 1) */
 } vk_maplight_t;
 
 void VK_InitMapLights (void);	/* its cvars, from VK_InitLights */
@@ -555,6 +558,43 @@ qboolean VK_MapLightAt (const vec3_t origin);
 void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
 void VK_PrintMapLights (void);	/* vk_lights */
 void VK_PrintMapLightColors (void);	/* vk_lights colors */
+void VK_PrintMapLightEdits (void);	/* vk_mapfile: what the map file's light edits did */
+qboolean VK_MapLightDroppedAt (const int *p);	/* a light entity the compiler lit nothing from at the point (to the unit) */
+
+/* vk_mapfile.c: the per-map override file maps/<map>.hlmap (4.7): the
+ * per-map cvars (sky, sun, r_map_light_scale, r_map_exposure), reset to
+ * their defaults at every map load before the file sets them, and light
+ * edits, which vk_maplights.c applies when it builds the map's lights */
+enum
+{
+	MAPEDIT_OFF	= 1 << 0,
+	MAPEDIT_LEVEL	= 1 << 1,
+	MAPEDIT_SCALE	= 1 << 2,
+	MAPEDIT_COLOR	= 1 << 3,
+	MAPEDIT_STYLE	= 1 << 4,
+	MAPEDIT_ORIGIN	= 1 << 5
+};
+
+typedef struct
+{
+	qboolean	add;		/* addlight, else light */
+	int		at[3];		/* light: the entity origin it changes, to the unit */
+	vec3_t		origin;		/* addlight's, or where "origin" moves the light */
+	int		keys;		/* MAPEDIT_* given */
+	int		level;
+	float		scale;
+	vec3_t		color;		/* sRGB 0-1 */
+	int		style;
+	int		line;		/* in the file */
+	int		matched;	/* set by vk_maplights.c: lights it changed; addlight: 1 if added */
+} vk_mapedit_t;
+
+void VK_InitMapFile (void);	/* after vk_sky.c's cvars */
+void VK_ShutdownMapFile (void);
+void VK_LoadMapFile (qmodel_t *worldmodel);	/* VK_LoadWorld, before the map's lights */
+vk_mapedit_t *VK_MapEdits (int *count);
+float VK_MapLightScale (void);	/* r_map_light_scale */
+float VK_MapExposure (void);	/* r_map_exposure: EV added to tm_exposure_bias */
 
 /* vk_lightcolor.c: utils/jsh2color's colors of the map's lights (what
  * Hammer of Thyrion's .lit files are baked from) */

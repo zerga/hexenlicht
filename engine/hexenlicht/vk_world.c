@@ -415,6 +415,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	VK_ClearMaterials ();
 	VK_ClearLava ();
 	VK_ClearLights ();	/* the lights were the old map's */
+	VK_LoadMapFile (worldmodel);	/* the per-map settings and light edits (4.7) */
 	memset (&stats, 0, sizeof(stats));
 
 	vk_world.worldmodel = worldmodel;
