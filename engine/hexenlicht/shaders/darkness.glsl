@@ -25,7 +25,8 @@
  * The weapon's least light is GL's R_DrawViewModel's "always give some
  * light on gun": at least 24 per channel, a vertex color of 24 / 200 of
  * the texture (times GL's shading dots, 1 in the middle of their table),
- * which GL multiplied the texture by in sRGB space (weapon_min_light).
+ * which GL multiplied the texture's 8-bit color by (weapon_min_light; with
+ * 4.17's 2.2 power exactly (24 / 200)^2.2 in linear light).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -43,6 +44,8 @@
 
 #ifndef DARKNESS_GLSL
 #define DARKNESS_GLSL
+
+#include "transfer.glsl"
 
 /* how much of a GL lightmap texel the dark lights take from a world
  * surface at p with the geometric normal gn */
@@ -86,7 +89,7 @@ weapon_min_light(vec3 albedo)
 {
 	const float least = 24.0 / 200.0;
 	vec3 a = max(albedo, vec3(1e-4));
-	return srgb_to_linear(linear_to_srgb(a) * least) / a;
+	return color_to_linear(linear_to_color(a, global_ubo.color_srgb) * least, global_ubo.color_srgb) / a;
 }
 
 #endif	/* DARKNESS_GLSL */

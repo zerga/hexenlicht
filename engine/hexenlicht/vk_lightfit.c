@@ -36,18 +36,18 @@
  * custom map's compiler may differ too.
  * vk_light.c writes each list entry's factor (VK_LightFitFactor) into the
  * entry beside the light's index (shaders/vertex_buffer.h), times
- * r_maplight_fit_scale (1.1: the lit image as bright as GL's image at 4.9's
- * bookmarks; GL multiplied the texture by the lightmap in sRGB space, which
- * shows a dark texture brighter than the product in linear light does, and
- * the fit to the lightmaps alone doesn't have that); an entry with fewer than
- * MIN_ENTRY_TEXELS texels takes the light's own factor, and a light without
- * any (the map file's addlights, a map without lightmaps) or
- * r_maplight_fit 0 takes r_maplight_gl_scale, 4.15's. The map file's edits
- * apply on top: a light keeps its factors when moved, scaled or given
- * another level; nothing is fitted again for an edit. Not physically based:
- * like 4.15's shape it changes only a light's first arrival, after GL's
- * lightmaps; its shadows, bounces and reflections stay path traced, and
- * the physical shapes (r_maplight_shape 0 and 1) don't take the factors.
+ * r_maplight_fit_scale (1; 4.16's 1.1 made up for the sRGB curve's linear
+ * toe, which showed GL's dark tones darker than GL's product of 8-bit
+ * colors: with 4.17's 2.2 power the fit to the lightmaps is GL's look); an
+ * entry with fewer than MIN_ENTRY_TEXELS texels takes the light's own
+ * factor, and a light without any (the map file's addlights, a map
+ * without lightmaps) or r_maplight_fit 0 takes r_maplight_gl_scale,
+ * 4.15's. The map file's edits apply on top: a light keeps its factors
+ * when moved, scaled or given another level; nothing is fitted again for
+ * an edit. Not physically based: like 4.15's shape it changes only a
+ * light's first arrival, after GL's lightmaps; its shadows, bounces and
+ * reflections stay path traced, and the physical shapes (r_maplight_shape
+ * 0 and 1) don't take the factors.
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -86,7 +86,7 @@ COMPILE_TIME_ASSERT(lightfit_key, MAX_LIGHT_POLYS <= (1 << 12));	/* the key's li
 typedef double dvec3_t[3];
 
 static cvar_t	r_maplight_fit = {"r_maplight_fit", "1", CVAR_NONE};	/* 0: r_maplight_gl_scale for every light (4.15) */
-static cvar_t	r_maplight_fit_scale = {"r_maplight_fit_scale", "1.1", CVAR_NONE};	/* the fitted factors times this: the lit image against GL's */
+static cvar_t	r_maplight_fit_scale = {"r_maplight_fit_scale", "1", CVAR_NONE};	/* the fitted factors times this: the lit image against GL's */
 
 /* a lump light as the compiler lit from it */
 typedef struct

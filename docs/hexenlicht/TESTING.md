@@ -94,7 +94,11 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   `vk_screenshot`). `-HlCvars` goes in after each load (a candidate:
   `"r_maplight_power 4"`; 4.15's light shapes: `"r_maplight_shape 1;
   r_maplight_scale 705"`); `-SkipSaves -SkipGl -KeepSaves` reuse the saves
-  and GL shots for more candidates; `-GlLit <folder>` adds
+  and GL shots for more candidates (a run without `-KeepSaves` deletes
+  them: the next `-SkipSaves` run then shoots the console); `-Bin
+  <folder>` runs another build for the Hexenlicht shots (4.17: a copy of
+  main's `build\windows-release\bin`, for a comparison on the same GL
+  shots); `-GlLit <folder>` adds
   `gl\<name>_glc.tga` with HoT's colored light (`<folder>\maps\*.lit`,
   copied in for the run), `-LitFrames` averages the lit image too. It
   backs up and restores `config.cfg` and `hexenlicht.cfg` of the game
@@ -103,10 +107,13 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   aside for `glh2`'s and back, checks that each save is of its map, and
   deletes its scripts (and the saves unless `-KeepSaves`). 15 bookmarks:
   ~3 minutes (Release, 960x540).
-- **`calib_compare.ps1 -Out <folder> -Labels a,b [-Pictures]`**: per
-  bookmark and pooled, Hexenlicht's direct light against GL's lightmaps in
-  linear light (GL multiplied textures by the lightmap in sRGB space: its
-  linear light is the lightmap decoded), in 30-pixel blocks where GL's
+- **`calib_compare.ps1 -Out <folder> -Labels a,b [-Pictures] [-Transfer
+  srgb]`**: per bookmark and pooled, Hexenlicht's direct light against
+  GL's lightmaps in linear light (GL multiplied the texture's 8-bit color
+  by the lightmap's: its linear light is the lightmap decoded; since 4.17
+  every shot is decoded as the engine encodes its image, by the 2.2 power;
+  `-Transfer srgb` for shots of a build before 4.17 or with `r_srgb 1`,
+  which gives the old numbers), in 30-pixel blocks where GL's
   pixels are grey (lightmaps: not the sky or liquids) and neither is
   clipped or black: the median ratio (1: GL's units), the spread (stops
   between the quartiles), the slope of log Hexenlicht over log GL (1: the
@@ -206,7 +213,7 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   before 4.15 dim or brighten the map's lights with `r_maplight_scale`
   (50, 62.5, 100, 4000), which only the physical shapes use: add
   `r_maplight_shape 0` to repeat them as measured, or scale
-  `r_maplight_fit_scale` (1.1 by default; 4.16) instead with GL's shape,
+  `r_maplight_fit_scale` (1 by default since 4.17, 1.1 in 4.16) instead with GL's shape,
   or `r_maplight_gl_scale` (2) with `r_maplight_fit 0` for 4.15's (e.g.
   R97's pulse at `r_maplight_gl_scale 0.5`): its light is bounded, a full
   lightmap texel at most, so the physical shape's very bright settings
@@ -452,10 +459,12 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   comparable with `glh2`'s shots (texture × lightmap); the light the lava
   adds to a block is linear in `r_emissive_scale` (shots at 0, 4, 8 and
   `r_lava_light 0` for the fake lights).
-- **Comparing noisy shots:** average them in linear light (sRGB → linear
-  before averaging): averaged sRGB values make a noisier image look darker
-  (a false 27 % in 3.4's first check). The frames of a paused scene still
-  get new random numbers, so averaging shots reduces the noise.
+- **Comparing noisy shots:** average them in linear light (decoded before
+  averaging; `tga_mean.ps1` decodes by the sRGB curve, close enough to
+  4.17's 2.2 power for comparing two sets): averaged 8-bit values make a
+  noisier image look darker (a false 27 % in 3.4's first check). The
+  frames of a paused scene still get new random numbers, so averaging
+  shots reduces the noise.
   `tga_mean.ps1 -Dir <shots> -A (0..11) -B (12..23) -MaxY 470 [-OutDir d]`
   compares two sets (means, 60-pixel blocks, noise) and writes the
   averages for `tga2png.ps1`.

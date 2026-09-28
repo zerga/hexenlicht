@@ -656,7 +656,7 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		}
 		intensity = 2.0f * VK_LightLevelIntensity (s->radius);
 		for (k = 0; k < 3; k++)
-			color[k] = VK_SRGBToLinear (q_max (s->color[k], 0.0f)) * intensity;
+			color[k] = VK_ColorToLinear (s->color[k]) * intensity;
 		WriteDynamicLight (&ubo->dyn_light_data[n++], s->origin, DYNAMIC_LIGHT_RADIUS, color, s->radius - s->minlight);
 		dlight_stats.lit++;
 		dlight_stats.owned += (s->key > 0);

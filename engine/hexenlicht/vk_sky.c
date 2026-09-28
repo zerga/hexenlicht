@@ -21,13 +21,13 @@
  * path_tracer_rgen.h's env_map computes GL's texture coordinates per pixel
  * from the ray's direction, as the software renderer does (d_sky.c): GL
  * computes them at the vertices of its polygon pieces and interpolates,
- * which warps the sky when seen up close. The layers are blended in sRGB,
- * as GL blends the framebuffer's bytes, and the result is the radiance
- * (times 1: GL's fullbright relation to the walls, vk_emissive.c). It is
- * what primary rays, reflections, refractions and specular bounces see,
- * in both modes. It scrolls on GL's realtime, which counts the clock and
- * runs while paused; with host_framerate on game time, so that test runs
- * repeat.
+ * which warps the sky when seen up close. The layers are blended in their
+ * 8-bit colors, as GL blends the framebuffer's bytes, and the result as
+ * linear light (transfer.glsl, 4.17) is the radiance (times 1: GL's
+ * fullbright relation to the walls, vk_emissive.c). It is what primary
+ * rays, reflections, refractions and specular bounces see, in both modes.
+ * It scrolls on GL's realtime, which counts the clock and runs while
+ * paused; with host_framerate on game time, so that test runs repeat.
  *
  * The sky's two modes (PLAN.md; the default is chosen per map during
  * calibration, until then faithful everywhere):
@@ -43,13 +43,14 @@
  *    With r_sun 1, a sun: Quake II RTX's get_sunlight (a disc of
  *    r_sun_angle degrees, in direct lighting and at bounce hits) from
  *    r_sun_elevation and r_sun_azimuth (degrees; the azimuth counts from
- *    +x towards +y, as a yaw), of r_sun_color (sRGB) at r_sun_intensity
- *    (1: a white surface facing it is lit as GL's fullbright). Its shadow
- *    ray ends at the first sky face it meets (Hexen II has world geometry
- *    above some of its skies), and only points in clusters that can see a
- *    sky triangle trace it (Quake II RTX's sky visibility: the PVS rows of
- *    the clusters holding one, in the light buffer). There is no visible
- *    sun disc: the painted skies have none.
+ *    +x towards +y, as a yaw), of r_sun_color (an 8-bit color) at
+ *    r_sun_intensity (1: a white surface facing it is lit as GL's
+ *    fullbright). Its shadow ray ends at the first sky face it meets
+ *    (Hexen II has world geometry above some of its skies), and only
+ *    points in clusters that can see a sky triangle trace it (Quake II
+ *    RTX's sky visibility: the PVS rows of the clusters holding one, in
+ *    the light buffer). There is no visible sun disc: the painted skies
+ *    have none.
  * vk_sky prints the sky, the mode and the sun.
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
@@ -97,6 +98,7 @@ static struct
 	int		front_count[256];
 	vec3_t		average;		/* linear, as GL blends the layers at average_alpha */
 	float		average_alpha;		/* the r_skyalpha it was made for, < 0 = none */
+	qboolean	average_srgb;		/* the r_srgb it was made for (4.17) */
 	int		sky_clusters;		/* clusters holding a sky triangle */
 	int		visible_clusters;	/* clusters that can see one: the sun's rays */
 	uint32_t	visibility[MAX_LIGHT_LISTS / 32];	/* LightBuffer's sky_visibility */
@@ -228,7 +230,7 @@ const uint32_t *VK_SkyVisibility (uint32_t *version)
 
 /* the sky's average color as GL shows it: the front layer over the back at
  * alpha, over all pairs of their texels (the layers scroll apart), blended
- * in sRGB, linear */
+ * in their 8-bit colors, linear */
 static void MakeAverage (float alpha)
 {
 	double	sum[3] = { 0.0, 0.0, 0.0 }, total = 0.0;
@@ -249,13 +251,14 @@ static void MakeAverage (float alpha)
 			if (!sky.front_count[fi])
 				continue;
 			for (k = 0; k < 3; k++)
-				sum[k] += w * VK_SRGBToLinear ((bc[k] * (1.0f - a) + fc[k] * a) / 255.0f);
+				sum[k] += w * VK_ColorToLinear ((bc[k] * (1.0f - a) + fc[k] * a) / 255.0f);
 			total += w;
 		}
 	}
 	for (k = 0; k < 3; k++)
 		sky.average[k] = (total > 0.0) ? (float)(sum[k] / total) : 0.0f;
 	sky.average_alpha = alpha;
+	sky.average_srgb = VK_ColorsSRGB ();
 }
 
 static float SkyAlpha (void)
@@ -273,7 +276,7 @@ static qboolean SunShines (void)
 	return SkyLights () && r_sun.integer && r_sun_intensity.value > 0.0f;
 }
 
-/* r_sun_color: sRGB, missing components 1 */
+/* r_sun_color: an 8-bit color, missing components 1 */
 static void SunColor (vec3_t color)
 {
 	float	c[3] = { 1.0f, 1.0f, 1.0f };
@@ -281,7 +284,7 @@ static void SunColor (vec3_t color)
 
 	sscanf (r_sun_color.string, "%f %f %f", &c[0], &c[1], &c[2]);
 	for (k = 0; k < 3; k++)
-		color[k] = VK_SRGBToLinear (q_max (c[k], 0.0f));
+		color[k] = VK_ColorToLinear (c[k]);
 }
 
 /* VK_PrepareUBO: the sky's textures, scroll and blend, the dome and the
@@ -303,7 +306,7 @@ void VK_PrepareSky (struct QVKUniformBuffer_s *ubo)
 	ubo->sky_front_scroll = (float)(fmod (time * 16.0, 128.0) / 128.0);
 	ubo->pt_env_scale = 1.0f;
 
-	if (sky.front_texture && sky.average_alpha != alpha)
+	if (sky.front_texture && (sky.average_alpha != alpha || sky.average_srgb != VK_ColorsSRGB ()))
 		MakeAverage (alpha);
 	for (k = 0; k < 3; k++)
 		ubo->sky_dome[k] = SkyLights () ? sky.average[k] * q_max (r_sky_light_scale.value, 0.0f) : 0.0f;
@@ -353,7 +356,7 @@ static void VK_Sky_f (void)
 		Con_Printf ("sky %s: not 256x128, not drawn\n", sky.name);
 	else
 	{
-		if (sky.average_alpha != SkyAlpha ())
+		if (sky.average_alpha != SkyAlpha () || sky.average_srgb != VK_ColorsSRGB ())
 			MakeAverage (SkyAlpha ());
 		Con_Printf ("sky %s: r_skyalpha %g, average color (linear) %.4f %.4f %.4f\n", sky.name,
 			    SkyAlpha (), sky.average[0], sky.average[1], sky.average[2]);

@@ -50,6 +50,7 @@ Each file in `engine/hexenlicht/` starts with a header comment describing it. **
 - Hunk allocations move the model cache: don't keep `Mod_Extradata` pointers across `GL_LoadTexture`/`Draw_CachePic` and the like.
 - `va()` has only 4 rotating buffers.
 - `shaders/hl_shared.h` and the headers it includes must compile in C and in every shader; C/GLSL struct layouts must match (UBO: `tools/hexenlicht/ubo_layout_check.ps1`).
+- Textures are UNORM 8-bit colors (4.17): a shader reading a color from the texture array converts it with `transfer.glsl`'s `color_to_linear(c, global_ubo.color_srgb)`, a data map (normals, masks) stays as it is; CPU colors go through `VK_ColorToLinear`, not an sRGB formula.
 - Vulkan: a dynamic BLAS's geometry flags must not change between its size query and its builds; `gl_RayFlagsOpaqueEXT` overrides instance flags; effects geometry needs `NO_DUPLICATE_ANY_HIT`.
 - MSVC: don't `(void)`-cast uninitialized locals; `const vec3_t` can't be passed to `AngleVectors`/`Mod_PointInLeaf`; a `static` definition of a function `glquake.h` declares extern compiles silently (undefined behaviour).
 - Hexen II data: vis is asymmetric; qbsp leaves faces facing into solid; there are no standalone brush models; frozen monsters are colormap 159→144 + translucent, then skin 101.

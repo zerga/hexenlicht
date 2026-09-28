@@ -580,7 +580,7 @@ static qboolean ParseChanges (int first, vk_mapedit_t *e, const vk_editablelight
 			{
 				if (i >= Cmd_Argc () || !ArgFloat (Cmd_Argv (i), &p[k]) || p[k] < 0.0f)
 				{
-					Con_Printf ("vk_editlight: color takes r g b (sRGB, 0-1 or 0-255)\n");
+					Con_Printf ("vk_editlight: color takes r g b (an 8-bit color, 0-1 or 0-255)\n");
 					return false;
 				}
 				i++;

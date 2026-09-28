@@ -49,6 +49,7 @@ layout(constant_id = 0) const uint spec_tone_mapping_hdr = 0;
 #include "vertex_buffer.h"
 
 #include "tone_mapping_utils.glsl"
+#include "transfer.glsl"
 
 // Process the image in 16x16x1 workgroups.
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -110,10 +111,12 @@ vec4 show_bar_chart(ivec2 pos, bool is_curve)
 
 // Applies blue-noise-based dithering for linear -> sRGB conversion.
 // This prevents onscreen banding artifacts in areas with subtle gradients.
+// Hexenlicht (4.17): a step of the 8-bit color the composite writes
+// (transfer.glsl: a 2.2 power, the sRGB curve with r_srgb 1)
 vec3 srgb_dither(vec3 color, ivec2 ipos)
 {
-    vec3 srgb = linear_to_srgb(color);
-    vec3 diff = srgb_to_linear(srgb + vec3(1.0/256.0)) - color;
+    vec3 srgb = linear_to_color(color, global_ubo.color_srgb);
+    vec3 diff = color_to_linear(srgb + vec3(1.0/256.0), global_ubo.color_srgb) - color;
 
     int texnum = global_ubo.current_frame_idx & (NUM_BLUE_NOISE_TEX - 1);
     ivec2 texpos = ipos & ivec2(BLUE_NOISE_RES - 1);

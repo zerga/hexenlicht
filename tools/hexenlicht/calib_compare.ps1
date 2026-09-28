@@ -2,10 +2,11 @@
 # docs/hexenlicht/TESTING.md, "Calibration against GL").
 #  - The light: GL's lightmaps (<name>_gllm.tga, r_lightmap 1) against
 #    Hexenlicht's direct diffuse light (<name>_direct.tga, divided by the
-#    shots' -Scale), both in linear light: GL multiplied its textures by the
-#    lightmap in sRGB space, so its light in linear light is the lightmap's
-#    sRGB decoded. Pixels count where GL's is grey (a lightmap: not the sky,
-#    liquids or other unlit surfaces), neither is clipped nor black; blocks of
+#    shots' -Scale), both in linear light: GL multiplied its textures' 8-bit
+#    colors by the lightmap's, so its light in linear light is the lightmap
+#    decoded (by -Transfer, below: the 2.2 power since 4.17). Pixels count
+#    where GL's is grey (a lightmap: not the sky, liquids or other unlit
+#    surfaces), neither is clipped nor black; blocks of
 #    -Block pixels with at least half of them. Per bookmark: the blocks, the
 #    median of Hexenlicht / GL (the scale to match: 1 = GL's units), the
 #    spread (the quartiles' distance, in stops) and the slope of log
@@ -28,8 +29,11 @@
 #    counted) for the image (top) and the light (bottom).
 # -Labels: the subfolders of Hexenlicht shots to compare (calib_shots.ps1's
 # -Label), each against the same GL shots; -Markdown writes the tables there.
+# -Transfer: how the shots' 8-bit colors are linear light, the engine's (4.17):
+# 2.2 (a power, the default; GL's lightmap texels are the fit's power of it
+# too), srgb for shots of a build before 4.17 or with r_srgb 1.
 param([Parameter(Mandatory)][string]$Out, [string[]]$Labels = @('hl'), [double]$Scale = 0.25, [int]$Block = 30,
-      [switch]$Pictures, [switch]$White, [string]$Markdown = '')
+      [switch]$Pictures, [switch]$White, [string]$Markdown = '', [string]$Transfer = '2.2')
 $ErrorActionPreference = 'Stop'
 if ($Block -lt 4) { throw '-Block: at least 4 pixels' }
 Add-Type -TypeDefinition @'
@@ -37,15 +41,18 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 public static class Calib {
+    // the shots' 8-bit colors as linear light: a power gamma, 0 = the sRGB curve (4.17)
+    static double gamma = 2.2;
     static double[] lut = MakeLut();
     static double[] MakeLut() {
         var t = new double[256];
-        for (int i = 0; i < 256; i++) { double v = i / 255.0; t[i] = v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); }
+        for (int i = 0; i < 256; i++) { double v = i / 255.0; t[i] = gamma > 0 ? Math.Pow(v, gamma) : v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); }
         return t;
     }
+    public static void SetTransfer(double g) { gamma = g; lut = MakeLut(); }
     static byte Encode(double x) {
         x = Math.Min(Math.Max(x, 0), 1);
-        x = x <= 0.0031308 ? x * 12.92 : 1.055 * Math.Pow(x, 1 / 2.4) - 0.055;
+        x = gamma > 0 ? Math.Pow(x, 1 / gamma) : x <= 0.0031308 ? x * 12.92 : 1.055 * Math.Pow(x, 1 / 2.4) - 0.055;
         return (byte)(x * 255 + 0.5);
     }
     // an uncompressed 24-bit TGA as top-down RGB
@@ -181,6 +188,7 @@ public static class Calib {
     }
 }
 '@
+[Calib]::SetTransfer($(if ($Transfer -eq 'srgb') { 0.0 } else { [double]::Parse($Transfer, [Globalization.CultureInfo]::InvariantCulture) }))
 
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $gldir = Join-Path $Out 'gl'

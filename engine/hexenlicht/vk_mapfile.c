@@ -16,9 +16,9 @@
  *  - light x y z <changes>: the map lights whose entity origin is x y z
  *    (to the unit, as vk_maplights.c's VK_MapLightAt); the changes: off,
  *    level n (at least 1: range and intensity, the mapper's key), scale f
- *    (intensity only), color r g b (sRGB, 0-1 or 0-255 as the _color key;
- *    shown with r_maplight_colors 1), style n, origin x y z (moved there;
- *    a spotlight keeps its direction);
+ *    (intensity only), color r g b (an 8-bit color, 0-1 or 0-255 as the
+ *    _color key; shown with r_maplight_colors 1), style n, origin x y z
+ *    (moved there; a spotlight keeps its direction);
  *  - addlight x y z <changes>: a new light there (level 300, white, style
  *    0 unless changed; off and origin make the line skipped).
  * vk_maplights.c applies the light edits whenever it builds the map's

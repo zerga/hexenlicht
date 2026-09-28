@@ -12,7 +12,7 @@
  *
  * Like the GL renderer, most quads use an alpha test (drawn or discarded,
  * no blending); the console background, fades and Draw_AlphaPic blend.
- * The shader works in sRGB-encoded space so both look like the original.
+ * The shader works in the 8-bit colors so both look like the original.
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -44,7 +44,7 @@ typedef struct
 {
 	float		x, y;
 	float		u, v;
-	uint32_t	color;		/* RGBA8, sRGB-encoded */
+	uint32_t	color;		/* RGBA8, an 8-bit color */
 	uint32_t	tex;		/* texture slot | FLAG_* */
 } draw_vertex_t;
 
@@ -1069,7 +1069,7 @@ void VK_DrawShade (int x, int y, int w, int h, float alpha)
 	Draw_Quad (x, y, x+w, y+h, 0, 0, 1, 1, 0, Draw_PackColor (0, 0, 0, (int)(alpha * 255.0f)), false);
 }
 
-/* a box of a color, sRGB 0-1 (vk_lightedit.c's markers) */
+/* a box of a color, 8-bit 0-1 (vk_lightedit.c's markers) */
 void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba)
 {
 	int	c[4], k;

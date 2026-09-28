@@ -9,10 +9,15 @@
  * (vk.texture_set); shaders index it directly.
  *
  * Differences to the GL version:
- * - Images are VK_FORMAT_R8G8B8A8_SRGB: shaders read linear colors, which
- *   the lighting needs. No power-of-two resampling, no gl_picmip.
- * - Mipmaps are generated on the GPU by blitting, which filters in linear
- *   space thanks to the sRGB format.
+ * - Images are VK_FORMAT_R8G8B8A8_UNORM (4.17; VK_FORMAT_R8G8B8A8_SRGB
+ *   before): shaders read the 8-bit colors as they are and turn them into
+ *   linear light where they are colors (shaders/transfer.glsl: a 2.2
+ *   power, GL's product with the lightmap; the sRGB curve with r_srgb 1).
+ *   VK_ColorToLinear is the same on the CPU (light colors, the sky's and
+ *   the lava's averages, particles, emissive skins, averaged screenshots).
+ *   No power-of-two resampling, no gl_picmip.
+ * - Mipmaps are generated on the GPU by blitting, which filters the 8-bit
+ *   colors, as GL's mipmaps and filtering did.
  * - Filtering follows the flags: mipmapped textures (world, models,
  *   sprites) are trilinear + anisotropic with repeat addressing; TEX_NEAREST
  *   is point sampled, everything else bilinear, both clamped to the edge
@@ -48,7 +53,7 @@
 #include "hashindex.h"
 #include "vk_local.h"
 
-#define TEXTURE_FORMAT	VK_FORMAT_R8G8B8A8_SRGB
+#define TEXTURE_FORMAT	VK_FORMAT_R8G8B8A8_UNORM
 
 typedef struct
 {
@@ -72,6 +77,13 @@ int		numgltextures;		/* slots in use, including slot 0 */
 int		gl_texlevel;		/* textures below this survive map changes */
 qboolean	flush_textures;		/* set by the server when the map changes */
 cvar_t		gl_purge_maptex = {"gl_purge_maptex", "1", CVAR_ARCHIVE};
+
+static void ColorsChanged (cvar_t *var);
+
+/* 4.17: the 8-bit colors are a COLOR_GAMMA power of linear light (see the
+ * top), or with r_srgb 1 the sRGB curve's */
+#define COLOR_GAMMA	2.2f	/* shaders/transfer.glsl's */
+static cvar_t	r_srgb = {"r_srgb", "0", CVAR_ARCHIVE};
 
 /* the video menu shows the GL filter names (menu.c) */
 int		gl_filter_idx = 4;	/* Bilinear */
@@ -107,6 +119,68 @@ static VkSampler	sampler_linear_repeat;	/* bilinear, no mips, repeat (TEX_REPEAT
 static VkSampler	sampler_trilinear;	/* trilinear + anisotropy, repeat */
 static VkDescriptorPool	texture_pool;
 static VkCommandBuffer	upload_cmd;		/* while uploading: from VK_BeginUpload */
+
+
+/* ==========================================================================
+ * Colors (4.17): 8-bit colors and linear light, as shaders/transfer.glsl
+ * ========================================================================== */
+
+/* the sRGB curve (r_srgb 1), else the COLOR_GAMMA power */
+qboolean VK_ColorsSRGB (void)
+{
+	return r_srgb.integer != 0;
+}
+
+/* an 8-bit color (0-1; above 1 too: jsh2color's colors reach 1.08) as
+ * linear light, by the sRGB curve or the COLOR_GAMMA power */
+float VK_ColorToLinearAs (float c, qboolean srgb)
+{
+	c = q_max (c, 0.0f);
+	if (srgb)
+		return (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
+	return powf (c, COLOR_GAMMA);
+}
+
+/* the same by r_srgb */
+float VK_ColorToLinear (float c)
+{
+	return VK_ColorToLinearAs (c, VK_ColorsSRGB ());
+}
+
+/* linear light as an 8-bit color, clamped to 0-1 */
+float VK_LinearToColor (float x)
+{
+	x = q_max (0.0f, q_min (1.0f, x));
+	if (VK_ColorsSRGB ())
+		return (x <= 0.0031308f) ? x * 12.92f : 1.055f * powf (x, 1.0f / 2.4f) - 0.055f;
+	return powf (x, 1.0f / COLOR_GAMMA);
+}
+
+/* VK_ColorToLinear of the bytes 0-255 */
+const float *VK_ColorTable (void)
+{
+	static float	table[2][256];
+	static qboolean	made[2];
+	int		s = VK_ColorsSRGB () ? 1 : 0, i;
+
+	if (!made[s])
+	{
+		for (i = 0; i < 256; i++)
+			table[s][i] = VK_ColorToLinearAs (i / 255.0f, s != 0);
+		made[s] = true;
+	}
+	return table[s];
+}
+
+/* the shaders follow the UBO's color_srgb (vk_ubo.c), the CPU's colors
+ * where they are used (dynamic lights, particles, the sky's average,
+ * screenshots) or here: the map lights' colors and the lava's lights;
+ * the emissive skins with the next map (vk_emissive.c) */
+static void ColorsChanged (cvar_t *var)
+{
+	(void)var;
+	VK_MapLightColorsChanged ();
+}
 
 
 /* ==========================================================================
@@ -401,7 +475,7 @@ static void VK_Convert8 (const byte *data, unsigned int *trans, vk_texture_t *t)
 }
 
 
-/* does a texel have a channel of at least VK_EMISSIVE_THRESHOLD (sRGB)? */
+/* does a texel have a channel of at least VK_EMISSIVE_THRESHOLD (of 255)? */
 static qboolean HasBrightTexels (const unsigned int *rgba, int count)
 {
 	int	i;
@@ -638,6 +712,8 @@ void VK_InitTextures (void)
 	int					i;
 
 	Cvar_RegisterVariable (&gl_purge_maptex);
+	Cvar_RegisterVariable (&r_srgb);
+	Cvar_SetCallback (&r_srgb, ColorsChanged);
 	Cmd_AddCommand ("vk_textures", VK_Textures_f);
 	Hash_Allocate (&hash_textures, VK_MAX_TEXTURES);
 

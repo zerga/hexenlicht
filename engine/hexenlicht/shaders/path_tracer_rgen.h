@@ -43,11 +43,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
+ *  - the textures are UNORM (4.17): their colors become linear light here
+ *    (base, emissive: transfer.glsl's color_to_linear), the normal map and
+ *    the masks' alpha stay as they are;
  *  - get_emissive_shell: not scaled by the tone mapper's adapted luminance
  *    (Hexen II has no shells). */
 
 #include "path_tracer.h"
 #include "utils.glsl"
+#include "transfer.glsl"
 #include "path_tracer_transparency.glsl"
 
 // Hexenlicht: the TLASes by device address (vk_accel.c), not a descriptor array
@@ -133,7 +137,8 @@ struct Ray {
  * its polygons' vertices, which warps the sky up close): height counts three
  * times, the direction scaled to 6 * 63 units, plus each layer's scroll, in
  * texels of the 128x128 layers; the front layer over the back at r_skyalpha,
- * blended in sRGB as GL blends the framebuffer, as radiance (GL's fullbright) */
+ * blended in the 8-bit colors as GL blends the framebuffer (its filtering
+ * too: the textures are UNORM, 4.17), as radiance (GL's fullbright) */
 vec3
 hexen2_sky(vec3 direction)
 {
@@ -143,10 +148,10 @@ hexen2_sky(vec3 direction)
 	vec3 d = vec3(direction.xy, direction.z * 3.0);
 	vec2 st = d.xy * ((6.0 * 63.0 / 128.0) / max(length(d), 1e-6));
 
-	vec3 back = linear_to_srgb(global_textureLod(global_ubo.sky_back_texture, st + global_ubo.sky_back_scroll, 0).rgb);
+	vec3 back = global_textureLod(global_ubo.sky_back_texture, st + global_ubo.sky_back_scroll, 0).rgb;
 	vec4 front = global_textureLod(global_ubo.sky_front_texture, st + global_ubo.sky_front_scroll, 0);
 
-	return srgb_to_linear(mix(back, linear_to_srgb(front.rgb), front.a * global_ubo.sky_alpha));
+	return color_to_linear(mix(back, front.rgb, front.a * global_ubo.sky_alpha), global_ubo.color_srgb);
 }
 
 /* Hexenlicht: Hexen II's sky instead of Quake II RTX's physical sky and
@@ -672,7 +677,7 @@ trace_caustic_ray(Ray ray, int surface_medium)
 
 	    	vec3 base_color = vec3(minfo.base_factor);
 	    	if (minfo.base_texture > 0)
-	    		base_color *= global_textureLod(minfo.base_texture, tex_coord, 2).rgb;
+	    		base_color *= color_to_linear(global_textureLod(minfo.base_texture, tex_coord, 2).rgb, global_ubo.color_srgb);
 	    	base_color = clamp(base_color, vec3(0), vec3(1));
 
 			throughput = base_color;
@@ -1038,7 +1043,7 @@ sample_emissive_texture(uint material_id, MaterialInfo minfo, vec2 tex_coord, ve
 	    else
 	        image3 = global_textureGrad(minfo.emissive_texture, tex_coord, tex_coord_x, tex_coord_y);
 
-    	vec3 corrected = correct_emissive(material_id, image3.rgb);
+    	vec3 corrected = correct_emissive(material_id, color_to_linear(image3.rgb, global_ubo.color_srgb));
 
 	    return corrected * minfo.emissive_factor;
 	}
@@ -1128,16 +1133,17 @@ get_material(
 		    image1 = global_textureGrad(minfo.base_texture, tex_coord, tex_coord_x, tex_coord_y);
 	}
 
-	base_color = image1.rgb * minfo.base_factor;
+	base_color = color_to_linear(image1.rgb, global_ubo.color_srgb) * minfo.base_factor;
 	base_color = clamp(base_color, vec3(0), vec3(1));
 
 	// Hexenlicht: a model's colorshade tint multiplies GL's vertex light (then
 	// clamped to 1); its values reach 10, so its hue, scaled to at most 1,
-	// tints the base color (its brightness is a matter of the lighting, E4)
+	// tints the base color (its brightness is a matter of the lighting, E4),
+	// as GL multiplied it: an 8-bit color (4.17)
 	if (triangle.instance_index != ~0u)
 	{
 		vec3 tint = instance_buffer.model_instances[triangle.instance_index].tint;
-		base_color *= tint / max(max(tint.r, max(tint.g, tint.b)), 1.0);
+		base_color *= color_to_linear(tint / max(max(tint.r, max(tint.g, tint.b)), 1.0), global_ubo.color_srgb);
 	}
 
 	normal = geo_normal;
