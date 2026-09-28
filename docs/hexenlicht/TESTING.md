@@ -214,6 +214,27 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   the file from the game folder into the repository's
   `data/hexenlicht/maps/` (don't copy: a game-folder file is used before
   the shipped one).
+- **Darkness (4.10):** `vk_darkplaces` in a local game lists the map's
+  dark places with a point (an item's or monster's origin + 24): a
+  script over the maps is `map <m>`, ~40 waits, `vk_darkplaces 5` per map,
+  in chained scripts of at most ~12 maps (a longer one overflows the 8 KB
+  command buffer and runs nothing). Bookmark them (a pitch of 15 shows the
+  floor) and run `calib_shots.ps1`: the look is GL's image against the lit
+  image (`-LitFrames 8`); the light compare has nothing to count (GL's
+  lightmaps are black there). With the torch: `-PreSave "impulse 43;
+  <20 waits>; invuse"` (`impulse 43` gives everything, the artifacts in
+  their index order, so the torch is the first; the client needs the ~20
+  frames to get the new inventory, or `invuse` does nothing; the save
+  keeps the torch burning for both engines; `impulse 14` is the
+  polymorph, a sheep's eye height) into another `-Out` (GL's shots
+  differ). The Necromancer's darkness (`EF_DARKLIGHT`): `-PlayerClass 3
+  -PreSave "impulse 43; <20 waits>; invleft; <5 waits>; invleft; <5
+  waits>; invuse"` (the first `invleft` only opens the inventory bar, the
+  second selects the last artifact, the Icon of the Defender) at lit
+  starts with a pitch of 30, and a second label with `-HlCvars
+  'r_darklights 0' -SkipSaves -SkipGl -KeepSaves`; `vk_lights` counts the
+  dark lights. The debug views don't show the darkening (only the
+  composites apply it).
 
 - **Window:** `resize_test.ps1` (resize, maximize, restore, too small) with a
   script that echoes `==== STEP1..5` and waits ~300 frames after each; also

@@ -1,5 +1,6 @@
 /*
 Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+Copyright (C) 2026  Hexenlicht contributors
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +22,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // color, when the denoiser is disabled (flt_enable = 0).
 // ========================================================================== //
 
+/* Hexenlicht: Quake II RTX's, but it takes GL's dark lights from the
+ * surface's light (4.10, darkness.glsl; also DLSS RR's input, so there
+ * the one-sample light decides the factor). */
+
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
 #extension GL_EXT_nonuniform_qualifier    : enable
@@ -35,6 +40,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 #include "utils.glsl"
 #include "brdf.glsl"
+#include "darkness.glsl"
 
 void
 main()
@@ -50,11 +56,21 @@ main()
 	vec3 low_freq = texelFetch(TEX_PT_COLOR_LF_SH, ipos, 0).rgb;
 	vec3 high_freq = unpackRGBE(texelFetch(TEX_PT_COLOR_HF, ipos, 0).x);
 	vec3 specular = unpackRGBE(texelFetch(TEX_PT_COLOR_SPEC, ipos, 0).x);
-	vec3 throughput = texelFetch(TEX_PT_THROUGHPUT, ipos, 0).rgb;
-	
+	vec4 throughput_dark = texelFetch(TEX_PT_THROUGHPUT, ipos, 0);	// Hexenlicht: w the dark lights' amount
+	vec3 throughput = throughput_dark.rgb;
+
 	low_freq /= STORAGE_SCALE_LF;
 	high_freq /= STORAGE_SCALE_HF;
 	specular /= STORAGE_SCALE_SPEC;
+
+	// Hexenlicht (4.10): GL's dark lights take their amount from the surface's light
+	if(global_ubo.num_dark_lights > 0)
+	{
+		float dark = dark_light_factor(low_freq + high_freq, throughput_dark.w);
+		low_freq *= dark;
+		high_freq *= dark;
+		specular *= dark;
+	}
 
 	// Load the other image channels
 	vec3 base_color = texelFetch(TEX_PT_BASE_COLOR_A, ipos, 0).rgb;

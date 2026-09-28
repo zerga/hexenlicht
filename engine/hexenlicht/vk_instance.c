@@ -775,7 +775,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	material = VK_SkinMaterial (e, hdr, emissive, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |
-		       (uint32_t)material;
+		       MATERIAL_FLAG_MODEL | (uint32_t)material;	/* 4.10: dark lights leave models lit (shaders/darkness.glsl) */
 	if (e->kind == SCENE_ENT_VIEWMODEL)
 		mi->material |= MATERIAL_FLAG_WEAPON;
 	if (emissive && VK_GetMaterial (material)->emissive_texture)
