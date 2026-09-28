@@ -24,14 +24,16 @@
  * is utils/light's by default (2): each light gives a surface the lightmap
  * value the compiler and GL made of it alone, (level - d)(0.5 + 0.5 cos)
  * halved, clipped, times the style, in linear light (to the power
- * r_maplight_gamma, 2.2), times r_maplight_gl_scale (2: GL added its lights
- * before the sRGB step, so overlapping lights were brighter than their sum;
- * 2 matches GL's lit image on the lightmapped world, median 0.97); the
- * sphere of r_maplight_radius (8) only softens the shadows; the range is
- * the level. Not physically based (a light has no fixed power), but its
- * shadows and everything after the first hit are path traced. Measured
- * against GL at 4.9's bookmarks: the direct light's spread 0.89 stops
- * (the physical shape's 1.15), the slope 0.87.
+ * r_maplight_gamma, 2.2), times its factor in the light list entry: GL
+ * added its lights before the sRGB step, so overlapping lights were
+ * brighter than their sum; since 4.16 vk_lightfit.c fits each light's
+ * factor per cluster to the map's lightmaps (4.15: one, r_maplight_gl_scale
+ * 2, now the lights' without a fit); the sphere of r_maplight_radius (8)
+ * only softens the shadows; the range is the level. Not physically based
+ * (a light has no fixed power), but its shadows and everything after the
+ * first hit are path traced. Measured against GL at 4.9's bookmarks: the
+ * direct light's spread 0.89 stops with 4.15's factor, 0.53 with 4.16's
+ * (the physical shape's 1.15).
  * The physical shape (0; 1 with utils/light's angle term instead of the
  * cosine): the intensity (pi x radiance of an 8-unit sphere, as
  * vk_testlight's) is r_maplight_scale x (level / 300)^r_maplight_power (3):
@@ -114,7 +116,7 @@ static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intens
 static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
 static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical, 1 GL's angle term, 2 GL's lightmap value (4.15) */
 static cvar_t	r_maplight_gamma = {"r_maplight_gamma", "2.2", CVAR_NONE};	/* GL's lightmap value into linear light: its power (4.15) */
-static cvar_t	r_maplight_gl_scale = {"r_maplight_gl_scale", "2", CVAR_NONE};	/* shape 2: a full GL texel's light, 1 = the texture's own color (4.15: 2 for GL's overlapping lights) */
+static cvar_t	r_maplight_gl_scale = {"r_maplight_gl_scale", "2", CVAR_NONE};	/* shape 2: a full GL texel's light where 4.16's fit has none, or with r_maplight_fit 0 (4.15: 2 for GL's overlapping lights; 1 = the texture's own color) */
 static cvar_t	r_maplight_radius = {"r_maplight_radius", "8", CVAR_NONE};	/* the spheres' (4.15) */
 static cvar_t	r_maplight_colors = {"r_maplight_colors", "0", CVAR_ARCHIVE};	/* 0 white (the original's, 4.9), 1 HoT's colors */
 
@@ -486,6 +488,7 @@ static void ApplyEdits (qmodel_t *worldmodel)
 			l->level = e->level;
 			l->scale = e->scale;
 			l->style = e->style;
+			l->base = -1;	/* not in the lightmaps: no fitted factor (4.16) */
 			q_strlcpy (c->classname, "addlight", sizeof(c->classname));
 			c->entity = -1;
 			c->line_id = e->id;
@@ -629,6 +632,7 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 		VectorCopy (e->origin, c->lump_origin);
 		l->level = e->level;
 		l->scale = 1.0f;
+		l->base = num_base;
 		l->style = (e->style > 0 && e->style < 256) ? e->style : 0;	/* utils/light allows 0-254 */
 		q_strlcpy (c->classname, e->classname, sizeof(c->classname));
 		c->entity = i;
@@ -691,6 +695,9 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 	}
 	free (ents);
 
+	/* GL's sum of overlapping lights (4.16): the lump's lights against the lightmaps */
+	VK_FitMapLights (worldmodel, base_lights, num_base);
+
 	/* jsh2color's colors, unless the map has its own */
 	if (!stats.colored && num_base)
 	{
@@ -721,6 +728,7 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 
 void VK_ClearMapLights (void)
 {
+	VK_ClearLightFit ();
 	num_base = num_maplights = num_editable = num_at_points = num_dropped_points = 0;
 	memset (at_hash, 0, sizeof(at_hash));
 	memset (&stats, 0, sizeof(stats));
@@ -764,13 +772,21 @@ float VK_MapLightRange (void)
 
 /* a map light's: its level's, times its map file scale and the map's
  * r_map_light_scale (4.7); with GL's shape (4.15) the light of a full GL
- * texel (r_maplight_gl_scale: 1 is the texture's own color, GL's white) */
+ * texel, the texture's own color, which each light list entry multiplies
+ * by the light's factor there (4.16: vk_lightfit.c's, or
+ * r_maplight_gl_scale) */
 float VK_MapLightIntensity (const vk_maplight_t *l)
 {
-	float	base = (VK_MapLightShape () == SPHERE_SHAPE_GL) ? q_max (r_maplight_gl_scale.value, 0.0f)
-								: VK_LightLevelIntensity ((float)l->level);
+	float	base = (VK_MapLightShape () == SPHERE_SHAPE_GL) ? 1.0f : VK_LightLevelIntensity ((float)l->level);
 
 	return base * l->scale * VK_MapLightScale ();
+}
+
+/* GL's shape (4.15): a full GL texel's light where the fit has no factor
+ * (4.16), and every light's with r_maplight_fit 0 */
+float VK_MapLightGLScale (void)
+{
+	return q_max (r_maplight_gl_scale.value, 0.0f);
 }
 
 /* the map lights' light shape (4.15: shaders/light_lists.h), SPHERE_SHAPE_* */
@@ -807,6 +823,8 @@ void VK_PrintMapLights (void)
 	Con_Printf ("  shape %d (4.15): %s, r_maplight_gamma %g%s, spheres of radius %g\n", VK_MapLightShape (), shapes[VK_MapLightShape ()],
 		    VK_MapLightGamma (), (VK_MapLightShape () == SPHERE_SHAPE_GL) ? va(", r_maplight_gl_scale %g", r_maplight_gl_scale.value) : "",
 		    VK_MapLightRadius ());
+	if (VK_MapLightShape () == SPHERE_SHAPE_GL)
+		VK_PrintLightFit (false);
 	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models in the light group last frame (at a light's origin, owning a dynamic light)\n",
 		    stats.spots, stats.unmatched, applied.styled, stats.colored, on_models);
 	Con_Printf ("  %d plain lights over lava (%d with a style): %s\n", applied.over_lava, applied.over_lava_styled,
@@ -880,6 +898,8 @@ void VK_InitMapLights (void)
 	Cvar_SetCallback (&r_maplight_range, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_shape, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_gl_scale, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_gamma, MapLightsChanged);	/* the fit's power (4.16) */
 	Cvar_SetCallback (&r_maplight_radius, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_colors, MapLightColorsChanged);
+	VK_InitLightFit ();
 }

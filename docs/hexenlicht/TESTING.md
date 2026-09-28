@@ -110,10 +110,22 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   pixels are grey (lightmaps: not the sky or liquids) and neither is
   clipped or black: the median ratio (1: GL's units), the spread (stops
   between the quartiles), the slope of log Hexenlicht over log GL (1: the
-  same contrast); and the lit image's mean luminance against GL's.
+  same contrast); and the lit image's mean luminance against GL's, the
+  look on the lightmapped world ("surfaces"), and since 4.16 the look
+  with the blocks where GL's lightmap is clipped ("+clip": fill-lit
+  rooms and yards, where GL's lights added up to a full texel, which the
+  light's mask leaves out) and those blocks' spread in stops.
   `-Pictures` writes `<label>\compare\<name>.png`: GL, Hexenlicht and their
   ratio (blue darker, red brighter, to 2 stops) for the image and the
-  light.
+  light. Saves are named `hlcal_<bookmark>`: two bookmark files with the
+  same names (4.9's `demo1_start` and 4.11a's) overwrite each other's
+  saves, so make them again (no `-SkipSaves`) when switching files.
+- **The light fit (4.16):** `vk_lights fit` scores the map's fitted light
+  factors on the lightmap texels the fit didn't use: the direct light
+  against GL's lightmaps with 4.15's one factor, a factor per light and
+  per list entry (what the renderer uses), and where GL's lightmap is
+  clipped. Over many maps: `map <m>`, ~40 waits, `echo ==== MAP <m>`,
+  `vk_lights fit`, at most ~10 maps per script, chained with `exec`.
 - `vk_screenshot <name> [frames]` writes `shots\<name>.tga`, frames
   averaged in linear light (not numbered, no 100-file limit).
 
@@ -134,8 +146,16 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 3. `tga_diff.ps1 -A old -B new -MaxY 470` compares above the HUD rows;
    `-Noise old2` skips pixels that differ between two old runs; `-DiffDir`
    writes images with differing pixels in red. Expect "identical" or ±1
-   rounding; explain everything else.
+   rounding; explain everything else. The first map after the game starts
+   can differ between two builds in the denoised lit image (4.16: every
+   pixel by up to ±20 while the direct light was identical; two runs of
+   one build identical, and the same map second in the script identical
+   within ±1): put a map you don't compare first.
 4. Remove the worktree afterwards.
+5. A script's last lines must be `toggleconsole`, a few waits and `quit`:
+   `quit` in a game opens the menu's "are you sure" (the run then ends at
+   `hl_run.ps1`'s timeout, killed, without the validation summary; a
+   killed run also leaves `<map>.gip` files in the game folder).
 
 ## Regression maps and useful places
 
@@ -186,9 +206,11 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   before 4.15 dim or brighten the map's lights with `r_maplight_scale`
   (50, 62.5, 100, 4000), which only the physical shapes use: add
   `r_maplight_shape 0` to repeat them as measured, or scale
-  `r_maplight_gl_scale` (2 by default) instead with GL's shape (its light
-  is bounded: a full lightmap texel at most, so the physical shape's very
-  bright settings have no equivalent next to lights).
+  `r_maplight_fit_scale` (1.1 by default; 4.16) instead with GL's shape,
+  or `r_maplight_gl_scale` (2) with `r_maplight_fit 0` for 4.15's (e.g.
+  R97's pulse at `r_maplight_gl_scale 0.5`): its light is bounded, a full
+  lightmap texel at most, so the physical shape's very bright settings
+  have no equivalent next to lights.
 - **Map files (4.7):** a test `maps/<map>.hlmap` goes into the data
   folder's `data1\maps\` (or `portals\maps\`), not the repository: it is
   used before a shipped one. `vk_mapfile` shows what it did, `vk_mapfile

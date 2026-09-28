@@ -551,6 +551,7 @@ typedef struct
 	float		spot_cos;	/* the cosine of half the cone's width */
 	qboolean	over_lava;	/* a plain light close over lava: left out while lava emits (4.5) */
 	float		scale;		/* the intensity times this (4.7: the map file's scale, 1) */
+	int		base;		/* the lump light it is (VK_FitMapLights' order, 4.16), -1: an addlight */
 } vk_maplight_t;
 
 void VK_InitMapLights (void);	/* its cvars, from VK_InitLights */
@@ -563,6 +564,7 @@ float VK_MapLightRange (void);	/* r_maplight_range: a map light's range is its l
 int VK_MapLightShape (void);	/* r_maplight_shape: SPHERE_SHAPE_* (4.15) */
 float VK_MapLightGamma (void);	/* r_maplight_gamma (4.15) */
 float VK_MapLightRadius (void);	/* r_maplight_radius (4.15) */
+float VK_MapLightGLScale (void);	/* r_maplight_gl_scale (4.15; 4.16: the lights the fit has no factor for) */
 qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
 float VK_SRGBToLinear (float c);	/* a GL light color's linear value */
 qboolean VK_MapLightAt (const vec3_t origin);
@@ -663,6 +665,15 @@ typedef struct
 	double		seconds;
 } vk_lightcolors_t;
 int *VK_LightColors (qmodel_t *worldmodel, vk_lightcolors_t *info);	/* 0-275 per entity (3 ints), freed by the caller */
+
+/* vk_lightfit.c: GL's sum of overlapping lights (4.16): the map lights'
+ * GL-shape factors per light list entry, fitted to the map's lightmaps */
+void VK_InitLightFit (void);	/* its cvars, from VK_InitMapLights */
+void VK_FitMapLights (qmodel_t *worldmodel, const vk_maplight_t *lights, int count);	/* VK_LoadMapLights: the lump's lights */
+void VK_UpdateLightFit (void);	/* VK_UpdateLights: fitted again for a new r_maplight_gamma */
+void VK_ClearLightFit (void);
+float VK_LightFitFactor (int base, int cluster);	/* a list entry's: lump light base (-1: none), vis cluster */
+void VK_PrintLightFit (qboolean score);	/* vk_lights; vk_lights fit: scored on the texels it didn't use */
 
 /* vk_light.c: the path tracer's lights (the map's, test lights from
  * vk_testlight) and their per-cluster lists, built when the lights change (VK_UpdateLights);

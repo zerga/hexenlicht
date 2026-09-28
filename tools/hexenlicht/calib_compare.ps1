@@ -17,7 +17,11 @@
 #    "surfaces": the median ratio of blocks on the lightmapped world only
 #    (as the light's mask, so no sky), per bookmark and pooled (the
 #    number the map lights' scale is divided by to match GL's look:
-#    r_maplight_gl_scale, with the physical shapes r_maplight_scale). -White
+#    r_maplight_fit_scale, 4.16; with the physical shapes r_maplight_scale);
+#    "+clip" (4.16): the same with the blocks where GL's lightmap is
+#    clipped (the light's mask leaves them out: the fill-lit rooms and
+#    yards, where GL's sum of lights reached a full texel), and "spread"
+#    those blocks' spread in stops (how evenly the look matches). -White
 #    compares with <name>_gl.tga even where a colored one exists.
 #  - -Pictures: <Out>\<label>\compare\<name>.png, half size: GL | Hexenlicht |
 #    Hexenlicht / GL (blue darker, red brighter, to 2 stops; black not
@@ -103,9 +107,9 @@ public static class Calib {
         return new double[] { lg.Count, Math.Pow(2, Quantile(r, 0.5)), Quantile(r, 0.75) - Quantile(r, 0.25), sxx > 0 ? sxy / sxx : double.NaN };
     }
     // the look on the lightmapped world only (GL's lightmap shot grey, not
-    // clipped or black; the GL image not black): log2 of Hexenlicht's lit
-    // over GL's image, per block
-    public static void SurfaceBlocks(string gl, string lit, string gllm, int block, List<double> r) {
+    // black, and not clipped unless clipped; the GL image not black): log2
+    // of Hexenlicht's lit over GL's image, per block
+    public static void SurfaceBlocks(string gl, string lit, string gllm, int block, List<double> r, bool clipped) {
         int w, h;
         byte[] a = Read(gl, out w, out h), b = ReadAs(lit, w, h), m = ReadAs(gllm, w, h);
         for (int by = 0; by + block <= h; by += block)
@@ -114,11 +118,16 @@ public static class Calib {
                 for (int y = by; y < by + block; y++)
                     for (int x = bx; x < bx + block; x++) {
                         int i = (y * w + x) * 3;
-                        if (!Grey(m, i) || m[i + 1] < 12 || m[i + 1] > 250 || Lum(a, i) < 0.002) continue;
+                        if (!Grey(m, i) || m[i + 1] < 12 || (m[i + 1] > 250 && !clipped) || Lum(a, i) < 0.002) continue;
                         sa += Lum(a, i); sb += Lum(b, i); n++;
                     }
                 if (n * 2 >= block * block && sa > 0 && sb > 0) r.Add(Math.Log(sb / sa, 2));
             }
+    }
+    // the quartiles' distance of log2 ratios, in stops
+    public static double Spread(List<double> v) {
+        var s = new List<double>(v); s.Sort();
+        return s.Count > 0 ? Quantile(s, 0.75) - Quantile(s, 0.25) : double.NaN;
     }
     public static double Median(List<double> v) {
         var s = new List<double>(v); s.Sort();
@@ -179,16 +188,16 @@ $names = @(Get-ChildItem $gldir -Filter '*_gllm.tga' | ForEach-Object { $_.Name 
 if (-not $names) { throw "no GL shots in $gldir" }
 $md = [Collections.Generic.List[string]]::new()
 function F([double]$v, [string]$f) { $v.ToString($f, $inv) }
-$fmt = '{0,-18} {1,6} {2,8} {3,7} {4,6}  {5,8} {6,8} {7,8} {8,9}{9}'
+$fmt = '{0,-18} {1,6} {2,8} {3,7} {4,6}  {5,8} {6,8} {7,8} {8,9} {9,7} {10,7}{11}'
 foreach ($label in $Labels) {
 	$hldir = Join-Path $Out $label
 	$pg = [Collections.Generic.List[double]]::new(); $pe = [Collections.Generic.List[double]]::new()
-	$ps = [Collections.Generic.List[double]]::new(); $ratios = [Collections.Generic.List[double]]::new()
+	$ps = [Collections.Generic.List[double]]::new(); $pc = [Collections.Generic.List[double]]::new(); $ratios = [Collections.Generic.List[double]]::new()
 	"== ${label}: the light (direct / GL lightmap) and the look (lit / GL image)"
-	$fmt -f 'bookmark', 'blocks', 'median', 'spread', 'slope', 'GL mean', 'HL mean', 'ratio', 'surfaces', ''
+	$fmt -f 'bookmark', 'blocks', 'median', 'spread', 'slope', 'GL mean', 'HL mean', 'ratio', 'surfaces', '+clip', 'spread', ''
 	$md.Add("### $label"); $md.Add('')
-	$md.Add('| bookmark | blocks | light median | spread (stops) | slope | GL mean | Hexenlicht mean | ratio | on surfaces |')
-	$md.Add('|---|---|---|---|---|---|---|---|---|')
+	$md.Add('| bookmark | blocks | light median | spread (stops) | slope | GL mean | Hexenlicht mean | ratio | on surfaces | with the clipped | their spread (stops) |')
+	$md.Add('|---|---|---|---|---|---|---|---|---|---|---|')
 	foreach ($n in $names) {
 		$direct = Join-Path $hldir "${n}_direct.tga"; $lit = Join-Path $hldir "${n}_lit.tga"
 		if (-not (Test-Path $direct) -or -not (Test-Path $lit)) { continue }
@@ -201,13 +210,16 @@ foreach ($label in $Labels) {
 		if (-not $colored) { $glimg = Join-Path $gldir "${n}_gl.tga" }
 		$g = [Calib]::MeanLum($glimg); $h = [Calib]::MeanLum($lit)
 		$sb = [Collections.Generic.List[double]]::new()
-		[Calib]::SurfaceBlocks($glimg, $lit, $gllm, $Block, $sb)
+		[Calib]::SurfaceBlocks($glimg, $lit, $gllm, $Block, $sb, $false)
+		$sc = [Collections.Generic.List[double]]::new()
+		[Calib]::SurfaceBlocks($glimg, $lit, $gllm, $Block, $sc, $true)
+		$pc.AddRange($sc)
 		$ps.AddRange($sb); $ratios.Add([Math]::Log($h / $g, 2))
 		$sm = [Calib]::Median($sb)
 		$fmt -f $n, $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), (F $g 'F4'), (F $h 'F4'), (F ($h / $g) 'F2'),
-			(F $sm 'F2'), $(if ($colored) { '  (GL with HoT colors)' } else { '' })
-		$md.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} |' -f $n, $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'),
-			(F $s[3] 'F2'), (F $g 'F4'), (F $h 'F4'), (F ($h / $g) 'F2'), (F $sm 'F2')))
+			(F $sm 'F2'), (F ([Calib]::Median($sc)) 'F2'), (F ([Calib]::Spread($sc)) 'F2'), $(if ($colored) { '  (GL with HoT colors)' } else { '' })
+		$md.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} |' -f $n, $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'),
+			(F $s[3] 'F2'), (F $g 'F4'), (F $h 'F4'), (F ($h / $g) 'F2'), (F $sm 'F2'), (F ([Calib]::Median($sc)) 'F2'), (F ([Calib]::Spread($sc)) 'F2')))
 		if ($Pictures) {
 			$cmp = Join-Path $hldir 'compare'; New-Item -ItemType Directory -Force $cmp | Out-Null
 			$tga = Join-Path $cmp "$n.tga"
@@ -217,9 +229,9 @@ foreach ($label in $Labels) {
 		}
 	}
 	$s = [Calib]::Stats($pg, $pe)
-	$fmt -f 'all', $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), '', '', (F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2'), ''
-	$md.Add(('| **all** | {0} | {1} | {2} | {3} | | | {4} | {5} |' -f $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'),
-		(F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2')))
+	$fmt -f 'all', $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), '', '', (F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2'), (F ([Calib]::Median($pc)) 'F2'), (F ([Calib]::Spread($pc)) 'F2'), ''
+	$md.Add(('| **all** | {0} | {1} | {2} | {3} | | | {4} | {5} | {6} | {7} |' -f $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'),
+		(F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2'), (F ([Calib]::Median($pc)) 'F2'), (F ([Calib]::Spread($pc)) 'F2')))
 	$md.Add('')
 	''
 }

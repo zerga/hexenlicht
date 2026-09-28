@@ -15,6 +15,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
+[Light fit](#light-fit-vk_lightfitc) ·
 [Emissive surfaces](#emissive-surfaces-vk_emissivec) · [Sky](#sky-vk_skyc) ·
 [Map file](#map-file-vk_mapfilec) · [Light editor](#light-editor-vk_lighteditc) ·
 [Calibration](#calibration-vk_calibc) ·
@@ -589,8 +590,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
     7, so 1 is a full texel), clipped at the compiler's byte (2.0625: 255 × 264 >> 7),
     times the style, clipped at 1, to the power `global_ubo.maplight_gamma`
     (`r_maplight_gamma` 2.2: GL multiplied the texture by it in sRGB
-    space), times the color (`r_maplight_gl_scale` for a full texel, not
-    a radiance); its range is the level, its CDF weight π × that light (as
+    space), times the color (a full texel's light, not a radiance) and
+    the light list entry's factor (4.16: GL's sum of overlapping lights,
+    `list_entry_factor`, [Light fit](#light-fit-vk_lightfitc)); its range
+    is the level, its CDF weight π × that light (as
     a solid angle weighs a radiance), the sphere is only the shadow ray's
     target (a point of it below the surface's horizon is the center: the
     compiler's plane test), and a bounce's solid-angle limit doesn't apply
@@ -612,7 +615,11 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   the open leafs its emitter touches (a BSP walk with the sphere's box, or
   the polygon's box reaching one unit in front of it; Q2RTX takes the
   light's one cluster), except clusters entirely behind a polygon (Q2RTX's
-  `light_affects_cluster`) and clusters beyond a sphere's range. A
+  `light_affects_cluster`) and clusters beyond a sphere's range. An entry
+  is the light's index in its low 16 bits and, for a sphere of GL's shape,
+  its factor in that cluster as a half float in the high 16 (4.16,
+  `ListEntry`: [Light fit](#light-fit-vk_lightfitc); the shader reads it with
+  the index, nothing more per candidate). A
   cluster's bounds (`VK_LoadLightClusters`, after the PVS is final) are its
   leaf's and those of its world triangles (Q2RTX: its opaque triangles');
   models and brush entities take the cluster of their center, so their
@@ -827,8 +834,11 @@ from `VK_LoadWorld` before the light lists):
   with a light shape (`r_maplight_shape`, 4.15, below;
   [Lights](#lights-vk_lightc) has the shader side). **Shape 2, the
   default:** utils/light's own, each light giving a surface the lightmap
-  texel the compiler and GL made of it alone, in linear light, times
-  `r_maplight_gl_scale` (2) for a full texel; its range is the level.
+  texel the compiler and GL made of it alone, in linear light, times its
+  factor for GL's sum with the other lights in the cluster it lights (4.16,
+  fitted to the map's lightmaps: [Light fit](#light-fit-vk_lightfitc);
+  `r_maplight_gl_scale` 2, 4.15's one factor for all, where there is none);
+  its range is the level.
   **Shapes 0 and 1** (physical; 1 with utils/light's angle term): the
   intensity (π × the radiance of an 8-unit sphere, as `vk_testlight`'s; a
   larger sphere has the same light at a distance, though on bounces its
@@ -961,8 +971,9 @@ from `VK_LoadWorld` before the light lists):
   tree stands at its own light, so it casts no shadows either.
 - **Against GL** (measured in 4.9 and 4.15, above): with shape 2 the lights
   add in linear light, not before the sRGB step (overlaps darker, made up
-  for on average by the scale), each light clips alone (GL clipped the
-  sum), shadows come from an 8-unit sphere, not from 16-unit texels
+  for since 4.16 per light and cluster by the fit to the lightmaps, before
+  it on average by the scale), each light clips alone (GL clipped the
+  sum; the fit takes that in too), shadows come from an 8-unit sphere, not from 16-unit texels
   (sharper contact shadows); with the physical shapes inverse-square
   falloff instead of linear, and with shape 0 the cosine instead of the
   compiler's 0.5 + 0.5 cos (surfaces lit at grazing angles get almost no
@@ -971,11 +982,11 @@ from `VK_LoadWorld` before the light lists):
   in the lightmaps.
 - `r_maplights 0` turns them off (test lights only); a change of
   `r_maplights`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`,
-  `r_maplight_shape`, `r_maplight_gl_scale`, `r_maplight_radius` or
-  `r_maplight_colors` rebuilds the lights (`VK_RebuildLights`: only while the client is in
+  `r_maplight_shape`, `r_maplight_gl_scale`, `r_maplight_radius`,
+  `r_maplight_colors`, `r_maplight_gamma` (also in the UBO each frame; 4.16
+  fits again with it), `r_maplight_fit` or `r_maplight_fit_scale` rebuilds the lights (`VK_RebuildLights`: only while the client is in
   the loaded world, as between `map` and the new world's load the old
-  one's memory is freed; else the next load takes them; `r_maplight_gamma`
-  goes into the UBO each frame). `vk_lights` prints the shape and the
+  one's memory is freed; else the next load takes them). `vk_lights` prints the shape and the
   lights of the light entities, the dropped ones, spotlights (unmatched
   targets), styled ones and those with `_color`, last frame's models at a
   light's origin, and where the colors come from (jsh2color's list and
@@ -1046,6 +1057,122 @@ lump:
   among them; `.lit` files baked from these colors match HoT's but for
   those and ±1 rounding (3 of 42 identical). This is the tool's
   single-threaded result.
+
+## Light fit (`vk_lightfit.c`)
+
+Story 4.16: GL's sum of overlapping lights for the map lights' GL shape.
+GL added a texel's lights before its sRGB step and clipped the sum;
+4.15's shape gives each light the texel it makes alone in linear light,
+and the path tracer adds those, so a light alone is GL's, overlapping
+lights add up to less (n equal lights: n against n^2.2) and GL's clip is
+missing. 4.15 had one factor for all (`r_maplight_gl_scale` 2): a lone
+torch was twice GL's (4.11a's survey: village5's start 2.19×), fill-lit
+yards darker. Here each light gets its own factor per cluster it lights,
+fitted to the map's own lightmaps when the map loads.
+
+- **The fit** (`VK_FitMapLights`, from `VK_LoadMapLights` with the lump's
+  lights before the map file's changes): utils/light repeated on the
+  world's lightmapped faces (not sky or turbulent; a face whose extents
+  differ from the engine's lightmap, or whose triangles all face into
+  solid, is left out): `ltface.c`'s `CalcFaceVectors`, `CalcFaceExtents`,
+  `CalcPoints` without `-extra` and `SingleLightFace`'s value, `trace.c`'s
+  `TestLine` through the world's nodes (floats as there), for the lights
+  GL's `R_MarkLights` would find for the face (its nodes' planes within the
+  level plus a margin: sample points lie up to a texel past their face,
+  more world units on a scaled texture, and 8 units more), on a quarter of
+  the texels (s and t even). Fitted when the factors are used: at the
+  map's load with GL's shape and `r_maplight_fit 1`, else when either is
+  set (the physical mode doesn't pay for it). At each texel
+  the ratio of GL's value (the lightmap: every style at its normal 264,
+  >> 7, clipped, the brightest channel, to the power `r_maplight_gamma`;
+  a `.lit` file that `gl_coloredlight` loaded instead: its brightest
+  channel)
+  to the sum of the lights' own values (each clipped, to that power) is
+  what the lights there should be multiplied by (at most 16: GL's sum
+  over the lights' own for 10 equal lights is 15.8; above it the model
+  doesn't explain the texel's light, e.g. the mission pack's other
+  options, and `vk_lights` counts those texels); a light's factor is the
+  mean of it weighted by the light's own value, per cluster (the texel's
+  triangle's, as `vk_world.c`'s `TriangleLeaf` gives the renderer's
+  triangles: a fan, the center 0.01 units in front, else 1) and over all
+  its texels. The compiler repeated: on the original game 96–100 % of the
+  texels within 1/255 of the BSP's (so its maps were lit without
+  `-extra`); the mission pack's only a third (other options), which is
+  why the target is the lightmaps, not the compiler's sum. A quarter of
+  the texels fits as well as half (within 0.01 stops at 8 maps) in about
+  half the time.
+- **The factors** (`VK_LightFitFactor`): per light list entry, the
+  cluster's (from at least 4 texels), else the light's own, times
+  `r_maplight_fit_scale` (1.1, below); `r_maplight_gl_scale` for a light
+  without texels (the map file's addlights, a map without light data) and
+  with `r_maplight_fit 0` (4.15's image: the direct light bit-identical to
+  `main`'s at five maps). `vk_light.c`'s `ListEntry` writes the factor as
+  a half float above the light's index in the entry
+  ([Lights](#lights-vk_lightc)); the shader multiplies a GL-shaped light's
+  CDF weight and light by it (`list_entry_factor`), so bounce hits and
+  models, which sample their cluster's list, have it too. The light's
+  color is a full texel's (`VK_MapLightIntensity`: the map file's scale
+  and `r_map_light_scale`). The lights' own factors on the 59 maps: the
+  median light's 1.2–2.1 on most (0.68 on meso9, whose lightmaps are
+  darker than its lights' levels give, 2.66 on keep2), a tenth of the
+  lights at most 0.6–1.5, a tenth at least 1.4–3.9.
+- **Edits** (4.7, 4.8): the map file's changes apply on top; a light keeps
+  its factors when moved, scaled or given another level; nothing is
+  fitted again for an edit (a cluster's entry a moved light didn't reach
+  before takes its own factor). `r_maplight_gamma` fits again (the power
+  is inside the sums). The fake lava lights are in the fit (they are in
+  the lightmaps), though the lava replaces them while it emits: their
+  neighbours' factors count their overlap (meso2's start 1.04 → 1.26 of
+  GL's look, with the lava at `r_emissive_scale` 32; meso9's 1.22 →
+  0.83).
+- **`r_maplight_fit_scale` 1.1**: fitted to the lightmaps, the direct
+  light is GL's, but the lit image is darker than GL's image (4.9's
+  bookmarks, the surfaces with GL's clipped blocks: 0.90): GL multiplied
+  the texture by the lightmap in sRGB space, which shows a dark texture
+  brighter than the product in linear light (a texture at sRGB 0.2 under
+  half light: 1.4×; the sRGB curve's linear toe), and Hexen II's textures
+  are dark. 1.1 makes the look as bright as before (0.99; 4.15's 0.98).
+  What stays depends on the texture: castle4's and the tower's dark stone
+  0.61–0.68 of GL's look, where the old factor 2 was brighter than GL's
+  lightmaps and made up for it (open question).
+- **Measured** (Release): `vk_lights fit` scores the factors on the half of
+  the texels the fit didn't use (s + t odd), the direct light against GL's
+  lightmaps: on the 42 original maps the spread (stops between the
+  quartiles) from 0.73–1.20 with 4.15's factor to 0.44–0.96 with one per
+  light and 0.36–0.70 per list entry, the texels within half a stop of
+  GL's from 27–52 % to 68–81 %; on the 17 mission pack maps 0.84–1.31 →
+  0.45–0.64 (69–77 %); no map worse. `calib_shots.ps1` at 4.9's 15
+  bookmarks (`r_maplight_fit 0` / 4.16): the direct light's spread 0.89 →
+  0.53 stops, slope 0.87 → 0.91; the look on the surfaces with GL's
+  clipped blocks 0.98 → 0.99, their spread 0.78 → 0.59 (the whole frame
+  1.07 → 1.06; per bookmark on the surfaces 0.61–1.27, was 0.75–1.34, the
+  mean error per bookmark 0.20 stops before and after); at 4.11a's 16
+  Blackmarsh views 0.99 → 0.71 stops, the look 0.94 → 0.96, its spread
+  0.93 → 0.74, the mean error per view 0.31 → 0.21 stops, per view on the
+  surfaces 0.62–1.36 (was 0.63–1.74: village5's torch 1.74 →
+  1.24, demo2's start 1.34 → 0.92, village3's yard 0.65 → 0.90; darker
+  village2's start 0.80 → 0.62, demo3's 1.07 → 0.74).
+- **Cost:** the fit when the map loads, 3–76 ms in Release (keep1 65–76, keep5 69–74, demo2 46–51),
+  about three times that in Debug; `vk_lights` prints its time. Per frame
+  nothing measurable: the entry's factor comes with the light's index;
+  only `direct_lighting.rgen` and `indirect_lighting.rgen` changed, and
+  their passes were within the runs' scatter (1920x1080, demo1 and the
+  cathedral, three runs of `main` and the branch alternated, without
+  DLSS: demo1 0.38–0.46 ms against 0.45–0.47 direct, 0.65–0.76 against
+  0.77–0.85 bounce).
+- **Not physically based**, as 4.15's shape: only a light's first arrival
+  changes, after GL's lightmaps; shadows (models' too), bounces and
+  reflections stay path traced, and the physical shapes
+  (`r_maplight_shape` 0 and 1, the "physically based" mode, R103) don't
+  take the factors. Left out: summing every list light per pixel in the
+  shader (a loop per pixel, and lights behind walls would count), fitting
+  again after edits, fits per light style (every style at its normal
+  value: a switched-off light's neighbours keep its overlap), GL's 16-unit
+  texel blur (R96), dynamic lights (physical, R97).
+- `vk_lights` prints the fit (lights, texels, faces left out, time,
+  entries and the largest factor, lights without texels, texels clipped at
+  16, the per-light factors' quartiles);
+  `vk_lights fit` adds the score.
 
 ## Emissive surfaces (`vk_emissive.c`)
 
@@ -2414,8 +2541,9 @@ overlay, and a measuring mode.
 | `vk_images` | render targets and the blue noise |
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (740, 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
-| `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default); shape 2's light of a full lightmap texel (2; 1 = the texture's own color); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
-| `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors` | light lists, light statistics read back, range culling off/on, each map light's color |
+| `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
+| `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1.1: the lit image as bright as GL's) |
+| `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
 | `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
