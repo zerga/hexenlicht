@@ -1,0 +1,52 @@
+# Blackmarsh (story 4.11a): the calibration and regression views of the hub, the
+# format of bookmarks.txt. Its maps' entrances (the info_player_start spots, the
+# player's origin about 24 units below them) and three views per map in its
+# main areas (pick_views.ps1: deathmatch spots, named by place). Run with
+# calib_shots.ps1 -Bookmarks tools\hexenlicht\bookmarks_blackmarsh.txt; see
+# docs/hexenlicht/TESTING.md, "Calibrating a hub". demo1_start, demo2_start and
+# village1_start are bookmarks.txt's too (the same saves).
+
+demo1_start demo1 -918 -2034 0 0 45
+demo1_from2 demo1 -1944 2448 -536 0 0
+demo1_from3 demo1 -368 1912 0 0 225
+demo2_start demo2 3672 -2176 -88 0 180
+demo2_fromv1 demo2 384 1984 160 0 270
+demo3_start demo3 -184 -1432 80 0 90
+rider1a_start rider1a 512 160 16 0 0
+village1_start village1 200 -784 30 0 90
+village1_fromv2 village1 964 2104 24 0 270
+village1_fromv3 village1 -1432 1628 56 0 0
+village1_fromv4 village1 1304 -8 144 0 180
+village2_start village2 -288 -952 24 0 0
+village2_fromv5 village2 -712 176 96 0 90
+village3_start village3 1256 -1296 400 0 180
+village4_start village4 1408 -40 112 0 0
+village5_start village5 -672 560 96 0 270
+
+demo1_corridor demo1 784 -536 -224 0 247.5
+demo1_arch demo1 -1624 -696 -136 0 225
+demo1_yard demo1 -1552 1096 0 0 0
+demo2_yard demo2 -656 -1440 231 0 90
+demo2_door demo2 1808 272 -328 0 180
+demo2_tree demo2 1420 -1420 224 0 90
+demo3_yard demo3 3632 504 0 0 0
+demo3_rocks demo3 -288 1368 0 0 45
+demo3_altar demo3 1664 -808 -224 0 90
+rider1a_se rider1a 1504 -528 16 0 135
+rider1a_ne rider1a 1488 832 16 0 225
+rider1a_sw rider1a 448 -528 16 0 45
+village1_passage village1 -1808 448 272 0 315
+village1_rampart village1 368 672 476 0 315
+village1_shoppe village1 -672 2512 30 0 225
+village2_hall village2 3200 -1120 496 0 135
+village2_tavern village2 424 2180 48 0 0
+village2_court village2 1488 80 160 0 0
+village3_stable village3 -1472 544 224 0 315
+village3_loft village3 480 512 352 0 225
+village3_fireplace village3 -832 -400 624 0 45
+village4_yard village4 3036 3342 338 0 270
+village4_candle village4 3984 1680 -320 0 270
+village4_hall village4 1576 1768 256 0 0
+village5_water village5 656 2008 -512 0 315
+village5_corridor village5 888 736 -464 0 337.5
+village5_crypt village5 -480 2032 -512 0 315
