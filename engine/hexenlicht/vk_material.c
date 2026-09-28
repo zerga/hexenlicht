@@ -32,6 +32,11 @@ vk_buffer_t	vk_material_table;		/* MAX_PBR_MATERIALS * MATERIAL_UINTS uints */
 static vk_material_t	materials[MAX_PBR_MATERIALS];
 int			vk_num_materials;	/* including the unused index 0 */
 
+static void SpecularChanged (cvar_t *var);
+
+/* the materials' specular factor: 0 matte, as GL (4.9); Quake II RTX's 1 */
+static cvar_t	r_specular = {"r_specular", "0", CVAR_NONE};
+
 
 /* IEEE 754 half precision, rounding to nearest */
 uint16_t VK_FloatToHalf (float f)
@@ -139,7 +144,7 @@ void VK_UploadMaterialRange (int first, int count)
 		d[2] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (-1.0f) << 16);	/* bump scale, no roughness override */
 		d[3] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (m->emissive_factor) << 16);	/* metalness, emissive factor */
 		d[4] = ((uint32_t)m->num_frames & 0xffff) | (((uint32_t)m->next_frame & 0xffff) << 16);
-		d[5] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular, base factor */
+		d[5] = VK_FloatToHalf (q_max (r_specular.value, 0.0f)) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular (r_specular), base factor */
 		d[6] = (uint32_t)m->alternate;
 		d[7] = 0;
 	}
@@ -155,8 +160,20 @@ void VK_UploadMaterials (void)
 }
 
 
+/* a new r_specular: the whole table again, once no frame uses it */
+static void SpecularChanged (cvar_t *var)
+{
+	(void)var;
+	if (vk_num_materials <= 1 || !vk_material_table.buffer)
+		return;
+	vkDeviceWaitIdle (vk.device);
+	VK_UploadMaterials ();
+}
+
 void VK_InitMaterials (void)
 {
+	Cvar_RegisterVariable (&r_specular);
+	Cvar_SetCallback (&r_specular, SpecularChanged);
 	VK_CreateBuffer (&vk_material_table, MAX_PBR_MATERIALS * MATERIAL_UINTS * sizeof(uint32_t),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 			 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |	/* vk_models check reads it back */

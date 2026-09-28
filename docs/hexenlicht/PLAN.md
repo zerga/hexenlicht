@@ -288,6 +288,7 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.12 | Player light level for gameplay (`cl.light_level` from the baked lightmaps and dynamic lights, as GL's `R_DrawViewModel`; found in 1.7, done with 2.8, G9) | S | `cl.light_level` matches `glhexen2` at the same spots; the Assassin only cloaks in the dark |
 | 4.13 | Denoiser lags brightening light styles (a light whose last style was 0 is never picked by the gradient samples); paused gradients in bounce-lit areas (found in 4.2) | S | A pulsing or switched-on light's denoised brightness follows the undenoised within a few frames; no paused HF or specular gradients (LF below 1 %) |
 | 4.14 | `glh2` shows no dynamic lights on surfaces (its `gl_flashblend` bubbles show they exist; found in 4.4) | S | Cause known; fixed (upstream if it is theirs) or TESTING.md has a GL reference for dynamic lights |
+| 4.15 | GL's light shape: utils/light's half-Lambert (0.5 + 0.5 cos) and its 16-unit lightmap texels' soft shadows light surfaces Hexenlicht leaves dark; candidates in the shader (half-Lambert, a GL-shaped falloff, larger spheres), measured with 4.9's tools (found in 4.9) | M | A candidate picked by the owner; the direct light's spread against GL's lightmaps below 4.9's 1.16 stops, or why not documented |
 | 4.11 | Calibrate hubs: Blackmarsh, Mazaera, Thysis, Septimus, the Eidolon finale, Tulku (Praevus) — one story per hub | M each | Hub reviewed and approved by the owner |
 
 ### E5 — Materials and texture pipeline
@@ -316,7 +317,7 @@ Goal: an effects checklist of both games fully ticked.
 | 6.7 | Cutscenes, intermissions, finale screens, demo playback | S | All play correctly |
 | 6.8 | Portal of Praevus specifics (Demoness, new effects) | M | Praevus checklist ticked |
 | 6.9 | Robustness: save/load, map change, `vid_restart`, Alt-Tab, resize | S | No leaks, no crashes |
-| 6.10 | Renderer settings menu (quality presets, upscaler, sky mode) | S | Options in the video menu |
+| 6.10 | Renderer settings menu (quality presets, upscaler, sky mode; since 4.9 also the exposure mode (fixed, `tm_auto_exposure 1` auto), colored light (`r_maplight_colors`, `gl_colored_dynamic_lights`) and the lava's glow (`r_emissive_scale`)) | S | Options in the video menu |
 
 ### E7 — Playthrough, performance, release
 Goal: v1.0 on GitHub Releases.

@@ -7,7 +7,8 @@
  * and for the debug views, with Quake II RTX's Lanczos filter otherwise.
  * Then encoded to sRGB with the gamma cvar, like draw2d.frag. The lit
  * image without tone mapping is still in Quake II RTX's storage scale
- * (STORAGE_SCALE_HDR), which push.scale takes out.
+ * (STORAGE_SCALE_HDR), which push.scale takes out; the debug views are
+ * scaled by r_debugview_scale (4.9).
  *
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
  * Copyright (C) 2026  Hexenlicht contributors
@@ -44,7 +45,7 @@ layout(push_constant) uniform Push
 	vec2	uv_to_texel;	/* in_uv (0..1 over the view) to the input's texel coordinates */
 	ivec2	input_size;	/* the input's texels shown over the view */
 	float	gamma;		/* the "gamma" cvar: <= 1 brightens */
-	float	scale;		/* 1 / STORAGE_SCALE_HDR for the lit image without tone mapping, else 1 */
+	float	scale;		/* 1 / STORAGE_SCALE_HDR for the lit image without tone mapping, 1 tone mapped, the debug views r_debugview_scale (4.9) */
 	int	filter_lanczos;	/* 0 nearest, 1 Lanczos (TAA_OUTPUT) */
 	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
 } push;

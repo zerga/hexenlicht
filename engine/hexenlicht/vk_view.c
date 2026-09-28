@@ -60,6 +60,7 @@
  * lighting, 19 specular hit distances, 20 the denoiser's history length
  * (shaders/hl_shared.h's DEBUGVIEW_*); 0 since the maps have lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "0", CVAR_NONE};
+static cvar_t	r_debugview_scale = {"r_debugview_scale", "1", CVAR_NONE};	/* the debug views times this (4.9) */
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
 static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction pass, the others */
@@ -457,6 +458,8 @@ void VK_RenderView3D (void)
 	/* the lit image without tone mapping is still scaled by
 	 * STORAGE_SCALE_HDR (asvgf_atrous.comp, compositing.comp) */
 	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
+	if (mode != DEBUGVIEW_LIT)
+		view_scale *= q_max (r_debugview_scale.value, 0.0f);	/* 4.9: lighting above 1 unclipped */
 	VK_ProfilerStop (cmd, PROF_VIEW);
 	VK_EndDenoiserFrame (denoise);
 	VK_EndUpscaleFrame ();
@@ -528,6 +531,7 @@ void VK_DrawView3D (void)
 void VK_InitView (void)
 {
 	Cvar_RegisterVariable (&r_debugview);
+	Cvar_RegisterVariable (&r_debugview_scale);
 	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(composite_push_t));
 }
 

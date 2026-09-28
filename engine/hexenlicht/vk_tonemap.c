@@ -26,7 +26,16 @@
  *
  * The exposure starts over (Quake II RTX's vkpt_tone_mapping_request_reset)
  * on a new map, with new pipelines and when the last 3D frame wasn't tone
- * mapped (a debug view, tm_enable 0).
+ * mapped (a debug view, tm_enable 0) or had the fixed exposure.
+ *
+ * Hexenlicht (4.9): tm_auto_exposure 0, the default, is a fixed exposure in
+ * GL's units: only the apply pass runs, the image times 2^r_map_exposure
+ * (the map file's), clipped at 1 as GL's, dithered, without the curve and
+ * the knee (tm_knee_start 0.6 would bend GL's range); the effects are then
+ * not scaled by the adapted luminance (vk_ubo.c gives the shaders tm_enable
+ * 0). Quake II RTX's auto exposure lifted Hexen II's torch-lit views to
+ * 1.2-17 times GL's brightness and flattened their contrast. The pass stays
+ * on (tm_enable 1) so that FSR gets its [0, 1] image.
  *
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
  * Copyright (C) 2026  Hexenlicht contributors
@@ -61,7 +70,13 @@ typedef struct
 typedef struct
 {
 	float	knee_w, knee_a, knee_b;
+	float	fixed_exposure;		/* > 0: the fixed exposure (4.9), no curve or knee */
 } apply_push_t;				/* tone_mapping_apply.comp's */
+
+/* 0 a fixed exposure in GL's units (4.9), 1 Quake II RTX's auto exposure */
+static cvar_t	tm_auto_exposure = {"tm_auto_exposure", "0", CVAR_NONE};
+
+COMPILE_TIME_ASSERT(tm_push_size, sizeof(apply_push_t) <= sizeof(curve_push_t));	/* one layout for both */
 
 static VkPipelineLayout	tm_layout;
 static VkPipeline	histogram_pipeline;
@@ -171,6 +186,8 @@ void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float fra
 		reset_required = true;	/* the exposure of an older frame */
 	last_frame = vk_render_frame;
 
+	/* cleared on a reset, and every frame of the fixed exposure, whose
+	 * apply pass still reads the adapted luminance for the full-screen blend */
 	if (reset_required)
 	{
 		BufferBarrier (cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
@@ -178,6 +195,18 @@ void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float fra
 		vkCmdFillBuffer (cmd, tonemap_buffer.buffer, 0, VK_WHOLE_SIZE, 0);
 		BufferBarrier (cmd, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 			       VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+	}
+
+	if (!VK_AutoExposure ())
+	{
+		/* the fixed exposure (4.9): only the apply pass; the EV kept
+		 * within +-20, so the factor is a positive, finite number */
+		KneeConstants (ubo, &apply);
+		apply.fixed_exposure = exp2f (q_min (q_max (VK_MapExposure (), -20.0f), 20.0f));
+		VK_DispatchComputeLayout (cmd, apply_pipeline, layout, &apply, sizeof(apply), width, height, 16);
+		VK_ComputeBarrier (cmd);
+		reset_required = true;	/* the auto exposure starts over when it is turned on */
+		return;
 	}
 
 	/* the histogram */
@@ -202,6 +231,7 @@ void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float fra
 
 	/* applied to the image */
 	KneeConstants (ubo, &apply);
+	apply.fixed_exposure = 0.0f;
 	VK_DispatchComputeLayout (cmd, apply_pipeline, layout, &apply, sizeof(apply), width, height, 16);
 	VK_ComputeBarrier (cmd);
 
@@ -251,13 +281,22 @@ static void VK_Exposure_f (void)
 	}
 	Con_Printf ("adapted luminance %.6f (EV %.2f), %u frames old; tone mapping %s\n", prev_adapted_luminance,
 		    log2f (prev_adapted_luminance), (unsigned) VK_FRAMES_IN_FLIGHT,
-		    VK_ToneMappingEnabled () ? "on" : "off (tm_enable 0)");
+		    !VK_ToneMappingEnabled () ? "off (tm_enable 0)" :
+		    VK_AutoExposure () ? "on, auto exposure" : "on, the fixed exposure (tm_auto_exposure 0: the adapted luminance is unused)");
+}
+
+/* Quake II RTX's auto exposure and curve (tm_auto_exposure 1), else the
+ * fixed exposure */
+qboolean VK_AutoExposure (void)
+{
+	return tm_auto_exposure.integer != 0;
 }
 
 void VK_InitToneMap (void)
 {
 	int	i;
 
+	Cvar_RegisterVariable (&tm_auto_exposure);
 	tm_layout = VK_CreatePassLayout (VK_SHADER_STAGE_COMPUTE_BIT, sizeof(curve_push_t));
 	VK_CreateBuffer (&tonemap_buffer, sizeof(ToneMappingBuffer),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |

@@ -13,6 +13,9 @@
  * The swapchain format is B8G8R8A8_UNORM with sRGB color space: the final
  * pass of the renderer writes already sRGB-encoded values.
  *
+ * Screenshots capture the next presented frame; vk_screenshot's (4.9)
+ * average several in linear light (VK_RequestScreenshotAverage).
+ *
  * Copyright (C) 2026  Hexenlicht contributors
  *
  * This program is free software; you can redistribute it and/or modify
@@ -59,10 +62,45 @@ static char		screenshot_name[MAX_OSPATH];	/* pending request, empty if none */
 static VkBuffer		screenshot_buffer;
 static VmaAllocation	screenshot_allocation;
 static VkDeviceSize	screenshot_size;
+static int		screenshot_frames = 1;	/* averaged into one (vk_screenshot, 4.9) */
+static int		screenshot_taken;	/* of them, captured */
+static float		*screenshot_sum;	/* linear light, w x h x 3 */
+static int		screenshot_sum_w, screenshot_sum_h;
 
 void VK_RequestScreenshot (const char *filename)
 {
+	VK_RequestScreenshotAverage (filename, 1);
+}
+
+/* the next frames presented, averaged in linear light into one TGA (a
+ * still, paused scene: the noise of one sample per pixel averages out) */
+void VK_RequestScreenshotAverage (const char *filename, int frames)
+{
 	q_strlcpy (screenshot_name, filename, sizeof(screenshot_name));
+	screenshot_frames = q_max (frames, 1);
+	screenshot_taken = 0;
+}
+
+static float DecodeSRGB (byte c)
+{
+	static float	table[256];
+	static qboolean	made;
+	int		i;
+
+	if (!made)
+	{
+		for (i = 0; i < 256; i++)
+			table[i] = VK_SRGBToLinear (i / 255.0f);
+		made = true;
+	}
+	return table[c];
+}
+
+static byte EncodeSRGB (float x)
+{
+	x = q_min (q_max (x, 0.0f), 1.0f);
+	x = (x <= 0.0031308f) ? x * 12.92f : 1.055f * powf (x, 1.0f / 2.4f) - 0.055f;
+	return (byte)(x * 255.0f + 0.5f);
 }
 
 /* copy the current swapchain image into the readback buffer */
@@ -101,7 +139,38 @@ static void VK_RecordScreenshotCopy (VkCommandBuffer cmd)
 				screenshot_buffer, 1, &copy);
 }
 
-/* after the frame finished: write the readback buffer as a 24-bit TGA */
+/* an averaged screenshot's frame into the sum (the first one starts it, as
+ * does a new size); false until the last */
+static qboolean SumScreenshot (const byte *pixels, int w, int h, qboolean bgra, const char *filename)
+{
+	size_t	i, n = (size_t)w * h;
+
+	if (screenshot_taken == 1 || w != screenshot_sum_w || h != screenshot_sum_h)
+	{
+		free (screenshot_sum);
+		screenshot_sum = (float *) calloc (n * 3, sizeof(float));
+		if (!screenshot_sum)
+			Sys_Error ("%s: out of memory", __thisfunc__);
+		screenshot_sum_w = w;
+		screenshot_sum_h = h;
+		screenshot_taken = 1;
+		/* a new size on what was the last frame: the request goes on */
+		q_strlcpy (screenshot_name, filename, sizeof(screenshot_name));
+	}
+	for (i = 0; i < n; i++)
+	{
+		const byte	*in = pixels + i * 4;
+		float		*s = screenshot_sum + i * 3;
+
+		s[0] += DecodeSRGB (bgra ? in[2] : in[0]);	/* RGB */
+		s[1] += DecodeSRGB (in[1]);
+		s[2] += DecodeSRGB (bgra ? in[0] : in[2]);
+	}
+	return screenshot_taken >= screenshot_frames;
+}
+
+/* after the frame finished: write the readback buffer as a 24-bit TGA (an
+ * averaged one when its last frame is in) */
 static void VK_WriteScreenshot (VkFence fence, const char *filename)
 {
 	int		w = (int)vk.extent.width, h = (int)vk.extent.height;
@@ -115,10 +184,19 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 	VK_CHECK (vmaMapMemory (vk.allocator, screenshot_allocation, (void **)&pixels));
 	VK_CHECK (vmaInvalidateAllocation (vk.allocator, screenshot_allocation, 0, VK_WHOLE_SIZE));
 
+	if (screenshot_frames > 1 && !SumScreenshot (pixels, w, h, bgra, filename))
+	{
+		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		return;		/* more frames to come */
+	}
+
 	tga = (byte *) malloc (size);
 	if (!tga)
 	{
 		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		free (screenshot_sum);
+		screenshot_sum = NULL;
+		screenshot_sum_w = screenshot_sum_h = 0;
 		Con_Printf ("screenshot: not enough memory\n");
 		return;
 	}
@@ -134,6 +212,19 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 	out = tga + 18;
 	for (y = h - 1; y >= 0; y--)
 	{
+		if (screenshot_frames > 1)
+		{
+			const float	*s = screenshot_sum + (size_t)y * w * 3;
+			float		scale = 1.0f / screenshot_frames;
+
+			for (x = 0; x < w; x++, s += 3, out += 3)
+			{
+				out[0] = EncodeSRGB (s[2] * scale);
+				out[1] = EncodeSRGB (s[1] * scale);
+				out[2] = EncodeSRGB (s[0] * scale);
+			}
+			continue;
+		}
 		in = pixels + (size_t)y * w * 4;
 		for (x = 0; x < w; x++, in += 4, out += 3)
 		{
@@ -145,8 +236,11 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 	vmaUnmapMemory (vk.allocator, screenshot_allocation);
 
 	if (FS_WriteFile (filename, tga, size) == 0)
-		Con_Printf ("Wrote %s\n", filename);
+		Con_Printf ("Wrote %s%s\n", filename, (screenshot_frames > 1) ? va(" (%d frames averaged)", screenshot_frames) : "");
 	free (tga);
+	free (screenshot_sum);
+	screenshot_sum = NULL;
+	screenshot_sum_w = screenshot_sum_h = 0;
 }
 
 
@@ -606,13 +700,15 @@ void VK_EndFrame (void)
 	vk.frame_count++;
 
 	/* last: writing it prints to the console, which may draw a new frame,
-	 * so the request is cleared first */
+	 * so the request is cleared first (an averaged one's with its last
+	 * frame; the earlier ones print nothing) */
 	if (screenshot)
 	{
 		char	name[MAX_OSPATH];
 
 		q_strlcpy (name, screenshot_name, sizeof(name));
-		screenshot_name[0] = 0;
+		if (++screenshot_taken >= screenshot_frames)
+			screenshot_name[0] = 0;		/* else the next frame is captured too */
 		VK_WriteScreenshot (f->fence, name);
 	}
 }
@@ -643,4 +739,7 @@ void VK_ShutdownSwapchain (void)
 		vmaDestroyBuffer (vk.allocator, screenshot_buffer, screenshot_allocation);
 	screenshot_buffer = VK_NULL_HANDLE;
 	screenshot_size = 0;
+	free (screenshot_sum);
+	screenshot_sum = NULL;
+	screenshot_sum_w = screenshot_sum_h = 0;
 }
