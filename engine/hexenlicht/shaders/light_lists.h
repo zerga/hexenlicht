@@ -283,6 +283,15 @@ lightmap_light_value(LightPolygon light, vec3 p, vec3 n, vec3 gn, float style)
 	return lightmap_to_linear(texel * style) * sphere_light_spot(light, p);
 }
 
+/* a light list entry's factor for a GL-shaped light (4.16): its sum with the other lights
+ * as GL's lightmaps have it in the entry's cluster, a half float above the light's index
+ * (vk_lightfit.c, vk_light.c's ListEntry); the light's color is a full GL texel's */
+float
+list_entry_factor(uint entry)
+{
+	return unpackHalf2x16(entry >> 16).x;
+}
+
 /* its weight in the light CDF: its light (times pi, as a sphere's solid angle weighs its
  * radiance: comparable with the lava's polygons) */
 float
@@ -392,7 +401,10 @@ sample_polygonal_lights(
 			continue;
 		}
 
-		uint current_idx = light_buffer.light_list_lights[n_idx];
+		// Hexenlicht (4.16): the entry's light, and a GL-shaped light's factor in this
+		// cluster above it (GL's sum of overlapping lights, vk_lightfit.c)
+		uint entry = light_buffer.light_list_lights[n_idx];
+		uint current_idx = entry & 0xffffu;
 
 		// In case of polygon light overflow, the host code will still populate the light lists
 		// with invalid indices. Skip those lights here, so they have pdf=0 and will not be selected.
@@ -412,7 +424,8 @@ sample_polygonal_lights(
 		float m;
 		if(light.type == LIGHT_TYPE_SPHERE && light.shape == SPHERE_SHAPE_GL)
 		{
-			m = lightmap_sphere_mass(light, p, n, gn, V, phong_exp, phong_scale, phong_weight, style);
+			m = lightmap_sphere_mass(light, p, n, gn, V, phong_exp, phong_scale, phong_weight, style) *
+			    list_entry_factor(entry);
 			style = 1;
 		}
 		else
@@ -497,7 +510,8 @@ sample_polygonal_lights(
 	// assert: current_idx >= 0?
 	if (current_idx >= 0) {
 		light_node = uint(current_idx);	// Hexenlicht
-		current_idx = int(light_buffer.light_list_lights[current_idx]);
+		uint entry = light_buffer.light_list_lights[current_idx];
+		current_idx = int(entry & 0xffffu);
 
 		LightPolygon light = get_light_polygon(current_idx);
 
@@ -520,7 +534,8 @@ sample_polygonal_lights(
 				// of it below the surface's horizon is the center (the compiler's plane test)
 				if(dot(position_light - p, gn) <= 0)
 					position_light = light.positions[0];
-				light_color = light.color * (M_PI * lightmap_light_value(light, p, n, gn, light.light_style_scale));
+				light_color = light.color * (M_PI * lightmap_light_value(light, p, n, gn, light.light_style_scale) *
+				                             list_entry_factor(entry));
 				light_angle = lightmap_angle_term(dot(n, c) / dist);
 			}
 			else

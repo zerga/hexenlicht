@@ -152,6 +152,7 @@ typedef struct
 	vec3_t		color;		/* radiance (a sphere of GL's shape: a full GL texel's light) */
 	int		style;		/* its light style (0-255), -1 = none (test lights) */
 	int		shape;		/* a sphere's SPHERE_SHAPE_* (4.15; test lights: physical) */
+	int		base;		/* a map light's lump light (4.16's fit), -1: none */
 } light_t;
 
 static light_t		lights[MAX_LIGHT_POLYS];
@@ -332,6 +333,19 @@ static void EmitterBounds (const light_t *l, vec3_t mins, vec3_t maxs)
 	}
 }
 
+/* a list entry: the light's index, and a GL-shaped map light's factor in
+ * the cluster as a half float above it (4.16: vk_lightfit.c's; 0 for the
+ * other lights, which don't read it) */
+static uint32_t ListEntry (uint32_t light, int cluster)
+{
+	const light_t	*l = &lights[light];
+	uint32_t	factor = 0;
+
+	if (l->type == LIGHT_TYPE_SPHERE && l->shape == SPHERE_SHAPE_GL)
+		factor = VK_FloatToHalf (q_min (VK_LightFitFactor (l->base, cluster), 65504.0f));	/* half's largest: no inf */
+	return light | (factor << 16);
+}
+
 /* Quake II RTX's collect_cluster_lights, over the lights' leafs' PVS; a
  * light that doesn't fit is left out whole */
 static void BuildLightLists (void)
@@ -390,7 +404,7 @@ static void BuildLightLists (void)
 	for (i = 0; i < num_pairs; i++)
 	{
 		c = (int)(list_pairs[i] >> 16);
-		list_nodes[list_offsets[c]++] = list_pairs[i] & 0xffff;
+		list_nodes[list_offsets[c]++] = ListEntry (list_pairs[i] & 0xffff, c);
 	}
 	for (c = num_lists; c > 0; c--)	/* each offset moved to its list's end: back to the start */
 		list_offsets[c] = list_offsets[c - 1];
@@ -434,6 +448,8 @@ void VK_UpdateLights (void)
 	const vk_maplight_t	*ml = VK_MapLights (&num_map_lights);
 	int			i, t, k, n = VK_NumLavaLights (), kept = 0;
 
+	VK_UpdateLightFit ();	/* 4.16: again if r_maplight_gamma changed */
+
 	/* the lava's lights replace the fake lava lights if they all fit (a
 	 * lava triangle is flagged as a light: bounces don't add its emission) */
 	for (i = 0; i < num_map_lights; i++)
@@ -466,6 +482,7 @@ void VK_UpdateLights (void)
 			VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI *
 				     (MAP_LIGHT_BASE_RADIUS * MAP_LIGHT_BASE_RADIUS) / (l->radius * l->radius), l->color);
 		l->style = ml[i].style;
+		l->base = ml[i].base;
 	}
 	/* the lava's polygons (4.5), unstyled */
 	first_lava_light = num_lights;
@@ -474,6 +491,7 @@ void VK_UpdateLights (void)
 		light_t	*l = &lights[num_lights++];
 
 		memset (l, 0, sizeof(*l));
+		l->base = -1;
 		l->type = LIGHT_TYPE_POLYGON;
 		VK_GetLavaLight (i, l->p, l->color);
 		l->style = -1;
@@ -487,6 +505,7 @@ void VK_UpdateLights (void)
 			light_t	*l = &lights[num_lights++];
 
 			memset (l, 0, sizeof(*l));
+			l->base = -1;
 			l->type = LIGHT_TYPE_POLYGON;
 			for (k = 0; k < 3; k++)
 				VectorCopy (test_quads[i].corners[tris[t][k]], l->p[k]);
@@ -499,6 +518,7 @@ void VK_UpdateLights (void)
 		light_t	*l = &lights[num_lights++];
 
 		memset (l, 0, sizeof(*l));
+		l->base = -1;
 		l->type = LIGHT_TYPE_SPHERE;
 		VectorCopy (test_spheres[i].origin, l->p[0]);
 		l->radius = test_spheres[i].radius;
@@ -974,6 +994,16 @@ static void VK_Lights_f (void)
 		VK_PrintMapLightColors ();
 		return;
 	}
+	if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "fit"))
+	{
+		/* 4.16, scored on the texels it didn't use: it traces the world,
+		 * whose memory a new map frees before its load */
+		if (WorldReady ())
+			VK_PrintLightFit (true);
+		else
+			Con_Printf ("vk_lights fit: no world loaded\n");
+		return;
+	}
 	for (c = 0; c < num_lights; c++)
 		spheres += (lights[c].type == LIGHT_TYPE_SPHERE);
 	for (c = 0; c < num_lists; c++)
@@ -1034,7 +1064,7 @@ static void VK_Lights_f (void)
 	n = list_offsets[view + 1] - list_offsets[view];
 	Con_Printf ("the camera's cluster %d: %u lights", view, n);
 	for (k = 0; k < (int)n && k < 32; k++)
-		Con_Printf (" %u", list_nodes[list_offsets[view] + k]);
+		Con_Printf (" %u", list_nodes[list_offsets[view] + k] & 0xffff);
 	Con_Printf ((n > 32) ? " ...\n" : "\n");
 }
 

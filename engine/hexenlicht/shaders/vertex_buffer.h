@@ -137,7 +137,10 @@ END_SHADER_STRUCT( VboPrimitive )
  *    SPHERE_SHAPE_GL (4.15) the range is the utils/light level and the
  *    color GL's full lightmap (lightmap_light_value);
  * light list n, the lights of vis cluster n, is
- * light_list_lights[light_list_offsets[n]] up to light_list_offsets[n + 1] */
+ * light_list_lights[light_list_offsets[n]] up to light_list_offsets[n + 1],
+ * each entry the light's index in its low 16 bits and, for a sphere of
+ * SPHERE_SHAPE_GL, its factor in the cluster as a half float in the high 16
+ * (4.16: GL's sum of overlapping lights, light_lists.h's list_entry_factor) */
 BEGIN_SHADER_STRUCT( LightBuffer )
 {
 	vec4 light_polys[MAX_LIGHT_POLYS * LIGHT_POLY_VEC4S];
