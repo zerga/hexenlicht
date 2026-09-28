@@ -42,9 +42,10 @@
  * twice the light); the range is the level times r_maplight_range (1). 4.9
  * calibrated them against GL at its bookmarks: power 2-4 matched GL's
  * lightmaps alike, a range other than the level worse; r_maplight_scale
- * 740 makes the lit image on the lightmapped world as bright as GL's, with
+ * 740 made the lit image on the lightmapped world as bright as GL's, with
  * the fixed exposure (tm_auto_exposure 0) and matte materials (r_specular 0,
- * vk_material.c); the direct light is then 1.15 of GL's lightmaps. Dynamic
+ * vk_material.c; the direct light 1.15 of GL's lightmaps), and 630 does
+ * since 4.17's 2.2 power (vk_texture.c's colors: 1.17 at 740). Dynamic
  * lights keep it (vk_light.c).
  * Colors (r_maplight_colors 1; 0, the default since 4.9: white, the
  * original's and Hammer of Thyrion's default): HoT's colored light, the colors utils/jsh2color baked
@@ -53,9 +54,10 @@
  * colored), or on a map whose lights have _color (later compilers' key,
  * 0-1 or 0-255; no original map has it) those, the others white, as that
  * compiler's .lit. The 0-255 color multiplied GL's lightmap, which
- * multiplies the texture in sRGB space: the light's color is its sRGB to
- * linear conversion, which shows the same hue on a wall (no scaling to
- * white's brightness: as in HoT, orange light is darker).
+ * multiplies the texture's 8-bit color: the light's color is its linear
+ * light (VK_ColorToLinear: a 2.2 power, the sRGB curve with r_srgb 1;
+ * 4.17), which shows the same hue on a wall (no scaling to white's
+ * brightness: as in HoT, orange light is darker).
  * Plain lights just over lava or under its surface (vk_emissive.c's
  * VK_OverLava) are the mappers' stand-ins for the lava's light: vk_light.c
  * leaves them out while the lava emits (4.5).
@@ -111,7 +113,7 @@ static void MapLightsChanged (cvar_t *var);
 static void MapLightColorsChanged (cvar_t *var);
 
 static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
-static cvar_t	r_maplight_scale = {"r_maplight_scale", "740", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness): the physical shapes, dynamic lights */
+static cvar_t	r_maplight_scale = {"r_maplight_scale", "630", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness; 4.17: 740 -> 630): the physical shapes, dynamic lights */
 static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intensity as (level / 300)^this (4.9) */
 static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
 static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical, 1 GL's angle term, 2 GL's lightmap value (4.15) */
@@ -148,7 +150,7 @@ typedef struct
 	int		jsh[3];		/* jsh2color's 0-275 */
 	vec3_t		own;		/* _color, 0-1 */
 	qboolean	has_own;
-	vec3_t		edited;		/* the map file's color, sRGB 0-1 */
+	vec3_t		edited;		/* the map file's color, 8-bit 0-1 */
 	qboolean	has_edited;
 } lightinfo_t;
 
@@ -341,14 +343,7 @@ static qboolean OriginInSolid (const mnode_t *node, const vec3_t p)
 	return node->contents == CONTENTS_SOLID;
 }
 
-/* a color GL multiplied its lightmaps with (in sRGB space) as the light's
- * linear color: the same hue on a wall (above 1 by the curve's power) */
-float VK_SRGBToLinear (float c)
-{
-	return (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
-}
-
-/* a light's color as the map file gives colors (sRGB, jsh2color's 0-275 /
+/* a light's color as the map file gives colors (8-bit colors, jsh2color's 0-275 /
  * 255 up to 1.08), with r_maplight_colors 1 (see the top), and where it
  * comes from */
 static const char *LightColor (const lightinfo_t *c, vec3_t srgb)
@@ -392,7 +387,7 @@ static void ApplyColors (void)
 			continue;
 		LightColor (&maplight_info[i], srgb);
 		for (k = 0; k < 3; k++)
-			c[k] = VK_SRGBToLinear (srgb[k]);
+			c[k] = VK_ColorToLinear (srgb[k]);	/* the same hue on a wall (above 1 by the curve's power) */
 	}
 }
 
@@ -874,11 +869,17 @@ static void MapLightsChanged (cvar_t *var)
 	VK_RebuildLights ();
 }
 
+/* the lights' colors again: r_maplight_colors, vk_texture.c's r_srgb (4.17) */
+void VK_MapLightColorsChanged (void)
+{
+	ApplyColors ();
+	VK_RebuildLights ();
+}
+
 static void MapLightColorsChanged (cvar_t *var)
 {
 	(void)var;
-	ApplyColors ();
-	VK_RebuildLights ();
+	VK_MapLightColorsChanged ();
 }
 
 void VK_InitMapLights (void)

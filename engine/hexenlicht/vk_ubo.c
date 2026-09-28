@@ -42,7 +42,8 @@ COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster)
 COMPILE_TIME_ASSERT(ubo_sky_dome, offsetof(QVKUniformBuffer_t, sky_dome) == 3792);
 COMPILE_TIME_ASSERT(ubo_maplight_gamma, offsetof(QVKUniformBuffer_t, maplight_gamma) == 3816);
 COMPILE_TIME_ASSERT(ubo_num_dark_lights, offsetof(QVKUniformBuffer_t, num_dark_lights) == 3820);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3828);
+COMPILE_TIME_ASSERT(ubo_color_srgb, offsetof(QVKUniformBuffer_t, color_srgb) == 3828);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3832);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -270,6 +271,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.anim_frame = (int)(r_scene.time * 5.0);	/* R_TextureAnimation's frame */
 	ubo.debug_view = (uint32_t)debug_view;
 	ubo.view_cluster = r_scene.viewleaf ? (int)(r_scene.viewleaf - r_scene.worldmodel->leafs) - 1 : -1;
+	ubo.color_srgb = VK_ColorsSRGB () ? 1u : 0u;	/* the 8-bit colors' curve (4.17, transfer.glsl) */
 
 	ubo_valid = true;
 	memcpy (ubo_buffers[vk.frame_index].mapped, &ubo, sizeof(ubo));

@@ -106,7 +106,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `VK_INIT_RELOAD_SHADER` entries on `vk_reload_shaders` (pipelines; lazily
   created ones are only destroyed). New modules join the table.
 - `vk_swapchain.c`: swapchain (UNORM with sRGB color space, so the final
-  pass encodes with `linear_to_srgb()` from `srgb.glsl`; recreated lazily
+  pass writes 8-bit colors with `linear_to_color()` from `transfer.glsl`,
+  see [Textures](#textures-vk_texturec); recreated lazily
   when `vk.swapchain_dirty`: `WM_SIZE`, `vid_vsync`, out-of-date; the
   render targets also when DLSS's images change, `VK_DLSSBetweenFrames`),
   two frames in flight, per-image present semaphores, `VK_BeginFrame`/`VK_EndFrame`,
@@ -144,10 +145,56 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `constants.h`'s `NUM_GLOBAL_TEXTURES` — `global_textures.h` checks it in C
   files that include `vk_local.h` first; update-after-bind so pics can load
   mid-frame).
-- Images are `R8G8B8A8_SRGB` with GPU-blitted mips. Slot 0 is white; freed
-  slots point back to it. `D_FlushCaches` purges slots above `gl_texlevel` on
-  a map change like upstream; `D_ClearOpenGLTextures` also clears the 2D pic
-  cache (`Draw_ClearCachedPics`), like `gl_rmisc.c`.
+- **Colors** (4.17): GL multiplied a texture's 8-bit color by the
+  lightmap's and showed the product as it was, which is the product in
+  linear light only under a pure power; so Hexenlicht's 8-bit colors are
+  the 2.2 power of linear light (`shaders/transfer.glsl`'s
+  `color_to_linear`/`linear_to_color`, `VK_ColorToLinear` on the CPU),
+  and `r_srgb 1` (archived, 0) takes the sRGB curve instead, the modern
+  standard, whose linear toe showed GL's dark tones up to 2–3× darker
+  (4.11a's survey: dark views 0.44–0.62 of GL's look while the light
+  matched). Images are `R8G8B8A8_UNORM` (were `_SRGB`): the shaders read
+  the colors as they are, and the base, emissive and sprite colors, the
+  sky's blend and the colorshade tint become linear light where they are
+  read (`path_tracer_rgen.h`, `indirect_lighting.rgen`,
+  `path_tracer_hit_shaders.h`); the mask's alpha and the (unused) normal
+  and falloff maps are read as they are (E5's data maps stay so; its
+  color maps take the curve). The mips, blitted on the GPU, and the
+  filtering average the 8-bit colors, as GL's did (the sRGB format did it
+  in linear light). The composite writes 8-bit colors by the curve
+  (`view_composite.frag`), the dither steps by one of them
+  (`tone_mapping_apply.comp`), the 2D uses the textures as they are
+  (`draw2d.frag`); the CPU's colors take the curve too: the map and
+  dynamic lights' colors, the sky's dome average and `r_sun_color`, the
+  lava's average (both kept, `vk_emissive.c`), particles (`vk_effects.c`),
+  the flames' emissive textures, `vk_screenshot`'s averaging, the
+  weapon's least light (`darkness.glsl`). The flag is the UBO's
+  `color_srgb`, so a change shows at once but for the flames (their
+  textures with the next map's materials); it rebuilds the lights
+  (`VK_MapLightColorsChanged`). Not a lighting change: light transport,
+  the lights' shape, shadows, bounces and reflections are the same; dark
+  textures reflect less (a color of 25: 0.0060 of white instead of
+  0.0097) and dark light shows brighter; both lighting modes.
+- **Measured** (4.17, Release, `calib_shots.ps1` against `glh2`, every
+  shot decoded by the 2.2 power, the look on the surfaces with GL's
+  clipped blocks): at 4.11a's 43 Blackmarsh views (its 16 entrances and 27
+  deathmatch spots) 27 → 36 within 0.85–1.2 of GL's look, the mean error
+  per view 0.28 → 0.17 stops, the spread within a view 0.85 → 0.64 stops,
+  pooled 0.98 → 0.98 (with `r_maplight_fit_scale` 1.1 → 1); the dark views
+  village1's 0.73 → 0.97, village2's start 0.65 → 0.87, village4's 0.41 →
+  0.73; at 4.9's bookmarks without the lava rooms 11 → 13 of 13, 0.16 →
+  0.09 stops, castle4 0.64 → 0.90, the tower 0.73 → 0.96 (4.16's dark
+  stone). An offline simulation from albedo shots (`r_debugview 1`) had
+  predicted it within 3–7 % (the bounce off dark textures and the mips
+  make it a little darker). Left outside: views where the lit image's
+  entities differ from GL's lightmaps (demo2's closed doors, 0.50 and
+  2.18; the lightmaps have no door shadows), a few with local light
+  differences (village4 0.73, demo1 and village1 0.76–0.82) and village5's
+  lone torch (1.38): 4.11a's.
+- Slot 0 is white; freed slots point back to it. `D_FlushCaches` purges
+  slots above `gl_texlevel` on a map change like upstream;
+  `D_ClearOpenGLTextures` also clears the 2D pic cache
+  (`Draw_ClearCachedPics`), like `gl_rmisc.c`.
 - `TEX_SPECIAL_TRANS` alpha is stored as opacity (GL blends those inverted),
   so alpha means opacity in every texture.
 - Samplers by the flags: mipmapped textures trilinear and anisotropic,
@@ -168,7 +215,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   layout is upstream's `gl_screen.c` (reused; it calls our
   `GL_BeginRendering`/`GL_Set2D`/`GL_EndRendering`).
 - Quads are alpha-tested (GL_GREATER 0.632, no blend) or blended per quad;
-  the shader works in sRGB-encoded space and applies the `gamma` cvar.
+  the shader works in the 8-bit colors (the UNORM textures as they are,
+  times the vertex color) and applies the `gamma` cvar.
 - **`SCR_UpdateScreen` re-enters via `Con_Printf`** — only the outermost level
   records a frame (`draw_depth`). Never print to the console between
   `VK_BeginFrame` and the end of `VK_EndFrame`'s state update; count problems
@@ -674,7 +722,7 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   flames flicker by up to 31 per frame: ±20 % of the intensity). The
   color is the client's (with `gl_colored_dynamic_lights`, 0 since 4.9:
   white), converted to
-  linear as the map lights' (`VK_SRGBToLinear`). Dark lights
+  linear as the map lights' (`VK_ColorToLinear`, 4.17). Dark lights
   (`EF_DARKLIGHT`, the Necromancer's darkness while invincible) aren't
   lights: they follow the sampled ones in `dyn_light_data` and darken the
   world after the denoiser (4.10, [Darkness](#darkness-shadersdarknessglsl));
@@ -824,11 +872,13 @@ from `VK_LoadWorld` before the light lists):
   map whose lights have `_color` (0–1, or 0–255 when a component is above
   1; later compilers' key, no original map has it) those, the other
   lights white, as that compiler's `.lit` has them. The 0–255 color
-  multiplied GL's lightmap, which multiplies the texture in sRGB space, so
-  the light's color is its sRGB → linear conversion: the same hue on a
-  wall (HoT's orange 255 128 64 is (1, 0.22, 0.05)). Not scaled back to
-  white's brightness, as in HoT's colored mode: torch light has 0.37× the
-  luminance of white, 255 225 200 0.79× (as HoT: a colored map is darker).
+  multiplied GL's lightmap, which multiplies the texture's 8-bit color, so
+  the light's color is its linear light (`VK_ColorToLinear`, 4.17: the 2.2
+  power, the sRGB curve with `r_srgb 1`): the same hue on a wall (HoT's
+  orange 255 128 64 is (1, 0.22, 0.05) by either curve). Not scaled back
+  to white's brightness, as in HoT's colored mode: torch light has 0.37×
+  the luminance of white, 255 225 200 0.80× (0.79× by the sRGB curve; as
+  HoT: a colored map is darker).
   `r_maplight_colors 0`: white; a change rebuilds the lights.
 - **Brightness:** a sphere of `r_maplight_radius` (8, the test spheres')
   with a light shape (`r_maplight_shape`, 4.15, below;
@@ -866,7 +916,10 @@ from `VK_LoadWorld` before the light lists):
   own range is best; the spread that stays (surfaces lit at grazing
   angles and in shadow: utils/light's 0.5 + 0.5 cos and its 16-unit
   lightmap texels; hot spots next to lights, where GL clips) was story 4.15
-  (#145), below. **`r_maplight_scale` 740** (was 1000), with matte materials
+  (#145), below. **`r_maplight_scale` 740** (was 1000; **630** since
+  4.17: with its 2.2 power 740 showed the lit image at 1.17 of GL's look,
+  630 at 1.02 on the surfaces and 1.00 with GL's clipped blocks, the
+  direct light 0.99; the numbers below are 4.9's), with matte materials
   (`r_specular 0`, [Materials](#materials-vk_materialc)): the lit image on
   the lightmapped world is as bright as GL's (median 0.99; per bookmark
   0.60–1.63: castle4's corridor, keep1 and romeric1 darker (4.15's
@@ -1103,7 +1156,7 @@ fitted to the map's own lightmaps when the map loads.
   half the time.
 - **The factors** (`VK_LightFitFactor`): per light list entry, the
   cluster's (from at least 4 texels), else the light's own, times
-  `r_maplight_fit_scale` (1.1, below); `r_maplight_gl_scale` for a light
+  `r_maplight_fit_scale` (1, below); `r_maplight_gl_scale` for a light
   without texels (the map file's addlights, a map without light data) and
   with `r_maplight_fit 0` (4.15's image: the direct light bit-identical to
   `main`'s at five maps). `vk_light.c`'s `ListEntry` writes the factor as
@@ -1125,16 +1178,19 @@ fitted to the map's own lightmaps when the map loads.
   neighbours' factors count their overlap (meso2's start 1.04 → 1.26 of
   GL's look, with the lava at `r_emissive_scale` 32; meso9's 1.22 →
   0.83).
-- **`r_maplight_fit_scale` 1.1**: fitted to the lightmaps, the direct
-  light is GL's, but the lit image is darker than GL's image (4.9's
-  bookmarks, the surfaces with GL's clipped blocks: 0.90): GL multiplied
-  the texture by the lightmap in sRGB space, which shows a dark texture
-  brighter than the product in linear light (a texture at sRGB 0.2 under
-  half light: 1.4×; the sRGB curve's linear toe), and Hexen II's textures
-  are dark. 1.1 makes the look as bright as before (0.99; 4.15's 0.98).
-  What stays depends on the texture: castle4's and the tower's dark stone
-  0.61–0.68 of GL's look, where the old factor 2 was brighter than GL's
-  lightmaps and made up for it (open question).
+- **`r_maplight_fit_scale` 1** (4.17; 1.1 in 4.16): fitted to the
+  lightmaps, the direct light is GL's. With the sRGB curve the lit image
+  was darker than GL's image (4.9's bookmarks, the surfaces with GL's
+  clipped blocks: 0.90): GL multiplied the texture's 8-bit color by the
+  lightmap's, which the sRGB curve's linear toe shows darker in linear
+  light (a color of 0.2 under half light: 1.4×), and Hexen II's textures
+  are dark; 1.1 made the look as bright as before on average, and dark
+  stone stayed 0.61–0.68 of GL's look (castle4, the tower). With 4.17's
+  2.2 power (see [Textures](#textures-vk_texturec)) GL's product is linear
+  light's: at 1 the look with GL's clipped blocks is 1.02 at 4.9's
+  bookmarks and 0.98 at 4.11a's 43 Blackmarsh views (decoded by the 2.2
+  power, `calib_compare.ps1`'s default since 4.17), castle4 0.90, the
+  tower 0.96; the direct light's median 1.02.
 - **Measured** (Release): `vk_lights fit` scores the factors on the half of
   the texels the fit didn't use (s + t odd), the direct light against GL's
   lightmaps: on the 42 original maps the spread (stops between the
@@ -1230,16 +1286,21 @@ radiance of a texture color of 1):
   `VK_MapLightAt` part, lit torches and flames; not dynamic light owners,
   nor a monster passing that point) show their skin's emissive texture: Q2RTX's
   `apply_fake_emissive_threshold` (the luminance of the texels with a
-  channel of at least 215 in sRGB, `VK_EMISSIVE_THRESHOLD`, blurred with
+  channel of at least 215 of 255, `VK_EMISSIVE_THRESHOLD`, blurred with
   an 11-tap filter and normalized, times the texel's color and its
   normalized luminance squared; twice the size, bilinear with wrapping,
-  then a 3-tap filter), the texture `<skin>*E<the skin's CRC>`, made when
+  then a 3-tap filter; in linear light by the colors' curve, 4.17), the
+  texture `<skin>*E<the skin's CRC>` (`*S` with `r_srgb 1`: a change of
+  the curve shows in the flames with the next map's materials), made when
   a model at a light first shows the skin (`VK_EmissiveSkin`, inside the
   frame: two uploads that wait for the GPU, the texture's and the new
   material's). The instance takes the skin's
   emissive material ([Skins](#skins-vk_skinc)), flagged
   `MATERIAL_FLAG_LIGHT` (the map light is its light), at GL's abslight
-  (`model_geometry.comp`'s emissive factor) times the scale. On the paks
+  (`model_geometry.comp`'s emissive factor; as it is: GL multiplied the
+  8-bit texture by it, which 4.17's 2.2 power would make abslight^2.2,
+  0.53 for 0.75, but the flames' brightness is the scale's, open) times
+  the scale. On the paks
   the lit flame models' skins have 6–33 % bright texels (`flame.mdl` 12 %,
   `flame2.mdl` 33 %, `cflmtrch.mdl` 7 %; `newfire.mdl` 61 %), the unlit
   ones none (`castrch`, `egtorch`, `mesotrch`, `rometrch`, `burner`, and
@@ -1305,8 +1366,9 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
   pieces and interpolates, which warps the sky seen up close. The layers
   are two textures made at map load (`VK_LoadSky`: `upsky`, `lowsky`,
   `TEX_RGBA | TEX_LINEAR | TEX_REPEAT`, bilinear and repeating), blended in
-  sRGB as GL blends the framebuffer's bytes (the sRGB textures filter in
-  linear light: a sub-texel difference). Primary rays, reflections,
+  their 8-bit colors as GL blends the framebuffer's bytes (and, since the
+  textures are UNORM, 4.17, filtered in them as GL's), then linear light by
+  the colors' curve. Primary rays, reflections,
   refractions and specular bounces see it, in both modes; as in Q2RTX it
   goes into `PT_TRANSPARENT` (not denoised) with a rotation-only motion
   vector (the moving clouds looked sharp with TAAU and DLSS SR/RR in 4.6's
@@ -1350,7 +1412,7 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
   lighting and at bounce hits, `pt_direct_sun_light`, `pt_sun_bounce_range`,
   `pt_sun_specular` as Q2RTX's) from `r_sun_elevation` and
   `r_sun_azimuth` (degrees; the azimuth from +x towards +y, as a yaw;
-  placeholders 45 and 45 until a map file sets them), of `r_sun_color` (sRGB, white) at
+  placeholders 45 and 45 until a map file sets them), of `r_sun_color` (an 8-bit color, white) at
   `r_sun_intensity` (1: its irradiance is π, a white surface facing it is
   lit as GL's fullbright; measured with the bounces off, egypt1's floor of
   albedo 0.055 gains 0.051). Its shadow ray ends at the first sky face it
@@ -1418,7 +1480,7 @@ addlight 1000 2000 128 level 300 color 1 1 1
   entity origin is x y z (to the unit; the entity lump's origins are
   integers, and an external `.ent` file's reordering doesn't matter):
   `off`, `level n` (at least 1: range and intensity, the mapper's key),
-  `scale f` (intensity only), `color r g b` (sRGB, 0–1 or 0–255 as the
+  `scale f` (intensity only), `color r g b` (an 8-bit color, 0–1 or 0–255 as the
   `_color` key; shown with `r_maplight_colors 1`, 0 keeps the original's
   white), `style n`, `origin x y z` (moved there; a spotlight keeps its
   direction). `addlight x y z <changes>` adds a light (level 300, white,
@@ -1511,7 +1573,7 @@ Story 4.8: the map's lights edited in the game, saved into the
   would take grey. A panel at the view's top right, below the notify
   lines, shows the selected light: classname, the entity origin its lines
   name (an addlight's own), level, scale, style and the style's value now,
-  its sRGB color and where it comes from (jsh2color, `_color`, the map
+  its 8-bit color and where it comes from (jsh2color, `_color`, the map
   file, white), a spotlight's width, where it was moved, off or inside
   solid, whether the file changes it (or how many lights share its origin:
   a light line changes them all), the distance, and the file's unsaved
@@ -1529,7 +1591,7 @@ Story 4.8: the map's lights edited in the game, saved into the
   dropped at a map load, `vk_mapfile reload` (both say so) and quit.
 - **`vk_editlight <changes>`** changes the selected light, several changes
   in one command, applied only if all parse: the map file's `off`, `level
-  n` (at least 1), `scale f`, `color r g b` (sRGB, 0–1 or 0–255), `style
+  n` (at least 1), `scale f`, `color r g b` (an 8-bit color, 0–1 or 0–255), `style
   n`, `origin x y z`; and the editor's `on` (clears `off`), `origin eye`,
   `origin cursor` (the crosshair's world hit, 8 units out along the
   surface's normal), `move dx dy dz` (world axes), `level *f` and `scale
@@ -1607,7 +1669,7 @@ the scripts are in [TESTING.md](TESTING.md#calibration-against-gl-49)):
 - **`vk_screenshot <name> [frames]`** writes `shots\<name>.tga`, the next
   presented frames (1–1024, 1) averaged in linear light
   (`VK_RequestScreenshotAverage`, `vk_swapchain.c`: each frame's capture
-  decoded from sRGB and summed, the average encoded): a paused frame's
+  decoded by the colors' curve and summed, the average encoded, 4.17): a paused frame's
   one-sample noise averages out; named, so not limited to `screenshot`'s
   100 numbered files. Each captured frame waits for its fence.
 - **`r_debugview_scale`** (1) multiplies the debug views
@@ -1695,10 +1757,12 @@ Story 4.10: Hexen II's darkness as GL shows it.
 - **The weapon's least light:** GL's `R_DrawViewModel` gives the weapon at
   least 24 per channel ("always give some light on gun"), a vertex color of
   24 / 200 × GL's shading dots (1 in the middle of the table), which GL
-  multiplied the texture by in sRGB space; `direct_lighting.rgen` gives the
+  multiplied the texture's 8-bit color by (with 4.17's 2.2 power exactly
+  (24 / 200)^2.2 in linear light); `direct_lighting.rgen` gives the
   weapon's direct light at least that (`weapon_min_light`, per channel from
-  its albedo: 2–4 % of it), so in total darkness it stays dimly visible as
-  in GL (rider2c's dark bank room: the hammer about as bright as GL's).
+  its albedo: 0.94 % of it by the 2.2 power, 2–7 % by the sRGB curve),
+  so in total darkness it stays dimly visible as in GL (rider2c's dark
+  bank room: the hammer about as bright as GL's).
   Only the direct light is floored (GL floors the whole): with bounce light
   about as bright as the floor the weapon gets up to twice GL's least
   light, and the floor on a noisy one-sample light raises its mean a
@@ -1736,8 +1800,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
   (FSR's outputs with FSR), with `VK_ComputeBarrier` between them;
   `GL_EndRendering` calls `VK_DrawView3D` after beginning swapchain
   rendering: `fullscreen.vert` + `view_composite.frag` (Q2RTX's final
-  blit: scales the upscaler's output over the view, see Upscaling; sRGB
-  encode + `gamma` like the 2D) into the 3D rectangle, then restores the
+  blit: scales the upscaler's output over the view, see Upscaling; the
+  colors' encode, 4.17, + `gamma` like the 2D) into the 3D rectangle, then restores the
   full viewport for the 2D.
 - **`primary_rays.rgen`** (3.2): Q2RTX's primary rays, dispatched as its
   are (width / 2 × height × 2 checkerboard fields: the left half of each
@@ -2358,9 +2422,10 @@ archived (a menu option with 6.10).
   applies the curve and the exposure (`tm_reinhard` 0.5 blends a Reinhard
   curve in; `tm_exposure_bias` −1), a knee towards white
   (`tm_knee_start`, `tm_white_point`; the push constants from
-  `KneeConstants`) and blue noise dither, linear [0, 1] out for the
-  composite. Q2RTX's `tm_*` cvars (registered since 3.1) with its
-  defaults; `tm_enable` (the UBO gets 0 or 1, as the host decides),
+  `KneeConstants`) and blue noise dither (a step of the 8-bit color the
+  composite writes, 4.17), linear [0, 1] out for the composite. Q2RTX's
+  `tm_*` cvars (registered since 3.1) with its defaults; `tm_enable` (the
+  UBO gets 0 or 1, as the host decides),
   `tm_debug 1/2` (the histogram or the curve over
   the view, drawn by the shader). The adaptation runs on game time between
   3D frames (at most 1 s), on real time while it stands still (paused).
@@ -2540,13 +2605,14 @@ overlay, and a measuring mode.
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
-| `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (740, 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
+| `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (630 since 4.17; 740 in 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
-| `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1.1: the lit image as bright as GL's) |
+| `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
-| `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; sRGB color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
+| `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; an 8-bit color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
 | `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines, unsaved edits; read it again and apply it (unsaved edits dropped); per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
 | `r_editlights 0/1`, `r_editlights_distance` | markers at the lights in sight and the selected light's panel (0); how far they reach (1024) (see [Light editor](#light-editor-vk_lighteditc)) |
 | `vk_setpos x y z [pitch yaw]`, `vk_bookmark <name>`, `vk_screenshot <name> [frames]` | the player there (single player; `save` on the same line keeps the pitch); a calibration bookmark into the game folder's `bookmarks.txt`; `shots\<name>.tga`, frames averaged in linear light (see [Calibration](#calibration-vk_calibc)) |

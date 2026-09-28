@@ -1,10 +1,10 @@
 /* draw2d.frag -- 2D batch (vk_draw.c)
  *
- * Works in sRGB-encoded space, like the original OpenGL renderer did, so
- * that blending and modulation look the same: the (linear) texture sample
- * is re-encoded, multiplied by the vertex color and blended as is. Quads
- * flagged ALPHA_TEST behave like GL's alpha test (GL_GREATER 0.632) with
- * blending off; the others are alpha blended.
+ * Works in the 8-bit colors, like the original OpenGL renderer did, so
+ * that blending and modulation look the same: the texture sample (UNORM,
+ * the color as it is, 4.17) is multiplied by the vertex color and blended
+ * as is. Quads flagged ALPHA_TEST behave like GL's alpha test (GL_GREATER
+ * 0.632) with blending off; the others are alpha blended.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -13,8 +13,6 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
-
-#include "srgb.glsl"
 
 #define TEX_SLOT_MASK		0xffffu
 #define FLAG_ALPHA_TEST		0x10000u
@@ -37,7 +35,7 @@ layout (push_constant) uniform push_constants
 void main ()
 {
 	vec4 t = texture (textures[nonuniformEXT (in_tex & TEX_SLOT_MASK)], in_uv);
-	vec4 c = vec4 (linear_to_srgb (t.rgb), t.a) * in_color;
+	vec4 c = t * in_color;
 
 	if ((in_tex & FLAG_ALPHA_TEST) != 0u)
 	{

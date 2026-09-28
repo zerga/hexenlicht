@@ -31,7 +31,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    (r_part.c's ptex_coord), a sprite a quad sampled at the mip level of
  *    the pixel's footprint and clamped at its edges; both are scaled by
  *    the exposure (effects_brightness, 3.7) as Quake II RTX's particles
- *    are, with one factor for both;
+ *    are, with one factor for both; the sprite's color becomes linear
+ *    light here (UNORM textures, transfer.glsl, 4.17), the particles'
+ *    comes linear (vk_effects.c);
  *  - beams and explosions come with their stories (6.3). */
 
 #include "hl_shared.h"
@@ -149,5 +151,5 @@ vec4 pt_logic_sprite(int primitiveID, vec2 bary, float hitT)
 	vec4 color = global_textureLod(s.texture, clamp(uv, half_texel, 1.0 - half_texel), lod);
 
 	color.a *= s.alpha;
-	return vec4(color.rgb * (color.a * effects_brightness()), color.a);
+	return vec4(color_to_linear(color.rgb, global_ubo.color_srgb) * (color.a * effects_brightness()), color.a);
 }

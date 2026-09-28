@@ -37,7 +37,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    as in direct_lighting.rgen (Quake II RTX's weapon is in every ray
  *    when it has no first-person model);
  *  - a model hit by a bounce ray has its colorshade tint's hue, as in
- *    get_material (Quake II RTX reads the texture as it is);
+ *    get_material (Quake II RTX reads the texture as it is); the texture's
+ *    color becomes linear light here (UNORM textures, 4.17);
  *  - the first bounce stores the specular ray's hit distance (for DLSS Ray
  *    Reconstruction, 3.10) in PT_SPECULAR_HIT_DIST, which
  *    direct_lighting.rgen clears (so it stays 0 without a specular ray: a
@@ -361,13 +362,13 @@ indirect_lighting(
 		vec3 bounce_normal  = bounce_geo_normal;
 		vec3 bounce_base_color = vec3(bounce_minfo.base_factor);
 		if (bounce_minfo.base_texture != 0)
-			bounce_base_color *= global_textureLod(bounce_minfo.base_texture, tex_coord, 2).rgb;
+			bounce_base_color *= color_to_linear(global_textureLod(bounce_minfo.base_texture, tex_coord, 2).rgb, global_ubo.color_srgb);
 		bounce_base_color = clamp(bounce_base_color, vec3(0), vec3(1));
 		// Hexenlicht: a model's colorshade tint, as get_material applies it
 		if (triangle.instance_index != ~0u)
 		{
 			vec3 tint = instance_buffer.model_instances[triangle.instance_index].tint;
-			bounce_base_color *= tint / max(max(tint.r, max(tint.g, tint.b)), 1.0);
+			bounce_base_color *= color_to_linear(tint / max(max(tint.r, max(tint.g, tint.b)), 1.0), global_ubo.color_srgb);
 		}
 		uint bounce_cluster_idx    = triangle.cluster;
 

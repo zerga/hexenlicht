@@ -19,7 +19,8 @@
 # -PreSave runs console commands before each save (80 frames before it, 4.10: a
 # lit torch, "impulse 43; <20 waits>; invuse", or an artifact, which the save
 # keeps for both engines); -PlayerClass is the class the saves are made with (2,
-# the Crusader; 3 the Necromancer).
+# the Crusader; 3 the Necromancer); -Bin another build's folder for the
+# Hexenlicht runs (hl_run.ps1's, e.g. a copy of main's for a comparison).
 # All shots are paused, GL's without its view blends (gl_polyblend 0: the
 # power-up tints and damage flashes, which Hexenlicht doesn't draw until 6.6),
 # without the HUD, the weapon, the crosshair or the
@@ -32,7 +33,8 @@
 param([string]$Bookmarks = '', [string[]]$Names = @(), [Parameter(Mandatory)][string]$Out, [string]$Label = 'hl',
       [string]$HlCvars = '', [int]$Frames = 16, [double]$Scale = 0.25, [switch]$SkipSaves, [switch]$SkipGl,
       [switch]$SkipHl, [switch]$KeepSaves, [int]$Width = 960, [int]$Height = 540, [string]$Data = '',
-      [string]$GlLit = '', [int]$LitFrames = 1, [switch]$DebugBuild, [string]$PreSave = '', [int]$PlayerClass = 2)
+      [string]$GlLit = '', [int]$LitFrames = 1, [switch]$DebugBuild, [string]$PreSave = '', [int]$PlayerClass = 2,
+      [string]$Bin = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Bookmarks) { $Bookmarks = Join-Path $PSScriptRoot 'bookmarks.txt' }
@@ -94,6 +96,7 @@ function Invoke-Engine([string]$exe, [string]$game, [string]$cfg) {
 		$p = @{ Exe = $exe; Cfg = $cfg; Width = $Width; Height = $Height; Timeout = 1800; Data = $Data }
 		if (-not $DebugBuild) { $p.Release = $true }
 		if ($game -eq 'portals') { $p.Portals = $true }
+		if ($Bin -and $exe -eq 'hexenlicht') { $p.Bin = $Bin }
 		$r = & $run @p
 		if ($r -ne 'exit 0') { throw "$exe $cfg ended with: $r" }
 	} finally {

@@ -112,8 +112,13 @@ void VK_ShutdownTextures (void);
 int VK_FindTexture (const char *identifier);	/* its slot, -1 = none */
 const char *VK_TextureName (int slot);
 unsigned short VK_TextureCRC (int slot);	/* of its data (the cache key) */
-#define VK_EMISSIVE_THRESHOLD	215	/* Quake II RTX's pt_surface_lights_threshold: a skin texel with a channel this bright (sRGB) emits */
+#define VK_EMISSIVE_THRESHOLD	215	/* Quake II RTX's pt_surface_lights_threshold: a skin texel with a channel this bright (of 255) emits */
 unsigned int *VK_TextureRGBA (int slot, int *width, int *height);	/* a bright skin's pixels (malloc'd), NULL = none kept */
+qboolean VK_ColorsSRGB (void);	/* r_srgb: the 8-bit colors are the sRGB curve's, else a 2.2 power (4.17) */
+float VK_ColorToLinear (float c);	/* an 8-bit color (0-1, above too) as linear light, as shaders/transfer.glsl */
+float VK_ColorToLinearAs (float c, qboolean srgb);	/* the same by the sRGB curve or the 2.2 power */
+float VK_LinearToColor (float x);	/* linear light as an 8-bit color, clamped to 0-1 */
+const float *VK_ColorTable (void);	/* VK_ColorToLinear of the bytes 0-255 */
 
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
@@ -121,7 +126,7 @@ void Draw_ClearCachedPics (void);	/* after texture slots were purged */
 void VK_ShutdownDraw (void);
 void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
 void VK_DrawShade (int x, int y, int w, int h, float alpha);	/* a translucent black box, 2D coordinates */
-void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba);	/* a box of a color (sRGB 0-1), 2D coordinates */
+void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba);	/* a box of a color (8-bit 0-1), 2D coordinates */
 
 /* vk_profiler.c: GPU timers (Quake II RTX's profiler.c). A pass is
  * bracketed by VK_ProfilerStart and VK_ProfilerStop with its PROF_* entry
@@ -566,7 +571,6 @@ float VK_MapLightGamma (void);	/* r_maplight_gamma (4.15) */
 float VK_MapLightRadius (void);	/* r_maplight_radius (4.15) */
 float VK_MapLightGLScale (void);	/* r_maplight_gl_scale (4.15; 4.16: the lights the fit has no factor for) */
 qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
-float VK_SRGBToLinear (float c);	/* a GL light color's linear value */
 qboolean VK_MapLightAt (const vec3_t origin);
 void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
 void VK_PrintMapLights (void);	/* vk_lights */
@@ -575,6 +579,7 @@ void VK_PrintMapLightEdits (void);	/* vk_mapfile: what the map file's light edit
 qboolean VK_MapLightDroppedAt (const int *p);	/* a light entity the compiler lit nothing from at the point (to the unit) */
 void VK_ApplyMapEdits (qmodel_t *worldmodel);	/* the map file's light lines again onto the lights VK_LoadMapLights read (then VK_RebuildLights) */
 qboolean VK_MapLightColorsOn (void);	/* r_maplight_colors */
+void VK_MapLightColorsChanged (void);	/* the lights' colors again (r_maplight_colors, r_srgb) and VK_RebuildLights */
 
 /* a light vk_lightedit.c (4.8) can select: each of the lump's lights and
  * the map file's addlights, with the file's changes (VK_EditableLights,
@@ -591,7 +596,7 @@ typedef struct
 	int		level;
 	int		style;
 	float		scale;
-	vec3_t		srgb;		/* its color as the map file gives colors (sRGB; jsh2color's up to 1.08), with r_maplight_colors 1 */
+	vec3_t		srgb;		/* its color as the map file gives colors (8-bit colors; jsh2color's up to 1.08), with r_maplight_colors 1 */
 	const char	*color_from;	/* where srgb comes from */
 	qboolean	spot;
 	float		spot_cos;	/* the cosine of half its cone's width */
@@ -624,7 +629,7 @@ typedef struct
 	int		keys;		/* MAPEDIT_* given */
 	int		level;
 	float		scale;
-	vec3_t		color;		/* sRGB 0-1 */
+	vec3_t		color;		/* an 8-bit color, 0-1 */
 	int		style;
 	int		line;		/* in the file */
 	int		id;		/* its line's, which lasts while lines come and go (4.8) */

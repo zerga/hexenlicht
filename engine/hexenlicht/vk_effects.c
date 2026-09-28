@@ -63,7 +63,6 @@ static int			last_slot = -1;			/* written last, -1 = none since the map loaded *
 static int			dropped_frames;			/* frames that left effects out since the map loaded */
 
 GLuint				particletexture;	/* glquake.h; GL defines it in gl_rmain.c */
-static float			srgb_to_linear[256];
 
 
 /* ==========================================================================
@@ -131,6 +130,7 @@ static void WriteParticles (vk_effectsframe_t *f, float *pos, EffectParticle *ou
 	float			scale, alpha;
 	int			n = 0, color, uvs, k;
 	const byte		*rgba;
+	const float		*to_linear = VK_ColorTable ();	/* the palette color as linear light (4.17) */
 
 	VectorScale (r_scene.up, 1.5f, pup);
 	VectorScale (r_scene.right, 1.5f, pright);
@@ -181,7 +181,7 @@ static void WriteParticles (vk_effectsframe_t *f, float *pos, EffectParticle *ou
 		}
 
 		for (k = 0; k < 3; k++)
-			out[n].color[k] = srgb_to_linear[rgba[k]];
+			out[n].color[k] = to_linear[rgba[k]];
 		out[n].alpha_and_uvs = VK_FloatToHalf (alpha) | ((uint32_t)uvs << 16);
 
 		VectorCopy (p->org, pos);
@@ -620,13 +620,6 @@ void VK_InitEffects (void)
 {
 	uint16_t	*indices;
 	int		i;
-
-	for (i = 0; i < 256; i++)
-	{
-		float	c = i / 255.0f;
-
-		srgb_to_linear[i] = (c <= 0.04045f) ? c / 12.92f : powf ((c + 0.055f) / 1.055f, 2.4f);
-	}
 
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
 	{

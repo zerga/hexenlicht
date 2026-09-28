@@ -11,10 +11,12 @@
  * (minimized).
  *
  * The swapchain format is B8G8R8A8_UNORM with sRGB color space: the final
- * pass of the renderer writes already sRGB-encoded values.
+ * pass of the renderer writes 8-bit colors (shaders/transfer.glsl: a 2.2
+ * power, the sRGB curve with r_srgb 1; 4.17).
  *
  * Screenshots capture the next presented frame; vk_screenshot's (4.9)
- * average several in linear light (VK_RequestScreenshotAverage).
+ * average several in linear light (VK_RequestScreenshotAverage), by the
+ * same curve.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -81,26 +83,14 @@ void VK_RequestScreenshotAverage (const char *filename, int frames)
 	screenshot_taken = 0;
 }
 
-static float DecodeSRGB (byte c)
+static float DecodeColor (byte c)
 {
-	static float	table[256];
-	static qboolean	made;
-	int		i;
-
-	if (!made)
-	{
-		for (i = 0; i < 256; i++)
-			table[i] = VK_SRGBToLinear (i / 255.0f);
-		made = true;
-	}
-	return table[c];
+	return VK_ColorTable ()[c];
 }
 
-static byte EncodeSRGB (float x)
+static byte EncodeColor (float x)
 {
-	x = q_min (q_max (x, 0.0f), 1.0f);
-	x = (x <= 0.0031308f) ? x * 12.92f : 1.055f * powf (x, 1.0f / 2.4f) - 0.055f;
-	return (byte)(x * 255.0f + 0.5f);
+	return (byte)(VK_LinearToColor (x) * 255.0f + 0.5f);
 }
 
 /* copy the current swapchain image into the readback buffer */
@@ -162,9 +152,9 @@ static qboolean SumScreenshot (const byte *pixels, int w, int h, qboolean bgra, 
 		const byte	*in = pixels + i * 4;
 		float		*s = screenshot_sum + i * 3;
 
-		s[0] += DecodeSRGB (bgra ? in[2] : in[0]);	/* RGB */
-		s[1] += DecodeSRGB (in[1]);
-		s[2] += DecodeSRGB (bgra ? in[0] : in[2]);
+		s[0] += DecodeColor (bgra ? in[2] : in[0]);	/* RGB */
+		s[1] += DecodeColor (in[1]);
+		s[2] += DecodeColor (bgra ? in[0] : in[2]);
 	}
 	return screenshot_taken >= screenshot_frames;
 }
@@ -219,9 +209,9 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 
 			for (x = 0; x < w; x++, s += 3, out += 3)
 			{
-				out[0] = EncodeSRGB (s[2] * scale);
-				out[1] = EncodeSRGB (s[1] * scale);
-				out[2] = EncodeSRGB (s[0] * scale);
+				out[0] = EncodeColor (s[2] * scale);
+				out[1] = EncodeColor (s[1] * scale);
+				out[2] = EncodeColor (s[0] * scale);
 			}
 			continue;
 		}

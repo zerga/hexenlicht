@@ -5,7 +5,8 @@
  * push.input_size texels cover the view. It is shown as it is when it has
  * the view's size, else scaled: nearest at exactly half the view's size
  * and for the debug views, with Quake II RTX's Lanczos filter otherwise.
- * Then encoded to sRGB with the gamma cvar, like draw2d.frag. The lit
+ * Then encoded as an 8-bit color (transfer.glsl: a 2.2 power, the sRGB
+ * curve with r_srgb 1; 4.17) with the gamma cvar, like draw2d.frag. The lit
  * image without tone mapping is still in Quake II RTX's storage scale
  * (STORAGE_SCALE_HDR), which push.scale takes out; the debug views are
  * scaled by r_debugview_scale (4.9).
@@ -34,7 +35,7 @@
 
 #include "global_ubo.h"
 #include "global_textures.h"
-#include "srgb.glsl"
+#include "transfer.glsl"
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
@@ -139,7 +140,7 @@ void main()
 		else
 			c = texelFetch(TEX_TAA_OUTPUT, p, 0).rgb;
 	}
-	c = linear_to_srgb(c * push.scale);	/* clamped to [0, 1] */
+	c = linear_to_color(c * push.scale, global_ubo.color_srgb);	/* clamped to [0, 1] */
 
 	out_color = vec4(pow(c, vec3(push.gamma)), 1.0);
 }

@@ -286,6 +286,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(float,           maplight_gamma)       /* r_maplight_gamma: GL's lightmap value into linear light (4.15, light_lists.h's lightmap_to_linear) */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             num_dark_lights)      /* GL's dark lights (4.10, darkness.glsl): dyn_light_data after num_dyn_lights */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           dark_light_unit)      /* the light of a full GL lightmap texel: 2^-r_map_exposure */ \
+	GLOBAL_UBO_VAR_LIST_DO(uint,            color_srgb)           /* r_srgb: 8-bit colors are sRGB, 0 = a 2.2 power (4.17, transfer.glsl) */ \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

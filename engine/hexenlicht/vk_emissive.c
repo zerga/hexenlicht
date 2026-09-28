@@ -31,16 +31,18 @@
  *    group: torches, flames, candles, when lit) show Quake II RTX's fake
  *    emissive texture of their skin
  *    (textures.c's apply_fake_emissive_threshold: the texels with a
- *    channel of at least VK_EMISSIVE_THRESHOLD, 215 in sRGB, blurred and
+ *    channel of at least VK_EMISSIVE_THRESHOLD, 215 of 255, blurred and
  *    scaled by their luminance, at twice the size) at GL's abslight (the
  *    instance's light level, model_geometry.comp's emissive factor) times
  *    the scale. They aren't lights (the map light is their light) but are
  *    flagged MATERIAL_FLAG_LIGHT too. Only skins with bright texels have one
  *    (vk_texture.c keeps their 8-bit pixels); it is made when first shown,
  *    as the texture "<skin>*E<the skin's CRC>" (a reloaded skin gets its
- *    own), and stays with the texture cache.
+ *    own; "*S" with r_srgb 1, 4.17), and stays with the texture cache.
  * A change of r_lava_light or r_emissive_scale rewrites the materials
- * (after the GPU is idle) and rebuilds the lights.
+ * (after the GPU is idle) and rebuilds the lights; r_srgb takes the
+ * lava's other average color when the lights are rebuilt (vk_texture.c),
+ * the flames' other emissive textures with the next map's materials.
  *
  * apply_fake_emissive_threshold with its filter and 2x upsampling is ported
  * from Quake II RTX's textures.c.
@@ -79,7 +81,7 @@ static cvar_t	r_emissive_models = {"r_emissive_models", "1", CVAR_NONE};
 static struct
 {
 	int		material;	/* in the material table */
-	vec3_t		color;		/* the texture's average linear color (the lights' at scale 1) */
+	vec3_t		color[2];	/* the texture's average linear color (the lights' at scale 1), [0] by the 2.2 power, [1] the sRGB curve (4.17) */
 	int		lights;		/* its light triangles */
 	char		name[16];
 } lava_materials[MAX_LAVA_MATERIALS];
@@ -103,8 +105,9 @@ static int		skins_made;		/* emissive skin textures made since the map loaded */
  * ========================================================================== */
 
 /* the average linear color of a world texture (Quake II RTX's
- * vkpt_extract_emissive_texture_info over the whole texture, with its bias) */
-static void AverageColor (const texture_t *tx, vec3_t color)
+ * vkpt_extract_emissive_texture_info over the whole texture, with its bias),
+ * by the sRGB curve or the 2.2 power (r_srgb, 4.17) */
+static void AverageColor (const texture_t *tx, qboolean srgb, vec3_t color)
 {
 	const byte	*pixels = (const byte *)tx + tx->offsets[0];
 	double		sum[3] = { 0.0, 0.0, 0.0 };
@@ -115,7 +118,7 @@ static void AverageColor (const texture_t *tx, vec3_t color)
 		unsigned int	c = d_8to24table[pixels[i]];	/* R,G,B,A in memory */
 
 		for (k = 0; k < 3; k++)
-			sum[k] += q_max (VK_SRGBToLinear (((c >> (8 * k)) & 0xff) / 255.0f) + (float)EMISSIVE_TRANSFORM_BIAS, 0.0f);
+			sum[k] += q_max (VK_ColorToLinearAs (((c >> (8 * k)) & 0xff) / 255.0f, srgb) + (float)EMISSIVE_TRANSFORM_BIAS, 0.0f);
 	}
 	for (k = 0; k < 3; k++)
 		color[k] = (n > 0) ? (float)(sum[k] / n) : 0.0f;
@@ -153,7 +156,8 @@ void VK_AddLavaMaterial (int material, const texture_t *tx)
 		return;
 	}
 	lava_materials[num_lava_materials].material = material;
-	AverageColor (tx, lava_materials[num_lava_materials].color);
+	AverageColor (tx, false, lava_materials[num_lava_materials].color[0]);
+	AverageColor (tx, true, lava_materials[num_lava_materials].color[1]);
 	lava_materials[num_lava_materials].lights = 0;
 	q_strlcpy (lava_materials[num_lava_materials].name, tx->name, sizeof(lava_materials[0].name));
 	num_lava_materials++;
@@ -225,7 +229,7 @@ void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color)
 
 	for (k = 0; k < 3; k++)
 		VectorCopy (t->p[k], p[k]);
-	VectorScale (lava_materials[t->lava].color, VK_EmissiveScale (), color);
+	VectorScale (lava_materials[t->lava].color[VK_ColorsSRGB () ? 1 : 0], VK_EmissiveScale (), color);
 }
 
 /* the distance from p to the triangle (Ericson, Real-Time Collision
@@ -314,31 +318,16 @@ qboolean VK_OverLava (const vec3_t origin)
  * The light models' flames: Quake II RTX's fake emissive textures
  * ========================================================================== */
 
-/* Quake II RTX's decode_srgb of a byte, from a table */
-static float DecodeSRGB (unsigned int c)
+/* Quake II RTX's decode_srgb of a byte: its linear light by r_srgb (4.17) */
+static float DecodeColor (unsigned int c)
 {
-	static float	table[256];
-	static qboolean	made;
-	int		i;
-
-	if (!made)
-	{
-		for (i = 0; i < 256; i++)
-			table[i] = VK_SRGBToLinear (i / 255.0f);
-		made = true;
-	}
-	return table[c & 0xff];
+	return VK_ColorTable ()[c & 0xff];
 }
 
-/* Quake II RTX's encode_srgb */
-static byte EncodeSRGB (float x)
+/* Quake II RTX's encode_srgb: linear light as a byte by r_srgb */
+static byte EncodeColor (float x)
 {
-	if (x <= 0.0031308f)
-		x *= 12.92f;
-	else
-		x = 1.055f * powf (x, 1.0f / 2.4f) - 0.055f;
-	x = q_max (0.0f, q_min (1.0f, x));
-	return (byte)(x * 255.0f + 0.5f);
+	return (byte)(VK_LinearToColor (x) * 255.0f + 0.5f);
 }
 
 #define LUMINANCE(r, g, b)	((r) * 0.2126f + (g) * 0.7152f + (b) * 0.0722f)
@@ -385,7 +374,8 @@ static void FilterImage (float *pixels, int num_comps, const float *kernel, int 
 }
 
 /* Quake II RTX's apply_fake_emissive_threshold on w x h pixels (R,G,B,A in
- * memory, sRGB): returns the 2w x 2h emissive image (sRGB, malloc'd) */
+ * memory, 8-bit colors): returns the 2w x 2h emissive image (8-bit colors,
+ * malloc'd) */
 static unsigned int *FakeEmissive (const unsigned int *pixels, int w, int h)
 {
 	static const float	filter[] = { 0.0093f, 0.028002f, 0.065984f, 0.121703f, 0.175713f, 0.198596f,
@@ -407,7 +397,7 @@ static unsigned int *FakeEmissive (const unsigned int *pixels, int w, int h)
 	{
 		unsigned int	c = pixels[i];
 		unsigned int	r = c & 0xff, g = (c >> 8) & 0xff, b = (c >> 16) & 0xff;
-		float		src_lum = LUMINANCE (DecodeSRGB (r), DecodeSRGB (g), DecodeSRGB (b));
+		float		src_lum = LUMINANCE (DecodeColor (r), DecodeColor (g), DecodeColor (b));
 
 		mask[i] = (q_max (r, q_max (g, b)) < VK_EMISSIVE_THRESHOLD) ? 0.0f : src_lum;
 		max_src_lum = q_max (max_src_lum, src_lum);
@@ -429,7 +419,7 @@ static unsigned int *FakeEmissive (const unsigned int *pixels, int w, int h)
 		float		color[3], src_lum, scale;
 
 		for (k = 0; k < 3; k++)
-			color[k] = DecodeSRGB ((c >> (8 * k)) & 0xff);
+			color[k] = DecodeColor ((c >> (8 * k)) & 0xff);
 		src_lum = LUMINANCE (color[0], color[1], color[2]) * src_lum_scale;
 		scale = mask[i] * src_lum * src_lum * lum_scale;
 		for (k = 0; k < 3; k++)
@@ -455,8 +445,8 @@ static unsigned int *FakeEmissive (const unsigned int *pixels, int w, int h)
 	FilterImage (final_2x, 3, filter_final, Q_COUNTOF(filter_final), w2, h2);
 
 	for (i = 0; i < w2 * h2; i++)
-		out[i] = (unsigned int)EncodeSRGB (final_2x[i * 3]) | ((unsigned int)EncodeSRGB (final_2x[i * 3 + 1]) << 8) |
-			 ((unsigned int)EncodeSRGB (final_2x[i * 3 + 2]) << 16) | 0xff000000u;
+		out[i] = (unsigned int)EncodeColor (final_2x[i * 3]) | ((unsigned int)EncodeColor (final_2x[i * 3 + 1]) << 8) |
+			 ((unsigned int)EncodeColor (final_2x[i * 3 + 2]) << 16) | 0xff000000u;
 
 	free (mask);
 	free (final);
@@ -475,7 +465,8 @@ int VK_EmissiveSkin (int slot)
 
 	if (!VK_TextureName (slot)[0] || strlen (VK_TextureName (slot)) + 7 >= sizeof(name))
 		return 0;	/* unnamed, or the name would be cut */
-	q_snprintf (name, sizeof(name), "%s*E%04x", VK_TextureName (slot), VK_TextureCRC (slot));
+	q_snprintf (name, sizeof(name), "%s*%c%04x", VK_TextureName (slot), VK_ColorsSRGB () ? 'S' : 'E',
+		    VK_TextureCRC (slot));	/* made by the curve (4.17) */
 	if ((e = VK_FindTexture (name)) >= 0)
 		return e;
 	rgba = VK_TextureRGBA (slot, &w, &h);
@@ -507,14 +498,14 @@ qboolean VK_ModelsEmit (void)
 /* vk_lights's lines */
 void VK_PrintEmissive (void)
 {
-	int	i;
+	int	i, s = VK_ColorsSRGB () ? 1 : 0;
 
 	Con_Printf ("emissive: r_emissive_scale %g; lava %s, %d light triangles (%d too small left out)",
 		    VK_EmissiveScale (), r_lava_light.integer ? "emits" : "off (r_lava_light 0)", num_lava_tris,
 		    lava_degenerate);
 	for (i = 0; i < num_lava_materials; i++)
 		Con_Printf ("%s %s %d (color %.3f %.3f %.3f)", i ? "," : ":", lava_materials[i].name, lava_materials[i].lights,
-			    lava_materials[i].color[0], lava_materials[i].color[1], lava_materials[i].color[2]);
+			    lava_materials[i].color[s][0], lava_materials[i].color[s][1], lava_materials[i].color[s][2]);
 	Con_Printf ("\n");
 	if (lava_other_materials)
 		Con_Printf ("  %d lava surfaces of materials past %d don't emit\n", lava_other_materials, MAX_LAVA_MATERIALS);
