@@ -6,7 +6,8 @@
  * console takes (numbers within a million):
  *  - the per-map cvars (map_cvars below): 4.6's sky and sun cvars,
  *    r_map_light_scale (every map light's intensity times it) and
- *    r_map_exposure (EV added to the global tm_exposure_bias, vk_ubo.c).
+ *    r_map_exposure (EV: the fixed exposure 2^it, vk_tonemap.c; added to
+ *    tm_exposure_bias with the auto exposure, vk_ubo.c).
  *    Every map load resets them to their defaults (their values when the
  *    renderer started) before the map's file sets them, so they don't
  *    carry over from map to map; the global calibration (r_maplight_scale,

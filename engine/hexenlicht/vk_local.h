@@ -178,6 +178,11 @@ qboolean VK_Benchmark (void);		/* vk_benchmark: also host.c and sys_win.c */
 /* vk_swapchain.c: capture the next presented frame into a TGA file
  * (gl_screen.c's "screenshot" command) */
 void VK_RequestScreenshot (const char *filename);
+void VK_RequestScreenshotAverage (const char *filename, int frames);	/* the next frames averaged in linear light (4.9) */
+
+/* vk_calib.c: calibration against GL (4.9): vk_setpos, vk_bookmark,
+ * vk_screenshot */
+void VK_InitCalib (void);
 
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert";
  * VK_ExePath gives <exe folder>\<file> */
@@ -524,6 +529,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view);
 void VK_ResetUBOHistory (void);	/* the next frame's _prev values are its own */
 const struct QVKUniformBuffer_s *VK_CurrentUBO (void);	/* this frame's, after VK_PrepareUBO */
 qboolean VK_ToneMappingEnabled (void);	/* tm_enable */
+qboolean VK_AutoExposure (void);	/* vk_tonemap.c: tm_auto_exposure (0: the fixed exposure, 4.9) */
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
 float VK_NumBounceRays (void);	/* pt_num_bounce_rays: 0, 0.5, 1 or 2 */
 qboolean VK_DenoiserEnabled (void);	/* flt_enable */
@@ -553,6 +559,7 @@ void VK_ClearMapLights (void);
 const vk_maplight_t *VK_MapLights (int *count);	/* none with r_maplights 0 */
 float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white */
 float VK_LightLevelIntensity (float level);	/* the same for a utils/light level */
+float VK_MapLightRange (void);	/* r_maplight_range: a map light's range is its level times this (4.9) */
 qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
 float VK_SRGBToLinear (float c);	/* a GL light color's linear value */
 qboolean VK_MapLightAt (const vec3_t origin);
@@ -624,7 +631,7 @@ void VK_ShutdownMapFile (void);
 void VK_LoadMapFile (qmodel_t *worldmodel);	/* VK_LoadWorld, before the map's lights */
 vk_mapedit_t *VK_MapEdits (int *count);
 float VK_MapLightScale (void);	/* r_map_light_scale */
-float VK_MapExposure (void);	/* r_map_exposure: EV added to tm_exposure_bias */
+float VK_MapExposure (void);	/* r_map_exposure: EV of the fixed exposure, or added to tm_exposure_bias (4.9) */
 /* the light editor's (4.8): the file is kept as its lines, which the edits
  * rewrite and VK_SaveMapFile writes */
 qboolean VK_MapFileLightEdit (const int *at, vk_mapedit_t *merged);	/* the light lines of the entity origin, merged in order; false: none */

@@ -58,6 +58,7 @@ layout(push_constant, std430) uniform PushConstants {
     float knee_w;
     float knee_a;
     float knee_b;
+    float fixed_exposure;   /* Hexenlicht (4.9): > 0 a fixed exposure, no curve or knee (vk_tonemap.c) */
 } push;
 
 // When tm_debug is enabled, this displays debugging information for the
@@ -157,6 +158,15 @@ void main()
 
     input_color = mix(input_color, blend_color.rgb, blend_color.a * clamp(blend_color_scale, 0, 1));
 
+    vec3 mapped_color;
+    if (push.fixed_exposure > 0)
+    {
+        /* Hexenlicht (4.9): the fixed exposure in GL's units, clipped at 1
+         * below as GL's, without the curve or the knee */
+        mapped_color = input_color * push.fixed_exposure;
+    }
+    else
+    {	/* Quake II RTX's auto exposure and curve (tm_auto_exposure 1), unchanged */
     const float lum = max(luminance(input_color), exp2(min_log_luminance));
 
     // Apply linear interpolation manually 
@@ -175,7 +185,7 @@ void main()
     const float out_log_luminance = left_weight_F * left_tonecurve + right_weight_F * right_tonecurve;
     const float out_luminance = exp2(out_log_luminance + global_ubo.tm_exposure_bias);
 
-    vec3 mapped_color = input_color * out_luminance / lum;
+    mapped_color = input_color * out_luminance / lum;
 
     if(spec_tone_mapping_hdr == 0)
     {
@@ -199,6 +209,7 @@ void main()
 
     // Finally, allow for some amount of blending with the original frame:
     mapped_color = mix(mapped_color, ae_mapped_color, global_ubo.tm_reinhard);
+    }
 
     if(spec_tone_mapping_hdr == 0)
     {

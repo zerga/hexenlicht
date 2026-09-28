@@ -229,7 +229,9 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	 * after a swapped one) */
 	ubo.pt_swap_checkerboard = (debug_view == DEBUGVIEW_LIT && !up->denoise && up->dlss != VK_SL_RR)
 				   ? (int)(vk_render_frame & 1) : 0;
-	ubo.tm_enable = VK_ToneMappingEnabled () ? 1.0f : 0.0f;	/* as vk_view.c decides (tm_enable 0.5: off) */
+	/* as vk_view.c decides (tm_enable 0.5: off); the shaders scale the
+	 * effects by the adapted luminance only with the auto exposure (4.9) */
+	ubo.tm_enable = (VK_ToneMappingEnabled () && VK_AutoExposure ()) ? 1.0f : 0.0f;
 	if (!VK_DenoiserHistoryValid ())
 	{
 		ubo.flt_temporal_lf = 0.0f;

@@ -69,6 +69,53 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   426x240 2D screen) is not a bug. Set `playerclass` explicitly: `config.cfg`
   may have another class.
 
+## Calibration against GL (4.9)
+
+- **Bookmarks** are views in `tools/hexenlicht/bookmarks.txt` (`name map x y
+  z pitch yaw [portals]`: the player's origin and view). In Hexenlicht,
+  `vk_bookmark <name>` appends one for where you stand to the game folder's
+  `bookmarks.txt` (copy it into the repository's list); `vk_setpos x y z
+  [pitch yaw]` goes to one (single player).
+- **The same camera in both engines** comes from a savegame:
+  `calib_shots.ps1` makes one per bookmark in Hexenlicht (`vk_setpos ...;
+  save hlcal_<name>` on one line keeps the pitch: a load sends the player
+  model's angles, which a server frame turns into a third of the view's),
+  then `glh2` and Hexenlicht both `load` it and take paused shots at the
+  same size, without the HUD (`viewsize 130`), `showpause 0`, the weapon,
+  the crosshair and the notify lines. Angles are bytes in the protocol
+  (1.4°), the same in both. Checked: egypt1's start at pitch 30, yaw 20
+  loaded as 29.5°, 19.7° in both, the same frame.
+- **`calib_shots.ps1 -Out <folder> [-Label l] [-HlCvars "..."]
+  [-Names ...]`**: `gl\<name>_gl.tga` (the image), `gl\<name>_gllm.tga`
+  (`r_lightmap 1`, entities hidden: the lightmaps), `<label>\<name>_lit.tga`
+  (the lit image) and `<label>\<name>_direct.tga` (the direct diffuse
+  light, `r_debugview 15` with `r_debugview_scale` 0.25, white lights, no
+  denoiser, entities hidden, lava and sky light off, 16 frames averaged by
+  `vk_screenshot`). `-HlCvars` goes in after each load (a candidate:
+  `"r_maplight_power 4"`); `-SkipSaves -SkipGl -KeepSaves` reuse the saves
+  and GL shots for more candidates; `-GlLit <folder>` adds
+  `gl\<name>_glc.tga` with HoT's colored light (`<folder>\maps\*.lit`,
+  copied in for the run), `-LitFrames` averages the lit image too. It
+  backs up and restores `config.cfg` and `hexenlicht.cfg` of the game
+  folder and `data1` (no `hexenlicht.cfg` during the runs: Hexenlicht would
+  find `data1`'s from `portals` too), moves the folder's own numbered shots
+  aside for `glh2`'s and back, checks that each save is of its map, and
+  deletes its scripts (and the saves unless `-KeepSaves`). 15 bookmarks:
+  ~3 minutes (Release, 960x540).
+- **`calib_compare.ps1 -Out <folder> -Labels a,b [-Pictures]`**: per
+  bookmark and pooled, Hexenlicht's direct light against GL's lightmaps in
+  linear light (GL multiplied textures by the lightmap in sRGB space: its
+  linear light is the lightmap decoded), in 30-pixel blocks where GL's
+  pixels are grey (lightmaps: not the sky or liquids) and neither is
+  clipped or black: the median ratio (1: GL's units), the spread (stops
+  between the quartiles), the slope of log Hexenlicht over log GL (1: the
+  same contrast); and the lit image's mean luminance against GL's.
+  `-Pictures` writes `<label>\compare\<name>.png`: GL, Hexenlicht and their
+  ratio (blue darker, red brighter, to 2 stops) for the image and the
+  light.
+- `vk_screenshot <name> [frames]` writes `shots\<name>.tga`, frames
+  averaged in linear light (not numbered, no 100-file limit).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

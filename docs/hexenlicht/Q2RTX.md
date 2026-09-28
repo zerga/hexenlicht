@@ -119,7 +119,7 @@ this repository) or one at a time with
 | `indirect_lighting.rgen` | bounces, glossy reflections (3.5a: launch check, half resolution with (h + 1) / 2 rows, the weapon only in its own rays, bounce hits on models tinted, the specular hit distance stored; 4.6: the sun at bounce hits with the models around a light in its shadow rays, a specular bounce that hits the sky sees GL's sky and a diffuse one the dome) | 3.5a, 4.6 |
 | `reflect_refract.rgen` | through translucent surfaces and models, off mirrors and glass (3.5b: launch check, water and slime skipped and no vertical water as glass, the weapon in no ray, the water normal only with a map, no god rays) | 3.5b |
 | `asvgf_*.comp` (not `asvgf_taau.comp`) | denoiser (3.6: unchanged but `asvgf_temporal.comp`, where a gradient sample blends into its pixel's history only as far as the anti-lag drops it; 4.13: `asvgf_gradient_img.comp` takes a light style's unsquared change, `direct_lighting.rgen` writes it, `ASVGF_GRAD_HF_SPEC_PING/PONG` RGBA16F, `PT_VISBUF_BARY_A/B` R32G32F, `flt_antilag_style`) | 3.6, 4.13 |
-| `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom (3.7: unchanged but `tone_mapping_curve.comp`'s launch check, removed; the tone mapping and readback buffers by device address, `vertex_buffer.h`; the apply shader's HDR variant and full screen blend unused) | 3.7 |
+| `tone_mapping_*.comp`, `tone_mapping_utils.glsl`, `bloom_*.comp` | exposure, tone curve, bloom (3.7: unchanged but `tone_mapping_curve.comp`'s launch check, removed; the tone mapping and readback buffers by device address, `vertex_buffer.h`; the apply shader's HDR variant and full screen blend unused; 4.9: `tone_mapping_apply.comp`'s fourth push constant `fixed_exposure`, whose branch, the default, skips the curve and the knee: DECISIONS R93) | 3.7, 4.9 |
 | `asvgf_taau.comp` | the TAA pass (3.8: threads past the TAA output write their zero only inside the images; `HQ_COLOR_INTERLEAVED` 1x1) | 3.8 |
 | `fsr_easu_fp32.comp`, `fsr_rcas_fp32.comp`, `fsr_easu.glsl`, `fsr_rcas.glsl`, `fsr_utils.glsl` | FSR 1 (3.8: the `.comp` files and `fsr_utils.glsl` unchanged; EASU's and RCAS's input clamped to the rendered part and the view, no writes past the view); the FP16 variants not imported (7.2) | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | not imported (4.6, DECISIONS R88) |
@@ -176,7 +176,9 @@ this repository) or one at a time with
   the cathedral's mean diffuse albedo is 0.04 (sRGB ~55), so one bounce adds
   2–3 % to the lit image, where lighter PBR textures would get tens of
   percent. The calibration (4.9) or the materials (E5) decide whether that
-  stays.
+  stays. *4.9: at its bookmarks the bounce adds ~8 % to the lit image on
+  the lightmapped world (the calibrated scale takes it in; DECISIONS R92);
+  the materials (E5) may change it.*
 - **Checkerboard fields and RR (answered in 3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.
@@ -219,7 +221,10 @@ this repository) or one at a time with
   anti-lag drops the history, `asvgf_temporal.comp`). The calibration
   against GL (4.9) measures the
   denoised image; a random pick (the A-SVGF paper's) would remove the rest
-  but lose Q2RTX's anti-lag for moving lights.
+  but lose Q2RTX's anti-lag for moving lights. *Answered in 4.9: at its 15
+  bookmarks the denoised image is ~1 % brighter than 16 raw frames averaged
+  (on the lightmapped world, median; 4 % with Q2RTX's specular, now off by
+  default); left as it is, the calibrated scale includes it (DECISIONS R92).*
 - **Exposure and the mood (4.9, 4.10).** Since 3.7 Q2RTX's tone
   mapper and auto exposure run with its defaults: its curve lifts the
   shadows of Hexen II's dark scenes, and the exposure brightens a dark
@@ -230,7 +235,10 @@ this repository) or one at a time with
   puzzle areas dark (a per-map value would be one more line in 4.7's map
   file list). Since 4.7 the map file's `r_map_exposure` adds a per-map EV
   to `tm_exposure_bias` (Q2RTX's per-map `maps/<map>.cfg` scripts are not
-  imported: DECISIONS R89).
+  imported: DECISIONS R89). *Answered in 4.9: the auto exposure lifted
+  Hexen II's torch-lit views to 1.2–17× GL's brightness; the default is now
+  a fixed exposure (`tm_auto_exposure 0`) in GL's units, `r_map_exposure` applied
+  to it (DECISIONS R93). The dark places' own question stays 4.10's.*
 - **Effects brightness (6.3, 6.2).** Since 3.7 particles and sprites share
   one exposure factor (`pt_particle_brightness` 15, measured on meteor
   staff particles); Q2RTX has separate ones for sprites, beams and
@@ -268,10 +276,14 @@ this repository) or one at a time with
   image PQ-encoded, which clamps at 10000 cd/m²: 78 in linear units before
   the ×128 storage scale. Walls next to the test lights exceed it, and the
   bloom around them is then up to 10/255 weaker than before 3.8. The
-  calibration (4.9) decides whether real lights stay below it.
+  calibration (4.9) decides whether real lights stay below it. *Answered in
+  4.9: with the fixed exposure the display clips at 1, 78 times below the
+  clamp, and the map lights are dimmer than before (scale 740); only
+  the faint bloom around a hot spot above 78 loses energy: left.*
 - **Reference shots by accumulation (4.9).** Q2RTX's reference mode
   (`pt_accumulation_rendering`: `temporal_blend_factor`, the
   `HQ_COLOR_INTERLEAVED` accumulator in `asvgf_taau.comp`, random primary
   ray offsets) averages frames of a still scene into an unbiased image. The
   shader path is imported; the host side and a full-size image would give
-  4.9 its reference shots.
+  4.9 its reference shots. *Answered in 4.9: not needed; `vk_screenshot`
+  averages paused frames in linear light (DECISIONS R91).*

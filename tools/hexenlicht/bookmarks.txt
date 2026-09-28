@@ -1,0 +1,22 @@
+# Calibration bookmarks (story 4.9): the same camera in glh2 and Hexenlicht.
+# One per line: name map x y z pitch yaw [portals]: the player's origin and view
+# (vk_bookmark <name> in Hexenlicht appends such a line to bookmarks.txt in the
+# game folder). calib_shots.ps1 takes the matched shots, calib_compare.ps1 compares
+# them; see docs/hexenlicht/TESTING.md. Angles go through the protocol as bytes
+# (1.4 degrees). portals: a Portal of Praevus map (run with -portals).
+
+demo1_start demo1 -918.0 -2034.0 0.0 0.0 45.0
+demo2_start demo2 3672.0 -2176.0 -88.0 0.0 180.0
+village1_start village1 200.0 -784.0 30.0 0.0 90.0
+meso1_start meso1 -16.0 456.0 4.0 0.0 270.0
+meso2_start meso2 0.0 72.0 0.0 0.0 90.0
+meso9_start meso9 1152.0 2720.0 0.0 0.0 270.0
+egypt1_start egypt1 -839.8 456.2 -6.6 0.0 0.0
+egypt4_start egypt4 20.0 -420.0 -80.0 0.0 90.0
+romeric1_start romeric1 0.0 1472.0 56.0 0.0 270.0
+romeric2_start romeric2 2304.0 1728.0 -128.0 0.0 180.0
+castle4_start castle4 -576.0 16.0 128.0 0.0 270.0
+cath_start cath -440.0 536.0 2.0 0.0 90.0
+tower_start tower 0.0 -640.0 48.0 0.0 90.0
+keep1_start keep1 1400.0 1256.0 -208.0 0.0 180.0 portals
+tibet1_start tibet1 176.0 -264.0 8.0 1.0 180.0 portals

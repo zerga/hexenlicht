@@ -442,7 +442,7 @@ void VK_UpdateLights (void)
 		l->type = LIGHT_TYPE_SPHERE;
 		VectorCopy (ml[i].origin, l->p[0]);
 		l->radius = MAP_LIGHT_RADIUS;
-		l->range = (float)ml[i].level;
+		l->range = (float)ml[i].level * VK_MapLightRange ();
 		VectorCopy (ml[i].spot_dir, l->spot_dir);
 		l->spot_cos = ml[i].spot_cos;
 		VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI, l->color);

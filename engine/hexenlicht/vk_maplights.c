@@ -21,12 +21,17 @@
  *    a plane goes to the side of the trace's other end, so only when every
  *    leaf that close is solid) and one with a level below 0.
  * Brightness: the intensity (pi x radiance, as vk_testlight's) is
- * r_maplight_scale x (level / 300)^3: the power under which inverse-square
- * light scales with each light's range as the compiler's linear falloff
- * does (twice the level and the distances, twice the light); the curve is
- * calibrated in 4.9.
- * Colors (r_maplight_colors 1; 0 white, the original's and Hammer of
- * Thyrion's default): HoT's colored light, the colors utils/jsh2color baked
+ * r_maplight_scale x (level / 300)^r_maplight_power (3): the power under
+ * which inverse-square light scales with each light's range as the
+ * compiler's linear falloff does (twice the level and the distances, twice
+ * the light); the range is the level times r_maplight_range (1). 4.9
+ * calibrated them against GL at its bookmarks: power 2-4 matched GL's
+ * lightmaps alike, a range other than the level worse; r_maplight_scale
+ * 740 makes the lit image on the lightmapped world as bright as GL's, with
+ * the fixed exposure (tm_auto_exposure 0) and matte materials (r_specular 0,
+ * vk_material.c); the direct light is then 1.15 of GL's lightmaps.
+ * Colors (r_maplight_colors 1; 0, the default since 4.9: white, the
+ * original's and Hammer of Thyrion's default): HoT's colored light, the colors utils/jsh2color baked
  * its .lit files from (vk_lightcolor.c: torches orange, plain lights by the
  * textures near them, the others 255 225 200; white on a map where none is
  * colored), or on a map whose lights have _color (later compilers' key,
@@ -90,8 +95,10 @@ static void MapLightsChanged (cvar_t *var);
 static void MapLightColorsChanged (cvar_t *var);
 
 static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
-static cvar_t	r_maplight_scale = {"r_maplight_scale", "1000", CVAR_NONE};	/* pi x radiance of a level 300 light */
-static cvar_t	r_maplight_colors = {"r_maplight_colors", "1", CVAR_ARCHIVE};	/* 0 white */
+static cvar_t	r_maplight_scale = {"r_maplight_scale", "740", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness) */
+static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intensity as (level / 300)^this (4.9) */
+static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
+static cvar_t	r_maplight_colors = {"r_maplight_colors", "0", CVAR_ARCHIVE};	/* 0 white (the original's, 4.9), 1 HoT's colors */
 
 /* an entity as utils/light parses it */
 enum { KEY_CLASSNAME = 1, KEY_TARGET = 2, KEY_TARGETNAME = 4, KEY_ORIGIN = 8, KEY_LEVEL = 16, KEY_STYLE = 32,
@@ -728,7 +735,13 @@ float VK_LightLevelIntensity (float level)
 {
 	float	x = level / (float)DEFAULT_LIGHT_LEVEL;
 
-	return q_max (r_maplight_scale.value, 0.0f) * x * x * x;
+	return q_max (r_maplight_scale.value, 0.0f) * powf (q_max (x, 0.0f), q_min (q_max (r_maplight_power.value, 0.0f), 8.0f));	/* 0-8: no inf */
+}
+
+/* a map light's range: its level times this (4.9) */
+float VK_MapLightRange (void)
+{
+	return q_max (r_maplight_range.value, 0.1f);
 }
 
 /* a map light's: its level's, times its map file scale and the map's
@@ -810,7 +823,11 @@ void VK_InitMapLights (void)
 	Cvar_RegisterVariable (&r_maplights);
 	Cvar_RegisterVariable (&r_maplight_scale);
 	Cvar_RegisterVariable (&r_maplight_colors);
+	Cvar_RegisterVariable (&r_maplight_power);
+	Cvar_RegisterVariable (&r_maplight_range);
 	Cvar_SetCallback (&r_maplights, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_scale, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_power, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_range, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_colors, MapLightColorsChanged);
 }
