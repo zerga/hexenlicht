@@ -41,7 +41,8 @@ COMPILE_TIME_ASSERT(ubo_tlas, offsetof(QVKUniformBuffer_t, tlas) == 3640);
 COMPILE_TIME_ASSERT(ubo_view_cluster, offsetof(QVKUniformBuffer_t, view_cluster) == 3780);
 COMPILE_TIME_ASSERT(ubo_sky_dome, offsetof(QVKUniformBuffer_t, sky_dome) == 3792);
 COMPILE_TIME_ASSERT(ubo_maplight_gamma, offsetof(QVKUniformBuffer_t, maplight_gamma) == 3816);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3820);
+COMPILE_TIME_ASSERT(ubo_num_dark_lights, offsetof(QVKUniformBuffer_t, num_dark_lights) == 3820);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3828);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 

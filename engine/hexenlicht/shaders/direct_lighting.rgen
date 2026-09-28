@@ -41,7 +41,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - it clears PT_SPECULAR_HIT_DIST, which indirect_lighting.rgen writes
  *    where it traces a specular ray;
  *  - a gradient sample writes its sampled light's style change into its
- *    stratum of ASVGF_GRAD_HF_SPEC_PING (4.13, asvgf_gradient_img.comp). */
+ *    stratum of ASVGF_GRAD_HF_SPEC_PING (4.13, asvgf_gradient_img.comp);
+ *  - the weapon's direct light is at least GL's least light on it, and
+ *    while there are dark lights each pixel leaves their amount at its
+ *    world surface in PT_THROUGHPUT's w for the composites (4.10,
+ *    darkness.glsl). */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -50,6 +54,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define ENABLE_SHADOW_CAUSTICS
 #include "path_tracer_rgen.h"
 #include "projection.glsl"
+#include "darkness.glsl"
 
 layout(constant_id = 0) const uint spec_enable_caustics = 0;
 
@@ -165,6 +170,10 @@ direct_lighting(ivec2 ipos, bool is_odd_checkerboard, out vec3 high_freq, out ve
 
 	o_specular = demodulate_specular(primary_base_reflectivity, o_specular);
 
+	// Hexenlicht (4.10): GL always gives the weapon some light (darkness.glsl)
+	if(primary_is_weapon)
+		high_freq = max(high_freq, weapon_min_light(primary_albedo));
+
 	high_freq = clamp_output(high_freq);
 	o_specular = clamp_output(o_specular);
 }
@@ -185,6 +194,20 @@ main()
 
 	vec3 high_freq, specular;
 	direct_lighting(ipos, is_odd_checkerboard, high_freq, specular);
+
+	// Hexenlicht (4.10): the dark lights' amount for the composites, 0 on models, the
+	// weapon, turbulent surfaces (no lightmaps in GL) and where there is no surface
+	// (darkness.glsl); only while there are any, as reflect_refract.rgen reads the w, a
+	// path length, before this pass
+	if(global_ubo.num_dark_lights > 0)
+	{
+		vec4 position_material = texelFetch(TEX_PT_SHADING_POSITION, ipos, 0);
+		uint material_id = floatBitsToUint(position_material.w);
+		vec4 throughput = imageLoad(IMG_PT_THROUGHPUT, ipos);
+		throughput.w = (material_id == 0 || (material_id & (MATERIAL_FLAG_MODEL | MATERIAL_FLAG_WEAPON | MATERIAL_FLAG_WARP)) != 0) ? 0
+			: dark_light_amount(position_material.xyz, decode_normal(texelFetch(TEX_PT_GEO_NORMAL_A, ipos, 0).x));
+		imageStore(IMG_PT_THROUGHPUT, ipos, throughput);
+	}
 
 	high_freq *= STORAGE_SCALE_HF;
 	specular *= STORAGE_SCALE_SPEC;

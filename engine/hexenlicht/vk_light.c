@@ -20,8 +20,11 @@
  * fading to 0 at R - minlight (GL's surfaces stop there); the radius changes as GL's
  * (explosions shrink, flames flicker). The color is GL's (the client's,
  * with gl_colored_dynamic_lights) converted to linear, as the map lights'.
- * Dark lights (4.10) and those of a negative radius (GL lights nothing
- * with them) are left out. An alias model whose entity owns one of them
+ * Dark lights (EF_DARKLIGHT, 4.10) go after them in the UBO, where no
+ * shader samples them: GL took them from its lightmaps, the composites take
+ * them from the world's light (shaders/darkness.glsl; r_darklights 0 turns
+ * that off). Those of a negative radius (GL lights nothing with them) are
+ * left out. An alias model whose entity owns a lit one
  * within the model's bounds casts no shadows while it does
  * (VK_DynamicLightOwner: vk_instance.c's light group), as the map lights'
  * torches: the light is inside it (a glowing projectile; also a monster's
@@ -98,6 +101,7 @@
 #define DYNAMIC_LIGHT_RADIUS	8.0f	/* MAP_LIGHT_BASE_RADIUS: the map lights' default */
 
 static cvar_t	r_dlights = {"r_dlights", "1", CVAR_NONE};
+static cvar_t	r_darklights = {"r_darklights", "1", CVAR_NONE};	/* 4.10: GL's dark lights darken the world (shaders/darkness.glsl) */
 
 /* the last 3D frame's dynamic lights, for vk_lights (VK_PrepareLights runs
  * inside the frame, which can't print) */
@@ -105,7 +109,8 @@ static struct
 {
 	int		lit;		/* in the UBO */
 	int		owned;		/* of them, keyed by an entity (the player's too) */
-	int		dark, negative;	/* left out: dark (4.10), a negative radius or none past minlight */
+	int		dark, negative;	/* not lights: dark (4.10), a negative radius or none past minlight */
+	int		darkening;	/* of the dark ones, darkening the world (r_darklights) */
 	int		most;		/* the most lit in a frame since the map loaded */
 	float		largest;	/* the largest intensity (pi x radiance) since then */
 } dlight_stats;
@@ -603,11 +608,13 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	vk_buffer_t	*buf = &light_buffers[vk.frame_index];
 	LightBuffer	*lb = (LightBuffer *) buf->mapped;
 	const uint32_t	*sky_visibility;
+	const scene_dlight_t	*dark[MAX_LIGHT_SOURCES];
 	uint32_t	version;
-	int		i, k, cur, n = 0;
+	int		i, k, cur, n = 0, num_dark = 0;
 
 	/* dynamic sphere lights (Quake II RTX's add_dlights): the game's (see the
-	 * top), then the test ones */
+	 * top), then the test ones; the game's dark ones (4.10) after them, where
+	 * no shader samples them (shaders/darkness.glsl) */
 	dlight_stats.lit = dlight_stats.owned = dlight_stats.dark = dlight_stats.negative = 0;
 	for (i = 0; i < r_scene.num_dlights && r_dlights.integer; i++)
 	{
@@ -618,6 +625,8 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		if (s->dark)
 		{
 			dlight_stats.dark++;
+			if (r_darklights.integer && s->radius > s->minlight && num_dark < MAX_LIGHT_SOURCES)
+				dark[num_dark++] = s;
 			continue;
 		}
 		if (!DynamicLightLit (s))
@@ -634,9 +643,23 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		dlight_stats.largest = q_max (dlight_stats.largest, intensity);
 	}
 	dlight_stats.most = q_max (dlight_stats.most, dlight_stats.lit);
-	for (i = 0; i < num_test_dlights && n < MAX_LIGHT_SOURCES; i++)
+	for (i = 0; i < num_test_dlights && n + num_dark < MAX_LIGHT_SOURCES; i++)
 		WriteDynamicLight (&ubo->dyn_light_data[n++], test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f);
 	ubo->num_dyn_lights = n;
+	/* the dark ones: GL's radius and minlight (in spot_data's bits), and
+	 * the light of a full GL lightmap texel that they take from: the light
+	 * that shows a texture at its own color at the fixed exposure (the lit
+	 * image was calibrated to GL's look, 4.9 and 4.15, whatever the map
+	 * lights' shape) */
+	for (i = 0; i < num_dark; i++)
+	{
+		static const vec3_t	none = {0, 0, 0};
+
+		WriteDynamicLight (&ubo->dyn_light_data[n + i], dark[i]->origin, dark[i]->radius, none, dark[i]->minlight);
+	}
+	ubo->num_dark_lights = num_dark;
+	ubo->dark_light_unit = exp2f (-q_min (q_max (VK_MapExposure (), -20.0f), 20.0f));
+	dlight_stats.darkening = num_dark;
 
 	/* the light styles (4.2): R_AnimateLight's value, GL's, relative to its normal
 	 * 'm' (264), so an unstyled light stays 1 and a style animates as in GL frame for
@@ -990,8 +1013,9 @@ static void VK_Lights_f (void)
 		}
 		Con_Printf ("light styles: %d lights in %d styles other than 0, %d off last frame\n", styled, styles, off);
 	}
-	Con_Printf ("dynamic lights last frame%s: %d (%d keyed by an entity), left out %d dark (4.10), %d unlit (negative radius, minlight); since the map loaded at most %d in a frame, the brightest %.0f\n",
-		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.dark,
+	Con_Printf ("dynamic lights last frame%s: %d (%d keyed by an entity), %d dark (4.10: %d darkening the world%s), %d unlit (negative radius, minlight); since the map loaded at most %d in a frame, the brightest %.0f\n",
+		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.dark, dlight_stats.darkening,
+		    r_darklights.integer ? "" : ", r_darklights 0",
 		    dlight_stats.negative, dlight_stats.most, dlight_stats.largest);
 	Con_Printf ("lists of %d clusters (of %d): %u entries (at most %d), mean %.1f, max %u (cluster %d), %d empty\n",
 		    num_lists, vk_pvs.num_clusters, num_nodes, MAX_LIGHT_LIST_NODES,
@@ -1034,6 +1058,7 @@ void VK_InitLights (void)
 	Cmd_AddCommand ("vk_testlight", VK_TestLight_f);
 	Cmd_AddCommand ("vk_lights", VK_Lights_f);
 	Cvar_RegisterVariable (&r_dlights);
+	Cvar_RegisterVariable (&r_darklights);
 	VK_InitMapLights ();
 	VK_InitEmissive ();
 }

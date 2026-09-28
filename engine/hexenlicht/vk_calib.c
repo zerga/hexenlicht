@@ -15,7 +15,10 @@
  *  - vk_screenshot <name> [frames] writes shots/<name>.tga, the next
  *    frames (1) averaged in linear light (vk_swapchain.c): a still frame's
  *    one-sample noise averages out, without the 100 numbered files of
- *    "screenshot".
+ *    "screenshot";
+ *  - vk_darkplaces [n] [threshold] (4.10) lists where GL shows the world's
+ *    floors black: the leaves with the most floor whose lightmaps are
+ *    below the threshold at the light styles now, with a point to go to.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -159,9 +162,175 @@ static void VK_Screenshot_f (void)
 	VK_RequestScreenshotAverage (name, (int)frames);
 }
 
+/* a surface's brightest lightmap texel as GL shows it now, 0-255: each
+ * style map's byte times the style's value, >> 7, clipped (gl_rsurf.c's
+ * R_BuildLightMap; the samples are RGB, gl_model.c); 0 without samples
+ * (GL draws such a surface black) */
+static int SurfaceBrightest (const msurface_t *s)
+{
+	int	size = ((s->extents[0] >> 4) + 1) * ((s->extents[1] >> 4) + 1);
+	int	best = 0, i, c, m;
+
+	if (!s->samples)
+		return 0;
+	for (i = 0; i < size; i++)
+	{
+		for (c = 0; c < 3; c++)
+		{
+			int	sum = 0;
+
+			for (m = 0; m < MAXLIGHTMAPS && s->styles[m] != 255; m++)
+				sum += s->samples[(m * size + i) * 3 + c] * d_lightstylevalue[s->styles[m]];
+			best = q_max (best, q_min (sum >> 7, 255));
+		}
+	}
+	return best;
+}
+
+/* a surface's area and middle (the mean of its corners) */
+static float SurfaceArea (const qmodel_t *m, const msurface_t *s, vec3_t mid)
+{
+	vec3_t	p[64], a, b, c;
+	float	area = 0;
+	int	i, n = q_min (s->numedges, 64);
+
+	VectorClear (mid);
+	for (i = 0; i < n; i++)
+	{
+		int	e = m->surfedges[s->firstedge + i];
+
+		VectorCopy (m->vertexes[(e >= 0) ? m->edges[e].v[0] : m->edges[-e].v[1]].position, p[i]);
+		VectorAdd (mid, p[i], mid);
+	}
+	if (n < 3)
+		return 0;
+	VectorScale (mid, 1.0f / (float)n, mid);
+	for (i = 1; i + 1 < n; i++)
+	{
+		VectorSubtract (p[i], p[0], a);
+		VectorSubtract (p[i + 1], p[0], b);
+		CrossProduct (a, b, c);
+		area += 0.5f * VectorLength (c);
+	}
+	return area;
+}
+
+/* vk_darkplaces [n] [threshold] (4.10): the world's dark places as GL
+ * shows them with the light styles now: floors (facing up, 0.7) whose
+ * lightmap texels are all below threshold (8 of 255), or that have none,
+ * grouped by the leaf in front of them (only empty and water leaves: not
+ * facing into solid, not inside the sky's brushes). Much of that is out of
+ * the player's reach (rooftops, ledges under the sky), so in a local game
+ * only leaves where the server has an entity with a model (a monster, an
+ * item, a puzzle piece; not the lights, markers or brush entities) count: the n (10) with the most dark floor, with their share of the
+ * leaf's floor, the entities, and a point 24 units above the first one (a
+ * player's origin, for vk_setpos) */
+static void VK_DarkPlaces_f (void)
+{
+	typedef struct { float dark, floor; int ents; char first[32]; vec3_t at; } darkleaf_t;
+	qmodel_t	*m = cl.worldmodel;
+	darkleaf_t	*leaves;
+	edict_t		*e;
+	int		n = 10, threshold = 8, i, k, shown = 0, surfaces = 0, dark_leaves = 0, reached = 0;
+	float		f, total = 0;
+
+	if (!LocalGame ("vk_darkplaces") || !m)
+		return;
+	if (!m->lightdata)
+	{
+		Con_Printf ("vk_darkplaces: %s has no light data (GL draws it fullbright)\n", m->name);
+		return;
+	}
+	if (Cmd_Argc () > 1 && ArgNumber (1, &f))
+		n = q_max ((int)f, 1);
+	if (Cmd_Argc () > 2 && ArgNumber (2, &f))
+		threshold = q_max ((int)f, 1);
+	leaves = (darkleaf_t *) calloc (m->numleafs + 1, sizeof(*leaves));
+	if (!leaves)
+		return;
+	for (i = 0; i < m->nummodelsurfaces; i++)
+	{
+		msurface_t	*s = &m->surfaces[m->firstmodelsurface + i];
+		vec3_t		normal, mid, front;
+		mleaf_t		*leaf;
+		darkleaf_t	*d;
+		float		area;
+
+		if (s->flags & (SURF_DRAWSKY | SURF_DRAWTURB))
+			continue;	/* not lightmapped */
+		VectorCopy (s->plane->normal, normal);
+		if (s->flags & SURF_PLANEBACK)
+			VectorNegate (normal, normal);
+		if (normal[2] < 0.7f)
+			continue;
+		area = SurfaceArea (m, s, mid);
+		VectorMA (mid, 2.0f, normal, front);
+		leaf = Mod_PointInLeaf (front, m);
+		if (!leaf || (leaf->contents != CONTENTS_EMPTY && leaf->contents != CONTENTS_WATER) || area <= 0)
+			continue;
+		d = &leaves[leaf - m->leafs];
+		d->floor += area;
+		if (SurfaceBrightest (s) < threshold)
+		{
+			dark_leaves += (d->dark == 0);
+			d->dark += area;
+			total += area;
+			surfaces++;
+		}
+	}
+	/* the server's entities with a model in them (not the players') */
+	for (i = 1, e = NEXT_EDICT (sv.edicts); i < sv.num_edicts; i++, e = NEXT_EDICT (e))
+	{
+		const char	*classname, *model;
+		vec3_t		origin;
+		darkleaf_t	*d;
+
+		if (e->free || i <= svs.maxclients)
+			continue;
+		classname = PR_GetString (e->v.classname);
+		model = PR_GetString (e->v.model);
+		if (!classname[0] || !q_strncasecmp (classname, "light", 5) || !model[0] || model[0] == '*')
+			continue;
+		VectorCopy (e->v.origin, origin);
+		d = &leaves[Mod_PointInLeaf (origin, m) - m->leafs];
+		if (d->dark <= 0)
+			continue;
+		if (!d->ents++)
+		{
+			q_strlcpy (d->first, classname, sizeof(d->first));
+			VectorCopy (origin, d->at);
+		}
+	}
+	for (i = 0; i <= m->numleafs; i++)
+		reached += (leaves[i].dark > 0 && leaves[i].ents > 0);
+	Con_Printf ("dark places in %s (floors below %d of 255 at the styles now): %d surfaces, %.0f square units in %d leaves, %d with entities\n",
+		    m->name, threshold, surfaces, total, dark_leaves, reached);
+	for (k = 0; k < n; k++)
+	{
+		int	best = -1;
+
+		for (i = 0; i <= m->numleafs; i++)
+		{
+			if (leaves[i].dark > 0 && leaves[i].ents > 0 && (best < 0 || leaves[i].dark > leaves[best].dark))
+				best = i;
+		}
+		if (best < 0)
+			break;
+		Con_Printf ("  leaf %d: %.0f square units dark, %.0f %% of its floor, %d entities (%s), at %.0f %.0f %.0f\n", best,
+			    leaves[best].dark, 100.0f * leaves[best].dark / leaves[best].floor, leaves[best].ents, leaves[best].first,
+			    leaves[best].at[0], leaves[best].at[1], leaves[best].at[2] + 24.0f);
+		leaves[best].dark = 0;
+		shown++;
+	}
+	if (!shown)
+		Con_Printf ("  none\n");
+	free (leaves);
+}
+
 void VK_InitCalib (void)
 {
 	Cmd_AddCommand ("vk_setpos", VK_SetPos_f);
 	Cmd_AddCommand ("vk_bookmark", VK_Bookmark_f);
 	Cmd_AddCommand ("vk_screenshot", VK_Screenshot_f);
+	Cmd_AddCommand ("vk_darkplaces", VK_DarkPlaces_f);
 }

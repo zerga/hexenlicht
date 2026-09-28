@@ -667,10 +667,12 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   flames flicker by up to 31 per frame: ±20 % of the intensity). The
   color is the client's (with `gl_colored_dynamic_lights`, 0 since 4.9:
   white), converted to
-  linear as the map lights' (`VK_SRGBToLinear`). Left out: dark lights
-  (`EF_DARKLIGHT`, the Necromancer's darkness while invincible: 4.10) and
+  linear as the map lights' (`VK_SRGBToLinear`). Dark lights
+  (`EF_DARKLIGHT`, the Necromancer's darkness while invincible) aren't
+  lights: they follow the sampled ones in `dyn_light_data` and darken the
+  world after the denoiser (4.10, [Darkness](#darkness-shadersdarknessglsl));
   lights of a negative radius (the spit; GL lights nothing with them, the
-  software renderer darkens: 4.10). An alias model whose entity owns one
+  software renderer darkens) are left out. An alias model whose entity owns one
   of them this frame (its key) within its bounds (a sphere around its
   origin from the model's bounds, scaled) goes into the light group
   (`VK_DynamicLightOwner`, see [Map lights](#map-lights-vk_maplightsc)):
@@ -750,7 +752,8 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
 - `vk_lights` prints the lights, the map's (below), the lava's and the
   light models' emission ([Emissive surfaces](#emissive-surfaces-vk_emissivec)), the lists (entries, mean and longest,
   empty ones), lights inside solid or left out, the last frame's dynamic
-  lights (those owned by an entity, left out dark / unlit / over 32, the
+  lights (those owned by an entity, the dark ones and how many darken the
+  world (4.10), left out unlit / over 32, the
   most in a frame and the brightest since the map loaded), the build time, the
   statistics buffers' sizes and the camera cluster's list; `vk_lights stats`
   reads back the shadow rays the last frame counted; `vk_lights cull 0|1`
@@ -1483,6 +1486,118 @@ the scripts are in [TESTING.md](TESTING.md#calibration-against-gl-49)):
 - **`r_debugview_scale`** (1) multiplies the debug views
   (`view_composite.frag`'s scale), so that lighting above 1 isn't clipped
   in a shot (the calibration takes the direct light at 0.25).
+- **`vk_darkplaces [n] [threshold]`** (4.10) lists where GL shows the
+  world's floors black: world surfaces facing up (normal z above 0.7, not
+  sky or turbulent) whose brightest lightmap texel is below the threshold
+  (8 of 255) at the light styles now, as `R_BuildLightMap` makes it (each
+  style map's byte times its value, >> 7, clipped; RGB samples), or that
+  have no samples (GL draws them black; a map without light data GL draws
+  fullbright: none); summed by the leaf in front of each (its middle plus 2
+  units along the normal; only empty and water leaves: not facing into
+  solid, which qbsp leaves such faces, nor inside the sky's brushes). Most
+  of that is out of reach (rooftops, ledges under the sky: what a first
+  version listed), so only leaves where the server has an entity with a
+  model count (monsters, items, puzzle pieces; not the players, the
+  lights, markers or brush entities): the n (10) with the most dark floor,
+  their share of the leaf's floor, the entities, and a point 24 units above
+  the first one's origin (a player's origin for `vk_setpos`). A local game
+  only. See [Darkness](#darkness-shadersdarknessglsl).
+
+## Darkness (`shaders/darkness.glsl`)
+
+Story 4.10: Hexen II's darkness as GL shows it.
+
+- **Total darkness** is light style `'a'` (0; `world.hc`: "'a' is total
+  darkness"): switchable lights (styles 32–62, `START_LOW`, fades between
+  `lightvalue1` and `lightvalue2`), shot-out torches (`torch_death` sets
+  their style to 0), broken light brushes (`breakable_brush`), style 63.
+  The map lights follow GL's style values every frame (4.2, [Lights](#lights-vk_lightc))
+  and the GL shape clips a style with the light (4.15): a light at `'a'`
+  gives nothing. Nothing new was needed.
+- **Dark lights** (`EF_DARKLIGHT`: only the Necromancer's invincibility, the
+  Icon of the Defender, 10 s; in deathmatch also 3 s after a respawn): the client makes a dynamic light of radius
+  200 + 0–31 (a new random each frame) with the dark flag. GL subtracts it
+  from the lightmap texels it reaches (`R_AddDynamicLights`, the `GL_RGBA`
+  path, `gl_lightmapfmt`'s default): `2 (R − |h| − ρ) / 255` of a texel (h
+  the plane distance, ρ the in-plane distance, GL's octagonal one), where
+  `R − |h| − ρ` is above the light's minlight (0), clipped at 0: the world
+  within ~100 units goes black, fading out to ~215. The software renderer
+  does the same; both add the light to alias models as any other (GL's
+  model lighting ignores the flag: models near him get brighter, clamped at
+  128). `vk_light.c` puts the dark lights after the dynamic lights the
+  shaders sample, in the same UBO array (`num_dark_lights`, their minlight
+  in `spot_data`'s bits, `dark_light_unit` = 2^−`r_map_exposure`);
+  `direct_lighting.rgen` computes each pixel's amount at its world surface
+  (`dark_light_amount`: the G-buffer's position and geometric normal, 0 on
+  alias models, flagged `MATERIAL_FLAG_MODEL` by `vk_instance.c`, on the
+  weapon and on turbulent surfaces, `MATERIAL_FLAG_WARP`, which have no
+  lightmaps in GL) into `PT_THROUGHPUT`'s w, which nothing reads after
+  `reflect_refract.rgen` (only while there are dark lights: otherwise it
+  keeps its path length); the composites (`asvgf_atrous.comp`'s last pass,
+  `compositing.comp` without the denoiser, which is also DLSS RR's input)
+  scale the surface's diffuse and specular light by `dark_light_factor`:
+  the light in GL's texel units (`(E / unit)^(1/2.2)`, E the demodulated
+  diffuse light's luminance, the unit the light that shows a texture at its
+  own color: the lit image was calibrated to GL's look, 4.9 and 4.15, so
+  that is GL's full texel whatever the map lights' shape; not shape 2's
+  `r_maplight_gl_scale`, which makes up for GL's overlapping lights and
+  would make the darkness reach farther), less the amount, clipped at 0,
+  back to linear light (safe for a texel of 0 or inf). So it acts after the
+  denoiser, frame by frame as GL (no lag; the flicker of its radius is
+  GL's). `r_darklights 0` turns it off (`r_dlights 0` too); `vk_lights`
+  counts them. Beside `glh2` (the same save, three lit starts looking down
+  30°; GL's shots without its yellow-green power-up tint, `gl_polyblend 0`:
+  the view blends are 6.6's) the dark disc around the player has GL's shape
+  and nearly its size: 59, 81 and 56 % of the pixels dark (below 6 of 255)
+  against GL's 47, 67 and 51 % (demo1, castle4, egypt1; with
+  `r_darklights 0` 5, 23, 1 %), its edge 10–15 % farther out, where
+  Hexenlicht's floor is darker than GL's (demo1's there 0.75×: the texel is
+  estimated from the pixel's own light; with shape 2's `r_maplight_gl_scale`
+  2 as the unit it reached farther still). No measurable cost with one (demo1, 1920x1080,
+  Release: direct lighting 0.84–0.86 ms against 0.79–0.88 without, the
+  frame within the runs' scatter); none without. Against GL: the factor is
+  from the luminance (GL clips each channel: its dim channels go black
+  first; the hue stays here), ρ is Euclidean (GL's octagonal one in
+  texture space, so on a texture scaled by s its disc is s times as wide
+  and up to ~11 % smaller off the axes), translucent brush surfaces (in
+  `PT_TRANSPARENT`) and reflections keep their light, and light bounced
+  off darkened surfaces isn't darkened (GL has none). With DLSS RR or
+  without the denoiser the factor comes from one-sample light: it is
+  convex, so the disc is a little brighter and speckled there (not
+  measured).
+- **The weapon's least light:** GL's `R_DrawViewModel` gives the weapon at
+  least 24 per channel ("always give some light on gun"), a vertex color of
+  24 / 200 × GL's shading dots (1 in the middle of the table), which GL
+  multiplied the texture by in sRGB space; `direct_lighting.rgen` gives the
+  weapon's direct light at least that (`weapon_min_light`, per channel from
+  its albedo: 2–4 % of it), so in total darkness it stays dimly visible as
+  in GL (rider2c's dark bank room: the hammer about as bright as GL's).
+  Only the direct light is floored (GL floors the whole): with bounce light
+  about as bright as the floor the weapon gets up to twice GL's least
+  light, and the floor on a noisy one-sample light raises its mean a
+  little.
+- **Dark places:** nothing in the game code marks them; they are floors the
+  lightmaps leave black, lit by the torch artifact (4.4's dynamic lights:
+  `EF_DIMLIGHT` then `EF_TORCHLIGHT`, `EF_MUZZLEFLASH` | `EF_BRIGHTLIGHT`,
+  for 23 s, dim for 7 s; the client keys all of an entity's lights to one
+  slot, so the torch is the last, the dim light of radius 200 + 0–31, in
+  GL too). `vk_darkplaces` ([Calibration](#calibration-vk_calibc)) finds
+  them: 34 leaves with an item or monster on the 53 single-player maps.
+  At six of them (castle5, meso5, meso6, rider2c, romeric2, tower; two
+  views each, `calib_shots.ps1`, TESTING.md) Hexenlicht's lit image
+  without the torch is as dark as GL's or darker (mean 0.65–1.21×, the
+  share of visible pixels alike), but for two of its own: meso6's black
+  corner is lit red by the lava at `r_emissive_scale` 32 (6.7×: DECISIONS
+  R94), and rider2c's big dark room by bounce light off its one lit ceiling
+  spot (35 % of the pixels visible against GL's 11 %). With the torch
+  both light the rooms; Hexenlicht 1.7–2.6× brighter next to walls (the
+  torch is a dynamic light, which stays physical: DECISIONS R97).
+- **Gameplay** was already GL's: `cl.light_level` (4.12, `r_light.c`) is
+  `R_DrawViewModel`'s, dark lights adding to it as in GL.
+- Left out: the hydra's blinding (`df`, GL's full-screen dark flash: the
+  view blends of 6.6), `EF_DARKFIELD` (the haste boots' particles, 6.2),
+  dynamic lights of a negative radius (GL lights nothing with them), GL's
+  brightening of models by a dark light.
 
 ## 3D view (`vk_view.c`)
 
@@ -2309,4 +2424,5 @@ overlay, and a measuring mode.
 | `vk_setpos x y z [pitch yaw]`, `vk_bookmark <name>`, `vk_screenshot <name> [frames]` | the player there (single player; `save` on the same line keeps the pitch); a calibration bookmark into the game folder's `bookmarks.txt`; `shots\<name>.tga`, frames averaged in linear light (see [Calibration](#calibration-vk_calibc)) |
 | `vk_editlight select [x y z\|none]`, `vk_editlight <changes>`, `add`, `reset`, `save`, `help` | the light at the crosshair or by entity origin; `off`, `on`, `level n\|*f`, `scale f\|*f`, `color r g b`, `style n`, `origin x y z\|eye\|cursor`, `move dx dy dz`; a new light at the eye; the map's own light again; the map file into the game folder |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 0 as in HoT since 4.9) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
+| `r_darklights 0/1`, `vk_darkplaces [n] [threshold]` | GL's dark lights (the invincible Necromancer) darken the world (1; 4.10, see [Darkness](#darkness-shadersdarknessglsl)); the map's dark places where an item or monster stands, with a point to go to (a local game; see [Calibration](#calibration-vk_calibc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

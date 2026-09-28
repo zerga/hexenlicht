@@ -316,7 +316,7 @@ Goal: an effects checklist of both games fully ticked.
 | 6.3 | Beams / lightning effects | S | Beams render and emit light |
 | 6.4 | Translucency: translucent entities, transparent models, cutout textures, glass | M | Matches original intent |
 | 6.5 | Water: refraction, underwater fog/tint | M | Above/below water correct |
-| 6.6 | View effects: damage/power-up flashes, underwater warp as post-process | S | Matches `glhexen2` feel |
+| 6.6 | View effects: damage/power-up flashes, underwater warp as post-process (GL's view blends, none drawn yet: also the power-up tints, e.g. the Icon of the Defender's yellow-green, and the hydra's blinding dark flash `df`; found in 4.10) | S | Matches `glhexen2` feel |
 | 6.7 | Cutscenes, intermissions, finale screens, demo playback | S | All play correctly |
 | 6.8 | Portal of Praevus specifics (Demoness, new effects) | M | Praevus checklist ticked |
 | 6.9 | Robustness: save/load, map change, `vid_restart`, Alt-Tab, resize | S | No leaks, no crashes |

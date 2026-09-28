@@ -16,7 +16,13 @@
 #     -Frames frames) into <Out>\<Label>, with -HlCvars set after each load
 #     (e.g. "r_maplight_power 4; r_maplight_range 1.25"); -LitFrames averages
 #     the lit image too (1: one frame, as seen).
-# All shots are paused, without the HUD, the weapon, the crosshair or the
+# -PreSave runs console commands before each save (80 frames before it, 4.10: a
+# lit torch, "impulse 43; <20 waits>; invuse", or an artifact, which the save
+# keeps for both engines); -PlayerClass is the class the saves are made with (2,
+# the Crusader; 3 the Necromancer).
+# All shots are paused, GL's without its view blends (gl_polyblend 0: the
+# power-up tints and damage flashes, which Hexenlicht doesn't draw until 6.6),
+# without the HUD, the weapon, the crosshair or the
 # notify lines, at -Width x -Height. -Skip... leaves out a step (the saves
 # are kept for later runs with -KeepSaves). config.cfg and hexenlicht.cfg
 # of the game folder and data1 are backed up and restored around the runs
@@ -26,7 +32,7 @@
 param([string]$Bookmarks = '', [string[]]$Names = @(), [Parameter(Mandatory)][string]$Out, [string]$Label = 'hl',
       [string]$HlCvars = '', [int]$Frames = 16, [double]$Scale = 0.25, [switch]$SkipSaves, [switch]$SkipGl,
       [switch]$SkipHl, [switch]$KeepSaves, [int]$Width = 960, [int]$Height = 540, [string]$Data = '',
-      [string]$GlLit = '', [int]$LitFrames = 1, [switch]$DebugBuild)
+      [string]$GlLit = '', [int]$LitFrames = 1, [switch]$DebugBuild, [string]$PreSave = '', [int]$PlayerClass = 2)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Bookmarks) { $Bookmarks = Join-Path $PSScriptRoot 'bookmarks.txt' }
@@ -135,10 +141,10 @@ foreach ($group in ($marks | Group-Object Game)) {
 
 	if (-not $SkipSaves) {
 		$blocks = foreach ($m in $list) {
-			@("map $($m.Map)", (Waits 150), 'god', 'notarget', 'noclip', (Waits 5),
+			@("map $($m.Map)", (Waits 150), 'god', 'notarget', 'noclip', (Waits 5), $PreSave, (Waits $(if ($PreSave) { 80 } else { 0 })),
 			  "vk_setpos $($m.Pos) $($m.Pitch) $($m.Yaw); save hlcal_$($m.Name)", (Waits 5)) -join "`n"
 		}
-		$first = Write-Scripts $dir 'hlcal_s' (@('wait;wait;wait', 'vid_vsync 0', 'host_framerate 0.02', 'playerclass 2')) $blocks $quit
+		$first = Write-Scripts $dir 'hlcal_s' (@('wait;wait;wait', 'vid_vsync 0', 'host_framerate 0.02', "playerclass $PlayerClass")) $blocks $quit
 		try { Invoke-Engine 'hexenlicht' $game $first } finally { Remove-Scripts $dir 'hlcal_s' }
 		foreach ($m in $list) {
 			$info = Join-Path $dir "hlcal_$($m.Name)\info.dat"
@@ -156,7 +162,7 @@ foreach ($group in ($marks | Group-Object Game)) {
 			  'r_lightmap 0', 'r_drawentities 1', 'pause', (Waits 5)) -join "`n"
 		}
 		$dests = foreach ($m in $list) { (Join-Path $gldir "$($m.Name)_gl.tga"), (Join-Path $gldir "$($m.Name)_gllm.tga") }
-		$first = Write-Scripts $dir 'hlcal_g' ($common + 'gl_coloredlight 0') $blocks $quit
+		$first = Write-Scripts $dir 'hlcal_g' ($common + @('gl_coloredlight 0', 'gl_polyblend 0')) $blocks $quit
 		try { Invoke-GlShots $game $first @($dests) } finally { Remove-Scripts $dir 'hlcal_g' }
 	}
 
@@ -176,7 +182,7 @@ foreach ($group in ($marks | Group-Object Game)) {
 					@("load hlcal_$($m.Name)", (Waits 100), 'pause', (Waits 10), 'screenshot', (Waits 5), 'pause', (Waits 5)) -join "`n"
 				}
 				$dests = foreach ($m in $lit) { Join-Path $gldir "$($m.Name)_glc.tga" }
-				$first = Write-Scripts $dir 'hlcal_c' ($common + 'gl_coloredlight 1') $blocks $quit
+				$first = Write-Scripts $dir 'hlcal_c' ($common + @('gl_coloredlight 1', 'gl_polyblend 0')) $blocks $quit
 				try { Invoke-GlShots $game $first @($dests) } finally { Remove-Scripts $dir 'hlcal_c' }
 			}
 		} finally {

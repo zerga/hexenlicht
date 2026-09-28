@@ -76,6 +76,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MATERIAL_KIND_TRANSP_MODEL   0xe0000000 // Transparent models. No distortion, just "see through".
 
 #define MATERIAL_FLAG_LIGHT          0x08000000
+#define MATERIAL_FLAG_MODEL          0x04000000 // Hexenlicht (4.10): an alias model's (the dark lights leave it lit, darkness.glsl)
 #define MATERIAL_FLAG_HANDEDNESS     0x02000000
 #define MATERIAL_FLAG_WEAPON         0x01000000
 #define MATERIAL_FLAG_WARP           0x00800000
