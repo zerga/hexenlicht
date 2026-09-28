@@ -197,7 +197,10 @@ opacity    cutout      # opaque | cutout | blend
 - Quake-family lights have linear falloff with a hard range; physical lights
   have inverse-square falloff. Calibration (E4) compares the same camera
   positions in `glhexen2` and Hexenlicht, tunes one global curve, then fixes
-  outliers per map through a per-map override file.
+  outliers per map through a per-map override file. Since 4.15 that curve
+  is utils/light's own (each light gives a surface its lightmap value;
+  [DECISIONS.md](DECISIONS.md) R95): not physically based for the light's
+  first arrival, path traced after it; the physical shape stays a setting.
 
 ---
 

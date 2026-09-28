@@ -15,8 +15,9 @@
  * entity effects (muzzle flashes, bright, dim lights, the torch), glowing
  * projectiles, explosions. GL added radius - distance to its lightmaps,
  * where utils/light had halved static light (rangescale 0.5), so one of
- * radius R is a map light of level R at twice its intensity, fading to 0
- * at R - minlight (GL's surfaces stop there); the radius changes as GL's
+ * radius R is a map light of level R at twice its intensity (the physical
+ * shape's, which dynamic lights keep with the map lights' GL shape, 4.15),
+ * fading to 0 at R - minlight (GL's surfaces stop there); the radius changes as GL's
  * (explosions shrink, flames flicker). The color is GL's (the client's,
  * with gl_colored_dynamic_lights) converted to linear, as the map lights'.
  * Dark lights (4.10) and those of a negative radius (GL lights nothing
@@ -58,11 +59,16 @@
  * radiance, with Quake II RTX's sqrt(cos) emission lobe; a sphere
  * contributes its radiance times its solid angle, falling off with the
  * inverse square of the distance (and outside a spotlight's cone to 0). A
- * test or map sphere's intensity is pi times its radiance, as a
- * UBO sphere light's color is (the sampling gives its solid angle / pi,
+ * test or map sphere's intensity is pi times its radiance (a map sphere's
+ * as 8 units wide: the same light at a distance whatever r_maplight_radius,
+ * but for Quake II RTX's solid-angle limit on bounces, which dims a larger
+ * one closer in),
+ * as a UBO sphere light's color is (the sampling gives its solid angle / pi,
  * the diffuse BRDF divides by pi again); Quake II RTX's add_dlights divides
- * a dlight's intensity by 25 first. VK_PrepareUBO calls VK_PrepareLights
- * for each 3D frame.
+ * a dlight's intensity by 25 first. The map's spheres have the map lights'
+ * shape (4.15, VK_MapLightShape; by default GL's: their color is then the
+ * light of a full GL texel, their range the level), test spheres the
+ * physical one. VK_PrepareUBO calls VK_PrepareLights for each 3D frame.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -88,8 +94,8 @@
 #define MAX_TEST_QUADS		16	/* two polygon lights each */
 #define TEST_SPHERE_RADIUS	8.0f
 #define TEST_SPHERE_INTENSITY	1000.0f
-#define MAP_LIGHT_RADIUS	8.0f	/* the test spheres' */
-#define DYNAMIC_LIGHT_RADIUS	8.0f	/* the map lights' */
+#define MAP_LIGHT_BASE_RADIUS	8.0f	/* the test spheres'; r_maplight_radius's default, whose radiance a map light's intensity is (4.15) */
+#define DYNAMIC_LIGHT_RADIUS	8.0f	/* MAP_LIGHT_BASE_RADIUS: the map lights' default */
 
 static cvar_t	r_dlights = {"r_dlights", "1", CVAR_NONE};
 
@@ -138,8 +144,9 @@ typedef struct
 	float		radius, range;	/* a sphere's; range 0 = unlimited */
 	vec3_t		spot_dir;	/* a sphere's cone, 0 0 0 = none */
 	float		spot_cos;	/* the cosine of half its width */
-	vec3_t		color;		/* radiance */
+	vec3_t		color;		/* radiance (a sphere of GL's shape: a full GL texel's light) */
 	int		style;		/* its light style (0-255), -1 = none (test lights) */
+	int		shape;		/* a sphere's SPHERE_SHAPE_* (4.15; test lights: physical) */
 } light_t;
 
 static light_t		lights[MAX_LIGHT_POLYS];
@@ -441,11 +448,18 @@ void VK_UpdateLights (void)
 		memset (l, 0, sizeof(*l));
 		l->type = LIGHT_TYPE_SPHERE;
 		VectorCopy (ml[i].origin, l->p[0]);
-		l->radius = MAP_LIGHT_RADIUS;
+		l->radius = VK_MapLightRadius ();
 		l->range = (float)ml[i].level * VK_MapLightRange ();
 		VectorCopy (ml[i].spot_dir, l->spot_dir);
 		l->spot_cos = ml[i].spot_cos;
-		VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI, l->color);
+		l->shape = VK_MapLightShape ();
+		/* the radiance of an 8-unit sphere's intensity, the same light at a distance
+		 * whatever the radius (4.15); GL's shape: the light of a full GL texel */
+		if (l->shape == SPHERE_SHAPE_GL)
+			VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]), l->color);
+		else
+			VectorScale (ml[i].color, VK_MapLightIntensity (&ml[i]) / (float)M_PI *
+				     (MAP_LIGHT_BASE_RADIUS * MAP_LIGHT_BASE_RADIUS) / (l->radius * l->radius), l->color);
 		l->style = ml[i].style;
 	}
 	/* the lava's polygons (4.5), unstyled */
@@ -542,6 +556,7 @@ static void WriteLight (const light_t *l, float *p)
 	p[12] = (l->style < 0) ? 1.0f : style_scales[0][l->style];
 	p[13] = (l->style < 0) ? 1.0f : style_scales[1][l->style];
 	p[14] = (float)l->type;
+	p[15] = (float)l->shape;
 }
 
 /* does a game dynamic light light anything: GL's surfaces get none from a
@@ -652,6 +667,7 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	}
 	ubo->num_static_lights = num_lights;
 	ubo->lights = buf->address;
+	ubo->maplight_gamma = VK_MapLightGamma ();	/* the map lights' GL-like shapes (4.15) */
 
 	/* the statistics: counted into this frame's buffer (vk_render_frame
 	 * counts the 3D frames), read from the last two frames' */

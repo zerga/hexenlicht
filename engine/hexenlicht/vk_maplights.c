@@ -20,16 +20,30 @@
  *    is inside solid (its trace starts there; a point within ON_EPSILON of
  *    a plane goes to the side of the trace's other end, so only when every
  *    leaf that close is solid) and one with a level below 0.
- * Brightness: the intensity (pi x radiance, as vk_testlight's) is
- * r_maplight_scale x (level / 300)^r_maplight_power (3): the power under
- * which inverse-square light scales with each light's range as the
- * compiler's linear falloff does (twice the level and the distances, twice
- * the light); the range is the level times r_maplight_range (1). 4.9
+ * Brightness: the light shape (r_maplight_shape, 4.15, shaders/light_lists.h)
+ * is utils/light's by default (2): each light gives a surface the lightmap
+ * value the compiler and GL made of it alone, (level - d)(0.5 + 0.5 cos)
+ * halved, clipped, times the style, in linear light (to the power
+ * r_maplight_gamma, 2.2), times r_maplight_gl_scale (2: GL added its lights
+ * before the sRGB step, so overlapping lights were brighter than their sum;
+ * 2 matches GL's lit image on the lightmapped world, median 0.97); the
+ * sphere of r_maplight_radius (8) only softens the shadows; the range is
+ * the level. Not physically based (a light has no fixed power), but its
+ * shadows and everything after the first hit are path traced. Measured
+ * against GL at 4.9's bookmarks: the direct light's spread 0.89 stops
+ * (the physical shape's 1.15), the slope 0.87.
+ * The physical shape (0; 1 with utils/light's angle term instead of the
+ * cosine): the intensity (pi x radiance of an 8-unit sphere, as
+ * vk_testlight's) is r_maplight_scale x (level / 300)^r_maplight_power (3):
+ * the power under which inverse-square light scales with each light's range
+ * as the compiler's linear falloff does (twice the level and the distances,
+ * twice the light); the range is the level times r_maplight_range (1). 4.9
  * calibrated them against GL at its bookmarks: power 2-4 matched GL's
  * lightmaps alike, a range other than the level worse; r_maplight_scale
  * 740 makes the lit image on the lightmapped world as bright as GL's, with
  * the fixed exposure (tm_auto_exposure 0) and matte materials (r_specular 0,
- * vk_material.c); the direct light is then 1.15 of GL's lightmaps.
+ * vk_material.c); the direct light is then 1.15 of GL's lightmaps. Dynamic
+ * lights keep it (vk_light.c).
  * Colors (r_maplight_colors 1; 0, the default since 4.9: white, the
  * original's and Hammer of Thyrion's default): HoT's colored light, the colors utils/jsh2color baked
  * its .lit files from (vk_lightcolor.c: torches orange, plain lights by the
@@ -95,9 +109,13 @@ static void MapLightsChanged (cvar_t *var);
 static void MapLightColorsChanged (cvar_t *var);
 
 static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
-static cvar_t	r_maplight_scale = {"r_maplight_scale", "740", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness) */
+static cvar_t	r_maplight_scale = {"r_maplight_scale", "740", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness): the physical shapes, dynamic lights */
 static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intensity as (level / 300)^this (4.9) */
 static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
+static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical, 1 GL's angle term, 2 GL's lightmap value (4.15) */
+static cvar_t	r_maplight_gamma = {"r_maplight_gamma", "2.2", CVAR_NONE};	/* GL's lightmap value into linear light: its power (4.15) */
+static cvar_t	r_maplight_gl_scale = {"r_maplight_gl_scale", "2", CVAR_NONE};	/* shape 2: a full GL texel's light, 1 = the texture's own color (4.15: 2 for GL's overlapping lights) */
+static cvar_t	r_maplight_radius = {"r_maplight_radius", "8", CVAR_NONE};	/* the spheres' (4.15) */
 static cvar_t	r_maplight_colors = {"r_maplight_colors", "0", CVAR_ARCHIVE};	/* 0 white (the original's, 4.9), 1 HoT's colors */
 
 /* an entity as utils/light parses it */
@@ -738,17 +756,39 @@ float VK_LightLevelIntensity (float level)
 	return q_max (r_maplight_scale.value, 0.0f) * powf (q_max (x, 0.0f), q_min (q_max (r_maplight_power.value, 0.0f), 8.0f));	/* 0-8: no inf */
 }
 
-/* a map light's range: its level times this (4.9) */
+/* a map light's range: its level times this (4.9); GL's shape's is the level */
 float VK_MapLightRange (void)
 {
-	return q_max (r_maplight_range.value, 0.1f);
+	return (VK_MapLightShape () == SPHERE_SHAPE_GL) ? 1.0f : q_max (r_maplight_range.value, 0.1f);
 }
 
 /* a map light's: its level's, times its map file scale and the map's
- * r_map_light_scale (4.7) */
+ * r_map_light_scale (4.7); with GL's shape (4.15) the light of a full GL
+ * texel (r_maplight_gl_scale: 1 is the texture's own color, GL's white) */
 float VK_MapLightIntensity (const vk_maplight_t *l)
 {
-	return VK_LightLevelIntensity ((float)l->level) * l->scale * VK_MapLightScale ();
+	float	base = (VK_MapLightShape () == SPHERE_SHAPE_GL) ? q_max (r_maplight_gl_scale.value, 0.0f)
+								: VK_LightLevelIntensity ((float)l->level);
+
+	return base * l->scale * VK_MapLightScale ();
+}
+
+/* the map lights' light shape (4.15: shaders/light_lists.h), SPHERE_SHAPE_* */
+int VK_MapLightShape (void)
+{
+	return q_min (q_max (r_maplight_shape.integer, SPHERE_SHAPE_PHYSICAL), SPHERE_SHAPE_GL);
+}
+
+/* the power that takes GL's lightmap values into linear light (4.15) */
+float VK_MapLightGamma (void)
+{
+	return q_min (q_max (r_maplight_gamma.value, 0.1f), 8.0f);
+}
+
+/* the map lights' sphere radius (4.15: 4.1's 8) */
+float VK_MapLightRadius (void)
+{
+	return q_min (q_max (r_maplight_radius.value, 0.5f), 64.0f);
 }
 
 void VK_CountMapLightModels (int n)
@@ -759,9 +799,14 @@ void VK_CountMapLightModels (int n)
 /* vk_lights's lines about them */
 void VK_PrintMapLights (void)
 {
-	Con_Printf ("map lights: %d (of %d light entities, %d other classnames; %d added by the map file)%s, r_maplight_scale %g; dropped %d inside solid, %d unlit, %d over %d\n",
+	static const char	*shapes[] = {"physical", "physical with GL's angle term", "GL's lightmap value"};
+
+	Con_Printf ("map lights: %d (of %d light entities, %d other classnames; %d added by the map file)%s, r_maplight_scale %g (the physical shapes, dynamic lights); dropped %d inside solid, %d unlit, %d over %d\n",
 		    num_maplights, stats.entities, stats.others, applied.edit_added, r_maplights.integer ? "" : ", off (r_maplights 0)",
 		    r_maplight_scale.value, stats.in_solid, stats.unlit, stats.over, MAX_LIGHT_POLYS);
+	Con_Printf ("  shape %d (4.15): %s, r_maplight_gamma %g%s, spheres of radius %g\n", VK_MapLightShape (), shapes[VK_MapLightShape ()],
+		    VK_MapLightGamma (), (VK_MapLightShape () == SPHERE_SHAPE_GL) ? va(", r_maplight_gl_scale %g", r_maplight_gl_scale.value) : "",
+		    VK_MapLightRadius ());
 	Con_Printf ("  %d spotlights (%d targets unmatched), %d with a style (4.2), %d with _color; %d models in the light group last frame (at a light's origin, owning a dynamic light)\n",
 		    stats.spots, stats.unmatched, applied.styled, stats.colored, on_models);
 	Con_Printf ("  %d plain lights over lava (%d with a style): %s\n", applied.over_lava, applied.over_lava_styled,
@@ -825,9 +870,16 @@ void VK_InitMapLights (void)
 	Cvar_RegisterVariable (&r_maplight_colors);
 	Cvar_RegisterVariable (&r_maplight_power);
 	Cvar_RegisterVariable (&r_maplight_range);
+	Cvar_RegisterVariable (&r_maplight_shape);
+	Cvar_RegisterVariable (&r_maplight_gamma);
+	Cvar_RegisterVariable (&r_maplight_gl_scale);
+	Cvar_RegisterVariable (&r_maplight_radius);
 	Cvar_SetCallback (&r_maplights, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_scale, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_power, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_range, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_shape, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_gl_scale, MapLightsChanged);
+	Cvar_SetCallback (&r_maplight_radius, MapLightsChanged);
 	Cvar_SetCallback (&r_maplight_colors, MapLightColorsChanged);
 }

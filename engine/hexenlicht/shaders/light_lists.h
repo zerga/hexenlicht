@@ -47,6 +47,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - a gradient sample weighs a list light by the larger of last frame's
  *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
  *    light that comes on can be picked;
+ *  - a map light's sphere has a light shape (4.15, r_maplight_shape): the
+ *    physical one above; the same with utils/light's angle term 0.5 + 0.5
+ *    cos in linear light instead of the cosine (SPHERE_SHAPE_GL_ANGLE); or
+ *    utils/light's lightmap value of that light alone in linear light
+ *    (SPHERE_SHAPE_GL, lightmap_light_value: the light of its center, weighed by
+ *    that value, the sphere only the shadow ray's target); the light color
+ *    of both includes the receiver's angle term, which light_angle returns;
  *  - the light buffer is read by device address (vertex_buffer.h). */
 
 #ifndef _LIGHT_LISTS_
@@ -233,6 +240,63 @@ sphere_light_spot(LightPolygon light, vec3 p)
 	return smoothstep(cos_half * cos_edge - sin_half * sin_edge, cos_half * cos_edge + sin_half * sin_edge, c);
 }
 
+/* Hexenlicht (4.15): a GL lightmap value (a texel, 0-1) in linear light: GL multiplied
+ * the texture by it in sRGB space, so its linear light is about its power maplight_gamma
+ * (2.2; the exact sRGB decode matched GL's lightmaps worse: its linear toe brightens the
+ * faint lights, which GL added before the decode) */
+float
+lightmap_to_linear(float texel)
+{
+	return pow(clamp(texel, 0, 1), global_ubo.maplight_gamma);
+}
+
+/* utils/light's angle term (ltface.c's SingleLightFace: scalecos 0.5) in linear light:
+ * 1 facing the light, 0.22 at grazing, within 10 % of the cosine from 0.45 up; from -1 to 1
+ * with shading normals (models, normal maps), so one facing away from the light gets none */
+float
+lightmap_angle_term(float cos_theta)
+{
+	return lightmap_to_linear(0.5 + 0.5 * clamp(cos_theta, -1, 1));
+}
+
+/* the GL shape's (SPHERE_SHAPE_GL) light at p for a style: the lightmap texel utils/light
+ * and GL made of this light alone, (level - d) (0.5 + 0.5 cos) from the center, nothing
+ * with the center behind the surface's plane (the compiler's test); halved (rangescale),
+ * clipped as the compiler's byte, times the style and GL's 264 >> 7, clipped at 1 (the
+ * texture's own color), in linear light (lightmap_to_linear); a spotlight's cone as the
+ * physical shape's. The range is the level (vk_light.c) */
+#define LIGHTMAP_TEXEL_SUM	247.27273	// 255 / (0.5 * 264 / 128): the compiler's sum that makes a GL texel 1
+#define LIGHTMAP_BYTE_CLIP	2.0625		// its byte's 255 as a GL texel (264 >> 7: 264 / 128)
+
+float
+lightmap_light_value(LightPolygon light, vec3 p, vec3 n, vec3 gn, float style)
+{
+	vec3 c = light.positions[0] - p;
+	float dist = length(c);
+	float level = light.positions[1].y;
+
+	if(dot(c, gn) <= 0 || dist >= level || style <= 0)
+		return 0;
+
+	float cos_theta = dot(n, c) / max(dist, 1e-3);
+	float texel = min((level - dist) * (0.5 + 0.5 * clamp(cos_theta, -1, 1)) / LIGHTMAP_TEXEL_SUM, LIGHTMAP_BYTE_CLIP);
+	return lightmap_to_linear(texel * style) * sphere_light_spot(light, p);
+}
+
+/* its weight in the light CDF: its light (times pi, as a sphere's solid angle weighs its
+ * radiance: comparable with the lava's polygons) */
+float
+lightmap_sphere_mass(LightPolygon light, vec3 p, vec3 n, vec3 gn, vec3 V, float phong_exp, float phong_scale, float phong_weight, float style)
+{
+	float value = lightmap_light_value(light, p, n, gn, style);
+	if(value <= 0)
+		return 0;
+
+	vec3 c = normalize(light.positions[0] - p);
+	float specular = phong(n, c, V, phong_exp) * phong_scale;
+	return M_PI * value * mix(1.0, specular, phong_weight);
+}
+
 /* the sphere's weight in the light CDF, as spherical_tri_area's for a triangle */
 float
 sphere_light_mass(LightPolygon light, vec3 p, vec3 n, vec3 V, float phong_exp, float phong_scale, float phong_weight, float max_solid_angle)
@@ -283,6 +347,7 @@ sample_polygonal_lights(
 		out uint light_node,	// Hexenlicht: the list entry, ~0u = none
 		out float pdfw,
 		out bool is_sky_light,
+		out float light_angle,	// Hexenlicht (4.15): the angle term light_color has instead of the cosine, 0 = none
 		vec3 rng)
 {
 	position_light = vec3(0);
@@ -291,6 +356,7 @@ sample_polygonal_lights(
 	light_color = vec3(0);
 	pdfw = 0;
 	is_sky_light = false;
+	light_angle = 0;
 
 	// Hexenlicht: and none past the lists there is room for (MAX_LIGHT_LISTS clusters;
 	// a BSP2 map can have more), whose offsets vk_light.c doesn't write
@@ -338,10 +404,21 @@ sample_polygonal_lights(
 
 		LightPolygon light = get_light_polygon(current_idx);
 
+		// Hexenlicht: the style as below (4.13), which the GL shape's light (4.15) has in its
+		// value, GL's clip
+		float style = is_gradient ? max(light.prev_style_scale, light.light_style_scale) : light.light_style_scale;
+
 		// Hexenlicht: or a sphere
-		float m = (light.type == LIGHT_TYPE_SPHERE)
-			? sphere_light_mass(light, p, n, V, phong_exp, phong_scale, phong_weight, max_solid_angle)
-			: spherical_tri_area(light.positions, p, n, V, phong_exp, phong_scale, phong_weight);
+		float m;
+		if(light.type == LIGHT_TYPE_SPHERE && light.shape == SPHERE_SHAPE_GL)
+		{
+			m = lightmap_sphere_mass(light, p, n, gn, V, phong_exp, phong_scale, phong_weight, style);
+			style = 1;
+		}
+		else
+			m = (light.type == LIGHT_TYPE_SPHERE)
+				? sphere_light_mass(light, p, n, V, phong_exp, phong_scale, phong_weight, max_solid_angle)
+				: spherical_tri_area(light.positions, p, n, V, phong_exp, phong_scale, phong_weight);
 
 		float light_lum = luminance(light.color);
 
@@ -352,8 +429,8 @@ sample_polygonal_lights(
 		// especially in shadowed areas.
 		// Hexenlicht: the larger of last frame's and this frame's (4.13): a light that was at 0
 		// and comes on can be picked, so its gradient shows (asvgf_gradient_img.comp); the
-		// choice differs from last frame's only while a style rises
-		light_lum *= is_gradient ? max(light.prev_style_scale, light.light_style_scale) : light.light_style_scale;
+		// choice differs from last frame's only while a style rises (style, above)
+		light_lum *= style;
 
 		// Hexenlicht: no sky lights (negative color, see the top), so no physical sky's
 		// luminance limits for them
@@ -436,12 +513,32 @@ sample_polygonal_lights(
 			position_light = sample_sphere_light(light.positions[0], radius, p, rng.yz);
 			pdfw = (solid_angle > 0) ? 1 / solid_angle : 0;
 
-			if(dot(position_light - p, gn) <= 0)
-				pdfw = 0;
+			if(light.shape == SPHERE_SHAPE_GL)
+			{
+				// Hexenlicht (4.15): GL's light of its center (times pi: the diffuse BRDF's
+				// 1 / pi, without the cosine); the sphere softens the shadows only, and a point
+				// of it below the surface's horizon is the center (the compiler's plane test)
+				if(dot(position_light - p, gn) <= 0)
+					position_light = light.positions[0];
+				light_color = light.color * (M_PI * lightmap_light_value(light, p, n, gn, light.light_style_scale));
+				light_angle = lightmap_angle_term(dot(n, c) / dist);
+			}
+			else
+			{
+				if(dot(position_light - p, gn) <= 0)
+					pdfw = 0;
 
-			if(pdfw > 0)
-				light_color = light.color * (solid_angle * sphere_light_window(dist, light.positions[1].y) *
-				                             sphere_light_spot(light, p) * light.light_style_scale);
+				if(pdfw > 0)
+					light_color = light.color * (solid_angle * sphere_light_window(dist, light.positions[1].y) *
+					                             sphere_light_spot(light, p) * light.light_style_scale);
+
+				// Hexenlicht (4.15): utils/light's angle term instead of the cosine
+				if(light.shape == SPHERE_SHAPE_GL_ANGLE)
+				{
+					light_angle = lightmap_angle_term(dot(n, normalize(position_light - p)));
+					light_color *= light_angle;
+				}
+			}
 
 			light_index = current_idx;
 			light_color /= pdf;

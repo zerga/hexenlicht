@@ -11,6 +11,7 @@
  *    Every map load resets them to their defaults (their values when the
  *    renderer started) before the map's file sets them, so they don't
  *    carry over from map to map; the global calibration (r_maplight_scale,
+ *    4.15's r_maplight_shape, _gl_scale, _gamma and _radius,
  *    the tm_* cvars) isn't per map;
  *  - light x y z <changes>: the map lights whose entity origin is x y z
  *    (to the unit, as vk_maplights.c's VK_MapLightAt); the changes: off,

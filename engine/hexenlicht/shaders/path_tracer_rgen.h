@@ -32,6 +32,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); for gradient
  *    samples the sampled list light's style change (nee_style_change, 4.13);
+ *    a map light's GL-like shape (4.15) brings its own angle term instead of
+ *    the cosine (the specular gets its light without it);
  *  - get_sunlight (4.6): the shadow ray ends at the first sky face it meets
  *    (trace_sky_distance: Hexen II has world geometry above some skies,
  *    which Quake II RTX's 10000-unit ray would hit; a point at the sky's
@@ -759,6 +761,7 @@ get_direct_illumination(
 	uint polygonal_light_node = ~0u;	// Hexenlicht: its light list entry
 	float polygonal_light_pdfw = 0;
 	bool polygonal_light_is_sky = false;
+	float polygonal_light_angle = 0;	// Hexenlicht (4.15): its angle term, 0 = the cosine
 
 	vec3 rng = vec3(
 		get_rng(RNG_NEE_LIGHT_SELECTION(bounce)),
@@ -791,6 +794,7 @@ get_direct_illumination(
 			polygonal_light_node,
 			polygonal_light_pdfw,
 			polygonal_light_is_sky,
+			polygonal_light_angle,
 			rng);
 	}
 
@@ -841,9 +845,21 @@ get_direct_illumination(
 	if(is_gradient && is_polygonal && !null_light && vis > 0 && polygonal_light_index >= 0)
 	{
 		LightPolygon chosen = get_light_polygon(uint(polygonal_light_index));
-		float style_max = max(chosen.light_style_scale, chosen.prev_style_scale);
-		if(style_max > 0)
-			nee_style_change = abs(chosen.light_style_scale - chosen.prev_style_scale) / style_max;
+		if(chosen.type == LIGHT_TYPE_SPHERE && chosen.shape == SPHERE_SHAPE_GL)
+		{
+			// 4.15: the change of its light, whose style is inside GL's clip and power
+			float v = lightmap_light_value(chosen, position, normal, geo_normal, chosen.light_style_scale);
+			float v_prev = lightmap_light_value(chosen, position, normal, geo_normal, chosen.prev_style_scale);
+			float v_max = max(v, v_prev);
+			if(v_max > 0)
+				nee_style_change = abs(v - v_prev) / v_max;
+		}
+		else
+		{
+			float style_max = max(chosen.light_style_scale, chosen.prev_style_scale);
+			if(style_max > 0)
+				nee_style_change = abs(chosen.light_style_scale - chosen.prev_style_scale) / style_max;
+		}
 	}
 #ifdef ENABLE_SHADOW_CAUSTICS
 	if(enable_caustics)
@@ -906,14 +922,18 @@ get_direct_illumination(
 
 	vec3 F = vec3(0);
 
+	// Hexenlicht (4.15): a list light with its own angle term (light_lists.h: the map
+	// lights' GL-like shapes) instead of the cosine; the specular takes its light without it
+	float light_angle = is_polygonal ? polygonal_light_angle : 0;
+
 	if(vis > 0 && direct_specular_weight > 0)
 	{
 		vec3 specular_brdf = GGX_times_NdotL(view_direction, normalize(pos_on_light - position),
 			normal, roughness, base_reflectivity, 0.0, specular_factor, F);
-		specular = radiance * specular_brdf * direct_specular_weight;
+		specular = ((light_angle > 0) ? radiance / light_angle : radiance) * specular_brdf * direct_specular_weight;
 	}
 
-	float NdotL = max(0, dot(normal, L));
+	float NdotL = (light_angle > 0) ? 1 : max(0, dot(normal, L));
 
 	float diffuse_brdf = NdotL / M_PI;
 	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);

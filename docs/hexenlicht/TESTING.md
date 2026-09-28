@@ -92,7 +92,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   light, `r_debugview 15` with `r_debugview_scale` 0.25, white lights, no
   denoiser, entities hidden, lava and sky light off, 16 frames averaged by
   `vk_screenshot`). `-HlCvars` goes in after each load (a candidate:
-  `"r_maplight_power 4"`); `-SkipSaves -SkipGl -KeepSaves` reuse the saves
+  `"r_maplight_power 4"`; 4.15's light shapes: `"r_maplight_shape 1;
+  r_maplight_scale 705"`); `-SkipSaves -SkipGl -KeepSaves` reuse the saves
   and GL shots for more candidates; `-GlLit <folder>` adds
   `gl\<name>_glc.tga` with HoT's colored light (`<folder>\maps\*.lit`,
   copied in for the run), `-LitFrames` averages the lit image too. It
@@ -181,6 +182,13 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 
 ## Other checks
 
+- **Map light brightness in older checks (4.15):** the checks below from
+  before 4.15 dim or brighten the map's lights with `r_maplight_scale`
+  (50, 62.5, 100, 4000), which only the physical shapes use: add
+  `r_maplight_shape 0` to repeat them as measured, or scale
+  `r_maplight_gl_scale` (2 by default) instead with GL's shape (its light
+  is bounded: a full lightmap texel at most, so the physical shape's very
+  bright settings have no equivalent next to lights).
 - **Map files (4.7):** a test `maps/<map>.hlmap` goes into the data
   folder's `data1\maps\` (or `portals\maps\`), not the repository: it is
   used before a shipped one. `vk_mapfile` shows what it did, `vk_mapfile
