@@ -6,15 +6,20 @@
 # farthest-point sampling). A view is the player's origin on the floor below the
 # spot and the spot's angle, or, when that faces a wall (the mean distance to
 # solid or sky over a 60-degree fan at the eye, 50 units up, is under 200
-# units), the most open of 16 yaws; spots less open than 160 units, or with the
-# eye not in open space (solid, water, sky), are left out. The distances come
-# from point traces through the BSP's nodes (hull 0, the world only: brush
-# entities such as doors are open space). Writes bookmark lines (name
-# <map>_dm<n>, rename them by place) to -Out, each after a comment with its
-# openness and distance, and prints them. -Portals: Portal of Praevus maps
-# (the bookmarks get "portals"). BSP version 29 only; needs PowerShell 7.
+# units), the most open of 16 yaws; spots less open than 160 units, with the
+# eye not in open space (solid, water, sky), or with an entity whose whole
+# classname matches -Avoid (a regex, default monster_.*; '' for none) less than
+# -AvoidRadius (48) units across and 128 up or down from the player's origin
+# are left out (4.11b: a monster standing on the spot puts the camera inside
+# its model). The distances come from point traces through the BSP's nodes
+# (hull 0, the world only: brush entities such as doors are open space).
+# Writes bookmark lines (name <map>_dm<n>, rename them by place) to -Out, each
+# after a comment with its openness and distance, and prints them. -Portals:
+# Portal of Praevus maps (the bookmarks get "portals"). BSP version 29 only;
+# needs PowerShell 7.
 param([Parameter(Mandatory)][string[]]$Paks, [Parameter(Mandatory)][string[]]$Maps, [string]$Entrances = '',
-      [int]$PerMap = 3, [Parameter(Mandatory)][string]$Out, [switch]$Portals)
+      [int]$PerMap = 3, [Parameter(Mandatory)][string]$Out, [switch]$Portals, [string]$Avoid = 'monster_.*',
+      [double]$AvoidRadius = 48)
 $ErrorActionPreference = 'Stop'
 if (-not ('BspTrace' -as [type])) {
 Add-Type -TypeDefinition @'
@@ -92,6 +97,14 @@ foreach ($pak in $Paks) {
 		$bt = [BspTrace]::new($bytes, $pos)
 		$entofs = [BitConverter]::ToInt32($bytes, $pos + 4); $entlen = [BitConverter]::ToInt32($bytes, $pos + 8)
 		$text = [Text.Encoding]::ASCII.GetString($bytes, $pos + $entofs, $entlen)
+		# the entities to keep away from (monsters: the camera would be inside one)
+		$avoidAt = [Collections.Generic.List[object]]::new()
+		foreach ($m in [regex]::Matches($text, '\{[^{}]*\}')) {
+			if ($Avoid -and $m.Value -match '"classname"\s+"([^"]*)"' -and $Matches[1] -match "^(?:$Avoid)$" -and
+			    $m.Value -match '"origin"\s+"([^"]*)"') {
+				$avoidAt.Add(@($Matches[1] -split '\s+' | ForEach-Object { [double]::Parse($_, $inv) }))
+			}
+		}
 		$cands = [Collections.Generic.List[object]]::new()
 		foreach ($m in [regex]::Matches($text, '\{[^{}]*\}')) {
 			$v = $m.Value
@@ -100,6 +113,10 @@ foreach ($pak in $Paks) {
 			$yaw = if ($v -match '"angle"\s+"([^"]*)"') { [double]::Parse($Matches[1], $inv) } else { 0 }
 			$floor = $bt.Floor($xyz[0], $xyz[1], $xyz[2])
 			if ([double]::IsNaN($floor) -or $bt.Contents($xyz[0], $xyz[1], $floor + 50) -ne -1) { continue }
+			# a monster where the player would stand (across, and up or down from the player's origin)
+			$near = $avoidAt | Where-Object { [Math]::Sqrt(($_[0] - $xyz[0]) * ($_[0] - $xyz[0]) + ($_[1] - $xyz[1]) * ($_[1] - $xyz[1])) -lt $AvoidRadius -and
+							  [Math]::Abs($_[2] - $floor) -lt 128 }
+			if ($near) { continue }
 			$open = Openness $bt $xyz[0] $xyz[1] ($floor + 50) $yaw
 			if ($open -lt 200) {
 				for ($a = 0; $a -lt 360; $a += 22.5) {

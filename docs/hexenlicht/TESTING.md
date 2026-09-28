@@ -155,8 +155,10 @@ every map. Blackmarsh (4.11a) was the first; about an hour of runs.
    - three views per map in its main areas: `pick_views.ps1 -Paks
      <paks> -Maps <maps> -Entrances <the entrance lines> -Out <file>`
      (deathmatch spots, each farthest from the views taken, turned away
-     from walls; `-Portals` for the mission pack), then rename them by
-     place (`<map>_<place>`) from their GL shots.
+     from walls, none with a monster standing on it: its model would be
+     around the camera, Hexenlicht's lit shot then black; `-Portals` for the
+     mission pack), then rename them by place (`<map>_<place>`) from
+     their GL shots.
 2. **Shots:** `calib_shots.ps1 -Bookmarks
    tools\hexenlicht\bookmarks_<hub>.txt -Out <folder> -KeepSaves`
    (Release, 960x540: 43 views ~12 minutes; the saves for step 4);
