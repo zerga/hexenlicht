@@ -283,6 +283,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(float,           sky_front_scroll)     /* realtime * 16 */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            sky_back_texture)     /* texture slots of the layers, 0 = no sky */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            sky_front_texture) \
+	GLOBAL_UBO_VAR_LIST_DO(float,           maplight_gamma)       /* r_maplight_gamma: GL's lightmap value into linear light (4.15, light_lists.h's lightmap_to_linear) */ \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

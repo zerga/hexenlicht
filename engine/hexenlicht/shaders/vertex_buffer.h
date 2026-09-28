@@ -79,6 +79,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LIGHT_TYPE_SPHERE       1
 #define LIGHT_STATS_UINTS       12
 
+// Hexenlicht (4.15): a sphere's light shape (r_maplight_shape, light_lists.h)
+#define SPHERE_SHAPE_PHYSICAL   0	// inverse square, the cosine (test lights always)
+#define SPHERE_SHAPE_GL_ANGLE   1	// inverse square, utils/light's 0.5 + 0.5 cos in linear light
+#define SPHERE_SHAPE_GL         2	// utils/light's lightmap value of the light alone, in linear light
+
 #define VERTEX_BUFFER_WORLD 0		// Hexenlicht: the world buffer (vk_world.c)
 #define VERTEX_BUFFER_INSTANCED 1	// this frame's alias model triangles (vk_model.c)
 #define VERTEX_BUFFER_FIRST_MODEL 2	// alias model k (source only): VERTEX_BUFFER_FIRST_MODEL + k
@@ -126,9 +131,11 @@ END_SHADER_STRUCT( VboPrimitive )
  *    then (style scale, last frame's style scale, LIGHT_TYPE_POLYGON, 0);
  *  - a sphere: (center, red), (radius, range, spot cosine, green), (spot
  *    direction, blue), then (style scale, last frame's, LIGHT_TYPE_SPHERE,
- *    0); range 0 = unlimited, else its light fades to 0 there
+ *    SPHERE_SHAPE_*); range 0 = unlimited, else its light fades to 0 there
  *    (sphere_light_window); a spotlight (direction not 0) lights the cone
- *    whose half width has that cosine (sphere_light_spot);
+ *    whose half width has that cosine (sphere_light_spot); with
+ *    SPHERE_SHAPE_GL (4.15) the range is the utils/light level and the
+ *    color GL's full lightmap (lightmap_light_value);
  * light list n, the lights of vis cluster n, is
  * light_list_lights[light_list_offsets[n]] up to light_list_offsets[n + 1] */
 BEGIN_SHADER_STRUCT( LightBuffer )
@@ -237,6 +244,7 @@ struct LightPolygon
 	float prev_style_scale;
 	uint type;		/* Hexenlicht: LIGHT_TYPE_*; a sphere: positions[0] center, [1].x radius, [1].y range,
 				 * [1].z a spotlight's cosine of half its width, [2] its direction (0 = none) */
+	uint shape;		/* Hexenlicht (4.15): a sphere's SPHERE_SHAPE_* */
 };
 
 VboPrimitive
@@ -441,6 +449,7 @@ get_light_polygon(uint index)
 	light.light_style_scale = p3.x;
 	light.prev_style_scale = p3.y;
 	light.type = uint(p3.z);	// Hexenlicht
+	light.shape = uint(p3.w);
 	return light;
 }
 

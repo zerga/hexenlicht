@@ -16,7 +16,8 @@
 #    (<name>_lit.tga): the mean luminance (linear) of each and their ratio;
 #    "surfaces": the median ratio of blocks on the lightmapped world only
 #    (as the light's mask, so no sky), per bookmark and pooled (the
-#    number r_maplight_scale is divided by to match GL's look). -White
+#    number the map lights' scale is divided by to match GL's look:
+#    r_maplight_gl_scale, with the physical shapes r_maplight_scale). -White
 #    compares with <name>_gl.tga even where a colored one exists.
 #  - -Pictures: <Out>\<label>\compare\<name>.png, half size: GL | Hexenlicht |
 #    Hexenlicht / GL (blue darker, red brighter, to 2 stops; black not

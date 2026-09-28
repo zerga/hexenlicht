@@ -557,9 +557,12 @@ void VK_InitMapLights (void);	/* its cvars, from VK_InitLights */
 void VK_LoadMapLights (qmodel_t *worldmodel);
 void VK_ClearMapLights (void);
 const vk_maplight_t *VK_MapLights (int *count);	/* none with r_maplights 0 */
-float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white */
+float VK_MapLightIntensity (const vk_maplight_t *l);	/* pi x radiance, white (GL's shape: a full GL texel's light, 4.15) */
 float VK_LightLevelIntensity (float level);	/* the same for a utils/light level */
-float VK_MapLightRange (void);	/* r_maplight_range: a map light's range is its level times this (4.9) */
+float VK_MapLightRange (void);	/* r_maplight_range: a map light's range is its level times this (4.9; GL's shape: 1) */
+int VK_MapLightShape (void);	/* r_maplight_shape: SPHERE_SHAPE_* (4.15) */
+float VK_MapLightGamma (void);	/* r_maplight_gamma (4.15) */
+float VK_MapLightRadius (void);	/* r_maplight_radius (4.15) */
 qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
 float VK_SRGBToLinear (float c);	/* a GL light color's linear value */
 qboolean VK_MapLightAt (const vec3_t origin);
