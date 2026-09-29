@@ -42,6 +42,7 @@ typedef struct
 	qboolean		have_rt_pipeline;	/* VK_KHR_ray_tracing_pipeline */
 	qboolean		have_ser;		/* VK_NV_ray_tracing_invocation_reorder */
 	qboolean		have_position_fetch;	/* VK_KHR_ray_tracing_position_fetch */
+	qboolean		have_bc;		/* textureCompressionBC: BC7 and BC5 image files (5.2) */
 
 	/* swapchain (vk_swapchain.c) */
 	VkSwapchainKHR		swapchain;
@@ -120,6 +121,33 @@ float VK_ColorToLinearAs (float c, qboolean srgb);	/* the same by the sRGB curve
 float VK_LinearToColor (float x);	/* linear light as an 8-bit color, clamped to 0-1 */
 const float *VK_ColorTable (void);	/* VK_ColorToLinear of the bytes 0-255 */
 
+/* vk_imagefile.c: the material spec's image files (5.2,
+ * docs/hexenlicht/MATERIALS.md), read into memory as they are */
+#define VK_IMAGE_MAX_LEVELS	16
+typedef struct
+{
+	char		file[MAX_QPATH];	/* the file found, with its extension */
+	char		error[160];		/* why it was refused ("" = not found, or loaded) */
+	const char	*kind;			/* "PNG", "TGA", "DDS", "KTX2" */
+	VkFormat	format;			/* VK_FORMAT_R8G8B8A8_UNORM, _BC7_UNORM_BLOCK or _BC5_UNORM_BLOCK */
+	const char	*file_format;		/* the file's own format, e.g. "BC7_UNORM_SRGB", "B8G8R8A8" */
+	int		width, height;
+	int		levels;			/* levels in the file (1: no mips) */
+	size_t		offset[VK_IMAGE_MAX_LEVELS], size[VK_IMAGE_MAX_LEVELS];	/* each level in data */
+	byte		*data;			/* malloc'd, level 0 first */
+	double		read_ms, decode_ms;
+} vk_imagefile_t;
+/* path without an extension (the spec's lookup: .png, .tga, .dds, .ktx2 in
+ * turn, each through the whole search path) or with one of them (only that
+ * file); lowercased. Never prints (it may run while a frame is recorded):
+ * false with error "" if no file was found, else error says why. */
+qboolean VK_LoadImageFile (const char *path, vk_imagefile_t *img);
+void VK_FreeImageFile (vk_imagefile_t *img);
+int VK_LoadImageTexture (const char *identifier, const vk_imagefile_t *img, int flags);	/* vk_texture.c: its slot */
+uint32_t VK_TextureLevels (int slot);	/* vk_texture.c: the slot's mip levels */
+void VK_InitImageFiles (void);
+void VK_DrawImageFile (void);	/* R_RenderView, after the 3D view: vk_imagefile's picture, in the 2D under the HUD */
+
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
 void Draw_ClearCachedPics (void);	/* after texture slots were purged */
@@ -127,6 +155,7 @@ void VK_ShutdownDraw (void);
 void VK_DestroyDrawPipeline (void);	/* rebuilt when next drawn */
 void VK_DrawShade (int x, int y, int w, int h, float alpha);	/* a translucent black box, 2D coordinates */
 void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba);	/* a box of a color (8-bit 0-1), 2D coordinates */
+void VK_DrawTexture (float x0, float y0, float x1, float y1, int slot, qboolean black);	/* a texture slot, alpha blended (over black), 2D coordinates */
 
 /* vk_profiler.c: GPU timers (Quake II RTX's profiler.c). A pass is
  * bracketed by VK_ProfilerStart and VK_ProfilerStop with its PROF_* entry

@@ -6,7 +6,9 @@ optional settings file. Frozen in story 5.1 ([DECISIONS.md](DECISIONS.md)
 M1–M7); the rest of E5 implements it: the loaders (5.2), the material
 system and hot reload (5.3), the export of the original textures under
 these names (5.4), the special materials (5.5), a test pack and the
-authoring guide (5.6). Until 5.3 the engine reads none of these files.
+authoring guide (5.6). Since 5.2 the engine reads the image files
+(`vk_imagefile <file>` shows one, RENDERER.md's "Image files"); until 5.3
+no material uses them.
 
 ## Files
 
@@ -151,8 +153,10 @@ in one file (Quake II RTX's `materials/*.mat` sections).
 ## Formats and lookup
 
 - **Authoring:** PNG and TGA, 8 bits per channel (a 16-bit PNG is read as
-  8). Any size: texture coordinates are the original's divided by its
-  size, so an image covers the same surface at any resolution; keep the
+  8), at most 8192 x 8192 texels as a count (5.2: a guard against a
+  small file that claims a huge image). Any size within that: texture
+  coordinates are the original's divided by its size, so an image covers
+  the same surface at any resolution; keep the
   original's aspect ratio (another one stretches). The images of a set may
   have different sizes (but `_r` and `_m`, above).
 - **Shipping:** DDS and KTX2 (without supercompression: Basis Universal

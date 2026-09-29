@@ -10,14 +10,18 @@
  *
  * Differences to the GL version:
  * - Images are VK_FORMAT_R8G8B8A8_UNORM (4.17; VK_FORMAT_R8G8B8A8_SRGB
- *   before): shaders read the 8-bit colors as they are and turn them into
+ *   before; image files also BC7_UNORM_BLOCK and BC5_UNORM_BLOCK, 5.2,
+ *   UNORM too): shaders read the 8-bit colors as they are and turn them into
  *   linear light where they are colors (shaders/transfer.glsl: a 2.2
  *   power, GL's product with the lightmap; the sRGB curve with r_srgb 1).
  *   VK_ColorToLinear is the same on the CPU (light colors, the sky's and
  *   the lava's averages, particles, emissive skins, averaged screenshots).
  *   No power-of-two resampling, no gl_picmip.
  * - Mipmaps are generated on the GPU by blitting, which filters the 8-bit
- *   colors, as GL's mipmaps and filtering did.
+ *   colors, as GL's mipmaps and filtering did. Image files (5.2,
+ *   vk_imagefile.c, VK_LoadImageTexture) bring their levels; with
+ *   TEX_MIPMAP an uncompressed one gets the rest of its chain blitted, a
+ *   BC7 or BC5 one keeps what it has (the GPU can't write them).
  * - Filtering follows the flags: mipmapped textures (world, models,
  *   sprites) are trilinear + anisotropic with repeat addressing; TEX_NEAREST
  *   is point sampled, everything else bilinear, both clamped to the edge
@@ -62,6 +66,7 @@ typedef struct
 	int		flags;
 	unsigned short	crc;
 	uint32_t	mip_levels;
+	VkFormat	format;		/* TEXTURE_FORMAT, or an image file's BC7 or BC5 (5.2) */
 	VkImage		image;
 	VmaAllocation	allocation;
 	VkImageView	view;
@@ -273,36 +278,45 @@ static void VK_ImageBarrier (VkImage image, uint32_t base_mip, uint32_t num_mips
 	vkCmdPipelineBarrier2 (upload_cmd, &dep);
 }
 
-/* create t's image and view, upload RGBA data and generate the mipmaps;
- * waits for the GPU: load time, or the first use of a picture or of an
- * emissive skin while a frame is recorded */
-static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
+/* creates t's image and view (width, height and flags set) from num_levels
+ * levels of an image in format, level i at data + offset[i], size[i] bytes
+ * (level 0 first); with TEX_MIPMAP an uncompressed image gets the rest of
+ * its mip chain blitted from the last of them (a compressed one keeps the
+ * levels it has: the GPU can't write them, 5.2). GL_LoadTexture's images
+ * have one level. Waits for the GPU: load time, or the first use of a
+ * picture or of an emissive skin while a frame is recorded */
+static void VK_UploadLevels (vk_texture_t *t, VkFormat format, const byte *data, uint32_t num_levels,
+			     const size_t *offset, const size_t *size)
 {
 	VkImageCreateInfo		image_info;
 	VkImageViewCreateInfo		view_info;
 	VmaAllocationCreateInfo		alloc_info;
 	vk_buffer_t			staging;
 	VkBufferImageCopy		copy;
-	VkDeviceSize			size = (VkDeviceSize)t->width * t->height * 4;
+	VkDeviceSize			total = 0;
 	uint32_t			i, w, h;
 
 	t->mip_levels = 1;
-	if (t->flags & TEX_MIPMAP)
+	if ((t->flags & TEX_MIPMAP) && format == TEXTURE_FORMAT)
 	{
 		for (w = q_max(t->width, t->height); w > 1; w >>= 1)
 			t->mip_levels++;
 	}
+	t->mip_levels = q_max(t->mip_levels, num_levels);
+	t->format = format;
 
-	/* staging buffer with the pixels */
-	VK_CreateBuffer (&staging, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_UPLOAD);
-	memcpy (staging.mapped, rgba, (size_t)size);
+	/* staging buffer with the levels, where they are in data */
+	for (i = 0; i < num_levels; i++)
+		total = q_max(total, (VkDeviceSize)(offset[i] + size[i]));
+	VK_CreateBuffer (&staging, total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_UPLOAD);
+	memcpy (staging.mapped, data, (size_t)total);
 	VK_CHECK (vmaFlushAllocation (vk.allocator, staging.allocation, 0, VK_WHOLE_SIZE));
 
 	/* the image */
 	memset (&image_info, 0, sizeof(image_info));
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
-	image_info.format = TEXTURE_FORMAT;
+	image_info.format = format;
 	image_info.extent.width = (uint32_t)t->width;
 	image_info.extent.height = (uint32_t)t->height;
 	image_info.extent.depth = 1;
@@ -311,28 +325,35 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-			   ((t->mip_levels > 1) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
+			   ((t->mip_levels > num_levels) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	memset (&alloc_info, 0, sizeof(alloc_info));
 	alloc_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	VK_CHECK (vmaCreateImage (vk.allocator, &image_info, &alloc_info, &t->image, &t->allocation, NULL));
 
-	/* commands: copy level 0, blit each further level from the previous */
+	/* commands: copy the levels given, blit each further level from the previous */
 	upload_cmd = VK_BeginUpload ();
 
 	VK_ImageBarrier (t->image, 0, t->mip_levels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			 VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
 			 VK_ACCESS_2_TRANSFER_WRITE_BIT);
 
-	memset (&copy, 0, sizeof(copy));
-	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.imageSubresource.layerCount = 1;
-	copy.imageExtent = image_info.extent;
-	vkCmdCopyBufferToImage (upload_cmd, staging.buffer, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	for (i = 0; i < num_levels; i++)
+	{
+		memset (&copy, 0, sizeof(copy));
+		copy.bufferOffset = (VkDeviceSize)offset[i];
+		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.imageSubresource.mipLevel = i;
+		copy.imageSubresource.layerCount = 1;
+		copy.imageExtent.width = q_max((uint32_t)t->width >> i, 1u);
+		copy.imageExtent.height = q_max((uint32_t)t->height >> i, 1u);
+		copy.imageExtent.depth = 1;
+		vkCmdCopyBufferToImage (upload_cmd, staging.buffer, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	}
 
-	w = (uint32_t)t->width;
-	h = (uint32_t)t->height;
-	for (i = 1; i < t->mip_levels; i++)
+	w = q_max((uint32_t)t->width >> (num_levels - 1), 1u);
+	h = q_max((uint32_t)t->height >> (num_levels - 1), 1u);
+	for (i = num_levels; i < t->mip_levels; i++)
 	{
 		VkImageBlit	blit;
 
@@ -359,18 +380,30 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 				t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 	}
 
-	/* all levels but the last are TRANSFER_SRC now, the last TRANSFER_DST */
-	if (t->mip_levels > 1)
+	/* the levels blitted from are TRANSFER_SRC now, the others TRANSFER_DST */
+	if (t->mip_levels > num_levels)
 	{
-		VK_ImageBarrier (t->image, 0, t->mip_levels - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_ImageBarrier (t->image, num_levels - 1, t->mip_levels - num_levels, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 				 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				 VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
 				 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+		if (num_levels > 1)
+			VK_ImageBarrier (t->image, 0, num_levels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					 VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+		VK_ImageBarrier (t->image, t->mip_levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				 VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+				 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 	}
-	VK_ImageBarrier (t->image, t->mip_levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			 VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-			 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	else
+	{
+		VK_ImageBarrier (t->image, 0, t->mip_levels, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				 VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+				 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	}
 
 	VK_EndUpload ();
 	upload_cmd = VK_NULL_HANDLE;
@@ -380,11 +413,18 @@ static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
 	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	view_info.image = t->image;
 	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_info.format = TEXTURE_FORMAT;
+	view_info.format = format;
 	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	view_info.subresourceRange.levelCount = t->mip_levels;
 	view_info.subresourceRange.layerCount = 1;
 	VK_CHECK (vkCreateImageView (vk.device, &view_info, NULL, &t->view));
+}
+
+static void VK_UploadRGBA (vk_texture_t *t, const unsigned int *rgba)
+{
+	size_t	offset = 0, size = (size_t)t->width * t->height * 4;
+
+	VK_UploadLevels (t, TEXTURE_FORMAT, (const byte *)rgba, 1, &offset, &size);
 }
 
 static void VK_DestroyTexture (int slot)
@@ -595,6 +635,55 @@ GLuint GL_LoadTexture (const char *identifier, byte *data, int width, int height
 	return (GLuint)slot;
 }
 
+/* an image file's texture (5.2, vk_imagefile.c): the slot named
+ * identifier, made or replaced, holding the file's levels as they are in
+ * its format; flags as GL_LoadTexture's (the sampler; TEX_MIPMAP: the rest
+ * of an uncompressed image's mip chain made). Its CRC is 0: the cache's
+ * CRCs are the original textures'. 0 (white) when the cache is full or
+ * img holds no valid levels. */
+int VK_LoadImageTexture (const char *identifier, const vk_imagefile_t *img, int flags)
+{
+	int		i, key, slot = -1;
+	vk_texture_t	*t;
+
+	if (!img->data || img->levels < 1 || img->levels > VK_IMAGE_MAX_LEVELS)
+		return 0;
+	key = Hash_GenerateKeyString (&hash_textures, identifier, true);
+	for (i = Hash_First(&hash_textures, key); i != -1; i = Hash_Next(&hash_textures, i))
+	{
+		if (i == 0 || strcmp (identifier, textures[i].identifier))
+			continue;	/* slot 0, the white texture freed slots point to, stays */
+		vkDeviceWaitIdle (vk.device);
+		VK_WriteTextureDescriptor (i, textures[0].view, textures[0].sampler);
+		VK_DestroyTexture (i);
+		slot = i;
+		break;
+	}
+	if (slot < 0)
+	{
+		if (numgltextures >= VK_MAX_TEXTURES)
+			return 0;
+		slot = numgltextures++;
+		Hash_Add (&hash_textures, key, slot);
+	}
+
+	t = &textures[slot];
+	q_strlcpy (t->identifier, identifier, MAX_QPATH);
+	t->width = img->width;
+	t->height = img->height;
+	t->flags = flags;
+	t->crc = 0;
+	VK_UploadLevels (t, img->format, img->data, (uint32_t)img->levels, img->offset, img->size);
+	t->sampler = VK_SamplerForFlags (t->flags);
+	VK_WriteTextureDescriptor (slot, t->view, t->sampler);
+	return slot;
+}
+
+uint32_t VK_TextureLevels (int slot)
+{
+	return (slot >= 0 && slot < numgltextures) ? textures[slot].mip_levels : 0;
+}
+
 /* the slot holding the texture loaded as identifier, -1 = none (e.g.
  * purged on a map change) */
 int VK_FindTexture (const char *identifier)
@@ -670,7 +759,8 @@ static void VK_Textures_f (void)
 	for (i = 0; i < numgltextures; i++)
 	{
 		const vk_texture_t	*t = &textures[i];
-		double			b = (double)t->width * t->height * 4 * ((t->mip_levels > 1) ? 4.0 / 3.0 : 1.0);
+		double			b = (double)t->width * t->height * ((t->format == VK_FORMAT_BC7_UNORM_BLOCK || t->format == VK_FORMAT_BC5_UNORM_BLOCK) ? 1 : 4) *
+					    ((t->mip_levels > 1) ? 4.0 / 3.0 : 1.0);	/* BC7, BC5: a byte per texel */
 
 		bytes += b;
 		if (t->mip_levels > 1)

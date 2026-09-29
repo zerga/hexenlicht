@@ -8,7 +8,7 @@ Keep this file current: a PR that changes a module updates its section.
 
 Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Vulkan core](#vulkan-core-and-swapchain) · [Shaders](#shaders) ·
-[Textures](#textures-vk_texturec) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
+[Textures](#textures-vk_texturec) · [Image files](#image-files-vk_imagefilec) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
 [Buffers and layouts](#buffers-and-gpu-data-layouts) · [Materials](#materials-vk_materialc) ·
 [World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
@@ -93,7 +93,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   errors, M warnings`), Win32 surface, device (requires Vulkan 1.3,
   acceleration structures, ray query, buffer device address, descriptor
   indexing, dynamic rendering, synchronization2, storage image extended
-  formats; enables RT pipeline, NV SER, position fetch when present), VMA,
+  formats; enables RT pipeline, NV SER, position fetch and BC textures
+  (`textureCompressionBC`, 5.2) when present), VMA,
   `vk_info`. Before the instance, `VK_SLPreInit` (`vk_streamline.cpp`)
   loads NVIDIA Streamline when `sl.interposer.dll` is next to the exe and
   its signature verifies: volk then loads Vulkan through the interposer's
@@ -207,6 +208,85 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `VK_TextureRGBA` converts them again for the light models' emissive
   textures ([Emissive surfaces](#emissive-surfaces-vk_emissivec)).
   `vk_textures` prints how many (meso9: 100 skins, 2.6 MB).
+- **Image files** (5.2, [below](#image-files-vk_imagefilec)):
+  `VK_LoadImageTexture` makes or replaces the slot of an identifier with
+  a file's levels in its format (`R8G8B8A8_UNORM`, `BC7_UNORM_BLOCK`,
+  `BC5_UNORM_BLOCK`), its CRC 0 (the cache's CRCs are the originals').
+  One upload path for both (`VK_UploadLevels`): the levels given are
+  copied, and with `TEX_MIPMAP` an uncompressed image gets the rest of its
+  chain blitted; a compressed one keeps what it has. `GL_LoadTexture`'s
+  images are one level, so its calls are the same as before (checked: the
+  3D view of demo1 and meso2 identical to `main`'s within the runs' noise,
+  the HUD's health number aside).
+
+## Image files (`vk_imagefile.c`)
+
+Story 5.2: reads the image files of [MATERIALS.md](MATERIALS.md) into
+memory as they are; `VK_LoadImageTexture` (above) uploads them. The
+material system (5.3) picks the names and puts the images into materials.
+
+- **Lookup:** `VK_LoadImageFile` takes a path without an extension and
+  tries `.png`, `.tga`, `.dds`, `.ktx2` in turn, each through the whole
+  search path (`FS_OpenFile` without a file, `FS_FileExists`'s call,
+  which gives the size; a later game folder first), or a path with one of
+  them (only that file); lowercased (paks compare names exactly).
+- **PNG, TGA:** `stb_image` (built for those two, `libs/stb`): every
+  channel count becomes RGBA, 16 bits per channel 8; gamma and color
+  profile chunks aren't applied.
+- **DDS:** the DX10 header's `BC7_UNORM` (and `_SRGB`), `BC5_UNORM`,
+  `R8G8B8A8_UNORM` (and `_SRGB`), `B8G8R8A8_UNORM` and `B8G8R8X8_UNORM`
+  (and `_SRGB`); the older header's FourCC `ATI2` or `BC5U` and 32-bit RGB
+  with an R mask of `0xff` or `0xff0000` (alpha 255 without its mask).
+- **KTX2:** `R8G8B8A8`, `B8G8R8A8`, `BC7` (UNORM or SRGB), `BC5_UNORM`; a
+  2D image, one layer and face, no supercompression; the level index gives
+  each level (levelCount 0: one).
+- **As loaded:** an `_SRGB` format is its UNORM twin (the same bytes: the
+  shaders decode colors, DECISIONS R104), BGRA is swapped to RGBA and an
+  X byte becomes an alpha of 255, so an image is RGBA8, BC7 or BC5, its
+  levels those of the file (at most its chain). Refused, with a reason in
+  `img->error`: other formats (BC1, BC3, BC4, `BC5_SNORM`, float), cube
+  maps, arrays, volumes, a size above `maxImageDimension2D` (32768 on the
+  RTX 4070 Ti), BC without the GPU's BC support (`vk.have_bc`,
+  `textureCompressionBC`, enabled when the GPU has it; `vk_info` prints
+  it), files whose levels don't fit (every size is checked against the
+  file's before a copy), a PNG or TGA of more than 8192x8192 texels
+  (`MAX_DECODED_TEXELS`: a small file can claim a huge image), an empty
+  file and a name with `*` or `?` (both end the game in `quakefs.c`:
+  `FS_LoadFile`'s `Sys_Error` on 0 bytes, the loose files' wildcard
+  lookup). The loader never prints (5.3 may load while a frame is
+  recorded) and writes its reasons without `va()` (5.3 may load on
+  threads).
+- **`vk_imagefile <file> [scale]`** reads a file into the texture
+  `*imagefile`, prints the file, its kind and format, size, levels in the
+  file and uploaded, and the read, decode and upload times (whole ms), and
+  shows it at the top left of the 2D screen over black, alpha blended
+  (`VK_DrawTexture`, the colors as they are: the file's values on screen
+  with `gamma 1`), scale screen pixels per texel (0 fits the screen),
+  until `vk_imagefile` alone or the textures' purge on a change to
+  another map (`gl_purge_maptex`).
+- **Measured** (`tools/hexenlicht/imagefile_set.ps1`,
+  `imagefile_compare.ps1`: 32 files at one pixel per texel, 7 at a
+  quarter; TESTING.md): the uncompressed ones exactly their sources (PNG
+  8 and 16 bits, TGA, DDS RGBA8 and BGRA8 with both headers, BGRX8 and
+  X8 layouts with X 0, KTX2 RGBA8 and BGRA8, alpha over black through
+  PNG, DDS and KTX2), the grey PNG, BC7 and BC5 exactly texconv's decode
+  but for one BC7 4x4 block of the 200x120 image, 2–4 off (BC7 is
+  specified bit-exactly, so one of the decoders, the GPU's or
+  DirectXTex's, deviates there; not looked into further: the loader
+  copies the blocks as they are, and the KTX2 of the same data shows the
+  same) and BC5 by 1; the mips: files whose levels are flat colors of
+  their own (RGBA8, BC7 and BC5 DDS; RGBA8 and BC7 KTX2) show level 2's color at a
+  quarter, and one with two levels the second's (the rest blitted from
+  it), and a noise PNG at a quarter is within 1 of its source averaged
+  over 4x4 (the blitted mips); the lookup order (`.tga` before `.dds`
+  before `.ktx2`, a `.dds` before a `.ktx2` of other content); all twelve
+  refusals (BC1, `BC5_SNORM`, float, cut short DDS and KTX2,
+  supercompressed, not an image, empty, a wildcard, two missing names)
+  with their reason; Debug validation clean. **Times** (Release,
+  2048x2048): a PNG 71–74 ms to decode (8 MB of noisy pixels), a TGA 4–5
+  ms (40 ms to read on a cold cache), a BC7 DDS 1–2 ms read, 1 ms parsed,
+  1–2 ms uploaded, an RGBA8 DDS with mips 12–14 ms in all: PNG decoding
+  is what a map load of replaced textures pays (5.3).
 
 ## 2D (`vk_draw.c`)
 
@@ -233,7 +313,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 - The order in `R_RenderView`: `R_SetupFrame` → `R_ViewModelLight` →
   `R_BuildScene` (fills `r_scene`) → `VK_UpdateInstances` →
   `VK_UpdateModelGeometry` → `VK_UpdateEffects` → `VK_BuildTLAS` →
-  `VK_RenderView3D`.
+  `VK_RenderView3D` → `VK_DrawLightEditor` → `VK_DrawImageFile` (these two
+  in the 2D, under the HUD).
 - `R_ViewModelLight` (`r_light.c`): GL's `R_DrawViewModel` lighting with
   `gl_rlight.c`'s `R_LightPointColor` on the RGB light maps `gl_model.c`
   loads (at least 24, plus dynamic lights) for **`cl.light_level`**, which the client sends to the
@@ -2599,7 +2680,8 @@ overlay, and a measuring mode.
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
-| `vk_info` | device, extensions, swapchain, validation counts |
+| `vk_info` | device, extensions, BC texture support and the largest image, swapchain, validation counts |
+| `vk_imagefile <file> [scale]`, `vk_imagefile` | 5.2: reads an image file of [MATERIALS.md](MATERIALS.md) (without an extension: `.png`, `.tga`, `.dds`, `.ktx2` in turn), prints what it read and the times, shows it at the top left, scale screen pixels per texel (0 fits); alone hides it (see [Image files](#image-files-vk_imagefilec)) |
 | `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |

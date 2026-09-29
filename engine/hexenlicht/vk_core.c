@@ -448,6 +448,8 @@ static qboolean VK_CreateDevice (const vk_candidate_t *c)
 	VK_ChainFeatures (&enable, c->has_rtp, c->has_ser, c->has_pf);
 	enable.core.features.samplerAnisotropy = c->supported.core.features.samplerAnisotropy;
 	enable.core.features.shaderInt64 = c->supported.core.features.shaderInt64;
+	/* BC7 and BC5 image files (5.2, vk_imagefile.c); refused without it */
+	enable.core.features.textureCompressionBC = c->supported.core.features.textureCompressionBC;
 	/* storage images in Quake II RTX's render-target formats (rg16f, r16ui, ...) */
 	enable.core.features.shaderStorageImageExtendedFormats = VK_TRUE;
 	enable.v12.bufferDeviceAddress = VK_TRUE;
@@ -503,6 +505,7 @@ static qboolean VK_CreateDevice (const vk_candidate_t *c)
 	vk.have_rt_pipeline = c->has_rtp;
 	vk.have_ser = c->has_ser;
 	vk.have_position_fetch = c->has_pf;
+	vk.have_bc = c->supported.core.features.textureCompressionBC;
 	return true;
 }
 
@@ -551,6 +554,7 @@ static void VK_Info_f (void)
 	Con_Printf ("RT pipeline: %s, SER: %s, position fetch: %s\n",
 			vk.have_rt_pipeline ? "yes" : "no", vk.have_ser ? "yes" : "no",
 			vk.have_position_fetch ? "yes" : "no");
+	Con_Printf ("BC textures: %s, largest image %u\n", vk.have_bc ? "yes" : "no", p->limits.maxImageDimension2D);
 	Con_Printf ("Swapchain : %ux%u, %u images, format %d, present mode %d\n",
 			vk.extent.width, vk.extent.height, vk.num_images,
 			(int)vk.surface_format.format, (int)vk.present_mode);
@@ -589,6 +593,7 @@ static vk_module_t	vk_modules[] =
 	{ "buffers",	VK_InitBuffers,		VK_ShutdownBuffers,		VK_INIT_DEFAULT },
 	{ "swapchain",	VK_InitSwapchain,	VK_ShutdownSwapchain,		VK_INIT_DEFAULT },
 	{ "textures",	VK_InitTextures,	VK_ShutdownTextures,		VK_INIT_DEFAULT },
+	{ "imagefiles",	VK_InitImageFiles,	NULL,				VK_INIT_DEFAULT },
 	{ "materials",	VK_InitMaterials,	VK_ShutdownMaterials,		VK_INIT_DEFAULT },
 	{ "world",	VK_InitWorld,		VK_ShutdownWorld,		VK_INIT_DEFAULT },
 	{ "models",	VK_InitModels,		VK_ShutdownModels,		VK_INIT_DEFAULT },

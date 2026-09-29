@@ -28,6 +28,7 @@ or `Hexenlicht-data` next to the repository.
 | `pak_entities.ps1` | lists entities of a classname pattern per map in the paks |
 | `pak_bsp.ps1` | extracts the paks' maps (`.bsp`) into a folder |
 | `tex_names.ps1` | the maps' world textures under the material spec's names: the names whose pixels differ between maps, with their `~<crc>` qualifiers (5.1, [MATERIALS.md](../../docs/hexenlicht/MATERIALS.md)) |
+| `imagefile_set.ps1`, `imagefile_compare.ps1` | the image file loader's test set (generated images in every PNG, TGA, DDS and KTX2 kind it reads, files it must refuse, test scripts; made with texconv) and the comparison of its screenshots with the files (5.2) |
 | `jsh2color_colors.patch`, `jsh2color_colors.ps1`, `light_colors_compare.ps1` | `utils/jsh2color` printing each light's color; runs it on the maps with its batch files' options; compares with `vk_lights colors` |
 | `monsters_near_start.ps1` | monsters near each map's `info_player_start` |
 | `patrols.ps1` | monsters with a patrol route near the start |

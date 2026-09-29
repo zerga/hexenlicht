@@ -207,6 +207,40 @@ was the first; about an hour of runs.
    differences, the stories found) and delete the shots; saves left by
    killed runs are `hlcal_*` with `<map>.gip` in the game folder.
 
+## Image files (5.2)
+
+The loader of [MATERIALS.md](MATERIALS.md)'s files (`vk_imagefile.c`,
+DECISIONS M8) against a generated test set; about two minutes.
+
+1. **The set:** `imagefile_set.ps1 -Texconv <texconv.exe>` (Microsoft's
+   DirectXTex texconv, MIT, not in the repository; it is also what makes
+   DDS files for materials) writes five generated images (no game data)
+   and 53 files into `data1\textures\imgtest`: every format family the
+   loader reads in PNG, TGA, DDS and KTX2 (not each `_SRGB` twin of the
+   uncompressed ones, nor both of BC5's FourCCs; texconv's, and DDS files written by the
+   script: X bytes of 0, mip levels that are flat colors of their own),
+   the lookup order, nine files it must refuse (with a wildcard and two
+   missing names, twelve refusals), texconv's decodes and the levels'
+   colors as references, and the scripts `imgtest_a.cfg` (to `_c`) into
+   `data1`. Its KTX2 files wrap the DDS files' levels (smallest first, as
+   Khronos's tools store them).
+2. **The run:** with `data1\shots` empty and the configs backed up
+   (the scripts set `vid_uiscale 1`, `gamma 1`, `viewsize 130`),
+   `hl_run.ps1 -Cfg imgtest_a.cfg` (Debug: the validation layer): 39
+   screenshots of `vk_imagefile <file> 1` and `0.25`; the log has what each
+   file was read as and the refusals' reasons.
+3. **The comparison:** `imagefile_compare.ps1` compares each screenshot's
+   top left with its reference (the source, texconv's decode of a lossy or
+   converted file, a level's color) and marks CHECK what 5.2 didn't
+   measure: exact files equal, decoded ones within 4 and a mean of 0.1,
+   a level's color and the made mips (a quarter against the source
+   averaged over 4x4) within 2.
+4. Restore the configs; delete `data1\textures\imgtest`, the scripts and
+   the screenshots.
+
+- **Times:** `vk_imagefile` of a large file in Release prints the read,
+  decode and upload times (whole milliseconds).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`
