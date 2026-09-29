@@ -18,6 +18,7 @@ Read only what the task needs.
 | Technical decisions made in stories, with where | [docs/hexenlicht/DECISIONS.md](docs/hexenlicht/DECISIONS.md) |
 | Renderer modules (`engine/hexenlicht/`), shaders, GPU layouts, console commands | [docs/hexenlicht/RENDERER.md](docs/hexenlicht/RENDERER.md) |
 | Quake II RTX module map and import rules | [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
+| Material spec: texture file names and maps, `.mat` settings, formats (E5) | [docs/hexenlicht/MATERIALS.md](docs/hexenlicht/MATERIALS.md) |
 | Testing: scripted runs, screenshots, pixel regression, check commands, maps | [docs/hexenlicht/TESTING.md](docs/hexenlicht/TESTING.md), tools in [tools/hexenlicht](tools/hexenlicht/README.md) |
 | Development setup: Vulkan SDK, game data, CLion | [docs/hexenlicht/SETUP.md](docs/hexenlicht/SETUP.md) |
 | DLSS for players: NVIDIA's files, turning it on | [docs/hexenlicht/DLSS.md](docs/hexenlicht/DLSS.md) |

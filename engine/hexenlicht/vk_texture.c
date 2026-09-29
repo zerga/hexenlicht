@@ -683,8 +683,8 @@ static void VK_Textures_f (void)
 			kept_bytes += (double)t->width * t->height;
 		}
 		if (list)
-			Con_Printf ("%4d %4dx%-4d %2u mips %s %s\n", i, t->width, t->height, t->mip_levels,
-					(t->flags & TEX_ALPHA) ? "a" : " ", t->identifier[0] ? t->identifier : "(unnamed)");
+			Con_Printf ("%4d %4dx%-4d %2u mips %s crc %04x %s\n", i, t->width, t->height, t->mip_levels,
+					(t->flags & TEX_ALPHA) ? "a" : " ", t->crc, t->identifier[0] ? t->identifier : "(unnamed)");
 	}
 	Con_Printf ("%d textures (%d mipmapped, %d with alpha), %.1f MB; %d kept across maps\n",
 			numgltextures, mipped, alpha, bytes / (1024.0 * 1024.0), gl_texlevel);

@@ -178,7 +178,9 @@ this repository) or one at a time with
   percent. The calibration (4.9) or the materials (E5) decide whether that
   stays. *4.9: at its bookmarks the bounce adds ~8 % to the lit image on
   the lightmapped world (the calibrated scale takes it in; DECISIONS R92);
-  the materials (E5) may change it.*
+  the materials (E5) may change it.* *5.1: a material's albedo is used as
+  authored; the test pack (5.6) shows whether lighter albedo needs
+  anything (DECISIONS M3).*
 - **Checkerboard fields and RR (answered in 3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.

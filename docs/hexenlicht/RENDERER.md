@@ -2600,7 +2600,7 @@ overlay, and a measuring mode.
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, swapchain, validation counts |
-| `vk_textures [list]` | texture slots |
+| `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |
 | `vk_instances [step\|box]` | model instances, gliding monsters, pose bounds |
