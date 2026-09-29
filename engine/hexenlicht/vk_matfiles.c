@@ -26,7 +26,14 @@
  *   VK_ApplyMaterialFiles). Formats by the map: BC5 only for normal maps,
  *   BC7 not for them (MATERIALS.md). A set is resolved when first asked
  *   for and again after a map load or a reload; one whose slot now holds
- *   another texture (another name or CRC) is made again.
+ *   another texture (another name or CRC) is made again. The .mat's kind
+ *   (5.5: chrome, glass) is the set's: a skin's instance takes it every
+ *   frame, the world's primitives at map load (vk_world.c); a kind on an
+ *   animation's later frame is refused (the triangles keep the first's).
+ * - The sky (5.5) has no slot: VK_SkyImageFile looks up the world's sky
+ *   texture's name and the CRC of its pixels and reads the file (RGBA8,
+ *   2:1) into memory for vk_sky.c, which splits and edits its layers; its
+ *   other maps and a .mat are reported (the sky is unlit).
  * - The images: one texture slot per file, named by the file
  *   (textures/<name>_rm for a packed pair), kept with the file's identity
  *   (the game folder or pak, position, size, write time): a set resolved
@@ -47,8 +54,12 @@
  * r_reloadmaterials lists the files again, resolves every set (reading
  * what is new or changed), applies them to the materials and uploads the
  * table after the GPU is idle (primitives reference materials by index:
- * no geometry is rebuilt), and prints what it did and how long it took.
- * r_materials 0 shows the original textures only (A/B comparisons).
+ * no geometry is rebuilt), and prints what it did and how long it took;
+ * 5.5: the lava's lights take their files' colors again
+ * (VK_LavaFileColors, VK_RebuildLights), the sky its layers
+ * (VK_ReloadSkyFile), and a world texture's changed kind is reported (it
+ * applies at the next map load). r_materials 0 shows the original
+ * textures only (A/B comparisons), the same way.
  * vk_materials [list|problems] prints the counts, each texture's files,
  * the problems.
  *
@@ -661,8 +672,9 @@ static int ReadPacked (const char *identifier, int r, int m)
 enum { MAP_ALBEDO, MAP_NORMAL, MAP_RM, MAP_EMISSIVE, NUM_MAPS };
 static const char *map_names[NUM_MAPS] = { "albedo", "normal", "roughness/metallic", "emissive" };
 
-enum { KIND_REGULAR, KIND_CHROME, KIND_GLASS };
-static const char *kind_names[] = { "regular", "chrome", "glass" };
+static const char *kind_names[] = { "regular", "chrome", "glass" };	/* MATKIND_* */
+
+static const char *FormatName (VkFormat format);
 
 typedef struct
 {
@@ -676,11 +688,18 @@ typedef struct
 	vk_matset_t	set;
 	int		image[NUM_MAPS];	/* in images[], -1 = none */
 	char		mat[MAX_QPATH];		/* the .mat used, "" = none */
-	int		kind;			/* the .mat's (5.5's) */
 	problems_t	problems;
 } texset_t;
 
 static texset_t	*sets[VK_MAX_TEXTURES];		/* by the original's slot */
+static texset_t	sky_set;			/* the world's sky (5.5): it has no slot */
+static struct
+{
+	char		file[MAX_QPATH];	/* read, "" = none */
+	int		width, height;
+	const char	*kind;
+	qboolean	alpha;
+} sky_file;
 static cvar_t	r_materials = {"r_materials", "1", CVAR_NONE};
 
 /* the spec's name of a texture: textures/, lowercase, * as #, a picture's
@@ -772,16 +791,16 @@ static void ParseMat (texset_t *s, int f)
 			if (k == (int)(sizeof(kind_names) / sizeof(kind_names[0])))
 				AddProblem (&s->problems, "%s line %d: kind %s: regular, chrome or glass; left out", file, lineno, value);
 			else if (s->use == MATUSE_WORLD && (s->source[0] == '*' || !q_strncasecmp (s->source, "sky", 3)) &&
-				 k != KIND_REGULAR)
+				 k != MATKIND_REGULAR)
 				AddProblem (&s->problems, "%s line %d: kind %s: this texture's name gives its kind; left out", file, lineno, value);
-			else if (s->use == MATUSE_SKIN && k == KIND_GLASS)
+			else if (s->use == MATUSE_SKIN && k == MATKIND_GLASS)
 				AddProblem (&s->problems, "%s line %d: kind glass is for world textures; left out", file, lineno);
+			else if (s->use == MATUSE_WORLD && s->source[0] == '+' && s->source[1] && s->source[1] != '0' &&
+				 q_tolower (s->source[1]) != 'a' && k != MATKIND_REGULAR)
+				AddProblem (&s->problems, "%s line %d: kind %s: an animated texture's kind is its first frame's "
+					    "(+0..., +a...: a surface's triangles keep it); left out", file, lineno, value);
 			else
-			{
-				s->kind = k;
-				if (k != KIND_REGULAR)
-					AddProblem (&s->problems, "%s line %d: kind %s comes with story 5.5, not applied yet", file, lineno, value);
-			}
+				m->kind = k;	/* the world's at map load (vk_world.c), a skin's live */
 			continue;
 		}
 		if (!q_strcasecmp (key, "roughness"))
@@ -864,7 +883,6 @@ static void ResolveSet (texset_t *s)
 	for (n = 0; n < NUM_MAPS; n++)
 		s->image[n] = -1;
 	s->mat[0] = '\0';
-	s->kind = KIND_REGULAR;
 	s->any = false;
 	s->resolved = true;
 	if (!idx.valid)
@@ -992,6 +1010,86 @@ const vk_matset_t *VK_MaterialSet (int slot, const char *name, int use)
 	return s->any ? &s->set : NULL;
 }
 
+/* the sky's file (5.5): its albedo is the whole sky, the two layers side by
+ * side, which vk_sky.c splits and edits on the CPU (the front's
+ * transparent texels take the back's average color), so it is read here
+ * rather than uploaded; the other maps and a .mat don't apply (the sky is
+ * unlit: its color is its radiance) */
+qboolean VK_SkyImageFile (const char *name, unsigned short crc, vk_imagefile_t *img)
+{
+	static const char	*others[] = { "_n", "_orm", "_r", "_m", "_e" };
+	texset_t		*s = &sky_set;
+	char			names[2][MAX_QPATH], path[MAX_QPATH], why[160];
+	int			n, k, f = -1, g, num_names = 2;
+	double			t0 = Sys_DoubleTime ();
+
+	memset (img, 0, sizeof(*img));
+	ClearProblems (&s->problems);
+	memset (s, 0, sizeof(*s));
+	memset (&sky_file, 0, sizeof(sky_file));
+	for (n = 0; n < NUM_MAPS; n++)
+		s->image[n] = -1;
+	if (!r_materials.integer || !name[0])
+		return false;
+	s->crc = crc;
+	s->use = MATUSE_SKY;
+	q_strlcpy (s->source, name, sizeof(s->source));
+	if (!SpecName (name, s->name, sizeof(s->name)))
+		return false;
+	s->resolved = true;
+	if (!idx.valid)
+		BuildIndex ();
+	if (q_snprintf (names[0], sizeof(names[0]), "%s~%04x", s->name, crc) >= (int)sizeof(names[0]))
+	{
+		q_strlcpy (names[0], s->name, sizeof(names[0]));
+		num_names = 1;
+	}
+	q_strlcpy (names[1], s->name, sizeof(names[1]));
+
+	for (n = 0; n < num_names; n++)
+	{
+		if (f < 0)
+			f = FindFile (names[n], "", all_extensions);
+		for (k = 0; k < (int)Q_COUNTOF(others); k++)
+		{
+			if ((g = FindFile (names[n], others[k], all_extensions)) >= 0)
+				AddProblem (&s->problems, "%s: the sky is unlit, only its albedo applies (its two layers); left out",
+					    idx.files[g].name);
+		}
+		if (q_snprintf (path, sizeof(path), "%s.mat", names[n]) < (int)sizeof(path) && (g = IndexFind (path)) >= 0)
+			AddProblem (&s->problems, "%s: the sky is unlit, only its albedo applies (its two layers); left out",
+				    idx.files[g].name);
+	}
+	s->any = (f >= 0 || s->problems.count);
+	if (f < 0)
+		return false;
+
+	loads.read++;
+	q_strlcpy (sky_file.file, idx.files[f].name, sizeof(sky_file.file));
+	if (!ReadIndexImage (f, img, why, sizeof(why)))
+		AddProblem (&s->problems, "%s: %s", idx.files[f].name, why);
+	else if (img->format != VK_FORMAT_R8G8B8A8_UNORM)
+		AddProblem (&s->problems, "%s: %s: the sky's layers are split and edited at load: PNG, TGA or an RGBA8 DDS or KTX2; left out",
+			    idx.files[f].name, FormatName (img->format));
+	else if (img->width != 2 * img->height)
+		AddProblem (&s->problems, "%s: %dx%d: the sky is its two square layers side by side (2:1, as the original's 256x128); left out",
+			    idx.files[f].name, img->width, img->height);
+	else
+	{
+		sky_file.width = img->width;
+		sky_file.height = img->height;
+		sky_file.kind = img->kind;
+		sky_file.alpha = VK_SkyFrontHasAlpha (img);
+		loads.ms += (Sys_DoubleTime () - t0) * 1000.0;
+		return true;
+	}
+	loads.refused++;
+	VK_FreeImageFile (img);
+	memset (img, 0, sizeof(*img));
+	loads.ms += (Sys_DoubleTime () - t0) * 1000.0;
+	return false;
+}
+
 int VK_SpriteTexture (int slot, int *original, qboolean *coverage)
 {
 	const vk_matset_t	*s = VK_MaterialSet (slot, NULL, MATUSE_SPRITE);
@@ -1054,6 +1152,7 @@ void VK_MaterialFilesNewMap (void)
 		if (sets[i])
 			sets[i]->resolved = false;
 	}
+	sky_set.resolved = false;	/* VK_LoadSky looks again */
 	memset (&loads, 0, sizeof(loads));
 }
 
@@ -1101,6 +1200,12 @@ static void Count (counts_t *c)
 		c->with_files += s->any;
 		c->problems += s->problems.count;
 	}
+	if (sky_set.resolved)
+	{
+		c->sets++;
+		c->with_files += sky_set.any;
+		c->problems += sky_set.problems.count;
+	}
 	for (k = 0; k < num_images; k++)
 	{
 		if (images[k].slot)
@@ -1127,6 +1232,29 @@ void VK_ReportMaterialFiles (void)
 		Con_Printf ("%d problems (vk_materials problems)\n", c.problems);
 }
 
+/* after the sets were resolved again (r_reloadmaterials) or r_materials
+ * changed, the GPU idle: the materials, the lava's lights (5.5: their
+ * colors follow the files), the sky's layers */
+static void FilesChanged (void)
+{
+	VK_ReapplyMaterials ();
+	VK_LavaFileColors ();
+	VK_RebuildLights ();
+	VK_ReloadSkyFile ();
+}
+
+/* a world texture's kind is in the geometry: a changed one applies at the
+ * next map load (5.5; Quake II RTX, too, builds the map's geometry again) */
+static void ReportKinds (void)
+{
+	char	first[MAX_QPATH];
+	int	n = VK_WorldKindsChanged (first, sizeof(first));
+
+	if (n)
+		Con_Printf ("the kind of %d world texture%s (%s%s) changed: it applies at the next map load\n",
+			    n, (n == 1) ? "" : "s", first, (n > 1) ? ", ..." : "");
+}
+
 static void R_ReloadMaterials_f (void)
 {
 	double		t0 = Sys_DoubleTime ();
@@ -1151,10 +1279,11 @@ static void R_ReloadMaterials_f (void)
 		if (sets[i])
 			VK_MaterialSet (i, NULL, sets[i]->use);	/* a sprite's too */
 	}
-	VK_ReapplyMaterials ();
+	FilesChanged ();
 	Count (&c);
 	Con_Printf ("r_reloadmaterials: %d of %d textures with files, %d files read (%.0f ms), %d problems; %.0f ms in all\n",
 		    c.with_files, c.sets, loads.read, loads.ms, c.problems, (Sys_DoubleTime () - t0) * 1000.0);
+	ReportKinds ();
 }
 
 static void MaterialsChanged (cvar_t *var)
@@ -1163,7 +1292,8 @@ static void MaterialsChanged (cvar_t *var)
 	if (vk_num_materials <= 1 || !vk.device)
 		return;
 	vkDeviceWaitIdle (vk.device);
-	VK_ReapplyMaterials ();
+	FilesChanged ();
+	ReportKinds ();
 }
 
 static const char *FormatName (VkFormat format)
@@ -1208,7 +1338,7 @@ static void PrintSet (const texset_t *s)
 		if (m->bump >= 0.0f)		Con_Printf (" bump %g", m->bump);
 		if (m->specular >= 0.0f)	Con_Printf (" specular %g", m->specular);
 		if (m->emission >= 0.0f)	Con_Printf (" emissive %g", m->emission);
-		if (s->kind != KIND_REGULAR)	Con_Printf (" kind %s", kind_names[s->kind]);
+		if (m->kind != MATKIND_REGULAR)	Con_Printf (" kind %s", kind_names[m->kind]);
 	}
 	Con_Printf ("\n");
 }
@@ -1226,6 +1356,10 @@ static void VK_Materials_f (void)
 			if (sets[i] && sets[i]->resolved && sets[i]->any)
 				PrintSet (sets[i]);
 		}
+		if (sky_set.resolved && sky_file.width)
+			Con_Printf ("sky  %s~%04x: the layers %s (%dx%d %s RGBA8%s)\n", sky_set.name + sizeof(TEXTURES_FOLDER),
+				    sky_set.crc, sky_file.file + sizeof(TEXTURES_FOLDER), sky_file.width, sky_file.height,
+				    sky_file.kind, sky_file.alpha ? ", alpha" : ", the original's transparency");
 		return;
 	}
 	if (!q_strcasecmp (arg, "problems"))
@@ -1236,6 +1370,8 @@ static void VK_Materials_f (void)
 			if (sets[i] && sets[i]->resolved)
 				PrintProblems (&sets[i]->problems);
 		}
+		if (sky_set.resolved)
+			PrintProblems (&sky_set.problems);
 		return;
 	}
 	if (arg[0])
@@ -1268,6 +1404,8 @@ void VK_ShutdownMaterialFiles (void)
 
 	for (i = 0; i < VK_MAX_TEXTURES; i++)
 		FreeSet (i);
+	ClearProblems (&sky_set.problems);
+	memset (&sky_set, 0, sizeof(sky_set));
 	free (images);
 	images = NULL;
 	num_images = max_images = 0;

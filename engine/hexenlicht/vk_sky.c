@@ -51,7 +51,18 @@
  *    RTX's sky visibility: the PVS rows of the clusters holding one, in
  *    the light buffer). There is no visible sun disc: the painted skies
  *    have none.
- * vk_sky prints the sky, the mode and the sun.
+ * The sky's material file (5.5, MATERIALS.md: textures/sky001~<crc>, else
+ * textures/sky001; vk_matfiles.c's VK_SkyImageFile) is the whole sky in
+ * the original's layout, 2:1, any size: the left half the front layer,
+ * the right half the back, each square. The front's transparency is its
+ * alpha, or without one the original's (index 0 and 255), scaled; its
+ * transparent texels take the back's average color, as GL's. The layers
+ * replace upsky and lowsky at their size (the shader addresses them in
+ * fractions: the same look at any size), bilinear, no mipmaps, as GL's;
+ * the dome's average is made from histograms of the file's texels (the
+ * same pairs, a table for the curve), when it loads. r_reloadmaterials
+ * and r_materials make the layers again (VK_ReloadSkyFile).
+ * vk_sky prints the sky, its file's layers, the mode and the sun.
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -96,6 +107,10 @@ static struct
 	int		front_texture;
 	int		back_count[256];	/* the layers' color indices, for the dome's average */
 	int		front_count[256];
+	int		file_size;		/* 5.5: the layers' size from the sky's material file, 0 = the original's */
+	int		(*file_back)[256];	/* the file's layers for the dome: [channel][value] */
+	int		(*file_front)[256][256];	/* [channel][value][alpha] */
+	qboolean	file_alpha;		/* the front's transparency is the file's, else the original's */
 	vec3_t		average;		/* linear, as GL blends the layers at average_alpha */
 	float		average_alpha;		/* the r_skyalpha it was made for, < 0 = none */
 	qboolean	average_srgb;		/* the r_srgb it was made for (4.17) */
@@ -110,7 +125,115 @@ static struct
  * Map load
  * ========================================================================== */
 
-/* the world's sky, as GL's R_InitSky makes its two textures */
+static void MakeAverage (float alpha);
+static float SkyAlpha (void);
+
+/* a sky file's front layer (its left half) has an alpha below 255; the
+ * back's isn't read (RGBA8, 2:1: VK_SkyImageFile) */
+qboolean VK_SkyFrontHasAlpha (const vk_imagefile_t *img)
+{
+	const byte	*d = img->data + img->offset[0];
+	int		x, y;
+
+	for (y = 0; y < img->height; y++)
+	{
+		for (x = 0; x < img->width / 2; x++)
+		{
+			if (d[((size_t)y * img->width + x) * 4 + 3] != 255)
+				return true;
+		}
+	}
+	return false;
+}
+
+static void FreeFileLayers (void)
+{
+	free (sky.file_back);
+	free (sky.file_front);
+	sky.file_back = NULL;
+	sky.file_front = NULL;
+	sky.file_size = 0;
+	sky.file_alpha = false;
+}
+
+/* 5.5: the layers from the sky's material file (VK_SkyImageFile: RGBA8,
+ * 2:1), the original's layout: the left half the front, the right half the
+ * back, each img->height square; the front's transparency its alpha, or
+ * without one the original's (src: color index 0 and 255), scaled; its
+ * transparent texels the back's average color, as GL's (no dark fringe
+ * when filtered); the histograms for the dome's average. false: no memory */
+static qboolean FileLayers (const vk_imagefile_t *img, const byte *src)
+{
+	const byte	*d = img->data + img->offset[0];
+	int		s = img->height, w = img->width, x, y, c;
+	unsigned int	*back, *front, transpix = 0;
+	double		sum[3] = { 0.0, 0.0, 0.0 };
+
+	back = (unsigned int *) malloc ((size_t)s * s * sizeof(unsigned int));
+	front = (unsigned int *) malloc ((size_t)s * s * sizeof(unsigned int));
+	sky.file_back = (int (*)[256]) calloc (3, sizeof(*sky.file_back));
+	sky.file_front = (int (*)[256][256]) calloc (3, sizeof(*sky.file_front));
+	if (!back || !front || !sky.file_back || !sky.file_front)
+	{
+		free (back);
+		free (front);
+		FreeFileLayers ();
+		return false;
+	}
+	sky.file_alpha = VK_SkyFrontHasAlpha (img);
+
+	for (y = 0; y < s; y++)
+	{
+		for (x = 0; x < s; x++)
+		{
+			const byte	*t = d + ((size_t)y * w + s + x) * 4;
+
+			memcpy (&back[y * s + x], t, 4);	/* R,G,B,A in memory; its alpha isn't read */
+			for (c = 0; c < 3; c++)
+			{
+				sum[c] += t[c];
+				sky.file_back[c][t[c]]++;
+			}
+		}
+	}
+	for (c = 0; c < 3; c++)
+		((byte *)&transpix)[c] = (byte)(sum[c] / ((double)s * s));	/* truncated, as the original's */
+
+	for (y = 0; y < s; y++)
+	{
+		for (x = 0; x < s; x++)
+		{
+			const byte	*t = d + ((size_t)y * w + x) * 4;
+			int		a;
+
+			if (sky.file_alpha)
+				a = t[3];
+			else
+			{	/* the original's front texel under it */
+				int	p = src[((2 * y + 1) * SKY_SIZE / (2 * s)) * 2 * SKY_SIZE + ((2 * x + 1) * SKY_SIZE / (2 * s))];	/* its centre's */
+
+				a = (p == 0 || p == 255) ? 0 : 255;
+			}
+			if (a)
+				front[y * s + x] = ((unsigned int)t[0] | ((unsigned int)t[1] << 8) | ((unsigned int)t[2] << 16) |
+						    ((unsigned int)a << 24));
+			else
+				front[y * s + x] = transpix;
+			for (c = 0; c < 3; c++)
+				sky.file_front[c][t[c]][a]++;
+		}
+	}
+
+	sky.back_texture = (int)GL_LoadTexture ("upsky", (byte *)back, s, s, TEX_RGBA | TEX_LINEAR | TEX_REPEAT);
+	sky.front_texture = (int)GL_LoadTexture ("lowsky", (byte *)front, s, s, TEX_ALPHA | TEX_RGBA | TEX_LINEAR | TEX_REPEAT);
+	sky.file_size = s;
+	free (back);
+	free (front);
+	return true;
+}
+
+/* the world's sky, as GL's R_InitSky makes its two textures; 5.5: its
+ * material file's layers instead, when there is one */
 static void LoadSkyTextures (qmodel_t *worldmodel)
 {
 	static unsigned int	back[SKY_SIZE * SKY_SIZE], front[SKY_SIZE * SKY_SIZE];
@@ -132,9 +255,23 @@ static void LoadSkyTextures (qmodel_t *worldmodel)
 		sky.bad_size = true;	/* GL reads 256 columns of 128 rows whatever its size */
 		return;
 	}
+	src = (const byte *)tx + tx->offsets[0];
+
+	/* 5.5: the material file, named by the texture and the CRC of its pixels (M2) */
+	{
+		vk_imagefile_t	img;
+		qboolean	ok = VK_SkyImageFile (tx->name, CRC_Block ((byte *)src, 2 * SKY_SIZE * SKY_SIZE), &img) &&
+				     FileLayers (&img, src);
+
+		VK_FreeImageFile (&img);
+		if (ok)
+		{
+			MakeAverage (SkyAlpha ());	/* now rather than in the first frame (histograms of the file's texels) */
+			return;
+		}
+	}
 
 	/* the back layer, and its average color for the front's transparent texels */
-	src = (const byte *)tx + tx->offsets[0];
 	r = g = b = 0;
 	for (i = 0; i < SKY_SIZE; i++)
 	{
@@ -210,11 +347,26 @@ void VK_LoadSky (qmodel_t *worldmodel, const VboPrimitive *prims, uint32_t num_p
 {
 	uint32_t	version = sky.visibility_version;
 
+	FreeFileLayers ();
 	memset (&sky, 0, sizeof(sky));
 	sky.visibility_version = version + 1;
 	sky.average_alpha = -1.0f;
 	LoadSkyTextures (worldmodel);
 	LoadSkyVisibility (prims, num_prims);
+}
+
+void VK_ReloadSkyFile (void)
+{
+	if (!vk_world.worldmodel)
+		return;
+	FreeFileLayers ();
+	sky.name[0] = '\0';
+	sky.bad_size = false;
+	sky.back_texture = sky.front_texture = 0;
+	memset (sky.back_count, 0, sizeof(sky.back_count));
+	memset (sky.front_count, 0, sizeof(sky.front_count));
+	sky.average_alpha = -1.0f;	/* made again */
+	LoadSkyTextures (vk_world.worldmodel);
 }
 
 const uint32_t *VK_SkyVisibility (uint32_t *version)
@@ -228,6 +380,58 @@ const uint32_t *VK_SkyVisibility (uint32_t *version)
  * Each frame
  * ========================================================================== */
 
+/* 5.5: MakeAverage for a material file's layers, per channel from the
+ * histograms of the back's values and the front's values and alphas
+ * (every pair of texels: the layers scroll apart); the blend as the
+ * shader's (the front at its alpha times alpha), its linear light from a
+ * table (linear between 4096 steps: the 8-bit blend isn't a byte) */
+static void MakeFileAverage (float alpha)
+{
+	static float	table[4097];
+	static int	table_srgb = -1;
+	int		srgb = VK_ColorsSRGB () ? 1 : 0, backs[256], nb, i, v, a, b, c;
+
+	if (table_srgb != srgb)
+	{
+		for (i = 0; i <= 4096; i++)
+			table[i] = VK_ColorToLinearAs (i / 4096.0f, srgb);
+		table_srgb = srgb;
+	}
+	for (c = 0; c < 3; c++)
+	{
+		double	sum = 0.0, total = 0.0;
+
+		for (b = nb = 0; b < 256; b++)
+		{
+			if (sky.file_back[c][b])
+				backs[nb++] = b;
+		}
+		for (v = 0; v < 256; v++)
+		{
+			for (a = 0; a < 256; a++)
+			{
+				double	wf = sky.file_front[c][v][a];
+				float	f = a / 255.0f * alpha;
+
+				if (!wf)
+					continue;
+				for (i = 0; i < nb; i++)
+				{
+					double	w = wf * sky.file_back[c][backs[i]];
+					float	x = (backs[i] * (1.0f - f) + v * f) / 255.0f * 4096.0f;
+					int	k = q_min ((int)x, 4095);
+
+					sum += w * (table[k] + (table[k + 1] - table[k]) * (x - (float)k));
+					total += w;
+				}
+			}
+		}
+		sky.average[c] = (total > 0.0) ? (float)(sum / total) : 0.0f;
+	}
+	sky.average_alpha = alpha;
+	sky.average_srgb = VK_ColorsSRGB ();
+}
+
 /* the sky's average color as GL shows it: the front layer over the back at
  * alpha, over all pairs of their texels (the layers scroll apart), blended
  * in their 8-bit colors, linear */
@@ -236,6 +440,11 @@ static void MakeAverage (float alpha)
 	double	sum[3] = { 0.0, 0.0, 0.0 }, total = 0.0;
 	int	bi, fi, k;
 
+	if (sky.file_size)
+	{
+		MakeFileAverage (alpha);
+		return;
+	}
 	for (bi = 0; bi < 256; bi++)
 	{
 		const byte	*bc = (const byte *)&d_8to24table[bi];
@@ -360,6 +569,9 @@ static void VK_Sky_f (void)
 			MakeAverage (SkyAlpha ());
 		Con_Printf ("sky %s: r_skyalpha %g, average color (linear) %.4f %.4f %.4f\n", sky.name,
 			    SkyAlpha (), sky.average[0], sky.average[1], sky.average[2]);
+		if (sky.file_size)	/* 5.5 */
+			Con_Printf ("its material file's layers, %dx%d, the front's transparency %s (vk_materials list)\n",
+				    sky.file_size, sky.file_size, sky.file_alpha ? "its alpha" : "the original's");
 	}
 	Con_Printf ("sky clusters %d, clusters that see the sky %d of %d\n", sky.sky_clusters, sky.visible_clusters,
 		    vk_pvs.num_clusters);
@@ -404,5 +616,6 @@ void VK_InitSky (void)
 
 void VK_ShutdownSky (void)
 {
+	FreeFileLayers ();
 	memset (&sky, 0, sizeof(sky));
 }

@@ -1,0 +1,90 @@
+/* texture_average.comp -- the average linear color of a texture slot
+ *
+ * Story 5.5 (vk_emissive.c's VK_LavaFileColors): the color of lava's
+ * lights when it emits a material file (its _e or its replaced albedo),
+ * by the same formula as vk_emissive.c's AverageColor for the original
+ * texture (Quake II RTX's vkpt_extract_emissive_texture_info over the
+ * whole texture, with its bias): every texel of level 0, each channel as
+ * linear light plus EMISSIVE_TRANSFORM_BIAS, at least 0, averaged; [0]
+ * by the 2.2 power, [1] by the sRGB curve (r_srgb, 4.17). On the GPU
+ * because a BC7 file (MATERIALS.md's shipping format) has no decoder on
+ * the CPU; the GPU's sampler decodes it. One workgroup per texture.
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+
+#define THREADS 256
+layout(local_size_x = THREADS, local_size_y = 1, local_size_z = 1) in;
+
+#define GLOBAL_UBO_DESC_SET_IDX 0
+#include "global_ubo.h"
+
+#define GLOBAL_TEXTURES_DESC_SET_IDX 1
+#include "global_textures.h"
+
+#include "transfer.glsl"
+
+layout(buffer_reference, std430) writeonly buffer AverageOut { vec4 v[]; };
+
+layout(push_constant) uniform Push
+{
+	DeviceAddress	out_average;	/* vec4[2]: by the 2.2 power, by the sRGB curve */
+	uint		slot;
+	uint		pad;
+} push;
+
+shared vec3 sum_power[THREADS];
+shared vec3 sum_srgb[THREADS];
+
+void main()
+{
+	uint	t = gl_LocalInvocationIndex;
+	ivec2	size = global_textureSize(push.slot, 0);
+	uint	n = uint(max(size.x, 0)) * uint(max(size.y, 0));
+	vec3	a = vec3(0.0), b = vec3(0.0);
+
+	for (uint i = t; i < n; i += THREADS)
+	{
+		ivec2	p = ivec2(int(i % uint(size.x)), int(i / uint(size.x)));
+		vec3	c = texelFetch(global_texture_descriptors[nonuniformEXT(push.slot)], p, 0).rgb;
+
+		a += max(color_to_linear(c, 0u) + vec3(EMISSIVE_TRANSFORM_BIAS), vec3(0.0));
+		b += max(color_to_linear(c, 1u) + vec3(EMISSIVE_TRANSFORM_BIAS), vec3(0.0));
+	}
+	sum_power[t] = a;
+	sum_srgb[t] = b;
+	barrier();
+	for (uint s = THREADS / 2u; s > 0u; s >>= 1)
+	{
+		if (t < s)
+		{
+			sum_power[t] += sum_power[t + s];
+			sum_srgb[t] += sum_srgb[t + s];
+		}
+		barrier();
+	}
+	if (t == 0u)
+	{
+		float	inv = (n > 0u) ? 1.0 / float(n) : 0.0;
+
+		AverageOut(push.out_average).v[0] = vec4(sum_power[0] * inv, 0.0);
+		AverageOut(push.out_average).v[1] = vec4(sum_srgb[0] * inv, 0.0);
+	}
+}

@@ -160,7 +160,14 @@ enum
 {
 	MATUSE_WORLD,		/* a world texture */
 	MATUSE_SKIN,		/* an alias model's skin, gfx/skin100 and 101 */
-	MATUSE_SPRITE		/* a sprite frame: an unlit effect, only the albedo applies */
+	MATUSE_SPRITE,		/* a sprite frame: an unlit effect, only the albedo applies */
+	MATUSE_SKY		/* the world's sky texture (5.5): only the albedo, the two layers (VK_SkyImageFile) */
+};
+enum
+{
+	MATKIND_REGULAR,	/* the .mat's kind (5.5) */
+	MATKIND_CHROME,		/* Quake II RTX's mirror below roughness 0.02: world textures, skins */
+	MATKIND_GLASS		/* Quake II RTX's glass, in the transparent geometry: world textures */
 };
 typedef struct
 {
@@ -169,6 +176,7 @@ typedef struct
 	qboolean	normal_bc5;		/* BC5: Z rebuilt from X and Y */
 	qboolean	roughness_map, metallic_map;	/* rm holds them (G, B; 255 where one is missing) */
 	float		roughness, metallic, bump, specular, emission;	/* the .mat's, -1 = not set */
+	int		kind;			/* MATKIND_* (the world's at map load, a skin's live) */
 } vk_matset_t;
 void VK_InitMaterialFiles (void);
 void VK_ShutdownMaterialFiles (void);
@@ -181,6 +189,11 @@ void VK_MaterialFilesPurged (int first);	/* D_ClearOpenGLTextures: slots from fi
 void VK_PreloadSpriteFiles (qmodel_t *model);	/* VK_LoadModels: a precached sprite's frames */
 void VK_PreloadStartupSprites (void);		/* VK_LoadModels: the sprites loaded at startup (below gl_texlevel) */
 void VK_ReportMaterialFiles (void);	/* R_NewMap: one summary line, when there are files or problems */
+/* the sky's file (5.5): textures/<name>~<crc>, else textures/<name> (crc
+ * of the sky's 256x128 pixels), decoded into img (VK_FreeImageFile it);
+ * false: none, r_materials 0 or refused (vk_materials problems says why).
+ * Only RGBA8 images 2:1 in size; outside frames. */
+qboolean VK_SkyImageFile (const char *name, unsigned short crc, vk_imagefile_t *img);
 /* quakefs.c (under HEXENLICHT): the search path in its order */
 void FS_ListSearchPath (const char *prefix,
 			void (*dir) (const char *ospath, void *ctx),
@@ -321,6 +334,8 @@ typedef struct
 	int		num_frames;	/* animation: frames in the sequence (1 = none) */
 	int		next_frame;	/* material of the next frame */
 	int		alternate;	/* first material of the alternate animation, 0 = none */
+	int		kind;		/* MATKIND_*, the files' (5.5): a skin's instance takes it every frame, the world's
+					   primitives at map load (vk_world.c) */
 } vk_material_t;
 
 extern vk_buffer_t	vk_material_table;
@@ -370,6 +385,7 @@ extern vk_world_t	vk_world;
 void VK_InitWorld (void);
 void VK_ShutdownWorld (void);
 void VK_LoadWorld (qmodel_t *worldmodel);	/* on map change, outside frames */
+int VK_WorldKindsChanged (char *first, size_t size);	/* world textures whose files' kind isn't the one the geometry was built with (5.5: applies at the next map load); first: the first's name */
 
 /* vk_pvs.c: the world's potentially visible sets. A cluster is a vis leaf
  * (leaf number - 1; -1 = none, e.g. the solid leaf). The matrix has one
@@ -447,6 +463,7 @@ struct VboPrimitive;
 qboolean VK_AddLavaLight (const struct VboPrimitive *p);	/* a world lava triangle facing out of the lava; false: not a light (degenerate, or its material past the lava table) */
 int VK_NumLavaLights (void);			/* the lava's polygon lights, none with r_lava_light 0 */
 void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color);	/* its corners (emitting along cross(p1 - p0, p2 - p0)) and radiance */
+void VK_LavaFileColors (void);			/* after the materials are applied (map load, r_reloadmaterials, r_materials): the lights' colors of lava emitting a file (5.5); outside frames, then VK_RebuildLights */
 qboolean VK_OverLava (const vec3_t origin);	/* within 16 units of a lava light, either side (vk_maplights.c: a fake lava light) */
 qboolean VK_LavaLightsOn (void);		/* vk_light.c: the lava's lights are in the light buffer (the fake lava lights out) */
 qboolean VK_ModelsEmit (void);			/* r_emissive_models */
@@ -460,6 +477,8 @@ void VK_PrintEmissive (void);			/* vk_lights */
 void VK_InitSky (void);
 void VK_ShutdownSky (void);
 void VK_LoadSky (qmodel_t *worldmodel, const struct VboPrimitive *prims, uint32_t num_prims);	/* VK_LoadWorld, after the PVS */
+void VK_ReloadSkyFile (void);			/* r_reloadmaterials, r_materials: the layers again from the sky's file or the original (5.5); outside frames */
+qboolean VK_SkyFrontHasAlpha (const vk_imagefile_t *img);	/* a sky file's front (its left half) has an alpha below 255 */
 const uint32_t *VK_SkyVisibility (uint32_t *version);	/* LightBuffer's sky_visibility; the version counts the maps */
 struct QVKUniformBuffer_s;
 void VK_PrepareSky (struct QVKUniformBuffer_s *ubo);	/* VK_PrepareUBO */

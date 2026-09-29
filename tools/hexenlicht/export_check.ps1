@@ -176,6 +176,14 @@ public static class ExportCheck {
 		var c = new uint[s];
 		byte[] d = t.Px;
 		hasAlpha = false;
+		if (t.Kind == "sky") {	// 5.5: the front layer (the left half) as the engine uploads it: 0 and 255 transparent
+			for (int i = 0; i < s; i++) {
+				c[i] = Pal[d[i]];
+				if (i % w < w / 2 && (d[i] == 0 || d[i] == 255)) c[i] &= 0xffffffu;
+			}
+			hasAlpha = true;
+			return c;
+		}
 		if (t.Mode == 0) { for (int i = 0; i < s; i++) c[i] = Pal[d[i]]; return c; }
 		for (int i = 0; i < s; i++) {
 			int p = d[i];

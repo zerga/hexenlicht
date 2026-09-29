@@ -296,7 +296,7 @@ Goal: edit a PNG, reload in game, see the change.
 | 5.2 | Loaders: PNG/TGA (stb_image), DDS/KTX2 (BC5/7; no BC4 since 5.1), colors vs data (UNORM formats, R104), mips | M | All formats load |
 | 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload; `get_material`'s reads as MATERIALS.md's "Shader changes" (since 5.1); an index of the files (`quakefs.c`), skins, sprites, lava and flames (L since 5.3: they share the index and the sets) | L | Live reload works |
 | 5.4 | Export command: all original textures with canonical names (`~<crc>` for every variant of a name whose pixels differ between maps, 5.1) + manifest CSV; every occurrence in the search path, exactly as uploaded (M since 5.4: four formats, the variants, PNG writing and the round trip) | M | Full export of both games |
-| 5.5 | Special materials: water/slime/lava, glass, chrome (since 5.1), sky, animated textures | M | Correct in both games |
+| 5.5 | Special materials: water/slime/lava, glass, chrome (since 5.1), sky, animated textures (L since 5.5: the sky's layers from a file, lava's lights averaged on the GPU, the kinds in the world's geometry and on skins, a test set in both games) | L | Correct in both games |
 | 5.6 | Test pack (stone, metal, water, emissive, glass) + authoring guide | S | Pack looks right in game |
 
 ### E6 — Full Hexen II coverage

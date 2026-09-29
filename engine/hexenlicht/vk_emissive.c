@@ -20,7 +20,10 @@
  *    undersides) is also a polygon light in vk_light.c's lists, of the
  *    texture's average linear color times the scale (Quake II RTX's
  *    collect_sky_and_lava_light_polys: one light per fan triangle, the
- *    emissive image's light_color), and is flagged MATERIAL_FLAG_LIGHT:
+ *    emissive image's light_color; 5.5: of what it emits, a material
+ *    file's average made on the GPU by texture_average.comp, since a BC7
+ *    file has no decoder here, times its emissive factor, the .mat's key
+ *    too: VK_LavaFileColors), and is flagged MATERIAL_FLAG_LIGHT:
  *    diffuse bounce rays that hit it add nothing, as the direct light
  *    samples it. While lava emits, the mappers' fake lava lights are left
  *    out (vk_maplights.c, vk_light.c): plain "light" entities at most
@@ -89,6 +92,8 @@ static struct
 	vec3_t		color[2];	/* the texture's average linear color (the lights' at scale 1), [0] by the 2.2 power, [1] the sRGB curve (4.17) */
 	int		lights;		/* its light triangles */
 	char		name[16];
+	int		file;		/* 5.5: the slot of the material file it emits (its _e, its replaced albedo), 0 = the original */
+	vec3_t		file_color[2];	/* that texture's average, as color (texture_average.comp) */
 } lava_materials[MAX_LAVA_MATERIALS];
 static int	num_lava_materials;
 
@@ -103,6 +108,7 @@ static int		num_lava_tris, max_lava_tris;
 static int		lava_degenerate;	/* triangles facing out of the lava too small for a light */
 static int		lava_other_materials;	/* surfaces of materials past MAX_LAVA_MATERIALS: no emission */
 static int		skins_made;		/* emissive skin textures made since the map loaded */
+static struct { int files; double ms; } lava_averages;	/* 5.5: the last VK_LavaFileColors */
 
 
 /* ==========================================================================
@@ -164,6 +170,7 @@ void VK_AddLavaMaterial (int material, const texture_t *tx)
 	AverageColor (tx, false, lava_materials[num_lava_materials].color[0]);
 	AverageColor (tx, true, lava_materials[num_lava_materials].color[1]);
 	lava_materials[num_lava_materials].lights = 0;
+	lava_materials[num_lava_materials].file = 0;
 	q_strlcpy (lava_materials[num_lava_materials].name, tx->name, sizeof(lava_materials[0].name));
 	num_lava_materials++;
 	VK_GetMaterial (material)->flags |= VK_MAT_LAVA;	/* its emission: VK_ApplyMaterialFiles */
@@ -213,14 +220,113 @@ int VK_NumLavaLights (void)
 	return r_lava_light.integer ? num_lava_tris : 0;
 }
 
+/* its color: the average of what it emits (the original, or 5.5's file)
+ * times the material's emissive factor, as its surface's (the scale, and
+ * the .mat's emissive key, 5.5) */
 void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color)
 {
 	const lavatri_t	*t = &lava_tris[i];
-	int		k;
+	const vk_material_t *m = VK_GetMaterial (lava_materials[t->lava].material);
+	int		k, s = VK_ColorsSRGB () ? 1 : 0;
 
 	for (k = 0; k < 3; k++)
 		VectorCopy (t->p[k], p[k]);
-	VectorScale (lava_materials[t->lava].color[VK_ColorsSRGB () ? 1 : 0], VK_EmissiveScale (), color);
+	VectorScale (lava_materials[t->lava].file ? lava_materials[t->lava].file_color[s] : lava_materials[t->lava].color[s],
+		     m->emissive_texture ? m->emissive_factor : VK_EmissiveScale (), color);
+}
+
+/* the average linear colors (texture_average.comp) of n texture slots;
+ * the GPU idle, outside frames */
+static void TextureAverages (const int *slots, int n, vec3_t (*colors)[2])
+{
+	VkPipelineLayout	layout;
+	VkPipeline		pipeline;
+	VkCommandBuffer		cmd;
+	VkMemoryBarrier2	barrier;
+	VkDependencyInfo	dep;
+	vk_buffer_t		out;
+	struct { VkDeviceAddress out; uint32_t slot, pad; } push;
+	const float		*v;
+	int			i, k, c;
+
+	if (n <= 0)
+		return;
+	layout = VK_CreatePassLayout (VK_SHADER_STAGE_COMPUTE_BIT, sizeof(push));
+	pipeline = VK_CreateComputePipeline ("texture_average.comp", layout);
+	VK_CreateBuffer (&out, (VkDeviceSize)n * 2 * 4 * sizeof(float),
+			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_READBACK);
+
+	cmd = VK_BeginUpload ();
+	for (i = 0; i < n; i++)
+	{
+		memset (&push, 0, sizeof(push));
+		push.out = out.address + (VkDeviceAddress)i * 2 * 4 * sizeof(float);
+		push.slot = (uint32_t)slots[i];
+		VK_DispatchComputeLayout (cmd, pipeline, layout, &push, sizeof(push), 1, 1, 1);	/* one workgroup */
+	}
+	memset (&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	memset (&dep, 0, sizeof(dep));
+	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dep.memoryBarrierCount = 1;
+	dep.pMemoryBarriers = &barrier;
+	vkCmdPipelineBarrier2 (cmd, &dep);
+	VK_EndUpload ();
+	VK_CHECK (vmaInvalidateAllocation (vk.allocator, out.allocation, 0, VK_WHOLE_SIZE));
+
+	v = (const float *) out.mapped;
+	for (i = 0; i < n; i++)
+	{
+		for (k = 0; k < 2; k++)
+		{
+			for (c = 0; c < 3; c++)
+				colors[i][k][c] = v[(i * 2 + k) * 4 + c];
+		}
+	}
+	VK_DestroyBuffer (&out);
+	vkDestroyPipeline (vk.device, pipeline, NULL);
+	vkDestroyPipelineLayout (vk.device, layout, NULL);
+}
+
+/* 5.5: the lava that emits a material file (its _e, else its replaced
+ * albedo: VK_ApplyMaterialFiles) lights with that file's average color;
+ * the original's is AverageColor's, made at VK_AddLavaMaterial */
+void VK_LavaFileColors (void)
+{
+	int	slots[MAX_LAVA_MATERIALS], which[MAX_LAVA_MATERIALS], i, n = 0;
+	vec3_t	colors[MAX_LAVA_MATERIALS][2];
+
+	for (i = 0; i < num_lava_materials; i++)
+	{
+		const vk_material_t	*m = VK_GetMaterial (lava_materials[i].material);
+
+		lava_materials[i].file = (m->emissive_texture && m->emissive_texture != m->original) ? m->emissive_texture : 0;
+		if (lava_materials[i].file)
+		{
+			slots[n] = lava_materials[i].file;
+			which[n++] = i;
+		}
+	}
+	lava_averages.files = n;
+	lava_averages.ms = 0.0;
+	if (!n)
+		return;
+	vkDeviceWaitIdle (vk.device);
+	{
+		double	t0 = Sys_DoubleTime ();
+
+		TextureAverages (slots, n, colors);
+		lava_averages.ms = (Sys_DoubleTime () - t0) * 1000.0;
+	}
+	for (i = 0; i < n; i++)
+	{
+		VectorCopy (colors[i][0], lava_materials[which[i]].file_color[0]);
+		VectorCopy (colors[i][1], lava_materials[which[i]].file_color[1]);
+	}
 }
 
 /* the distance from p to the triangle (Ericson, Real-Time Collision
@@ -495,9 +601,19 @@ void VK_PrintEmissive (void)
 		    VK_EmissiveScale (), r_lava_light.integer ? "emits" : "off (r_lava_light 0)", num_lava_tris,
 		    lava_degenerate);
 	for (i = 0; i < num_lava_materials; i++)
-		Con_Printf ("%s %s %d (color %.3f %.3f %.3f)", i ? "," : ":", lava_materials[i].name, lava_materials[i].lights,
-			    lava_materials[i].color[s][0], lava_materials[i].color[s][1], lava_materials[i].color[s][2]);
+	{
+		const float		*c = lava_materials[i].file ? lava_materials[i].file_color[s] : lava_materials[i].color[s];
+		const vk_material_t	*m = VK_GetMaterial (lava_materials[i].material);
+		float			key = (m->emissive_texture && VK_EmissiveScale () > 0.0f) ?	/* the .mat's emissive (5.5) */
+					      m->emissive_factor / VK_EmissiveScale () : 1.0f;
+
+		Con_Printf ("%s %s %d (color %.3f %.3f %.3f%s, x %g)", i ? "," : ":", lava_materials[i].name, lava_materials[i].lights,
+			    c[0], c[1], c[2], lava_materials[i].file ? " its file's" : "", key);
+	}
 	Con_Printf ("\n");
+	if (lava_averages.files)
+		Con_Printf ("  the lava's files' average colors: %d, on the GPU in %.1f ms (texture_average.comp)\n",
+			    lava_averages.files, lava_averages.ms);
 	if (lava_other_materials)
 		Con_Printf ("  %d lava surfaces of materials past %d don't emit\n", lava_other_materials, MAX_LAVA_MATERIALS);
 	Con_Printf ("  the light models' flames %s; %d emissive skin textures made since the map loaded\n",
@@ -513,6 +629,7 @@ static void LavaChanged (cvar_t *var)
 		return;		/* no map */
 	vkDeviceWaitIdle (vk.device);
 	VK_ReapplyMaterials ();		/* the emission of each (vk_material.c) */
+	VK_LavaFileColors ();		/* 5.5: a file emitted now */
 	VK_RebuildLights ();
 }
 

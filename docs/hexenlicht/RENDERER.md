@@ -346,11 +346,23 @@ materials ([Materials](#materials-vk_materialc)).
   `bump`, `specular`, `emissive` ≥ 0 (at most a half float's 65504),
   `kind`. Reported and left out: unknown keys, bad values, a line with no
   or two values, a `kind` other than `regular` on a world texture whose
-  name gives its kind (`*…`, `sky…`) or `glass` on a skin, `bump`
-  without a normal map, anything on a sprite; `chrome` and `glass` are
-  kept but reported as 5.5's (a kind lives in the primitives' material
-  IDs: changing it means rebuilding geometry). An empty `.mat` has no
-  settings.
+  name gives its kind (`*…`, `sky…`) or `glass` on a skin, a kind on an
+  animation's later frame (`+1…`–`+9…`, `+b…`–`+j…`: a surface's
+  triangles keep the first frame's, 5.5), `bump` without a normal map,
+  anything on a sprite. Since 5.5 `chrome` and `glass` apply (the set's
+  `kind`): a skin's instance takes it every frame ([Skins](#skins-vk_skinc)),
+  the world's primitives at map load ([World](#world-vk_worldc): a kind
+  is in the primitives' material IDs, glass moves them between groups).
+  An empty `.mat` has no settings.
+- **The sky** (5.5, [Sky](#sky-vk_skyc)): it has no texture slot (sky
+  textures skip `GL_LoadTexture`), so its set is apart from the slots':
+  `VK_SkyImageFile` (from `VK_LoadSky`) looks up the sky texture's name
+  qualified with the CRC of its 256x128 pixels (M2), then plain, and
+  reads the file into memory (not uploaded: `vk_sky.c` splits and edits
+  its layers); only RGBA8 (PNG, TGA, uncompressed DDS and KTX2; BC7
+  reported) of 2:1; `_n`, `_orm`, `_r`, `_m`, `_e` and a `.mat` for it
+  are reported (the sky is unlit). It counts in the summary as a texture
+  looked up; `vk_materials list` shows its file.
 - **Reading:** a file's bytes are read here, not through `quakefs.c`,
   which ends the game on a file it can't open again or read to its end
   (`Sys_Error`): a loose file that an editor is still writing has a
@@ -389,9 +401,13 @@ materials ([Materials](#materials-vk_materialc)).
   geometry is rebuilt: primitives reference materials by index), a line
   with what it read and the time (the test set's 22 textures: 2 files
   changed 8 ms in Release, 21–27 ms in Debug; nothing changed 7 and 19
-  ms). **`r_materials 0/1`** (1, not archived): 0 shows the
+  ms); 5.5: the lava's lights' colors (`VK_LavaFileColors`,
+  `VK_RebuildLights`), the sky's layers (`VK_ReloadSkyFile`), and a line
+  when a world texture's kind changed (`VK_WorldKindsChanged`: "applies
+  at the next map load"). **`r_materials 0/1`** (1, not archived): 0 shows the
   original textures only, for A/B comparisons; a change applies the
-  materials again. **`vk_materials [list|problems]`**: `r_materials`, the
+  materials again, the same way (a world texture's kind at the next map
+  load). **`vk_materials [list|problems]`**: `r_materials`, the
   index (files, sources, time), textures looked up and with files, images
   and their memory, problems; `list` each texture with files (its maps:
   the file, size, kind, format, alpha; refused or left out; the `.mat`'s
@@ -417,7 +433,7 @@ the starting points for authors and their tools.
 
 - **What:** the world textures of every map (`maps/*.bsp`, BSP 29 and
   BSP2: mip 0, the bytes after the miptex header as `gl_model.c` copies
-  them; the sky whole, 256x128, its two layers are 5.5's), the skins of
+  them; the sky whole, 256x128, its layers' layout, the file 5.5 reads), the skins of
   every model (`*.mdl` in `models/` and `gfx/`, both formats:
   `IDPO`/`mdl_t` and `RAPO`/`newmdl_t`, dispatched by the header as
   `Mod_LoadModel`), the frames of every sprite (`*.spr`, `_<frame>`, a
@@ -443,7 +459,10 @@ the starting points for authors and their tools.
   TEX_NEAREST` (`GL_LoadPicTexture`). RGBA where the conversion set
   `TEX_ALPHA` and a texel's alpha is below 255 (holey, transparent and
   special-trans skins, sprites with transparent texels), else RGB: the
-  world's and plain skins' alpha (index 255's 0) isn't read. PNGs by
+  world's and plain skins' alpha (index 255's 0) isn't read. The sky
+  (5.5) as `vk_sky.c` uploads its front layer: its left half transparent
+  at color 0 and 255 (4 of the 5 skies; egypt's has no transparent
+  texels), which a material file's alpha replaces. PNGs by
   `stb_image_write` (`libs/stb`, `STBI_WRITE_NO_STDIO`: written through
   `stbi_write_png_to_func` into files opened here), no gamma chunk.
 - **Where:** `<game folder>/<folder>/textures/…` and
@@ -550,7 +569,9 @@ the starting points for authors and their tools.
   (`texture`, whose [material files](#material-files-vk_matfilesc) apply),
   the slot it shows without files (`original`: the texture, or a player's
   translated skin) and flags (`VK_MAT_SKIN`, `_CUTOUT`, `_TRANSLATED`,
-  `_LAVA`, `_FLAME`).
+  `_LAVA`, `_FLAME`); since 5.5 also the files' `kind` (`MATKIND_*`, not
+  in the GPU table: a skin's instance takes it every frame, the world's
+  primitives at map load).
   `VK_ApplyMaterialFiles` makes the rest from those and the texture's
   files, or the defaults without files, as before E5: the base texture
   (the replaced albedo, but not under a player's colors), the mask of a
@@ -581,7 +602,12 @@ the starting points for authors and their tools.
   and `model_geometry.comp`'s dP/dv, which is DirectX's, as Q2RTX's maps
   are); its Z is `B × 2 − 1` (Q2RTX read B as it is) or, for BC5,
   rebuilt from X and Y (the Toksvig adjustment then has nothing to
-  soften). Bounce rays read only the base color, as Q2RTX's.
+  soften). 5.5: the bitangent from the triangle's own normal, not
+  `geo_normal`, which the rays turn towards themselves: a surface seen
+  from behind keeps its normal map's frame (Q2RTX mirrored the map there;
+  a liquid's surface is two coincident faces, up and down, and primary
+  rays, which don't cull, hit either: with a normal map they shaded
+  differently, speckled). Bounce rays read only the base color, as Q2RTX's.
   `pt_roughness_override` and `pt_metallic_override` still apply.
   Measured without files: the 3D view identical to `main`'s (4 maps, lit
   and `r_debugview` 1, 2 and 10, but meso9's flying imp); with a
@@ -600,9 +626,25 @@ the starting points for authors and their tools.
 - Lava (4.5): its materials emit, and a world lava triangle whose front
   leaf isn't lava is a light, flagged `MATERIAL_FLAG_LIGHT` (see
   [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
-- `vk_world [materials]` prints statistics (with the lava lights) and
-  checks the animation table against `R_TextureAnimation`; `materials`
-  lists each material with its emissive texture and factor.
+- **Kinds from material files** (5.5): a regular texture's `.mat` `kind`
+  (its set's, resolved before the triangles are emitted: `FileKind`) makes
+  its triangles Q2RTX's `MATERIAL_KIND_CHROME` (the opaque group) or
+  `MATERIAL_KIND_GLASS` (the transparent group, as Q2RTX's
+  `geom_transparent`: seen through; alpha 1; the PVS connected across to
+  the leaf past the pane's brush, `GlassBackLeaf` stepping up to 32
+  units, so the lights beyond a window are in the near side's lists;
+  `vk_world` counts the triangles that found one);
+  a surface takes its animation's first frame's (the triangles reference
+  it, and `animate_material` keeps their kind); the turbulent and sky
+  textures keep their names' kinds. At map load only: glass moves
+  triangles between groups (the BLAS), as Quake II RTX builds the map's
+  geometry again for a kind change; `r_reloadmaterials` reports a
+  changed one (`VK_WorldKindsChanged`, the kinds the geometry was built
+  with, `texture_kinds`). Brush entities keep their triangles' kind.
+- `vk_world [materials]` prints statistics (with the lava lights; the
+  kinds, chrome and glass too) and checks the animation table against
+  `R_TextureAnimation`; `materials` lists each material with its
+  emissive texture and factor, and a kind other than regular.
 
 ## PVS (`vk_pvs.c`)
 
@@ -736,6 +778,13 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   model's skins by its flags (holey, transparent, special-trans), for the
   translated player skins, `VK_ModelHasCutouts` and (5.4) the texture
   export.
+- **Chrome** (5.5): a skin whose files' `.mat` says `kind chrome` makes
+  its instance Q2RTX's `MATERIAL_KIND_CHROME_MODEL` (`vk_instance.c`,
+  every frame, so a reload shows it at once; a mirror only below
+  roughness 0.02); a translucent entity stays Q2RTX's transparent model
+  (6.4); the player under its colors takes its skin's (the files of the
+  skin `R_TranslatePlayerSkin` translates). `vk_instances` shows
+  "chrome", `vk_models check` expects it. `glass` isn't for skins.
 - One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
   precache on map load, others on demand); for `EF_HOLEY` models the skin is
   its own `mask_texture`. A third key (4.5): emissive, for models at a map
@@ -1671,8 +1720,19 @@ radiance of a texture color of 1):
   surface has a light style (`vertex_buffer.h`'s `light_style_scale`
   stays 1).
 - **Material files** (5.3, `VK_ApplyMaterialFiles`): lava emits its
-  replaced albedo, or its `_e`, times the `.mat`'s `emissive` (1); its
-  light polygons keep the original's average color (5.5's). A flame shows
+  replaced albedo, or its `_e`, times the `.mat`'s `emissive` (1); since
+  5.5 its light polygons follow (`VK_LavaFileColors`, after the
+  materials are applied at map load, `r_reloadmaterials`, `r_materials`,
+  `r_lava_light`): the color is the average of the file it emits, made on
+  the GPU (`texture_average.comp`: every texel of level 0, each channel
+  as linear light plus Q2RTX's bias, by both curves; one workgroup per
+  texture, read back; a BC7 file, MATERIALS.md's shipping format, has no
+  decoder on the CPU), times the material's emissive factor, the scale
+  and the `.mat`'s key (which the light missed before); the original's
+  stays `AverageColor`'s. `vk_lights` prints each lava material's color
+  ("its file's"), its key ("x 2") and the averages' time (meso9's 64x64
+  file: 29 ms at a map load in Debug with the pipeline made, 3 ms on a
+  reload). A flame shows
   its skin's `_e` instead of the fake emissive texture (castle4's torch
   green in the test); `r_emissive_models 0` turns both off (the light
   models keep their flame materials, which then emit nothing). Any other
@@ -1801,8 +1861,39 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
 - **Against GL:** no warping up close; the sky in reflections, refractions
   and glossy bounces; its brightness under the exposure; the sky light
   mode (opt-in).
-- `vk_sky` prints the sky's texture, its average color, the clusters with
-  sky and those that see it, the mode, the dome and the sun.
+- **Its material file** (5.5, MATERIALS.md; found by
+  [Material files](#material-files-vk_matfilesc)' `VK_SkyImageFile`):
+  the whole sky in the original's layout, 2:1, any size: the left half
+  the front layer, the right half the back, each square. `FileLayers`:
+  the front's transparency is the file's alpha (its left half's:
+  `VK_SkyFrontHasAlpha`), or without one (every texel 255) the
+  original's (index 0 and 255) scaled to it, each texel's centre's
+  (MATERIALS.md's "keeps the original's coverage"); its transparent
+  texels take the back's average color, truncated, as GL's; the back's
+  alpha isn't read. They replace `upsky` and `lowsky` at their size
+  (`GL_LoadTexture` replaces the slots), bilinear, repeating, no
+  mipmaps, as GL's: the shader addresses the layers in fractions, so a
+  file of any size shows the same sky at its detail. The dome's average
+  (sky light mode) is the same over all pairs of the layers' texels, from
+  histograms per channel (the back's values; the front's values and
+  alphas) and a table for the curve (4096 steps, linear between them:
+  the blend isn't a byte), made when the file loads and again for
+  another `r_skyalpha` or `r_srgb`: the export's files (the original
+  layers) give the palette path's averages to four decimals.
+  `r_reloadmaterials` and `r_materials` make the layers again
+  (`VK_ReloadSkyFile`, reading the file again whether it changed or not:
+  one image; the sky's visibility stays). A change of `r_skyalpha` or
+  `r_srgb` makes the average again inside a frame (no print; with a
+  file whose front has soft alpha up to 256 × 256 × 256 table steps per
+  channel: a hitch of that frame). Refused (the original
+  sky, reported): BC7 or BC5 (the texels are split and edited), not 2:1.
+  Measured (`special_set.ps1`): demo1's and keep1's sky001~6566 and
+  egypt1's sky000 from files, a file with holes and one without (the
+  original's), the domes as computed by hand (0.2072 0 0.5436, 0.2777 0
+  0.3884).
+- `vk_sky` prints the sky's texture, its average color, its file's
+  layers (5.5), the clusters with sky and those that see it, the mode,
+  the dome and the sun.
 
 ## Map file (`vk_mapfile.c`)
 
@@ -2199,7 +2290,10 @@ Story 4.10: Hexen II's darkness as GL shows it.
   range hack); no back-face culling (GL draws `EF_SPECIAL_TRANS` models
   two-sided); threads past the fields' size return (the dispatch is rounded
   up to 8x8 groups); no readback, god rays or light-buffer PVS overlay; water keeps
-  its geometric normal while there is no water normal map; vertical water
+  its geometric normal while there is no water normal map (Q2RTX's global
+  waves, 6.5; a texture's own `_n` applies since 5.3, warped as the
+  albedo, and alike on a liquid's two coincident faces since 5.5, see
+  [Materials](#materials-vk_materialc)); vertical water
   and slime stay water (3.5b: Q2RTX makes them glass for its force fields;
   Hexen II's vertical turbulent surfaces are walls). The sky (and
   nothing) is an empty surface whose color, Hexen II's sky since 4.6
@@ -2233,8 +2327,21 @@ Story 4.10: Hexen II's darkness as GL shows it.
     translucent surface loses its back faces (6.4). A ray from inside a
     liquid leaves it through a translucent turbulent surface (they bound
     liquid volumes).
-  - Mirrors and glass (Q2RTX's `chrome` and `glass` kinds) come with the
-    code for E5's materials; screens and security cameras are Quake II's.
+  - Mirrors and glass (Q2RTX's `chrome` and `glass` kinds) come from a
+    texture's `.mat` since 5.5 ([World](#world-vk_worldc),
+    [Skins](#skins-vk_skinc)): chrome (and a chrome model) reflects about
+    the shading normal below roughness 0.02, the throughput times the
+    base color, no Fresnel term, no field split (above 0.02 it is shaded
+    regular, `primary_rays.rgen`); glass is thin (`pt_thick_glass` 0):
+    Fresnel from 5 % head-on, the even field reflects (F × 2), the odd one
+    refracts twice at 1.52 tinted by the base color ((1 − F) × 2), and it
+    needs `pt_reflect_refract` ≥ 1. Both are tinted by the albedo, so the
+    originals' dark textures make dark mirrors and glass: a light albedo
+    with them (MATERIALS.md). Glass casts no shadow and doesn't tint the
+    light through it (the shadow rays see the opaque group only). Cost
+    (5.5, demo1's start at 1920x1080, Release, full power: a chrome floor
+    and a glass pedestal over much of the view): the pass 0.06 → 0.30 ms,
+    the frame 3.53 → 3.65 ms. Screens and security cameras are Quake II's.
   - Water and slime stay opaque and textured as GL draws them (only
     `SURF_TRANSLUCENT` surfaces and translucent entities blend there):
     they are skipped, and vertical ones stay water; Q2RTX's physical water
@@ -2343,7 +2450,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
-  kinds (cutouts yellow, the weapon cyan; with `pt_reflect_refract 0`
+  kinds (cutouts yellow, the weapon cyan, chrome red since 5.5, glass pale
+  cyan; with `pt_reflect_refract 0`
   translucent surfaces alternate between regular and their kind, else the
   odd field shows what is behind them: the debug view reads the G-buffer
   after the reflection and refraction passes), 4 instances, 5 clusters with the camera's
