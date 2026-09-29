@@ -7,7 +7,7 @@
 #   glhexen2   Hexen II with the upstream OpenGL renderer (glh2.exe)
 #   hexenlicht Hexen II with the Hexenlicht renderer (work in progress)
 #   h2patch    patches retail pak files to v1.11
-#   volk, vma, stb_image   vendored libraries for the Vulkan renderer
+#   volk, vma, stb_image, stb_image_write   vendored libraries for the Vulkan renderer
 #   (libs/streamline: NVIDIA Streamline's headers for optional DLSS, no binaries)
 #
 # Requires the LunarG Vulkan SDK 1.3+ (VULKAN_SDK environment variable).
@@ -128,6 +128,11 @@ target_link_libraries(vma PUBLIC volk)
 add_library(stb_image STATIC ${LIBS_DIR}/stb/stb_image_impl.c)
 target_include_directories(stb_image PUBLIC ${LIBS_DIR}/stb)
 target_compile_definitions(stb_image PUBLIC STBI_NO_STDIO)
+
+# stb_image_write: PNG writing through a callback (the texture export)
+add_library(stb_image_write STATIC ${LIBS_DIR}/stb/stb_image_write_impl.c)
+target_include_directories(stb_image_write PUBLIC ${LIBS_DIR}/stb)
+target_compile_definitions(stb_image_write PUBLIC STBI_WRITE_NO_STDIO)
 
 # ---------------------------------------------------------------------------
 # Settings shared by all Hexen II client targets (Makefile win64 section).
@@ -291,6 +296,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_mapfile.c
 	${HEXENLICHT_DIR}/vk_lightedit.c
 	${HEXENLICHT_DIR}/vk_calib.c
+	${HEXENLICHT_DIR}/vk_export.c
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_asvgf.c
@@ -308,7 +314,7 @@ add_executable(hexenlicht WIN32
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1 ${LIBS_DIR}/streamline)
 target_compile_features(hexenlicht PRIVATE cxx_std_17)	# vk_streamline.cpp
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
-target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image)
+target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image stb_image_write)
 add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise hexenlicht_map_files)	# building the exe also builds its shaders and data
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>

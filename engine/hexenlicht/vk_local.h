@@ -115,6 +115,7 @@ const char *VK_TextureName (int slot);
 unsigned short VK_TextureCRC (int slot);	/* of its data (the cache key) */
 #define VK_EMISSIVE_THRESHOLD	215	/* Quake II RTX's pt_surface_lights_threshold: a skin texel with a channel this bright (of 255) emits */
 unsigned int *VK_TextureRGBA (int slot, int *width, int *height);	/* a bright skin's pixels (malloc'd), NULL = none kept */
+void VK_Convert8Pixels (const byte *data, int width, int height, int *flags, unsigned int *rgba);	/* as GL_LoadTexture converts them; *flags settled (TEX_ALPHA) */
 qboolean VK_ColorsSRGB (void);	/* r_srgb: the 8-bit colors are the sRGB curve's, else a 2.2 power (4.17) */
 float VK_ColorToLinear (float c);	/* an 8-bit color (0-1, above too) as linear light, as shaders/transfer.glsl */
 float VK_ColorToLinearAs (float c, qboolean srgb);	/* the same by the sRGB curve or the 2.2 power */
@@ -255,6 +256,10 @@ void VK_RequestScreenshotAverage (const char *filename, int frames);	/* the next
 /* vk_calib.c: calibration against GL (4.9): vk_setpos, vk_bookmark,
  * vk_screenshot */
 void VK_InitCalib (void);
+
+/* vk_export.c: r_exporttextures, the original textures as PNGs under their
+ * material file names (5.4) */
+void VK_InitExport (void);
 
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert";
  * VK_ExePath gives <exe folder>\<file> */
@@ -427,6 +432,7 @@ struct scene_entity_s;
 void R_InitSkins (void);
 void VK_ClearSkins (void);			/* on map change, after VK_LoadWorld */
 void VK_AddSkinMaterials (qmodel_t *model);	/* on map load; the caller uploads the materials */
+int VK_SkinTextureMode (int model_flags);	/* the TEX_ mode gl_model.c gives a model's skins */
 qboolean VK_ModelHasCutouts (const qmodel_t *model);
 int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, qboolean emissive, qboolean *bad_skin);
 

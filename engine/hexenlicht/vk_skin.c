@@ -73,7 +73,7 @@ static qboolean	player_skin_as_is[MAX_CLIENTS];	/* R_TranslatePlayerSkin: the pl
  * ========================================================================== */
 
 /* the texture mode gl_model.c's Mod_LoadAllSkins gives a model's skins */
-static int SkinTextureMode (int model_flags)
+int VK_SkinTextureMode (int model_flags)
 {
 	int	tex_mode = TEX_DEFAULT | TEX_MIPMAP;
 
@@ -89,7 +89,7 @@ static int SkinTextureMode (int model_flags)
 /* the skins of these models have holes (TEX_HOLEY) */
 qboolean VK_ModelHasCutouts (const qmodel_t *model)
 {
-	return (SkinTextureMode (model->flags) & TEX_HOLEY) != 0;
+	return (VK_SkinTextureMode (model->flags) & TEX_HOLEY) != 0;
 }
 
 /* slot: the texture shown; files: the skin whose material files apply
@@ -313,7 +313,7 @@ void R_TranslatePlayerSkin (int playernum)
 	if (playernum >= 0 && playernum < MAX_CLIENTS)	/* 5.3: such a player shows a replaced albedo */
 		player_skin_as_is[playernum] = !memcmp (translated, original, size);
 	q_snprintf (name, sizeof(name), "player%d", playernum);
-	GL_LoadTexture (name, translated, width, height, SkinTextureMode (model->flags));
+	GL_LoadTexture (name, translated, width, height, VK_SkinTextureMode (model->flags));
 }
 
 

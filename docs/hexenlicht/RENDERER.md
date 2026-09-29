@@ -8,7 +8,8 @@ Keep this file current: a PR that changes a module updates its section.
 
 Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Vulkan core](#vulkan-core-and-swapchain) · [Shaders](#shaders) ·
-[Textures](#textures-vk_texturec) · [Image files](#image-files-vk_imagefilec) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
+[Textures](#textures-vk_texturec) · [Image files](#image-files-vk_imagefilec) ·
+[Material files](#material-files-vk_matfilesc) · [Texture export](#texture-export-vk_exportc) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
 [Buffers and layouts](#buffers-and-gpu-data-layouts) · [Materials](#materials-vk_materialc) ·
 [World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
@@ -209,6 +210,10 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `VK_TextureRGBA` converts them again for the light models' emissive
   textures ([Emissive surfaces](#emissive-surfaces-vk_emissivec)).
   `vk_textures` prints how many (meso9: 100 skins, 2.6 MB).
+- `VK_Convert8Pixels` (5.4) is the upload's 8-bit conversion for
+  pixels that aren't in a slot, with the flags as the conversion settles
+  them (`TEX_ALPHA`): the texture export's colors ([Texture
+  export](#texture-export-vk_exportc)).
 - **Image files** (5.2, [below](#image-files-vk_imagefilec)):
   `VK_LoadImageTexture` makes or replaces the slot of an identifier with
   a file's levels in its format (`R8G8B8A8_UNORM`, `BC7_UNORM_BLOCK`,
@@ -402,6 +407,85 @@ materials ([Materials](#materials-vk_materialc)).
   textures replaced at 512x512: noise PNGs 700–960 ms, BC7 DDS 58–63 ms
   (the world's build 53–56 ms without files); decoding PNGs on threads
   is left to 5.6's test pack.
+
+## Texture export (`vk_export.c`)
+
+Story 5.4 (DECISIONS M19–M21): **`r_exporttextures [folder]`** writes
+every original texture as a PNG under its [MATERIALS.md](MATERIALS.md)
+name, exactly as the engine uploads it, and a manifest, `textures.csv`:
+the starting points for authors and their tools.
+
+- **What:** the world textures of every map (`maps/*.bsp`, BSP 29 and
+  BSP2: mip 0, the bytes after the miptex header as `gl_model.c` copies
+  them; the sky whole, 256x128, its two layers are 5.5's), the skins of
+  every model (`*.mdl` in `models/` and `gfx/`, both formats:
+  `IDPO`/`mdl_t` and `RAPO`/`newmdl_t`, dispatched by the header as
+  `Mod_LoadModel`), the frames of every sprite (`*.spr`, `_<frame>`, a
+  group's `_<frame × 100 + i>`) and `gfx/skin100.lmp` to `skin255.lmp`
+  (`vk_skin.c`'s pictures: stone and ice). **Every
+  occurrence in the search path**, not only the one the game loads:
+  `FS_ListSearchPath` (5.3) gives each pak's entries and each game
+  folder, whose `maps/`, `models/` and `gfx/` are walked. The same name
+  (MATERIALS.md's: lowercased, `*` as `#`) and pixels in several files is
+  one file; a name with more than one set of pixels gets `~<crc>` on
+  every variant, the others are plain (a CRC two different images of a
+  name share is reported, the second left out). With `-portals` the
+  search path has both games; without it data1 only, and the first line
+  says so.
+- **Exactly as uploaded:** the 8-bit pixels and the CRC as `gl_model.c`
+  passes them to `GL_LoadTexture`: a model's first skin after
+  `Mod_FloodFillSkin` (copied here: static in `gl_model.c`; it fills the
+  first skin's memory before every skin, so skins 1 and up are raw); the
+  colors by `vk_texture.c`'s conversion (`VK_Convert8Pixels`, the
+  upload's `VK_Convert8`) with the texture's flags: world `TEX_MIPMAP`,
+  skins `VK_SkinTextureMode` (`vk_skin.c`: holey, transparent,
+  special-trans), sprites `TEX_MIPMAP | TEX_ALPHA`, pictures `TEX_ALPHA |
+  TEX_NEAREST` (`GL_LoadPicTexture`). RGBA where the conversion set
+  `TEX_ALPHA` and a texel's alpha is below 255 (holey, transparent and
+  special-trans skins, sprites with transparent texels), else RGB: the
+  world's and plain skins' alpha (index 255's 0) isn't read. PNGs by
+  `stb_image_write` (`libs/stb`, `STBI_WRITE_NO_STDIO`: written through
+  `stbi_write_png_to_func` into files opened here), no gamma chunk.
+- **Where:** `<game folder>/<folder>/textures/…` and
+  `<game folder>/<folder>/textures.csv` (`FS_USERDIR`; `export` by
+  default: `data1\export`, `portals\export` with `-portals`); the name
+  takes letters, digits, `_` and `-`, and `textures` is refused (never
+  the folder the engine reads). A new export overwrites an earlier one's
+  files; files it doesn't make stay (delete the folder for a clean one).
+- **`textures.csv`**, a row per file, sorted by name: `file`
+  (`textures/rtex343~ad81.png`), `name` (the engine's, as `vk_textures
+  list` prints it: `*lava1`, `models/ball.mdl_0`, `gfx/skin100.lmp`),
+  `crc`, `width`, `height`, `kind` (`world`, `liquid`, `sky`, `skin`,
+  `sprite`, `picture`), `alpha` (`none`, `coverage`: 0 or 255,
+  `translucent`), `variants` (of the name), `used in` (the maps, else the
+  model, sprite or picture file; space separated), `from` (the paks or
+  game folders, relative to the base folder: `data1/pak1.pak`, `portals`).
+- **Nothing of the game changes:** the files are read here (`fopen` of
+  the pak at the entry's position, or of the loose file), not through
+  `quakefs.c` or the model cache; no GPU work, no texture slots. A
+  console command, outside frames: it prints what it read (per kind of
+  file and the time), a line per kind of texture (files, names, names
+  with variants, files with alpha), the totals (files, MB, time, folder)
+  and the problems (the first 40): a file that can't be read or is cut
+  short, a format or version the engine doesn't take, a size it ends the
+  game on (or over 8192), a name Windows can't take (a character, a
+  device name like `con`, a folder name ending in `.` or a space), a name
+  longer than 40 characters (`vk_matfiles.c`'s index takes relative paths
+  below 64 characters, and `textures/<name>~<crc>_orm.ktx2` adds 23) or
+  with a `~` (the qualifier's), a 16-character miptex name without its
+  end (`GL_LoadTexture` reads on into the width), a CRC collision, no
+  memory for an image (a file can claim 8192x8192 texels many times).
+- **Measured** (5.4, TESTING.md "Texture export"): with `-portals` 2110
+  files, 24.2 MB (870 names of world, liquid and sky textures, 100 with
+  variants, as M2 and `tex_names.ps1`; 553 skin names in 555 files,
+  `ball.mdl`'s and `scepter.mdl`'s first with two variants; 573 sprite
+  frames, 2 pictures;
+  629 with alpha), 3.2–3.4 s in Release, 8.6 s in Debug; data1 alone 1430
+  files. The CRCs equal the texture cache's for all 3183 textures
+  `vk_textures list` shows on demo1, egypt1, egypt5, tibet8 and keep1;
+  `export_check.ps1` finds no difference in any file or row against its
+  own reading of the paks, decoded by texconv; with the export in
+  `textures\` the 3D view is identical to the view without files.
 
 ## 2D (`vk_draw.c`)
 
@@ -648,6 +732,10 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `gl_texturenum[skin][(int)(cl.time*10)&3]`, bad numbers fall back to 0 and
   are counted; players with translated colors use `player<n>` (found with
   `VK_FindTexture`) unless `gl_nocolors`.
+- `VK_SkinTextureMode` is the texture mode `Mod_LoadAllSkins` gives a
+  model's skins by its flags (holey, transparent, special-trans), for the
+  translated player skins, `VK_ModelHasCutouts` and (5.4) the texture
+  export.
 - One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
   precache on map load, others on demand); for `EF_HOLEY` models the skin is
   its own `mask_texture`. A third key (4.5): emissive, for models at a map
@@ -2878,6 +2966,7 @@ overlay, and a measuring mode.
 | `vk_imagefile <file> [scale]`, `vk_imagefile` | 5.2: reads an image file of [MATERIALS.md](MATERIALS.md) (without an extension: `.png`, `.tga`, `.dds`, `.ktx2` in turn), prints what it read and the times, shows it at the top left, scale screen pixels per texel (0 fits); alone hides it (see [Image files](#image-files-vk_imagefilec)) |
 | `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
 | `r_reloadmaterials`, `r_materials 0/1`, `vk_materials [list\|problems]` | 5.3: the material files again (the new and changed ones read, the materials applied; no map reload); the material files apply (1) or the original textures only (0, not archived; A/B comparisons); the index, textures with files, images, problems; each texture's files; the problems (see [Material files](#material-files-vk_matfilesc)) |
+| `r_exporttextures [folder]` | 5.4: every original texture of the search path's maps, models, sprites and stone and ice pictures as a PNG under its material file name, exactly as uploaded, and `textures.csv`, into `<game folder>/export` (or folder; run with `-portals` for both games; see [Texture export](#texture-export-vk_exportc)) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |
 | `vk_instances [step\|box]` | model instances, gliding monsters, pose bounds |

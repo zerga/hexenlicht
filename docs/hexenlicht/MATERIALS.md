@@ -9,7 +9,9 @@ these names (5.4), the special materials (5.5), a test pack and the
 authoring guide (5.6). Since 5.2 the engine reads the image files
 (`vk_imagefile <file>` shows one, RENDERER.md's "Image files"), since 5.3
 the materials use them (RENDERER.md's "Material files";
-`r_reloadmaterials`, `r_materials`, `vk_materials`; DECISIONS M11–M18).
+`r_reloadmaterials`, `r_materials`, `vk_materials`; DECISIONS M11–M18),
+since 5.4 `r_exporttextures` writes the original textures under these
+names ([below](#the-export-54); DECISIONS M19–M21).
 
 ## Files
 
@@ -190,6 +192,38 @@ in one file (Quake II RTX's `materials/*.mat` sections).
   M1); 5.3 measured no cost beyond run-to-run noise (M14). A map load
   pays for decoding PNGs (demo1's 96 world textures at 512x512: 0.7–1 s
   as PNG, 60 ms as BC7 DDS, M18).
+
+## The export (5.4)
+
+The starting points: `r_exporttextures` in the console writes every
+original texture as a PNG under its name here, exactly as the engine
+uploads it, into `<game folder>\export\textures\` (`r_exporttextures
+<folder>`: another folder in the game folder, never `textures`), and
+`textures.csv` beside it, a row per file: the file, the engine's name
+(`*lava1`, `models/ball.mdl_0`), the CRC, the size, the kind (world,
+liquid, sky, skin, sprite, picture), the alpha (none, coverage,
+translucent), how many variants the name has, the maps (or the model or
+sprite file) it is used in and the paks it is from. Run the game with
+`-portals` for both games (then `portals\export`: about 2,100 files,
+24 MB); without it data1's only.
+
+- Every map's world textures (the sky whole), every model's skins, every
+  sprite's frames and the stone and ice pictures, from every pak and
+  game folder, not only the files the game loads: a name with several
+  sets of pixels has each under `<name>~<crc>`, the others plain.
+- The colors as the engine shows them; world textures and plain skins
+  are RGB; a holey, transparent or special-trans skin or a sprite with
+  transparent texels is RGBA, the alpha the engine made (holes 0, a
+  transparent skin's 0.33, a special-trans skin's translucency): keep it
+  in an edited albedo, or drop it to keep the original's holes (above).
+- Names longer than 40 characters (the index of the material files
+  takes `textures/<name>~<crc>_orm.ktx2` in 63) and names with a `~`
+  (the qualifier's) aren't exported but reported; the games have none.
+- Unchanged in `textures\`, the files change nothing (5.4 checked the
+  view pixel by pixel), so a copy is where an albedo starts; the
+  manifest's `used in` finds a map's textures. Left out: the 2D pictures,
+  the sky's two layers (5.5), DDS or KTX2 (texconv converts the PNGs).
+  A new export overwrites an earlier one's files and deletes none.
 
 ## Shader changes (5.3)
 

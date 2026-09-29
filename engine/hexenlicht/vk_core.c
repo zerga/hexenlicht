@@ -607,6 +607,7 @@ static vk_module_t	vk_modules[] =
 	{ "mapfile",	VK_InitMapFile,		VK_ShutdownMapFile,		VK_INIT_DEFAULT },
 	{ "lightedit",	VK_InitLightEditor,	VK_ShutdownLightEditor,		VK_INIT_DEFAULT },
 	{ "calib",	VK_InitCalib,		NULL,				VK_INIT_DEFAULT },
+	{ "export",	VK_InitExport,		NULL,				VK_INIT_DEFAULT },
 	{ "ubo",	VK_InitUBO,		VK_ShutdownUBO,			VK_INIT_DEFAULT },
 	{ "images",	VK_InitImages,		VK_ShutdownImages,		VK_INIT_DEFAULT },
 	{ "images|",	VK_CreateImages,	VK_DestroyImages,		VK_INIT_SWAPCHAIN },
