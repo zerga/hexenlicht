@@ -25,12 +25,14 @@ From the [project plan](docs/hexenlicht/PLAN.md#4-licensing-rules):
 | [volk](https://github.com/zeux/volk) | 1.4.350 | MIT | `libs/volk` | Loading Vulkan functions at runtime |
 | [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.4.0 | MIT | `libs/vma` | GPU memory management |
 | [stb_image](https://github.com/nothings/stb) | 2.30 (commit `2c980bb`) | MIT or public domain | `libs/stb` | Loading PNG/TGA textures |
+| [stb_image_write](https://github.com/nothings/stb) | 1.16 (commit `2c980bb`) | MIT or public domain | `libs/stb` | Writing PNGs (the texture export, `r_exporttextures`) |
 | [Free blue noise textures](http://momentsingraphics.de/BlueNoise.html) (Christoph Peters) | `FreeBlueNoiseTextures.zip` of 2025-05-12, `64_64/HDR_RGBA_*` only | CC0 1.0 | `libs/bluenoise` | The path tracer's random numbers |
 | [AMD FidelityFX Super Resolution 1.0](https://github.com/GPUOpen-Effects/FidelityFX-FSR) (`ffx_a.h`, `ffx_fsr1.h`) | v1.0.2 (commit `a21ffb8f6`) | MIT | `libs/fsr1` | FSR 1 upscaling and sharpening (EASU, RCAS) |
 | [NVIDIA Streamline](https://github.com/NVIDIA-RTX/Streamline) headers (18 of `include/`, listed in `libs/streamline/README.md`; not `sl_nvperf.h`) | v2.14.1 (`streamline-sdk-v2.14.1.zip`) | MIT | `libs/streamline` | Optional DLSS SR and RR with the player's DLLs (`vk_streamline.cpp`); no Streamline or NVIDIA binary is in the repository or releases |
 
-`libs/vma/vma_impl.cpp` and `libs/stb/stb_image_impl.c` are Hexenlicht's own
-files (GPL-2.0-or-later) that compile the libraries' implementations.
+`libs/vma/vma_impl.cpp`, `libs/stb/stb_image_impl.c` and
+`libs/stb/stb_image_write_impl.c` are Hexenlicht's own files
+(GPL-2.0-or-later) that compile the libraries' implementations.
 
 Source code adapted from other projects keeps its copyright lines in the
 file headers:

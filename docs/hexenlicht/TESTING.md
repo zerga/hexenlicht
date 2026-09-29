@@ -290,6 +290,56 @@ demo1's start, meso9 and castle4; about four minutes in Debug.
 - **Map load time:** the `materials:` line after a map load (Release)
   gives the files read and their time; `vk_world` the world's build.
 
+## Texture export (5.4)
+
+`r_exporttextures` (RENDERER.md's "Texture export", DECISIONS
+M19–M21). About 15 minutes in Release, the configs backed up.
+
+1. **The export:** a script with `r_exporttextures`, run with
+   `-Portals` (both games; without it data1 only): the log's lines per
+   kind (with `-portals`: world 963 files, liquid 12, sky 5, skin 555,
+   sprite 573, picture 2; 2110 files, no problems) and
+   `portals\export\textures.csv`. `tex_names.ps1` over the three paks
+   gives the world, liquid and sky names and variants to compare with
+   the manifest's rows of those kinds (870 names, 980 files, the same
+   CRCs, sizes and maps).
+2. **Independent check:** `export_check.ps1 -Texconv <texconv.exe>`
+   (`-Export`, `-Paks`; data1 alone: `-Export ...\data1\export -Paks`
+   pak0 and pak1) reads the paks itself, converts and names the textures
+   by the rules and compares every manifest row and every PNG, decoded by
+   texconv: "no differences". Changing a copy (swapping two PNGs of one
+   size, a manifest cell) must show each change.
+3. **CRCs against the engine:** `vk_textures list` after maps of both
+   games (demo1, egypt1; tibet8 and keep1 with `-portals`): each listed
+   name, as MATERIALS.md names it, with its CRC is a manifest row (the
+   rest are the 2D's, `upsky`/`lowsky`, `player<n>` and the flames'
+   `*E` textures). `ball.mdl`'s first skin is in both games' starts
+   (6104 in data1, 7d5c with `-portals`).
+4. **The round trip:** copy `export\textures` into `data1\textures`
+   (empty before) and run the same paused views without and with them
+   (twice without, for the runs' noise; `host_framerate 0.02`, `flt_enable
+   0`): demo1 with `r_debugview` 1, 2, 8, 10 and 0, the Paladin in the
+   chase camera with the colors 0 0 and 4 4, the view weapons, castle4's
+   torch, keep1 with the Demoness in the chase camera and tibet8
+   (`-portals`): `tga_diff.ps1` identical to a run without files. What
+   isn't repeatable between runs (where the ice mace's hits and the
+   meteor land, meso9's lava particles) is compared in one paused frame:
+   shots with `r_materials 1`, `0` and `1` again; the base color view is
+   identical but for the notify lines (the lit view's noise changes every
+   frame). The map loads' `materials:` lines: every texture looked up
+   with files, 0 problems; a Debug run with the files ends with
+   `Vulkan validation: 0 errors, 0 warnings`. Delete `data1\textures`
+   afterwards.
+5. **Problems:** loose files in `portals\maps` and `portals\models` (a
+   map copy with texture names `con`, `a:b` and one of 16 characters
+   without its end, one with BSP version 30, a text file named `.mdl`, a
+   model cut short, models named with a `~` and with a name over 40
+   characters) are reported, one line each, and the rest is exported
+   (into another folder: `r_exporttextures t54test`), a BSP2 copy, a map
+   named `maps\.bsp` (no name: no empty entry in `used in`) and a model
+   whose name has 39 characters too; `r_exporttextures con` and
+   `r_exporttextures textures` are refused. Delete them afterwards.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

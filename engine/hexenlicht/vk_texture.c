@@ -515,6 +515,21 @@ static void VK_Convert8 (const byte *data, unsigned int *trans, vk_texture_t *t)
 }
 
 
+/* 8-bit pixels converted as GL_LoadTexture uploads them with *flags, R,G,B,A
+ * in memory (5.4, the texture export: vk_export.c); *flags as the
+ * conversion settles them (TEX_ALPHA) */
+void VK_Convert8Pixels (const byte *data, int width, int height, int *flags, unsigned int *rgba)
+{
+	vk_texture_t	t;
+
+	memset (&t, 0, sizeof(t));
+	t.width = width;
+	t.height = height;
+	t.flags = *flags;
+	VK_Convert8 (data, rgba, &t);
+	*flags = t.flags;
+}
+
 /* does a texel have a channel of at least VK_EMISSIVE_THRESHOLD (of 255)? */
 static qboolean HasBrightTexels (const unsigned int *rgba, int count)
 {
