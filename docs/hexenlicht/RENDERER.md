@@ -195,7 +195,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 - Slot 0 is white; freed slots point back to it. `D_FlushCaches` purges
   slots above `gl_texlevel` on a map change like upstream;
   `D_ClearOpenGLTextures` also clears the 2D pic cache
-  (`Draw_ClearCachedPics`), like `gl_rmisc.c`.
+  (`Draw_ClearCachedPics`), like `gl_rmisc.c`, and (5.3) the material
+  files' sets and images (`VK_MaterialFilesPurged`).
 - `TEX_SPECIAL_TRANS` alpha is stored as opacity (GL blends those inverted),
   so alpha means opacity in every texture.
 - Samplers by the flags: mipmapped textures trilinear and anisotropic,
@@ -223,7 +224,8 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 
 Story 5.2: reads the image files of [MATERIALS.md](MATERIALS.md) into
 memory as they are; `VK_LoadImageTexture` (above) uploads them. The
-material system (5.3) picks the names and puts the images into materials.
+material system (5.3, [below](#material-files-vk_matfilesc)) picks the
+names and puts the images into materials.
 
 - **Lookup:** `VK_LoadImageFile` takes a path without an extension and
   tries `.png`, `.tga`, `.dds`, `.ktx2` in turn, each through the whole
@@ -287,6 +289,119 @@ material system (5.3) picks the names and puts the images into materials.
   ms (40 ms to read on a cold cache), a BC7 DDS 1–2 ms read, 1 ms parsed,
   1–2 ms uploaded, an RGBA8 DDS with mips 12–14 ms in all: PNG decoding
   is what a map load of replaced textures pays (5.3).
+- **`VK_ImageFileHasAlpha`** (5.3): coverage, an alpha below 255 in level
+  0; a BC7 block counts as opaque when its mode has no alpha (0–3) or its
+  alpha endpoints (and p-bits, and a rotated channel's in modes 4 and 5)
+  are all at their maximum; BC5 has none.
+
+## Material files (`vk_matfiles.c`)
+
+Story 5.3: finds [MATERIALS.md](MATERIALS.md)'s files for each original
+texture; `vk_material.c`'s `VK_ApplyMaterialFiles` puts them into its
+materials ([Materials](#materials-vk_materialc)).
+
+- **The index:** every file under `textures/` in the search path, listed
+  once: `quakefs.c`'s `FS_ListSearchPath` (under `HEXENLICHT`, the only
+  code that sees the paks) gives each pak entry with the prefix and each
+  game folder, whose `textures` folder is walked (`FindFirstFileA`,
+  recursive, 16 deep). The first occurrence of a name in the search path's
+  order is kept (a later game folder first, and in a folder the loose
+  files before its paks: Hexen II's order), a loose file with its size and
+  last write time. A lookup is then a hash probe instead of a search
+  through the path (up to 7 kinds of file per texture, each under two
+  names and four extensions, each search a file system call per game
+  folder). Built at the first lookup after a map load (`VK_LoadWorld`
+  calls `VK_MaterialFilesNewMap`) or `r_reloadmaterials`: 96 loose files
+  in under a millisecond. Pak entries with capitals (`Textures/` too:
+  the prefix is matched in any case), `*` or `?` are left out and
+  reported (the lookup lowercases; paks compare exactly; the loader
+  refuses wildcards), as are names longer than `MAX_QPATH`.
+- **Sets:** one per original texture slot (world textures, skins, the
+  stone and ice pictures, sprite frames): the slot's spec name
+  (`VK_TextureName` lowercased, `*` as `#`, a picture's `.lmp` cut),
+  qualified with `~<crc>` (`VK_TextureCRC`); each map and the `.mat`
+  looked up on its own (the qualified name, then the plain one; `.png`,
+  `.tga`, `.dds`, `.ktx2`), the roughness and metallic from the first name
+  with any of `_orm`, `_r`, `_m` (`_orm` first; an `_orm` beside `_r` or
+  `_m` is reported). `_r` and `_m` (PNG or TGA: others refused) are packed
+  on the CPU into one RGBA8 texture, `textures/<name>_rm`: G roughness, B
+  metallic, 255 where one is missing (the material's factor is then its
+  value), R and A 255; of different sizes both are refused. Formats by
+  the map (M6): BC5 only as a normal map, BC7 not as one (reported, left
+  out). A set is resolved when first asked for (`VK_MaterialSet`: world
+  materials on map load, skins when their material is made, possibly
+  mid-frame, sprites on map load for the precached ones and those the
+  client loads at startup, `VK_PreloadStartupSprites`, and when drawn)
+  and again after a map load or a reload; one whose slot holds another
+  texture now (another name or CRC: `GL_LoadTexture` replaces a slot in
+  place on a cache mismatch) is made again. `r_materials 0` makes every
+  set empty, so the materials are the originals'.
+- **The `.mat`:** `key value` per line, `#` comments, keys and kinds in
+  any case (MATERIALS.md's table): `roughness` and `metallic` 0–1,
+  `bump`, `specular`, `emissive` ≥ 0 (at most a half float's 65504),
+  `kind`. Reported and left out: unknown keys, bad values, a line with no
+  or two values, a `kind` other than `regular` on a world texture whose
+  name gives its kind (`*…`, `sky…`) or `glass` on a skin, `bump`
+  without a normal map, anything on a sprite; `chrome` and `glass` are
+  kept but reported as 5.5's (a kind lives in the primitives' material
+  IDs: changing it means rebuilding geometry). An empty `.mat` has no
+  settings.
+- **Reading:** a file's bytes are read here, not through `quakefs.c`,
+  which ends the game on a file it can't open again or read to its end
+  (`Sys_Error`): a loose file that an editor is still writing has a
+  stale size in its folder or can't be opened. So a loose file is read
+  from its game folder at its size now, a pak entry at its position in
+  the pak (`FS_ListSearchPath` gives it; paks don't change while the
+  game runs), and a file that can't be opened or read to its end is
+  refused ("being written? `r_reloadmaterials` again");
+  `VK_ParseImageFile` parses the bytes.
+- **Images:** a texture slot per file read (`VK_ParseImageFile`,
+  `VK_LoadImageTexture` with `TEX_MIPMAP`: repeating, trilinear, mips
+  made for an uncompressed image), named by the file; kept with its
+  identity (game folder or pak, position, size, write time) and whether
+  it has coverage (`VK_ImageFileHasAlpha`). A set resolved again reuses an
+  unchanged file and reads a changed one into its slot again (the slot
+  number stays: the material table needn't change for it); a refused one
+  isn't retried until it changes. A new slot is taken only while 256 of
+  the 4096 stay free (`TEXTURE_RESERVE`: `GL_LoadTexture` ends the game
+  when the cache is full); the rest are refused as problems. A file
+  deleted, or renamed to another extension, keeps its slot until the
+  purge. Purged with the map's textures:
+  `D_ClearOpenGLTextures` calls `VK_MaterialFilesPurged`, which drops the
+  sets and the images in the purged slots (the replacement slots are made
+  during a map, above `gl_texlevel`; the pictures and sprites loaded at
+  startup keep their slots, their sets are made again on the next map's
+  load). With `gl_purge_maptex 0` the maps' images stay.
+- **Never printed while resolving:** problems (refused files and why,
+  maps that don't apply, `.mat` lines) are collected per set and for the
+  index (`vk_materials problems`); `R_NewMap` prints one line after the
+  models (`VK_ReportMaterialFiles`) when there are files or problems:
+  textures with files, files read and their time, the images kept and
+  their video memory, problems.
+- **`r_reloadmaterials`**: `vkDeviceWaitIdle`, the index again, every set
+  resolved again (reading what is new or changed, a deleted file's next
+  candidate; with `r_materials 0` when it is 1 again), `VK_ReapplyMaterials` (the materials and the table; no
+  geometry is rebuilt: primitives reference materials by index), a line
+  with what it read and the time (the test set's 22 textures: 2 files
+  changed 8 ms in Release, 21–27 ms in Debug; nothing changed 7 and 19
+  ms). **`r_materials 0/1`** (1, not archived): 0 shows the
+  original textures only, for A/B comparisons; a change applies the
+  materials again. **`vk_materials [list|problems]`**: `r_materials`, the
+  index (files, sources, time), textures looked up and with files, images
+  and their memory, problems; `list` each texture with files (its maps:
+  the file, size, kind, format, alpha; refused or left out; the `.mat`'s
+  settings); `problems` the problems.
+- **Measured** (5.3, `material_set.ps1`, `material_check.ps1`, TESTING.md
+  "Materials"): 26 checks at demo1's start, the Paladin's gauntlet and the
+  player, the Crusader's ice mace, its hits (sprites) and a file held open
+  half written during a reload (refused, then read), meso9's lava and
+  castle4's torch (with `r_emissive_models 0` too) pass in Debug and
+  Release (Debug validation clean); the search order (a
+  loose file before its folder's pak, `portals` before `data1`, a pak's
+  capitals reported); map load in Release with all 96 of demo1's world
+  textures replaced at 512x512: noise PNGs 700–960 ms, BC7 DDS 58–63 ms
+  (the world's build 53–56 ms without files); decoding PNGs on threads
+  is left to 5.6's test pack.
 
 ## 2D (`vk_draw.c`)
 
@@ -341,18 +456,54 @@ material system (5.3) picks the names and puts the images into materials.
 ## Materials (`vk_material.c`)
 
 - Rebuilt per map, uploaded with `VK_UploadMaterials`. Layout
-  (`MATERIAL_UINTS` 8): Q2RTX's 6 uints + Hexen II's alternate animation
-  (`+a..+j`). Set: the base texture, the cutout mask, the animation and
-  (4.5) the emissive texture and factor (Q2RTX's; the lava's and the light
-  models' skins', see [Emissive surfaces](#emissive-surfaces-vk_emissivec));
-  the specular factor `r_specular` (0 since 4.9: matte, as GL; Q2RTX's 1
-  made the dark walls look like polished metal, see [Map
-  lights](#map-lights-vk_maplightsc); a change uploads the table again after
-  `vkDeviceWaitIdle`; E5's material files will set their own); the other
-  factors are Q2RTX's defaults (metallic 0, roughness 1).
+  (`MATERIAL_UINTS` 8, `vertex_buffer.h`): Q2RTX's 6 uints, Hexen II's
+  alternate animation (`+a..+j`) in `[6]` and (5.3) the roughness and
+  metallic texture with the `MATERIAL_NORMALS_BC5` flag in `[7]`; `[2].y`
+  and `[3].x` are glTF's roughness and metallic (the value without that
+  texture, a factor on it; Q2RTX's `roughness_override` was a floor over
+  the albedo's alpha).
+- A material is what it shows (5.3): its original texture slot
+  (`texture`, whose [material files](#material-files-vk_matfilesc) apply),
+  the slot it shows without files (`original`: the texture, or a player's
+  translated skin) and flags (`VK_MAT_SKIN`, `_CUTOUT`, `_TRANSLATED`,
+  `_LAVA`, `_FLAME`).
+  `VK_ApplyMaterialFiles` makes the rest from those and the texture's
+  files, or the defaults without files, as before E5: the base texture
+  (the replaced albedo, but not under a player's colors), the mask of a
+  cutout skin (the albedo if it has alpha, else the original), the normal
+  map and its BC5 flag, the roughness and metallic texture, the factors
+  (roughness 1, metallic 0 or 1 with a metallic map, bump 1, the
+  `.mat`'s), the specular (the `.mat`'s, 1 where the roughness is
+  authored, else `r_specular`: 0 since 4.9, matte as GL; Q2RTX's 1 made
+  the dark walls look like polished metal, see [Map
+  lights](#map-lights-vk_maplightsc)) and the emission (4.5's lava: its
+  albedo with `r_lava_light`, an `_e` instead; the light models' flames:
+  an `_e`, else the fake emissive texture; any other lit texture: an `_e`
+  or, with the `.mat`'s `emissive`, its albedo; times `r_emissive_scale`
+  and the `.mat`'s `emissive`, see [Emissive
+  surfaces](#emissive-surfaces-vk_emissivec)). `VK_ReapplyMaterials`
+  applies every material again and uploads the table (after
+  `vkDeviceWaitIdle`): `r_reloadmaterials`, `r_materials`, `r_lava_light`,
+  `r_emissive_scale`; `r_specular` uploads it again.
 - `vertex_buffer.h`'s `get_material_info`/`animate_material`: frame =
   `int(cl.time*5)` (`global_ubo.anim_frame`); surfaces reference their
   animation's first frame.
+- **`get_material`** (`path_tracer_rgen.h`, 5.3, MATERIALS.md): the
+  roughness and metallic are the material's values times the roughness
+  and metallic texture's G and B where it has one, also without a normal
+  map (Q2RTX: the albedo's and the normal map's alpha, with a normal map
+  only); the normal map's green is flipped (OpenGL's convention: the
+  tangent frame's bitangent runs down the image, `vk_world.c`'s `+vecs[1]`
+  and `model_geometry.comp`'s dP/dv, which is DirectX's, as Q2RTX's maps
+  are); its Z is `B × 2 − 1` (Q2RTX read B as it is) or, for BC5,
+  rebuilt from X and Y (the Toksvig adjustment then has nothing to
+  soften). Bounce rays read only the base color, as Q2RTX's.
+  `pt_roughness_override` and `pt_metallic_override` still apply.
+  Measured without files: the 3D view identical to `main`'s (4 maps, lit
+  and `r_debugview` 1, 2 and 10, but meso9's flying imp); with a
+  roughness and metallic texture on about half of demo1's start view, the
+  primary rays 0.42–0.50 ms at 1920x1080 against 0.41–0.47 without files
+  and on `main` (Release, run-to-run spread of that size).
 
 ## World (`vk_world.c`)
 
@@ -487,7 +638,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   the instances with an emissive skin);
   `check` compares every triangle of the last frame
   with the same computation on the CPU (`CpuTriangle` — keep it in step with
-  the shader).
+  the shader), and each instance's material against its group (a masked
+  one's mask is its albedo or, 5.3, the original skin).
 
 ## Skins (`vk_skin.c`)
 
@@ -499,13 +651,31 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
 - One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
   precache on map load, others on demand); for `EF_HOLEY` models the skin is
   its own `mask_texture`. A third key (4.5): emissive, for models at a map
-  light's origin, a material with the skin's emissive texture (made on first
-  use, `VK_EmissiveSkin`), or the plain one where the skin has no bright
-  texels (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+  light's origin, a material flagged `VK_MAT_FLAME` with the skin's
+  emissive texture (made on first use, `VK_EmissiveSkin`; 5.3: its own
+  material also where the skin has no bright texels, so that an `_e` found
+  later applies, and also with `r_emissive_models 0`, when it emits
+  nothing, so that an `_e` doesn't glow on a flame whose map light lights
+  for it; see [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+- **Material files** (5.3, [above](#material-files-vk_matfilesc)): a
+  skin material's texture is the skin (under a player's colors the class
+  model's last single skin, the one `R_TranslatePlayerSkin` translates,
+  whatever the group frame or skin number), `VK_ApplyMaterialFiles` does
+  the rest: a replaced albedo with
+  alpha is also an `EF_HOLEY` skin's mask, one without keeps the original
+  as the mask (`vk_models check` accepts either); the stone and ice
+  pictures are named `gfx/skin100` and `101` (unnamed slots: the set takes
+  the picture's name).
 - `R_TranslatePlayerSkin` is `gl_rmisc.c`'s per-class translation
   (`gfx/player.lmp`, `color_offsets`) but translates the 8-bit skin and loads
   it with the model's texture mode (so the Demoness keeps her cutouts, which
-  GL loses) at native size with mips.
+  GL loses) at native size with mips. 5.3: it notes whether the
+  translation changed any texel (top and bottom color 0 don't: an identity
+  table); such a player shows the skin's replaced albedo, the others their
+  translated original (`VK_MAT_TRANSLATED`), both the other maps
+  (MATERIALS.md). When a player's colors or class change, the material
+  made for them before is found again (`VK_FindMaterial`: the same
+  texture, shown slot and flags) or one is made.
 
 ## Effects (`vk_effects.c`)
 
@@ -514,8 +684,17 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   Q2RTX's `transparency.c` (`hl_shared.h`): positions (3 per particle, then 4
   per sprite quad sharing a static uint16 index buffer 0 1 2, 2 3 0), then an
   `EffectParticle` (linear color, half alpha | GL's `ptex_coord` set) per
-  particle and an `EffectSprite` (texture slot, alpha) per sprite;
+  particle and an `EffectSprite` (texture slot, alpha, original slot,
+  coverage) per sprite;
   `MAX_EFFECT_PARTICLES`/`MAX_EFFECT_SPRITES`, the excess is counted.
+- **A sprite frame's replaced albedo** (5.3, `VK_SpriteTexture`; the
+  precached sprites' frames are looked up on map load): the texture
+  shown, with the original's slot, whose size sets the mip level (GL's
+  texel per unit: `pt_logic_sprite` adds the log2 of the sizes' ratio),
+  and, where the albedo has no alpha, whose alpha is the coverage (read in
+  the shader: the original's 8-bit pixels aren't kept and a BC7 image
+  couldn't take them). Sprites have no material: their other maps and
+  `.mat` are reported and left out.
 - Particles as GL's `R_DrawParticles`: one camera-facing triangle, 1.5 units
   up/right scaled with distance, snow's `count/10` base and texture sets,
   color `& 0x1ff` from `d_8to24table` or `d_8to24TranslucentTable`, GL's 16x16
@@ -1397,11 +1576,26 @@ radiance of a texture color of 1):
   and particles (effects).
 - **Left out** (not emissive in GL): runes, `+0fire` and `+0sun`
   (buttons), water, slime and the other turbulent textures (unlit in GL
-  because they are turbulent; E5's `.mat` files can make `*skulls`,
-  `*rtex386`, `*rtex153`, `*rtex346` lava), the sky (its own modes,
+  because they are turbulent; since 5.3 an `_e` or a `.mat`'s `emissive`
+  makes `*skulls`, `*rtex386`, `*rtex153`, `*rtex346` glow, but not
+  lava's lights), the sky (its own modes,
   [Sky](#sky-vk_skyc)); no emissive
   surface has a light style (`vertex_buffer.h`'s `light_style_scale`
   stays 1).
+- **Material files** (5.3, `VK_ApplyMaterialFiles`): lava emits its
+  replaced albedo, or its `_e`, times the `.mat`'s `emissive` (1); its
+  light polygons keep the original's average color (5.5's). A flame shows
+  its skin's `_e` instead of the fake emissive texture (castle4's torch
+  green in the test); `r_emissive_models 0` turns both off (the light
+  models keep their flame materials, which then emit nothing). Any other
+  lit texture with an `_e`, or a `.mat` `emissive` (then its albedo),
+  glows at the scale times that; it lights its surroundings through
+  bounce rays only (not a light, not flagged: the light lists hold the
+  map's lights and lava's triangles, M5). On a model the emission is also
+  times the instance's GL light level where it has one
+  (`model_geometry.comp`'s emissive factor, `AliasLight`: abslight, the
+  rotating items' pulse, the `MLS_*` modes; 1 when the world lights it),
+  as the flames' is: an `_e` on an abslight 0 model shows nothing.
 - **Against GL:** the lava lights its rooms through light instead of the
   mappers' grids (their hot spots on meso2's lava are gone; castle5's lava,
   lit from inside by them, is dark and banded without emission); the
@@ -2683,12 +2877,13 @@ overlay, and a measuring mode.
 | `vk_info` | device, extensions, BC texture support and the largest image, swapchain, validation counts |
 | `vk_imagefile <file> [scale]`, `vk_imagefile` | 5.2: reads an image file of [MATERIALS.md](MATERIALS.md) (without an extension: `.png`, `.tga`, `.dds`, `.ktx2` in turn), prints what it read and the times, shows it at the top left, scale screen pixels per texel (0 fits); alone hides it (see [Image files](#image-files-vk_imagefilec)) |
 | `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
+| `r_reloadmaterials`, `r_materials 0/1`, `vk_materials [list\|problems]` | 5.3: the material files again (the new and changed ones read, the materials applied; no map reload); the material files apply (1) or the original textures only (0, not archived; A/B comparisons); the index, textures with files, images, problems; each texture's files; the problems (see [Material files](#material-files-vk_matfilesc)) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |
 | `vk_instances [step\|box]` | model instances, gliding monsters, pose bounds |
 | `vk_models [list\|check]` | alias models, GPU-vs-CPU triangle check |
 | `vk_effects [check]` | particles/sprites, effects TLAS ray check |
-| `r_specular` | the materials' specular factor (0 since 4.9: matte, as GL; 1 Quake II RTX's; see [Materials](#materials-vk_materialc)) |
+| `r_specular` | the materials' specular factor where no roughness is authored (0 since 4.9: matte, as GL; 1 Quake II RTX's; see [Materials](#materials-vk_materialc)) |
 | `vk_accel` | acceleration structure sizes, build times |
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |

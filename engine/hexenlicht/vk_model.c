@@ -266,7 +266,10 @@ void VK_LoadModels (void)
 	{
 		if (cl.model_precache[i]->type == mod_alias && VK_AliasModelIndex (cl.model_precache[i]) >= 0)
 			VK_AddSkinMaterials (cl.model_precache[i]);
+		else if (cl.model_precache[i]->type == mod_sprite)
+			VK_PreloadSpriteFiles (cl.model_precache[i]);	/* their material files (5.3), not while drawn */
 	}
+	VK_PreloadStartupSprites ();
 	loading_models = false;
 	if (vk_num_materials > first_material)
 		VK_UploadMaterialRange (first_material, vk_num_materials - first_material);
@@ -601,8 +604,9 @@ static void VK_ModelsCheck (void)
 		inward_per_model[index * 2 + 1] += num_tris;
 
 		/* the group its triangles are in against its material: transparent
-		 * ones are Q2RTX's transparent models, masked ones have the skin
-		 * as their cutout mask, the others neither (the weapon looks like
+		 * ones are Q2RTX's transparent models, masked ones have a cutout
+		 * mask (the skin, or its replaced albedo with alpha: 5.3), the
+		 * others neither (the weapon looks like
 		 * one of them, and only its triangles have the weapon flag); and
 		 * the material as the GPU's table has it (uploaded on map load or
 		 * mid-frame) */
@@ -623,7 +627,7 @@ static void VK_ModelsCheck (void)
 			look = (g == MODEL_GROUP_WEAPON) ? mf->weapon_look : g;
 			if (g == NUM_MODEL_GROUPS || weapon != (g == MODEL_GROUP_WEAPON) ||
 			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
-			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture) ||
+			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture && mat->mask_texture != mat->original) ||
 			    ((look == MODEL_GROUP_OPAQUE || look == MODEL_GROUP_LIGHT) && mat->mask_texture))
 				group_bad++;
 			if ((int)(gm[0] & 0xffff) != mat->base_texture || (int)(gm[1] >> 16) != mat->mask_texture)

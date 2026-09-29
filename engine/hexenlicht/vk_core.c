@@ -595,6 +595,7 @@ static vk_module_t	vk_modules[] =
 	{ "textures",	VK_InitTextures,	VK_ShutdownTextures,		VK_INIT_DEFAULT },
 	{ "imagefiles",	VK_InitImageFiles,	NULL,				VK_INIT_DEFAULT },
 	{ "materials",	VK_InitMaterials,	VK_ShutdownMaterials,		VK_INIT_DEFAULT },
+	{ "matfiles",	VK_InitMaterialFiles,	VK_ShutdownMaterialFiles,	VK_INIT_DEFAULT },
 	{ "world",	VK_InitWorld,		VK_ShutdownWorld,		VK_INIT_DEFAULT },
 	{ "models",	VK_InitModels,		VK_ShutdownModels,		VK_INIT_DEFAULT },
 	{ "models|",	VK_CreateModelPipelines, VK_DestroyModelPipelines,	VK_INIT_RELOAD_SHADER },

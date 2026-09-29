@@ -854,6 +854,44 @@ qboolean FS_FileInGamedir (const char *filename)
 	return false;
 }
 
+#if defined(HEXENLICHT)
+/*
+============
+FS_ListSearchPath
+
+Hexenlicht (engine/hexenlicht/vk_matfiles.c): walks the search path in
+its order (a later game directory first) for an index of the files under
+a folder: dir() gets each directory's OS path, pakfile() each pak entry
+whose name starts with prefix (in any case), its position and size in
+the pak and the pak's file name.
+============
+*/
+void FS_ListSearchPath (const char *prefix,
+			void (*dir) (const char *ospath, void *ctx),
+			void (*pakfile) (const char *name, long filepos, long size, const char *pakname, void *ctx),
+			void *ctx)
+{
+	searchpath_t	*search;
+	size_t	len = strlen(prefix);
+	int	i;
+
+	for (search = fs_searchpaths ; search ; search = search->next)
+	{
+		if (search->pack)
+		{
+			for (i = 0; i < search->pack->numfiles; i++)
+			{
+				if (!q_strncasecmp(search->pack->files[i].name, prefix, len))
+					pakfile (search->pack->files[i].name, search->pack->files[i].filepos,
+						 search->pack->files[i].filelen, search->pack->filename, ctx);
+			}
+		}
+		else
+			dir (search->filename, ctx);
+	}
+}
+#endif	/* HEXENLICHT */
+
 /*
 ============
 FS_LoadFile

@@ -294,7 +294,7 @@ Goal: edit a PNG, reload in game, see the change.
 |---|---|---|---|
 | 5.1 | Finalise the material spec (§6) | S | Spec frozen in `docs/hexenlicht/MATERIALS.md` |
 | 5.2 | Loaders: PNG/TGA (stb_image), DDS/KTX2 (BC5/7; no BC4 since 5.1), colors vs data (UNORM formats, R104), mips | M | All formats load |
-| 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload; `get_material`'s reads as MATERIALS.md's "Shader changes" (since 5.1) | M | Live reload works |
+| 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload; `get_material`'s reads as MATERIALS.md's "Shader changes" (since 5.1); an index of the files (`quakefs.c`), skins, sprites, lava and flames (L since 5.3: they share the index and the sets) | L | Live reload works |
 | 5.4 | Export command: all original textures with canonical names (`~<crc>` for every variant of a name whose pixels differ between maps, 5.1) + manifest CSV | S | Full export of both games |
 | 5.5 | Special materials: water/slime/lava, glass, chrome (since 5.1), sky, animated textures | M | Correct in both games |
 | 5.6 | Test pack (stone, metal, water, emissive, glass) + authoring guide | S | Pack looks right in game |

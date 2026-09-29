@@ -7,8 +7,9 @@ M1–M7); the rest of E5 implements it: the loaders (5.2), the material
 system and hot reload (5.3), the export of the original textures under
 these names (5.4), the special materials (5.5), a test pack and the
 authoring guide (5.6). Since 5.2 the engine reads the image files
-(`vk_imagefile <file>` shows one, RENDERER.md's "Image files"); until 5.3
-no material uses them.
+(`vk_imagefile <file>` shows one, RENDERER.md's "Image files"), since 5.3
+the materials use them (RENDERER.md's "Material files";
+`r_reloadmaterials`, `r_materials`, `vk_materials`; DECISIONS M11–M18).
 
 ## Files
 
@@ -105,7 +106,7 @@ R89).
 | `metallic` | 0–1 | 0 without a map, 1 with one | without a metallic map the metallic value, with one a factor on it |
 | `bump` | ≥ 0 | 1 | the normal map's strength (Quake II RTX's `bump_scale`, times `pt_bump_scale`) |
 | `specular` | ≥ 0 | 1 where the roughness is authored (`_r`, `_orm` or a `roughness` key), else `r_specular` (0) | the dielectric specular (Quake II RTX's `specular_factor`: its Fresnel term from 4 % head-on; metals take 1 whatever it is) |
-| `emissive` | ≥ 0 | 1 with `_e`, else 0 (lava's and the light models' flames' own, R82) | the emission: `_e`'s color, or the albedo's without one, times this, in lava's units (a color of 1 emits `r_emissive_scale`, 32) |
+| `emissive` | ≥ 0 | 1 with `_e`, else 0 (lava's and the light models' flames' own, R82) | the emission: `_e`'s color, or the albedo's without one, times this, in lava's units (a color of 1 emits `r_emissive_scale`, 32; on a model also times its GL light level where it has one, as the flames', 5.3) |
 
 What emits other than lava and the light models' flames lights its
 surroundings only through bounce rays: the light lists hold the map
@@ -138,17 +139,18 @@ in one file (Quake II RTX's `materials/*.mat` sections).
   (R92), which is why a normal map alone doesn't.
 - **Player colors:** a player's skin is recolored by the player's colors
   (`R_TranslatePlayerSkin`, the `player<n>` textures). A player whose
-  colors leave the skin as it is (an identity translation; 5.3 finds
-  which colors do) shows the replaced albedo
+  colors leave the skin as it is (the translation changes no texel: top
+  and bottom color 0, the default; 5.3, M16) shows the replaced albedo
   (`textures/models/<class>.mdl_0.png`); other players show the
   original, translated; the other maps apply to both.
 - **Sprites** are unlit effects without a material: only an albedo (with
   its alpha) applies.
-- **Holes kept from the original:** an albedo without alpha keeps the
-  original's coverage. A masked skin then takes the original as its mask
-  (today the mask is the skin itself, and `vk_models check` asserts it,
-  `vk_model.c`); a sprite, which has no mask, gets the original's alpha
-  merged into the image at load (5.3).
+- **Holes kept from the original:** an albedo without alpha (every texel
+  255; a BC7 file: every block certainly opaque) keeps the original's
+  coverage. A masked skin then takes the original as its mask; a sprite,
+  which has no mask, takes the original's alpha as its coverage (5.3:
+  read in the shader beside the albedo, not merged into the image at
+  load, M15).
 
 ## Formats and lookup
 
@@ -179,30 +181,34 @@ in one file (Quake II RTX's `materials/*.mat` sections).
   first name that has any of `_orm`, `_r`, `_m`: its `_orm`, else its `_r`
   and `_m` (never mixed across names). A `.mat` is used whole (settings
   aren't merged across files).
-- **Reload:** `r_reloadmaterials` (5.3) reads the changed files again.
+- **Reload:** `r_reloadmaterials` (5.3) reads the new and changed files
+  again and applies them, without reloading the map.
 - **Cost:** a material reads its albedo and, with a normal map, the
   normal; one with a roughness or metallic map reads one texture more per
   shading point (Quake II RTX packs them into the albedo's and the
   normal's alpha instead, which shipped files can't be repacked into,
-  M1); 5.3 measures it.
+  M1); 5.3 measured no cost beyond run-to-run noise (M14). A map load
+  pays for decoding PNGs (demo1's 96 world textures at 512x512: 0.7–1 s
+  as PNG, 60 ms as BC7 DDS, M18).
 
 ## Shader changes (5.3)
 
-What the spec asks of `get_material` (`path_tracer_rgen.h`), which reads
-Quake II RTX's layout today:
+Done in 5.3 (DECISIONS M13–M15). What the spec asked of `get_material`
+(`path_tracer_rgen.h`), which read Quake II RTX's layout before:
 
 - the normal's green flipped: the tangent frame's bitangent runs down the
   image (world triangles `vk_world.c`, models `model_geometry.comp`), so
   the shaders read DirectX's convention, as Quake II RTX's;
 - roughness and metallic from their own texture (a slot in the material
-  table, `vk_material.c`), also without a normal map: today they are the
+  table, `vk_material.c`), also without a normal map: they were the
   albedo's and the normal's alpha, read only with a normal map;
 - glTF's roughness rule (the value or a factor) instead of Quake II RTX's
   `roughness_override`, a floor;
 - BC5 normals: Z rebuilt from X and Y (`rgbToNormal` reads Z), so the
-  Toksvig adjustment loses the normal's length there;
+  Toksvig adjustment loses the normal's length there; the other normal
+  maps' Z decoded as XYZ's `B × 2 − 1` (Quake II RTX read B as it is);
 - a masked skin's mask from the original where its albedo has no alpha
-  (above; with `vk_models check`'s mask-is-the-skin test changed).
+  (above; `vk_models check` accepts either).
 
 ## Not in E5
 

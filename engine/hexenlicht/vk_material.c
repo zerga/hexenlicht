@@ -4,10 +4,20 @@
  * (shaders/vertex_buffer.h): the textures to shade it with, factors, and
  * the animation sequence it is in.
  * Materials are rebuilt on every map change (vk_world.c adds the world's
- * textures); VK_UploadMaterials writes them to the GPU table in Quake II
- * RTX's layout. For now only the base texture, the cutout mask, the
- * emission (4.5: lava and the light models' flames, vk_emissive.c) and the
- * animation are set; the PBR maps come with epic E5.
+ * textures, vk_skin.c the skins); VK_UploadMaterials writes them to the
+ * GPU table in Quake II RTX's layout, with Hexen II's alternate animation
+ * and (5.3) the roughness and metallic texture in its spare words.
+ * A material is its original texture slot, the slot it shows without
+ * files (the original, or a player's translated skin) and flags (a skin,
+ * a cutout, lava, a light model's flame); VK_ApplyMaterialFiles makes the
+ * rest from those and the texture's material files (5.3, vk_matfiles.c,
+ * MATERIALS.md): the albedo, the normal map, the roughness and metallic
+ * map, the emission and the .mat's factors, or the defaults without
+ * files (the original, roughness 1, metallic 0, a flat normal, the
+ * specular r_specular: as before E5). The emission: lava its albedo
+ * (4.5, r_lava_light), the light models' flames their skin's fake
+ * emissive texture (vk_emissive.c), an _e file or the .mat's emissive
+ * key on any lit texture; times r_emissive_scale and the key.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -107,11 +117,74 @@ int VK_AddMaterial (const char *name, int base_texture)
 	m = &materials[index];
 	memset (m, 0, sizeof(*m));
 	q_strlcpy (m->name, name, sizeof(m->name));
-	m->base_texture = base_texture;
+	m->texture = m->original = m->base_texture = base_texture;
 	m->emissive_factor = 1.0f;
+	m->roughness = 1.0f;
+	m->bump = 1.0f;
+	m->specular = -1.0f;
 	m->num_frames = 1;
 	m->next_frame = index;
 	return index;
+}
+
+/* the material's textures, factors and emission from what it is (texture,
+ * original, flags) and its texture's material files, or the defaults
+ * without them (MATERIALS.md's Defaults) */
+void VK_ApplyMaterialFiles (int index)
+{
+	vk_material_t		*m = VK_GetMaterial (index);
+	const vk_matset_t	*s = VK_MaterialSet (m->texture, NULL, (m->flags & VK_MAT_SKIN) ? MATUSE_SKIN : MATUSE_WORLD);
+	qboolean		albedo = s && s->albedo && !(m->flags & VK_MAT_TRANSLATED);
+	int			own = s ? s->emissive : 0;
+	float			key = s ? s->emission : -1.0f;
+
+	m->base_texture = albedo ? s->albedo : m->original;
+	m->mask_texture = 0;
+	if (m->flags & VK_MAT_CUTOUT)	/* an albedo without alpha keeps the original's holes */
+		m->mask_texture = (albedo && s->albedo_alpha) ? s->albedo : m->original;
+	m->normal_texture = s ? s->normal : 0;
+	m->normal_bc5 = s && s->normal && s->normal_bc5;
+	m->rm_texture = s ? s->rm : 0;
+	/* glTF's rule: the value without a map, a factor on one; a missing _r
+	 * or _m is 255 in the packed texture, so its factor is its value */
+	m->roughness = (s && s->roughness >= 0.0f) ? s->roughness : 1.0f;
+	m->metallic = (s && s->metallic >= 0.0f) ? s->metallic : ((s && s->metallic_map) ? 1.0f : 0.0f);
+	m->bump = (s && s->bump >= 0.0f) ? s->bump : 1.0f;
+	/* an authored roughness makes it physically based (M4), else r_specular */
+	m->specular = (s && s->specular >= 0.0f) ? s->specular :
+		      ((s && (s->roughness_map || s->roughness >= 0.0f)) ? 1.0f : -1.0f);
+
+	if (m->flags & VK_MAT_LAVA)
+		m->emissive_texture = VK_LavaEmits () ? (own ? own : m->base_texture) : 0;
+	else if (m->flags & VK_MAT_FLAME)
+		m->emissive_texture = !VK_ModelsEmit () ? 0 : own ? own : VK_EmissiveSkin (m->original);	/* made when first asked for */
+	else
+		m->emissive_texture = own ? own : ((key > 0.0f) ? m->base_texture : 0);
+	m->emissive_factor = m->emissive_texture ? VK_EmissiveScale () * ((key >= 0.0f) ? key : 1.0f) : 1.0f;
+}
+
+/* every material's files again, then the whole table; nothing may be
+ * using it (r_reloadmaterials, r_materials, r_lava_light and the like) */
+void VK_ReapplyMaterials (void)
+{
+	int	i;
+
+	for (i = 1; i < vk_num_materials; i++)
+		VK_ApplyMaterialFiles (i);
+	VK_UploadMaterials ();
+}
+
+/* a material made for this texture, shown slot and flags, 0 = none */
+int VK_FindMaterial (int texture, int original, int flags)
+{
+	int	i;
+
+	for (i = 1; i < vk_num_materials; i++)
+	{
+		if (materials[i].texture == texture && materials[i].original == original && materials[i].flags == flags)
+			return i;
+	}
+	return 0;
 }
 
 vk_material_t *VK_GetMaterial (int index)
@@ -137,16 +210,16 @@ void VK_UploadMaterialRange (int first, int count)
 	{
 		const vk_material_t	*m = &materials[i];
 
-		/* the factors are Quake II RTX's defaults (MAT_Reset) */
 		d = table + (i - first) * MATERIAL_UINTS;
-		d[0] = (uint32_t)m->base_texture & 0xffff;
+		d[0] = ((uint32_t)m->base_texture & 0xffff) | (((uint32_t)m->normal_texture & 0xffff) << 16);
 		d[1] = ((uint32_t)m->emissive_texture & 0xffff) | (((uint32_t)m->mask_texture & 0xffff) << 16);
-		d[2] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (-1.0f) << 16);	/* bump scale, no roughness override */
-		d[3] = VK_FloatToHalf (1.0f) | ((uint32_t)VK_FloatToHalf (m->emissive_factor) << 16);	/* metalness, emissive factor */
+		d[2] = VK_FloatToHalf (m->bump) | ((uint32_t)VK_FloatToHalf (m->roughness) << 16);
+		d[3] = VK_FloatToHalf (m->metallic) | ((uint32_t)VK_FloatToHalf (m->emissive_factor) << 16);
 		d[4] = ((uint32_t)m->num_frames & 0xffff) | (((uint32_t)m->next_frame & 0xffff) << 16);
-		d[5] = VK_FloatToHalf (q_max (r_specular.value, 0.0f)) | ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular (r_specular), base factor */
+		d[5] = VK_FloatToHalf ((m->specular >= 0.0f) ? m->specular : q_max (r_specular.value, 0.0f)) |
+		       ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular, base factor */
 		d[6] = (uint32_t)m->alternate;
-		d[7] = 0;
+		d[7] = ((uint32_t)m->rm_texture & 0xffff) | ((m->normal_bc5 ? MATERIAL_NORMALS_BC5 : 0u) << 16);
 	}
 	VK_UploadBuffer (&vk_material_table, (VkDeviceSize)first * MATERIAL_UINTS * sizeof(uint32_t), table,
 			 (VkDeviceSize)count * MATERIAL_UINTS * sizeof(uint32_t));

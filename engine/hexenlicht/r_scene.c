@@ -323,6 +323,7 @@ void R_NewMap (void)
 
 	VK_LoadWorld (cl.worldmodel);	/* the world and its submodels on the GPU */
 	VK_LoadModels ();		/* the alias models the map precaches */
+	VK_ReportMaterialFiles ();	/* 5.3: what was found (outside frames) */
 	VK_ClearInstances ();
 	VK_ClearEffects ();
 	VK_ResetDenoiserHistory ();	/* the images show the old map */

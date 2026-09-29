@@ -272,6 +272,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_draw.c
 	${HEXENLICHT_DIR}/vk_buffer.c
 	${HEXENLICHT_DIR}/vk_material.c
+	${HEXENLICHT_DIR}/vk_matfiles.c
 	${HEXENLICHT_DIR}/vk_world.c
 	${HEXENLICHT_DIR}/vk_pvs.c
 	${HEXENLICHT_DIR}/vk_model.c
