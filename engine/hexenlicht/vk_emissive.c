@@ -13,7 +13,9 @@
  * lava's surface is 32 times GL's relation to the walls (the exposure
  * adapts to it; it clips towards white). 4.9 calibrates it:
  *  - Lava (r_lava_light 1): its warped texture, linear (the material's
- *    emissive texture is its base texture), times the scale. The side of
+ *    emissive texture is its base texture; 5.3: a replaced albedo or its
+ *    _e, times the .mat's emissive, vk_material.c's
+ *    VK_ApplyMaterialFiles), times the scale. The side of
  *    each world lava triangle whose front leaf isn't lava (so not the
  *    undersides) is also a polygon light in vk_light.c's lists, of the
  *    texture's average linear color times the scale (Quake II RTX's
@@ -39,8 +41,11 @@
  *    (vk_texture.c keeps their 8-bit pixels); it is made when first shown,
  *    as the texture "<skin>*E<the skin's CRC>" (a reloaded skin gets its
  *    own; "*S" with r_srgb 1, 4.17), and stays with the texture cache.
- * A change of r_lava_light or r_emissive_scale rewrites the materials
- * (after the GPU is idle) and rebuilds the lights; r_srgb takes the
+ *    A skin's _e file (5.3) is its flame's emissive texture instead;
+ *    r_emissive_models 0 turns both off.
+ * A change of r_lava_light, r_emissive_scale or r_emissive_models
+ * rewrites the materials (after the GPU is idle) and rebuilds the
+ * lights; r_srgb takes the
  * lava's other average color when the lights are rebuilt (vk_texture.c),
  * the flames' other emissive textures with the next map's materials.
  *
@@ -161,6 +166,7 @@ void VK_AddLavaMaterial (int material, const texture_t *tx)
 	lava_materials[num_lava_materials].lights = 0;
 	q_strlcpy (lava_materials[num_lava_materials].name, tx->name, sizeof(lava_materials[0].name));
 	num_lava_materials++;
+	VK_GetMaterial (material)->flags |= VK_MAT_LAVA;	/* its emission: VK_ApplyMaterialFiles */
 }
 
 /* vk_world.c: a world lava triangle whose front leaf isn't lava, after its
@@ -197,24 +203,9 @@ qboolean VK_AddLavaLight (const VboPrimitive *p)
 	return true;
 }
 
-/* the lava materials' emission by the cvars */
-static void ApplyLavaMaterials (void)
+qboolean VK_LavaEmits (void)
 {
-	int	i;
-
-	for (i = 0; i < num_lava_materials; i++)
-	{
-		vk_material_t	*m = VK_GetMaterial (lava_materials[i].material);
-
-		m->emissive_texture = r_lava_light.integer ? m->base_texture : 0;
-		m->emissive_factor = VK_EmissiveScale ();
-	}
-}
-
-/* VK_LoadWorld, after the surfaces and before the materials are uploaded */
-void VK_FinishLava (void)
-{
-	ApplyLavaMaterials ();
+	return r_lava_light.integer != 0;
 }
 
 int VK_NumLavaLights (void)
@@ -517,21 +508,11 @@ void VK_PrintEmissive (void)
  * use by the frames in flight */
 static void LavaChanged (cvar_t *var)
 {
-	int	i;
-
 	(void)var;
 	if (vk_num_materials <= 1)
 		return;		/* no map */
 	vkDeviceWaitIdle (vk.device);
-	ApplyLavaMaterials ();
-	for (i = 1; i < vk_num_materials; i++)
-	{
-		vk_material_t	*m = VK_GetMaterial (i);
-
-		if (m->emissive_texture)
-			m->emissive_factor = VK_EmissiveScale ();
-	}
-	VK_UploadMaterials ();
+	VK_ReapplyMaterials ();		/* the emission of each (vk_material.c) */
 	VK_RebuildLights ();
 }
 
@@ -550,4 +531,5 @@ void VK_InitEmissive (void)
 	Cvar_RegisterVariable (&r_emissive_models);
 	Cvar_SetCallback (&r_lava_light, LavaChanged);
 	Cvar_SetCallback (&r_emissive_scale, LavaChanged);
+	Cvar_SetCallback (&r_emissive_models, LavaChanged);	/* 5.3: the flames' materials (VK_MAT_FLAME) */
 }

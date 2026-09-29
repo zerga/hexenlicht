@@ -770,8 +770,8 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	 * with MLS_ABSLIGHT shows its skin's emissive texture (4.5,
 	 * vk_emissive.c: the flames of torches and the like, lit; not what
 	 * passes that point), flagged as a light: the map light is its light */
-	emissive = group == MODEL_GROUP_LIGHT && VK_ModelsEmit () && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
-		   VK_MapLightAt (e->origin);
+	emissive = group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
+		   VK_MapLightAt (e->origin);	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
 	material = VK_SkinMaterial (e, hdr, emissive, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |

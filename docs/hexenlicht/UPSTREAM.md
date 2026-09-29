@@ -119,6 +119,15 @@ changes one, with a line on what we changed:
   (story 2.9): `CL_RelinkEntities` clears `forcelink` before the renderer
   runs, and Hexenlicht's `r_lerpmove` needs to know which entities step.
 
+- `engine/h2shared/quakefs.c` — after `FS_FileInGamedir`, an
+  `#if defined(HEXENLICHT)` function `FS_ListSearchPath` (story 5.3): walks
+  `fs_searchpaths` in its order, giving each pak entry with a prefix (in
+  any case; its name, position, size and pak) and each game directory to
+  callbacks (the material files' index,
+  `vk_matfiles.c`; declared in `engine/hexenlicht/vk_local.h`). Nothing
+  else changes; the guard keeps it out of HexenWorld and the Makefile
+  builds.
+
 To check: `git diff --name-status upstream/master main | grep -v "^A"`
 prints every upstream file that differs on `main`.
 

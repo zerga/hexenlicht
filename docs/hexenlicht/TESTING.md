@@ -241,6 +241,55 @@ DECISIONS M8) against a generated test set; about two minutes.
 - **Times:** `vk_imagefile` of a large file in Release prints the read,
   decode and upload times (whole milliseconds).
 
+## Materials (5.3)
+
+The material system ([MATERIALS.md](MATERIALS.md), RENDERER.md's
+"Material files", DECISIONS M11–M18) against a generated test set at
+demo1's start, meso9 and castle4; about four minutes in Debug.
+
+1. **The set:** `material_set.ps1 -Texconv <texconv.exe>` writes 30
+   generated files (no game data) into `data1\textures` (it refuses to
+   if other files are there: move a texture pack away first) and the
+   scripts `mattest_a.cfg` to `_c`; the files it wrote are listed in
+   `data1\mattest_files.txt`. They were placed by a probe (every demo1
+   world texture replaced by a flat code color, the base color view
+   decoded on a grid): rtex022, rtex021 and rtex013 are walls, rtex040 the
+   ramp, rtex429, rtex388 and rtex430 floors, rtex426 the pedestal,
+   rtex028 the ceiling strip, rtex038 a column.
+2. **The run:** with `data1\shots` empty and the configs backed up,
+   `material_set.ps1 -Run` (`-Release`) runs the scripts and, when the log
+   shows `T53_SWAP`, swaps the ice mace's skin for one whose left half is
+   transparent and deletes `rtex430~6995.png`, which the script's
+   `r_reloadmaterials` then picks up (the hot reload); at `T53_LOCK` it
+   writes half of a new `rtex388~6280.png` and holds it open without
+   sharing (a file an editor is still writing: the next reload must
+   refuse it, not end the game), at `T53_UNLOCK` the rest. 23 screenshots
+   at 960x540: demo1 with the Paladin (base color, shading and geometric
+   normals, roughness/metallic/specular, lit; the same with `r_materials
+   0`; the player in the chase camera with the colors 0 0 and 4 4), with
+   the Crusader's ice mace before and after the reload, its hits
+   (sprites) and the file being written, meso9's lava, castle4's torch
+   with and without files and with `r_emissive_models 0`.
+3. **The check:** `material_check.ps1` reads the shots at the probe's
+   points and prints PASS or FAIL for 26 checks (the debug views read
+   back through the 2.2 power; one reads the log). The log has
+   `vk_materials list` and `problems` (six expected: four `.mat` lines of
+   rtex388, rtex038's `_r.dds`, rtex013's BC7 normal map; seven while
+   the file is being written), the reload lines and
+   `Vulkan validation: 0 errors, 0 warnings`.
+4. **`r_materials 0` against `main`:** `tga_diff.ps1` of shot 05 (base
+   color) against the same view from `main` (the "Pixel regression"
+   script's demo1 base color shot): identical but for the notify lines.
+5. `material_set.ps1 -Remove` deletes the files it wrote, the scripts and
+   its sources; restore the configs.
+
+- **The search order** (done once in 5.3, by hand): a loose
+  `data1\textures` file wins over the same name in a `data1` pak (Hexen
+  II adds a folder's loose files above its paks), a `portals` file over
+  `data1`'s (`-portals`), and a pak entry with capitals is reported.
+- **Map load time:** the `materials:` line after a map load (Release)
+  gives the files read and their time; `vk_world` the world's build.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

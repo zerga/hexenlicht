@@ -143,10 +143,48 @@ typedef struct
  * false with error "" if no file was found, else error says why. */
 qboolean VK_LoadImageFile (const char *path, vk_imagefile_t *img);
 void VK_FreeImageFile (vk_imagefile_t *img);
+qboolean VK_ParseImageFile (const char *name, const byte *file, size_t len, vk_imagefile_t *img);	/* a file's bytes read elsewhere (5.3), the kind by the name's extension */
+qboolean VK_ImageFileHasAlpha (const vk_imagefile_t *img);	/* a texel's alpha below 255 (level 0; a BC7 block not certainly opaque) */
 int VK_LoadImageTexture (const char *identifier, const vk_imagefile_t *img, int flags);	/* vk_texture.c: its slot */
 uint32_t VK_TextureLevels (int slot);	/* vk_texture.c: the slot's mip levels */
 void VK_InitImageFiles (void);
 void VK_DrawImageFile (void);	/* R_RenderView, after the 3D view: vk_imagefile's picture, in the 2D under the HUD */
+
+/* vk_matfiles.c: the material files (5.3, docs/hexenlicht/MATERIALS.md):
+ * an index of the files under textures/, the maps and settings of each
+ * original texture slot, r_reloadmaterials, r_materials, vk_materials.
+ * VK_MaterialSet never prints: it may load files while a frame is
+ * recorded (a skin when first shown). */
+enum
+{
+	MATUSE_WORLD,		/* a world texture */
+	MATUSE_SKIN,		/* an alias model's skin, gfx/skin100 and 101 */
+	MATUSE_SPRITE		/* a sprite frame: an unlit effect, only the albedo applies */
+};
+typedef struct
+{
+	int		albedo, normal, rm, emissive;	/* texture slots of the images, 0 = none (or refused) */
+	qboolean	albedo_alpha;		/* the albedo has coverage (an alpha below 255) */
+	qboolean	normal_bc5;		/* BC5: Z rebuilt from X and Y */
+	qboolean	roughness_map, metallic_map;	/* rm holds them (G, B; 255 where one is missing) */
+	float		roughness, metallic, bump, specular, emission;	/* the .mat's, -1 = not set */
+} vk_matset_t;
+void VK_InitMaterialFiles (void);
+void VK_ShutdownMaterialFiles (void);
+/* the set of the original texture in slot (name: for an unnamed slot, a
+ * picture's, e.g. gfx/skin100.lmp); NULL: no files, or r_materials 0 */
+const vk_matset_t *VK_MaterialSet (int slot, const char *name, int use);
+int VK_SpriteTexture (int slot, int *original, qboolean *coverage);	/* a sprite frame's texture: its albedo, else slot; original: slot when replaced (0 = not); coverage: the original's alpha applies */
+void VK_MaterialFilesNewMap (void);	/* VK_LoadWorld: look again (the index, the sets) */
+void VK_MaterialFilesPurged (int first);	/* D_ClearOpenGLTextures: slots from first on are gone */
+void VK_PreloadSpriteFiles (qmodel_t *model);	/* VK_LoadModels: a precached sprite's frames */
+void VK_PreloadStartupSprites (void);		/* VK_LoadModels: the sprites loaded at startup (below gl_texlevel) */
+void VK_ReportMaterialFiles (void);	/* R_NewMap: one summary line, when there are files or problems */
+/* quakefs.c (under HEXENLICHT): the search path in its order */
+void FS_ListSearchPath (const char *prefix,
+			void (*dir) (const char *ospath, void *ctx),
+			void (*pakfile) (const char *name, long filepos, long size, const char *pakname, void *ctx),
+			void *ctx);
 
 /* vk_draw.c: the 2D batch drawn by GL_EndRendering */
 void VK_InitDraw (void);
@@ -249,14 +287,32 @@ VkCommandBuffer VK_BeginUpload (void);
 void VK_EndUpload (void);
 void VK_UploadBuffer (vk_buffer_t *dst, VkDeviceSize offset, const void *data, VkDeviceSize size);
 
-/* vk_material.c: the material table (layout in shaders/vertex_buffer.h) */
+/* vk_material.c: the material table (layout in shaders/vertex_buffer.h).
+ * texture, original and flags say what the material is;
+ * VK_ApplyMaterialFiles sets the rest from them and the original
+ * texture's material files (5.3, vk_matfiles.c). */
+#define VK_MAT_SKIN		1	/* an alias model's skin (vk_skin.c) */
+#define VK_MAT_CUTOUT		2	/* EF_HOLEY: the mask is the albedo's coverage, else the original's */
+#define VK_MAT_TRANSLATED	4	/* a player's translated colors: the albedo isn't replaced */
+#define VK_MAT_LAVA		8	/* emits its albedo (vk_emissive.c, r_lava_light) */
+#define VK_MAT_FLAME		16	/* a light model's flame: the skin's _e or fake emissive texture, with r_emissive_models */
 typedef struct
 {
 	char		name[16];	/* texture name */
+	int		texture;	/* the original texture slot, whose material files apply */
+	int		original;	/* the slot shown without a replaced albedo: texture, or a player's translated skin */
+	int		flags;		/* VK_MAT_* */
 	int		base_texture;	/* texture slot */
+	int		normal_texture;	/* 0 = none */
+	int		rm_texture;	/* roughness (G) and metallic (B), 0 = none */
 	int		mask_texture;	/* cutout: texture slot whose alpha < 0.5 are holes, 0 = none */
 	int		emissive_texture;	/* texture slot of the emitted radiance, 0 = none (vk_emissive.c) */
 	float		emissive_factor;	/* times the emissive texture (1) */
+	float		roughness;	/* without rm the roughness, with it a factor on it (glTF's rule) */
+	float		metallic;	/* the same */
+	float		bump;		/* the normal map's strength */
+	float		specular;	/* the dielectric specular, -1 = r_specular */
+	qboolean	normal_bc5;	/* the normal map is BC5: Z rebuilt */
 	int		num_frames;	/* animation: frames in the sequence (1 = none) */
 	int		next_frame;	/* material of the next frame */
 	int		alternate;	/* first material of the alternate animation, 0 = none */
@@ -270,8 +326,11 @@ void VK_ShutdownMaterials (void);
 void VK_ClearMaterials (void);
 int VK_AddMaterial (const char *name, int base_texture);
 vk_material_t *VK_GetMaterial (int index);
+int VK_FindMaterial (int texture, int original, int flags);	/* one made for these, 0 = none */
 void VK_UploadMaterials (void);
 void VK_UploadMaterialRange (int first, int count);	/* new materials, while others are in use */
+void VK_ApplyMaterialFiles (int index);	/* the material's maps, factors and emission from its texture's files (or the defaults) */
+void VK_ReapplyMaterials (void);	/* every material again and the table; the GPU is idle (r_reloadmaterials, the cvars) */
 uint16_t VK_FloatToHalf (float f);
 float VK_HalfToFloat (uint16_t h);
 
@@ -380,7 +439,6 @@ void VK_ClearLava (void);			/* VK_LoadWorld, before the surfaces */
 void VK_AddLavaMaterial (int material, const texture_t *tx);	/* the material of a lava surface */
 struct VboPrimitive;
 qboolean VK_AddLavaLight (const struct VboPrimitive *p);	/* a world lava triangle facing out of the lava; false: not a light (degenerate, or its material past the lava table) */
-void VK_FinishLava (void);			/* after the surfaces: the lava materials' emission */
 int VK_NumLavaLights (void);			/* the lava's polygon lights, none with r_lava_light 0 */
 void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color);	/* its corners (emitting along cross(p1 - p0, p2 - p0)) and radiance */
 qboolean VK_OverLava (const vec3_t origin);	/* within 16 units of a lava light, either side (vk_maplights.c: a fake lava light) */
@@ -388,6 +446,7 @@ qboolean VK_LavaLightsOn (void);		/* vk_light.c: the lava's lights are in the li
 qboolean VK_ModelsEmit (void);			/* r_emissive_models */
 int VK_EmissiveSkin (int slot);			/* the skin's emissive texture, made on first use; 0 = none */
 float VK_EmissiveScale (void);			/* r_emissive_scale: the emissive materials' factor */
+qboolean VK_LavaEmits (void);			/* r_lava_light */
 void VK_PrintEmissive (void);			/* vk_lights */
 
 /* vk_sky.c: Hexen II's sky as GL draws it (env_map), faithful or lighting

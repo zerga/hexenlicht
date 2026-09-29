@@ -413,6 +413,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vkDeviceWaitIdle (vk.device);	/* frames in flight may still use the old buffers */
 	VK_FreeWorld ();
 	VK_ClearMaterials ();
+	VK_MaterialFilesNewMap ();	/* the files may have changed since the last map */
 	VK_ClearLava ();
 	VK_ClearLights ();	/* the lights were the old map's */
 	VK_LoadMapFile (worldmodel);	/* the per-map settings and light edits (4.7) */
@@ -435,7 +436,8 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	prims = (VboPrimitive *) data;
 
 	vk_world.num_primitives = EmitModels (worldmodel, prims);
-	VK_FinishLava ();	/* the lava materials' emission */
+	for (i = 1; i < (uint32_t)vk_num_materials; i++)
+		VK_ApplyMaterialFiles ((int)i);	/* the material files (5.3), the lava's emission (flagged by EmitModels) */
 	prims_size = vk_world.num_primitives * sizeof(VboPrimitive);
 	size = prims_size + vk_world.num_primitives * 9 * sizeof(float);
 	positions = (float *) (data + prims_size);
@@ -621,9 +623,13 @@ static void VK_World_f (void)
 		{
 			const vk_material_t	*m = VK_GetMaterial (i);
 
-			Con_Printf ("%4d %-16s texture %4d frames %d next %4d alternate %4d emissive %4d x %g\n", i, m->name,
+			Con_Printf ("%4d %-16s texture %4d frames %d next %4d alternate %4d emissive %4d x %g", i, m->name,
 					m->base_texture, m->num_frames, m->next_frame, m->alternate, m->emissive_texture,
 					m->emissive_factor);
+			if (m->base_texture != m->original || m->normal_texture || m->rm_texture)	/* material files (5.3) */
+				Con_Printf (" (original %d) normal %d%s rm %d roughness %g metallic %g", m->original, m->normal_texture,
+						m->normal_bc5 ? " BC5" : "", m->rm_texture, m->roughness, m->metallic);
+			Con_Printf ("\n");
 		}
 	}
 }

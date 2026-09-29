@@ -33,6 +33,9 @@
  *   image), empty files and names with * or ? (both end the game in
  *   quakefs.c: FS_LoadFile's Sys_Error, the loose files' wildcard lookup).
  * - Mips: the file's levels (at most its full chain), level 0 first.
+ * - VK_ImageFileHasAlpha (5.3): whether level 0 has coverage (an alpha
+ *   below 255; a BC7 block unless its mode or endpoints make it opaque),
+ *   which decides whether an albedo is a masked skin's mask.
  * - The loader never prints (5.3 may load while a frame is recorded, when
  *   a print re-enters SCR_UpdateScreen); it says why in img->error.
  * vk_imagefile <file> [scale] reads a file, uploads it as the texture
@@ -400,22 +403,14 @@ static long FileSize (const char *name)
 	return FS_OpenFile (name, NULL, NULL);
 }
 
-static qboolean LoadFile (const char *name, long size, vk_imagefile_t *img)
+/* a file's bytes as its extension's kind; img->file and read_ms are set */
+static qboolean ParseFile (const char *name, const byte *file, size_t len, vk_imagefile_t *img)
 {
-	byte		*file;
-	size_t		len;
 	qboolean	ok;
 	double		t0 = Sys_DoubleTime ();
 
-	q_strlcpy (img->file, name, sizeof(img->file));
-	/* FS_LoadFile ends the game with a Sys_Error on a file of 0 bytes (its
-	 * fread of nothing "fails") */
-	if (size <= 0)
+	if (!len)
 		return Refuse (img, "an empty file");
-	if ((file = FS_LoadMallocFile (name, NULL)) == NULL)
-		return Refuse (img, "can't be read");
-	len = (size_t)fs_filesize;
-	img->read_ms = (Sys_DoubleTime () - t0) * 1000.0;
 	if (!q_strcasecmp (COM_FileGetExtension (name), "dds"))
 	{
 		img->kind = "DDS";
@@ -431,15 +426,43 @@ static qboolean LoadFile (const char *name, long size, vk_imagefile_t *img)
 		img->kind = q_strcasecmp (COM_FileGetExtension (name), "tga") ? "PNG" : "TGA";
 		ok = LoadStb (file, len, img);
 	}
-	free (file);
 	if (!ok)
 	{
 		free (img->data);
 		img->data = NULL;
 	}
 	else if (!img->decode_ms)
-		img->decode_ms = (Sys_DoubleTime () - t0) * 1000.0 - img->read_ms;
+		img->decode_ms = (Sys_DoubleTime () - t0) * 1000.0;
 	return ok;
+}
+
+static qboolean LoadFile (const char *name, long size, vk_imagefile_t *img)
+{
+	byte		*file;
+	qboolean	ok;
+	double		t0 = Sys_DoubleTime ();
+
+	q_strlcpy (img->file, name, sizeof(img->file));
+	/* FS_LoadFile ends the game with a Sys_Error on a file of 0 bytes (its
+	 * fread of nothing "fails") */
+	if (size <= 0)
+		return Refuse (img, "an empty file");
+	if ((file = FS_LoadMallocFile (name, NULL)) == NULL)
+		return Refuse (img, "can't be read");
+	img->read_ms = (Sys_DoubleTime () - t0) * 1000.0;
+	ok = ParseFile (name, file, (size_t)fs_filesize, img);
+	free (file);
+	return ok;
+}
+
+/* 5.3 (vk_matfiles.c, which reads the bytes itself: FS_LoadFile ends the
+ * game on a file that is being written): a file's bytes, the kind by the
+ * name's extension; never prints */
+qboolean VK_ParseImageFile (const char *name, const byte *file, size_t len, vk_imagefile_t *img)
+{
+	memset (img, 0, sizeof(*img));
+	q_strlcpy (img->file, name, sizeof(img->file));
+	return ParseFile (name, file, len, img);
 }
 
 qboolean VK_LoadImageFile (const char *path, vk_imagefile_t *img)
@@ -492,6 +515,80 @@ void VK_FreeImageFile (vk_imagefile_t *img)
 {
 	free (img->data);
 	img->data = NULL;
+}
+
+/* count bits from bit first of a 128-bit BC7 block (little endian) */
+static uint32_t BlockBits (const byte *b, int first, int count)
+{
+	uint32_t	v = 0;
+	int		i;
+
+	for (i = 0; i < count; i++)
+		v |= (uint32_t)((b[(first + i) >> 3] >> ((first + i) & 7)) & 1) << i;
+	return v;
+}
+
+/* a BC7 block whose every texel's alpha is 255: modes 0-3 have none, the
+ * others' alpha lies between endpoints (and their p-bits), so both at
+ * their maximum make it 255; modes 4 and 5 may rotate a color channel
+ * into alpha (the Khronos Data Format spec's BC7) */
+static qboolean BC7BlockOpaque (const byte *b)
+{
+	int	mode, rot;
+
+	for (mode = 0; mode < 8 && !(b[0] & (1 << mode)); mode++)
+		;
+	switch (mode)
+	{
+	case 0: case 1: case 2: case 3:
+		return true;
+	case 4:		/* rotation 2, index mode 1, RGB 5 bits x 2 each, A 6 bits x 2 */
+		rot = (int)BlockBits (b, 5, 2);
+		if (rot)
+			return BlockBits (b, 8 + (rot - 1) * 10, 10) == 0x3ff;
+		return BlockBits (b, 38, 12) == 0xfff;
+	case 5:		/* rotation 2, RGB 7 bits x 2 each, A 8 bits x 2 */
+		rot = (int)BlockBits (b, 6, 2);
+		if (rot)
+			return BlockBits (b, 8 + (rot - 1) * 14, 14) == 0x3fff;
+		return BlockBits (b, 50, 16) == 0xffff;
+	case 6:		/* RGBA 7 bits x 2 each, then a p-bit per endpoint */
+		return BlockBits (b, 49, 14) == 0x3fff && BlockBits (b, 63, 2) == 3;
+	case 7:		/* partition 6, RGBA 5 bits x 4 each, then 4 p-bits */
+		return BlockBits (b, 74, 20) == 0xfffff && BlockBits (b, 94, 4) == 0xf;
+	default:	/* reserved: decodes to 0 */
+		return false;
+	}
+}
+
+/* coverage: a texel of level 0 whose alpha is below 255 (a BC7 block that
+ * isn't certainly opaque; BC5 has no alpha) */
+qboolean VK_ImageFileHasAlpha (const vk_imagefile_t *img)
+{
+	const byte	*p;
+	size_t		i;
+
+	if (!img->data || img->levels < 1)
+		return false;
+	p = img->data + img->offset[0];
+	if (img->format == VK_FORMAT_R8G8B8A8_UNORM)
+	{
+		for (i = 3; i < img->size[0]; i += 4)
+		{
+			if (p[i] != 255)
+				return true;
+		}
+		return false;
+	}
+	if (img->format == VK_FORMAT_BC7_UNORM_BLOCK)
+	{
+		for (i = 0; i + 16 <= img->size[0]; i += 16)
+		{
+			if (!BC7BlockOpaque (p + i))
+				return true;
+		}
+	}
+	return false;
 }
 
 /* ==========================================================================

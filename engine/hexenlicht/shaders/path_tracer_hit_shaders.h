@@ -143,12 +143,25 @@ vec4 pt_logic_sprite(int primitiveID, vec2 bary, float hitT)
 	EffectSprite s = EffectSpriteBufferRef(global_ubo.sprites).sprites[sprite_index];
 
 	/* the pixel's footprint at hitT: P[1][1] is 1 / tan(fov_y / 2), negated */
-	float lod = max(log2(hitT * 2.0 / (abs(global_ubo.P[1][1]) * float(global_ubo.height))), 0.0);
+	float footprint = log2(hitT * 2.0 / (abs(global_ubo.P[1][1]) * float(global_ubo.height)));
+	float lod = max(footprint, 0.0);
+	/* a replaced frame (5.3): its texels per unit against the original's */
+	if (s.original != 0)
+		lod = max(footprint + log2(float(global_textureSize(s.texture, 0).x) / float(global_textureSize(s.original, 0).x)), 0.0);
 	/* half a texel of the coarser of the two levels trilinear filtering
 	 * reads, so neither wraps around (the sampler repeats) */
 	int level = min(int(ceil(lod)), global_textureQueryLevels(s.texture) - 1);
 	vec2 half_texel = min(0.5 / vec2(global_textureSize(s.texture, level)), vec2(0.5));
 	vec4 color = global_textureLod(s.texture, clamp(uv, half_texel, 1.0 - half_texel), lod);
+
+	/* an albedo without alpha keeps the original's coverage (MATERIALS.md) */
+	if (s.coverage != 0)
+	{
+		float olod = max(footprint, 0.0);
+		int olevel = min(int(ceil(olod)), global_textureQueryLevels(s.original) - 1);
+		vec2 ohalf = min(0.5 / vec2(global_textureSize(s.original, olevel)), vec2(0.5));
+		color.a = global_textureLod(s.original, clamp(uv, ohalf, 1.0 - ohalf), olod).a;
+	}
 
 	color.a *= s.alpha;
 	return vec4(color_to_linear(color.rgb, global_ubo.color_srgb) * (color.a * effects_brightness()), color.a);

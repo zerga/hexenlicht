@@ -692,9 +692,14 @@ trace_caustic_ray(Ray ray, int surface_medium)
 	return extinction(surface_medium, extinction_distance) * throughput;
 }
 
-vec3 rgbToNormal(vec3 rgb, out float len)
+/* Hexenlicht (5.3): MATERIALS.md's normal maps, XYZ as RGB x 0.5 + 0.5 (Quake
+ * II RTX reads Z as it is); BC5 has X and Y only (Z samples as 0), so Z is
+ * rebuilt and the length, which the Toksvig adjustment reads, is 1 */
+vec3 rgbToNormal(vec3 rgb, bool bc5, out float len)
 {
-    vec3 n = vec3(rgb.xy * 2 - 1, rgb.z);
+    vec3 n;
+    n.xy = rgb.xy * 2 - 1;
+    n.z = bc5 ? sqrt(max(1 - dot(n.xy, n.xy), 0)) : rgb.z * 2 - 1;
 
     len = length(n);
     return len > 0 ? n / len : vec3(0);
@@ -1147,8 +1152,26 @@ get_material(
 	}
 
 	normal = geo_normal;
-	metallic = 0;
-    roughness = 1;
+
+	// Hexenlicht (5.3, MATERIALS.md): roughness and metallic from their own
+	// texture (G, B), also without a normal map, by glTF's rule: the
+	// material's value, or a factor on the map (Quake II RTX: the albedo's
+	// and the normal map's alpha, read with a normal map only, the roughness
+	// override a floor)
+	roughness = minfo.roughness;
+	metallic = minfo.metalness_factor;
+	if (minfo.rm_texture != 0)
+	{
+		vec4 rm;
+		if (mip_level >= 0)
+			rm = global_textureLod(minfo.rm_texture, tex_coord, mip_level);
+		else
+			rm = global_textureGrad(minfo.rm_texture, tex_coord, tex_coord_x, tex_coord_y);
+		roughness *= rm.g;
+		metallic *= rm.b;
+	}
+	roughness = clamp(roughness, 0, 1);
+	metallic = clamp(metallic, 0, 1);
 
     if (minfo.normals_texture != 0)
     {
@@ -1159,7 +1182,11 @@ get_material(
 	        image2 = global_textureGrad(minfo.normals_texture, tex_coord, tex_coord_x, tex_coord_y);
 
 		float normalMapLen;
-		vec3 local_normal = rgbToNormal(image2.rgb, normalMapLen);
+		vec3 local_normal = rgbToNormal(image2.rgb, (minfo.normals_flags & MATERIAL_NORMALS_BC5) != 0, normalMapLen);
+		// Hexenlicht (5.3): OpenGL's convention, green up the image; the
+		// bitangent runs down it (+v: vk_world.c, model_geometry.comp),
+		// which is DirectX's, as Quake II RTX's maps are
+		local_normal.y = -local_normal.y;
 
 		if(dot(triangle.tangents[0], triangle.tangents[0]) > 0)
 		{
@@ -1177,15 +1204,6 @@ get_material(
 
 			normal = normalize(mix(geo_normal, normal, bump_scale));
 		}
-
-        metallic = clamp(image2.a * minfo.metalness_factor, 0, 1);
-        
-        if(minfo.roughness_override >= 0)
-        	roughness = max(image1.a, minfo.roughness_override);
-        else
-        	roughness = image1.a;
-
-        roughness = clamp(roughness, 0, 1);
 
         float effective_mip = mip_level;
 

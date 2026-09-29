@@ -122,8 +122,10 @@ END_SHADER_STRUCT( EffectParticle )
 
 BEGIN_SHADER_STRUCT( EffectSprite )
 {
-	uint texture;		/* texture slot of the frame */
+	uint texture;		/* texture slot of the frame: its replaced albedo (5.3), or the original */
 	float alpha;		/* multiplies the texture's */
+	uint original;		/* the original frame's slot when replaced (its size, a texel per unit, sets the mip level), 0 = not */
+	uint coverage;		/* 1: the original's alpha is the coverage (the albedo has none) */
 }
 END_SHADER_STRUCT( EffectSprite )
 

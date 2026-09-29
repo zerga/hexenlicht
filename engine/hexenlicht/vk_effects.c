@@ -8,7 +8,9 @@
  * They go into a mapped buffer per frame in flight, laid out like Quake II
  * RTX's transparency.c (shaders/hl_shared.h): vertex positions for the
  * acceleration structures, then a color per particle and a texture and
- * alpha per sprite for the shaders. The sprite quads share a static index
+ * alpha per sprite for the shaders (5.3: a frame's replaced albedo, with
+ * the original for its mip level and, without alpha of its own, its
+ * coverage; vk_matfiles.c). The sprite quads share a static index
  * buffer. vk_accel.c builds a BLAS over each and puts them into the
  * effects TLAS, which the view pass walks for the effects in front of
  * what it hit.
@@ -40,7 +42,7 @@
 #include "shaders/hl_shared.h"
 
 COMPILE_TIME_ASSERT(EffectParticle, sizeof(EffectParticle) == 16);	/* the shaders' std430 layouts */
-COMPILE_TIME_ASSERT(EffectSprite, sizeof(EffectSprite) == 8);
+COMPILE_TIME_ASSERT(EffectSprite, sizeof(EffectSprite) == 16);
 COMPILE_TIME_ASSERT(EffectsCheckRay, sizeof(EffectsCheckRay) == 32);
 COMPILE_TIME_ASSERT(EffectsCheckResult, sizeof(EffectsCheckResult) == 8);
 COMPILE_TIME_ASSERT(EffectsCheckPush, sizeof(EffectsCheckPush) == 48);
@@ -327,7 +329,14 @@ static void WriteSprites (vk_effectsframe_t *f, float *pos, EffectSprite *out)
 			continue;
 		}
 
-		out[n].texture = (uint32_t)frame->gl_texturenum;
+		{	/* its replaced albedo (5.3) */
+			int		original;
+			qboolean	coverage;
+
+			out[n].texture = (uint32_t)VK_SpriteTexture ((int)frame->gl_texturenum, &original, &coverage);
+			out[n].original = (uint32_t)original;
+			out[n].coverage = coverage ? 1u : 0u;
+		}
 		/* GL: blended with the texture's alpha, times r_wateralpha if
 		 * translucent; unlit (GL_REPLACE, or white GL_MODULATE) */
 		out[n].alpha = ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & EF_TRANSPARENT)) ?

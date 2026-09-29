@@ -54,14 +54,19 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 /* Hexenlicht: the material table (vk_material.c), MATERIAL_UINTS uints per material:
  *   [0] base texture | normal map << 16          (texture slots, 0 = none;
  *   [1] emissive texture | mask texture << 16      the base falls back to white)
- *   [2] half2 (bump scale, roughness override)
- *   [3] half2 (metalness factor, emissive factor)
+ *   [2] half2 (bump scale, roughness)
+ *   [3] half2 (metallic, emissive factor)
  *   [4] number of animation frames | next frame's material << 16
  *   [5] half2 (specular factor, base factor)
  *   [6] Hexen II: material of the alternate animation (+a..+j), 0 = none
- *   [7] unused
- * [0]-[5] are Quake II RTX's layout. */
+ *   [7] Hexenlicht (5.3): roughness and metallic texture (G, B) | MATERIAL_NORMALS_* flags << 16
+ * [0]-[5] are Quake II RTX's layout, but for [2].y and [3].x (5.3,
+ * MATERIALS.md): glTF's roughness and metallic, the value without the
+ * roughness and metallic texture and a factor on it with one (Quake II
+ * RTX: a roughness floor over the albedo's alpha, and a factor on the
+ * normal map's alpha). */
 #define MATERIAL_UINTS          8
+#define MATERIAL_NORMALS_BC5    1u	/* [7] >> 16: the normal map is BC5 (X, Y), Z rebuilt */
 
 // should match the same constant declared in material.h
 #define MAX_PBR_MATERIALS      4096	// Hexenlicht: MATERIAL_INDEX_MASK + 1; index 0 is unused
@@ -192,9 +197,11 @@ struct MaterialInfo
 	uint normals_texture;
 	uint emissive_texture;
 	uint mask_texture;
+	uint rm_texture;	/* Hexenlicht (5.3): roughness (G) and metallic (B), 0 = none */
+	uint normals_flags;	/* Hexenlicht (5.3): MATERIAL_NORMALS_* */
 	float bump_scale;
-	float roughness_override;
-	float metalness_factor;
+	float roughness;	/* Hexenlicht (5.3): glTF's, the value or a factor on rm_texture (Quake II RTX's roughness_override) */
+	float metalness_factor;	/* the same for metallic */
 	float emissive_factor;
 	float specular_factor;
 	float base_factor;
@@ -394,8 +401,10 @@ get_material_info(uint material_id)
 	minfo.normals_texture = data[0] >> 16;
 	minfo.emissive_texture = data[1] & 0xffff;
 	minfo.mask_texture = data[1] >> 16;
+	minfo.rm_texture = data[7] & 0xffff;
+	minfo.normals_flags = data[7] >> 16;
 	minfo.bump_scale = unpackHalf2x16(data[2]).x;
-	minfo.roughness_override = unpackHalf2x16(data[2]).y;
+	minfo.roughness = unpackHalf2x16(data[2]).y;
 	minfo.metalness_factor = unpackHalf2x16(data[3]).x;
 	minfo.emissive_factor = unpackHalf2x16(data[3]).y;
 	minfo.specular_factor = unpackHalf2x16(data[5]).x;
