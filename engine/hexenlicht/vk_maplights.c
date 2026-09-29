@@ -21,10 +21,12 @@
  *    a plane goes to the side of the trace's other end, so only when every
  *    leaf that close is solid) and one with a level below 0.
  * Brightness: the light shape (r_maplight_shape, 4.15, shaders/light_lists.h)
- * is utils/light's by default (2): each light gives a surface the lightmap
- * value the compiler and GL made of it alone, (level - d)(0.5 + 0.5 cos)
- * halved, clipped, times the style, in linear light (to the power
- * r_maplight_gamma, 2.2), times its factor in the light list entry: GL
+ * is the physical one by default (0, the "Physically based" mode since 4.21,
+ * below). The "Original" mode is utils/light's (2): each light gives a
+ * surface the lightmap value the compiler and GL made of it alone,
+ * (level - d)(0.5 + 0.5 cos) halved, clipped, times the style, in linear
+ * light (to the power r_maplight_gamma, 2.2), times its factor in the light
+ * list entry: GL
  * added its lights before the sRGB step, so overlapping lights were
  * brighter than their sum; since 4.16 vk_lightfit.c fits each light's
  * factor per cluster to the map's lightmaps (4.15: one, r_maplight_gl_scale
@@ -116,7 +118,7 @@ static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
 static cvar_t	r_maplight_scale = {"r_maplight_scale", "630", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness; 4.17: 740 -> 630): the physical shapes, dynamic lights */
 static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intensity as (level / 300)^this (4.9) */
 static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
-static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical, 1 GL's angle term, 2 GL's lightmap value (4.15) */
+static cvar_t	r_maplight_shape = {"r_maplight_shape", "0", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical (the default since 4.21), 1 GL's angle term, 2 GL's lightmap value (4.15, "Original") */
 static cvar_t	r_maplight_gamma = {"r_maplight_gamma", "2.2", CVAR_NONE};	/* GL's lightmap value into linear light: its power (4.15) */
 static cvar_t	r_maplight_gl_scale = {"r_maplight_gl_scale", "2", CVAR_NONE};	/* shape 2: a full GL texel's light where 4.16's fit has none, or with r_maplight_fit 0 (4.15: 2 for GL's overlapping lights; 1 = the texture's own color) */
 static cvar_t	r_maplight_radius = {"r_maplight_radius", "8", CVAR_NONE};	/* the spheres' (4.15) */
