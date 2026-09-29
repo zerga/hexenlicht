@@ -130,13 +130,13 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   light. Saves are named `hlcal_<bookmark>`: two bookmark files with the
   same names (4.9's `demo1_start` and 4.11a's) overwrite each other's
   saves, so make them again (no `-SkipSaves`) when switching files.
-- **The light fit (4.16):** `vk_lights fit` scores the map's fitted light
-  factors on the lightmap texels the fit didn't use: the direct light
-  against GL's lightmaps with 4.15's one factor, a factor per light and
-  per list entry (what the renderer uses), and where GL's lightmap is
-  clipped (only in the Original mode: `r_maplight_shape 2` first since
-  4.21). Over many maps: `map <m>`, ~40 waits, `echo ==== MAP <m>`,
-  `vk_lights fit`, at most ~10 maps per script, chained with `exec`.
+- **The light fit (4.16):** `vk_lights fit` (GL's shape, the default)
+  scores the map's fitted light factors on the lightmap texels the fit
+  didn't use: the direct light against GL's lightmaps with 4.15's one
+  factor, a factor per light and per list entry (what the renderer uses),
+  and where GL's lightmap is clipped. Over many maps: `map <m>`, ~40
+  waits, `echo ==== MAP <m>`, `vk_lights fit`, at most ~10 maps per
+  script, chained with `exec`.
 - `vk_screenshot <name> [frames]` writes `shots\<name>.tga`, frames
   averaged in linear light (not numbered, no 100-file limit).
 
@@ -145,9 +145,9 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 A hub is done when it passes GL's sanity check and the owner has played it
 (DECISIONS R107; R105 before 4.21), without shipped per-map files: what is
 off for a renderer-wide reason is fixed for every map. GL is a sanity
-reference, not a target: the default "Physically based" mode is meant to
-look like the path tracer, not like GL. Blackmarsh (4.11a) was the first;
-about an hour of runs.
+reference, not a target. The hubs are reviewed in the default "Original"
+mode (R108; 4.21's default was "Physically based"). Blackmarsh (4.11a)
+was the first; about an hour of runs.
 
 1. **Views** into `tools/hexenlicht/bookmarks_<hub>.txt` (the format of
    `bookmarks.txt`; Blackmarsh's has 43):
@@ -174,18 +174,18 @@ about an hour of runs.
    `cl.light_level` is GL's), nothing broken (black views, a light missing
    or blocked, a bright or dark spot without a reason); differences
    Hexenlicht has on purpose (the lava at ×32, entity shadows and
-   lighting, bounce light, physical falloff) are fine; the owner reviews
-   the grids and plays the hub. (4.11a's "close enough", 0.85–1.2 per
+   lighting, bounce light) are fine; the owner reviews the grids and
+   plays the hub. (4.11a's "close enough", 0.85–1.2 per
    view in the Original mode, R105, was replaced by it.)
 4. **A map outside, or a view broken:** the pictures' two rows say
    whether the direct light is off (a light's shape or level) or the look
    is (entities, textures, bounce, the lava); a candidate: `calib_shots.ps1
    ... -SkipSaves -SkipGl -KeepSaves -Label <candidate> -Names <views>
    -HlCvars "..."` (e.g. `"r_lava_light 0"`: the fake lava lights
-   instead, 4.11b; in the Original mode, `"r_maplight_shape 2;
-   r_maplight_fit 0; r_maplight_gl_scale 1"`: each light at its own GL
-   texel, how 4.11a found the fit's granularity), then `calib_compare.ps1
-   -Labels hl,<candidate>`. A renderer-wide cause
+   instead, 4.11b; `"r_maplight_fit 0; r_maplight_gl_scale 1"`: each
+   light at its own GL texel, how 4.11a found the fit's granularity;
+   `"r_maplight_shape 0"`: the Physically based mode), then
+   `calib_compare.ps1 -Labels hl,<candidate>`. A renderer-wide cause
    becomes a story (fixed for every map); a shipped map file only if the
    owner asks for one.
 5. **Checks** of the hub's special lights, each shot in both engines from
@@ -282,10 +282,9 @@ about an hour of runs.
 
 - **Map light brightness in older checks (4.15):** the checks below from
   before 4.15 dim or brighten the map's lights with `r_maplight_scale`
-  (50, 62.5, 100, 4000), which only the physical shapes use: the default
-  again since 4.21 (the checks from 4.15 to 4.21, R97's pulse and 4.16's,
-  4.17's and 4.11a's numbers, need `r_maplight_shape 2`); with GL's shape
-  scale `r_maplight_fit_scale` (1 by default since 4.17, 1.1 in 4.16),
+  (50, 62.5, 100, 4000), which only the physical shapes use: add
+  `r_maplight_shape 0` to repeat them as measured, or scale
+  `r_maplight_fit_scale` (1 by default since 4.17, 1.1 in 4.16) instead with GL's shape,
   or `r_maplight_gl_scale` (2) with `r_maplight_fit 0` for 4.15's (e.g.
   R97's pulse at `r_maplight_gl_scale 0.5`): its light is bounded, a full
   lightmap texel at most, so the physical shape's very bright settings
