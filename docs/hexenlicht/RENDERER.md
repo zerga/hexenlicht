@@ -186,11 +186,11 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   0.09 stops, castle4 0.64 → 0.90, the tower 0.73 → 0.96 (4.16's dark
   stone). An offline simulation from albedo shots (`r_debugview 1`) had
   predicted it within 3–7 % (the bounce off dark textures and the mips
-  make it a little darker). Left outside: views where the lit image's
-  entities differ from GL's lightmaps (demo2's closed doors, 0.50 and
-  2.18; the lightmaps have no door shadows), a few with local light
-  differences (village4 0.73, demo1 and village1 0.76–0.82) and village5's
-  lone torch (1.38): 4.11a's.
+  make it a little darker). Left outside: demo2's closed door (0.50: the
+  lightmaps have no door shadows) and, as 4.11a found, the fit's
+  granularity (demo2's sliding doors 2.18, village5's lone torch 1.38,
+  village4 0.73, demo1 and village1 0.76–0.82: story 4.18, DECISIONS
+  R106).
 - Slot 0 is white; freed slots point back to it. `D_FlushCaches` purges
   slots above `gl_texlevel` on a map change like upstream;
   `D_ClearOpenGLTextures` also clears the 2D pic cache
@@ -1665,7 +1665,9 @@ the scripts are in [TESTING.md](TESTING.md#calibration-against-gl-49)):
   protocol as bytes (1.4°).
 - **`vk_bookmark <name>`** appends `name map x y z pitch yaw [portals]`
   for the player's origin and view to `bookmarks.txt` in the game folder
-  and prints it: the lines of `tools/hexenlicht/bookmarks.txt`.
+  and prints it: the lines of `tools/hexenlicht/bookmarks.txt` (4.9's
+  views) and `bookmarks_<hub>.txt` (4.11's, TESTING.md's "Calibrating a
+  hub").
 - **`vk_screenshot <name> [frames]`** writes `shots\<name>.tga`, the next
   presented frames (1–1024, 1) averaged in linear light
   (`VK_RequestScreenshotAverage`, `vk_swapchain.c`: each frame's capture
@@ -1782,7 +1784,10 @@ Story 4.10: Hexen II's darkness as GL shows it.
   R94), and rider2c's big dark room by bounce light off its one lit ceiling
   spot (35 % of the pixels visible against GL's 11 %). With the torch
   both light the rooms; Hexenlicht 1.7–2.6× brighter next to walls (the
-  torch is a dynamic light, which stays physical: DECISIONS R97).
+  torch is a dynamic light, which stays physical: DECISIONS R97). 4.11a
+  found the other side: at dark views, looking ahead, the torch adds
+  0.03–0.22 of GL's light, as it sits at the player's feet, on the
+  floor's plane, where GL's formula lights the floor most (story 4.19).
 - **Gameplay** was already GL's: `cl.light_level` (4.12, `r_light.c`) is
   `R_DrawViewModel`'s, dark lights adding to it as in GL.
 - Left out: the hydra's blinding (`df`, GL's full-screen dark flash: the

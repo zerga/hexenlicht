@@ -108,7 +108,7 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   deletes its scripts (and the saves unless `-KeepSaves`). 15 bookmarks:
   ~3 minutes (Release, 960x540).
 - **`calib_compare.ps1 -Out <folder> -Labels a,b [-Pictures] [-Transfer
-  srgb]`**: per bookmark and pooled, Hexenlicht's direct light against
+  srgb] [-ByMap] [-Range lo,hi]`**: per bookmark and pooled, Hexenlicht's direct light against
   GL's lightmaps in linear light (GL multiplied the texture's 8-bit color
   by the lightmap's: its linear light is the lightmap decoded; since 4.17
   every shot is decoded as the engine encodes its image, by the 2.2 power;
@@ -121,7 +121,10 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   look on the lightmapped world ("surfaces"), and since 4.16 the look
   with the blocks where GL's lightmap is clipped ("+clip": fill-lit
   rooms and yards, where GL's lights added up to a full texel, which the
-  light's mask leaves out) and those blocks' spread in stops.
+  light's mask leaves out) and those blocks' spread in stops. Since 4.11
+  a line counts the views whose "+clip" look is within `-Range` (0.85,
+  1.2) and gives the mean error per view (stops), and `-ByMap` adds a
+  pooled row per map (a bookmark's name up to its first `_`).
   `-Pictures` writes `<label>\compare\<name>.png`: GL, Hexenlicht and their
   ratio (blue darker, red brighter, to 2 stops) for the image and the
   light. Saves are named `hlcal_<bookmark>`: two bookmark files with the
@@ -135,6 +138,65 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   `vk_lights fit`, at most ~10 maps per script, chained with `exec`.
 - `vk_screenshot <name> [frames]` writes `shots\<name>.tga`, frames
   averaged in linear light (not numbered, no 100-file limit).
+
+## Calibrating a hub (4.11)
+
+A hub is done when it is "close enough" to GL (DECISIONS R105), without
+shipped per-map files: what is off for a renderer-wide reason is fixed for
+every map. Blackmarsh (4.11a) was the first; about an hour of runs.
+
+1. **Views** into `tools/hexenlicht/bookmarks_<hub>.txt` (the format of
+   `bookmarks.txt`; Blackmarsh's has 43):
+   - the maps' entrances: `pak_entities.ps1 -Paks ... -Pattern
+     info_player_start -Keys angle` gives the spots; the player's origin
+     is about the spot's z − 24 (the floor; village1's spots stand 18
+     above it, which only moves the camera: both engines load the same
+     save), the view its `angle`;
+   - three views per map in its main areas: `pick_views.ps1 -Paks
+     <paks> -Maps <maps> -Entrances <the entrance lines> -Out <file>`
+     (deathmatch spots, each farthest from the views taken, turned away
+     from walls, none with a monster standing on it: its model would be
+     around the camera, Hexenlicht's lit shot then black; `-Portals` for the
+     mission pack), then rename them by place (`<map>_<place>`) from
+     their GL shots.
+2. **Shots:** `calib_shots.ps1 -Bookmarks
+   tools\hexenlicht\bookmarks_<hub>.txt -Out <folder> -KeepSaves`
+   (Release, 960x540: 43 views ~12 minutes; the saves for step 4);
+   **compare:** `calib_compare.ps1 -Out <folder> -ByMap -Pictures`.
+3. **Close enough** (R105): a view's look with GL's clipped blocks within
+   0.85–1.2 of GL's, or outside for a reason Hexenlicht keeps on purpose
+   or a renderer-wide one already on the board (entity shadows and entity
+   lighting GL's lightmaps don't have, bounce light, water, 4.18's fit
+   granularity, 4.19's dynamic lights), written down; a map's pooled look
+   with the clipped blocks within 0.9–1.1 unless only such views move it;
+   the owner reviews the grids and plays the hub.
+4. **A view outside without a known reason:** the pictures' two rows say
+   whether the direct light is off (the fit, a light's shape) or the look
+   is (entities, textures, bounce); a candidate: `calib_shots.ps1 ...
+   -SkipSaves -SkipGl -KeepSaves -Label <candidate> -Names <views>
+   -HlCvars "..."` (e.g. `"r_maplight_fit 0; r_maplight_gl_scale 1"`:
+   each light at its own GL texel; 4.11a found 4.18 this way), then
+   `calib_compare.ps1 -Labels hl,<candidate>`. A renderer-wide cause
+   becomes a story (fixed for every map); a shipped map file only if the
+   owner asks for one.
+5. **Checks** of the hub's special lights, each shot in both engines from
+   the same save (`-SkipSaves -KeepSaves` on saves made by a script, the
+   bookmark lines only name them):
+   - switchable lights and styles: `pak_entities.ps1 -Pattern light
+     -Keys style, spawnflags` and the entities that target their
+     `targetname` (`-Pattern 'trigger_.*|func_.*' -Keys target`); a save
+     before and after walking into the trigger (noclip; `bsp_models.ps1`
+     gives its bounds);
+   - thunderstorms (`light_thunderstorm`): ten saves ~25 frames apart
+     catch flashes (a flash lasts ~0.3 s);
+   - the torch: `-PreSave` (4.10's, above).
+6. **Grids for the owner:** `calib_grid.ps1 -Out <folder> -Names ...
+   -Columns 'GL|gl\{0}_gl.tga|1', 'Hexenlicht|hl\{0}_lit.tga|1' -Png
+   <file>` (a row per view, a column per pattern; a scale other than 1
+   multiplies a shot in linear light).
+7. **Record** the hub's verdict in DECISIONS.md (the numbers, the accepted
+   differences, the stories found) and delete the shots; saves left by
+   killed runs are `hlcal_*` with `<map>.gip` in the game folder.
 
 ## Pixel regression (renderer refactors)
 

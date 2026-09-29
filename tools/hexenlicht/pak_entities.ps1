@@ -1,7 +1,9 @@
-param([string[]]$Paks, [string]$Pattern = 'func_rotating|func_train')
+param([string[]]$Paks, [string]$Pattern = 'func_rotating|func_train', [string[]]$Keys = @())
 
 # Lists, per map in the given paks, the entities whose classname matches
-# $Pattern, with their targetname (empty = starts on its own) and origin.
+# $Pattern, with their targetname (empty = starts on its own) and origin, and
+# with -Keys the values of those keys they have (e.g. angle, style, target,
+# spawnflags; 4.11).
 foreach ($pak in $Paks) {
 	$bytes = [System.IO.File]::ReadAllBytes($pak)
 	$dirofs = [BitConverter]::ToInt32($bytes, 4)
@@ -21,7 +23,8 @@ foreach ($pak in $Paks) {
 				$tn = if ($ent -match '"targetname"\s+"([^"]*)"') { $Matches[1] } else { '' }
 				$model = if ($ent -match '"model"\s+"([^"]*)"') { $Matches[1] } else { '' }
 				$org = if ($ent -match '"origin"\s+"([^"]*)"') { $Matches[1] } else { '' }
-				"{0,-12} {1,-16} model {2,-5} targetname '{3}' origin '{4}'" -f ($name -replace '^maps/|\.bsp$',''), $cls, $model, $tn, $org
+				$more = foreach ($k in $Keys) { if ($ent -match ('"' + [regex]::Escape($k) + '"\s+"([^"]*)"')) { " $k '$($Matches[1])'" } }
+				("{0,-12} {1,-16} model {2,-5} targetname '{3}' origin '{4}'" -f ($name -replace '^maps/|\.bsp$',''), $cls, $model, $tn, $org) + ($more -join '')
 			}
 		}
 	}

@@ -32,8 +32,13 @@
 # -Transfer: how the shots' 8-bit colors are linear light, the engine's (4.17):
 # 2.2 (a power, the default; GL's lightmap texels are the fit's power of it
 # too), srgb for shots of a build before 4.17 or with r_srgb 1.
+# After the pooled row (4.11, TESTING.md's "Calibrating a hub"): how many views'
+# "+clip" look is within -Range (0.85 to 1.2) and the mean error per view in
+# stops (views without such blocks left out and counted); -ByMap adds a pooled
+# row per map, the map being a bookmark's name up to its first _.
 param([Parameter(Mandatory)][string]$Out, [string[]]$Labels = @('hl'), [double]$Scale = 0.25, [int]$Block = 30,
-      [switch]$Pictures, [switch]$White, [string]$Markdown = '', [string]$Transfer = '2.2')
+      [switch]$Pictures, [switch]$White, [string]$Markdown = '', [string]$Transfer = '2.2', [switch]$ByMap,
+      [ValidateCount(2, 2)][double[]]$Range = @(0.85, 1.2))
 $ErrorActionPreference = 'Stop'
 if ($Block -lt 4) { throw '-Block: at least 4 pixels' }
 Add-Type -TypeDefinition @'
@@ -201,6 +206,7 @@ foreach ($label in $Labels) {
 	$hldir = Join-Path $Out $label
 	$pg = [Collections.Generic.List[double]]::new(); $pe = [Collections.Generic.List[double]]::new()
 	$ps = [Collections.Generic.List[double]]::new(); $pc = [Collections.Generic.List[double]]::new(); $ratios = [Collections.Generic.List[double]]::new()
+	$maps = [ordered]@{}; $views = [Collections.Generic.List[double]]::new()
 	"== ${label}: the light (direct / GL lightmap) and the look (lit / GL image)"
 	$fmt -f 'bookmark', 'blocks', 'median', 'spread', 'slope', 'GL mean', 'HL mean', 'ratio', 'surfaces', '+clip', 'spread', ''
 	$md.Add("### $label"); $md.Add('')
@@ -222,7 +228,12 @@ foreach ($label in $Labels) {
 		$sc = [Collections.Generic.List[double]]::new()
 		[Calib]::SurfaceBlocks($glimg, $lit, $gllm, $Block, $sc, $true)
 		$pc.AddRange($sc)
+		$views.Add([Calib]::Median($sc))
+		$m = ($n -split '_')[0]
+		if (-not $maps.Contains($m)) { $maps[$m] = @{ g = [Collections.Generic.List[double]]::new(); e = [Collections.Generic.List[double]]::new(); s = [Collections.Generic.List[double]]::new(); c = [Collections.Generic.List[double]]::new(); r = [Collections.Generic.List[double]]::new() } }
+		$maps[$m].g.AddRange($lg); $maps[$m].e.AddRange($le); $maps[$m].s.AddRange($sb); $maps[$m].c.AddRange($sc)
 		$ps.AddRange($sb); $ratios.Add([Math]::Log($h / $g, 2))
+		$maps[$m].r.Add([Math]::Log($h / $g, 2))
 		$sm = [Calib]::Median($sb)
 		$fmt -f $n, $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), (F $g 'F4'), (F $h 'F4'), (F ($h / $g) 'F2'),
 			(F $sm 'F2'), (F ([Calib]::Median($sc)) 'F2'), (F ([Calib]::Spread($sc)) 'F2'), $(if ($colored) { '  (GL with HoT colors)' } else { '' })
@@ -240,6 +251,23 @@ foreach ($label in $Labels) {
 	$fmt -f 'all', $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), '', '', (F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2'), (F ([Calib]::Median($pc)) 'F2'), (F ([Calib]::Spread($pc)) 'F2'), ''
 	$md.Add(('| **all** | {0} | {1} | {2} | {3} | | | {4} | {5} | {6} | {7} |' -f $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'),
 		(F ([Calib]::Median($ratios)) 'F2'), (F ([Calib]::Median($ps)) 'F2'), (F ([Calib]::Median($pc)) 'F2'), (F ([Calib]::Spread($pc)) 'F2')))
+	# the views' look with the clipped blocks within -Range, and the mean error per view (4.11)
+	$valid = @($views | Where-Object { -not [double]::IsNaN($_) })
+	$in = @($valid | Where-Object { $_ -ge $Range[0] -and $_ -le $Range[1] }).Count
+	$err = if ($valid.Count) { ($valid | ForEach-Object { [Math]::Abs([Math]::Log($_, 2)) } | Measure-Object -Average).Average } else { 0 }
+	$line = 'views with the look (+clip) within {0}-{1}: {2} of {3}; the mean error per view {4} stops{5}' -f (F $Range[0] 'F2'), (F $Range[1] 'F2'), $in, $valid.Count, (F $err 'F2'),
+		$(if ($valid.Count -ne $views.Count) { ' (' + ($views.Count - $valid.Count) + ' more without blocks)' } else { '' })
+	$line; $md.Add(''); $md.Add($line)
+	if ($ByMap) {
+		# pooled per map (the bookmark's name up to its first _)
+		$md.Add(''); $md.Add('| map | blocks | light median | spread (stops) | slope | ratio | on surfaces | with the clipped | their spread (stops) |'); $md.Add('|---|---|---|---|---|---|---|---|---|')
+		foreach ($m in $maps.Keys) {
+			$v = $maps[$m]; $s = [Calib]::Stats($v.g, $v.e)
+			$fmt -f "map $m", $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'), '', '', (F ([Calib]::Median($v.r)) 'F2'), (F ([Calib]::Median($v.s)) 'F2'), (F ([Calib]::Median($v.c)) 'F2'), (F ([Calib]::Spread($v.c)) 'F2'), ''
+			$md.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} |' -f $m, $s[0], (F $s[1] 'F3'), (F $s[2] 'F2'), (F $s[3] 'F2'),
+				(F ([Calib]::Median($v.r)) 'F2'), (F ([Calib]::Median($v.s)) 'F2'), (F ([Calib]::Median($v.c)) 'F2'), (F ([Calib]::Spread($v.c)) 'F2')))
+		}
+	}
 	$md.Add('')
 	''
 }

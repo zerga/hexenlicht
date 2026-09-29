@@ -15,7 +15,10 @@ or `Hexenlicht-data` next to the repository.
 | `resize_test.ps1` | resizes, maximizes and restores the window from outside while a test script runs |
 | `perf_baseline.ps1` | measures the GPU timers (`vk_profiler`, `vk_benchmark 1`) at demo1's and the cathedral's starts for each window size and prints markdown tables |
 | `calib_shots.ps1`, `bookmarks.txt` | matched screenshots of `glh2` and Hexenlicht at the calibration bookmarks: both load the same savegame (4.9) |
-| `calib_compare.ps1` | compares them: Hexenlicht's direct light against GL's lightmaps, the lit image against GL's, and pictures with ratio maps |
+| `calib_compare.ps1` | compares them: Hexenlicht's direct light against GL's lightmaps, the lit image against GL's, and pictures with ratio maps; per map (`-ByMap`) and the views within a range |
+| `bookmarks_blackmarsh.txt` | 4.11a's views of the Blackmarsh hub (entrances and main areas) for `calib_shots.ps1 -Bookmarks` |
+| `pick_views.ps1` | picks a hub's views in its maps' main areas (deathmatch spots, away from the other views and from walls) |
+| `calib_grid.ps1` | a labelled grid of `calib_shots.ps1`'s shots, a row per view and a column per shot kind, for review |
 | `tga2png.ps1` | converts the engines' TGA screenshots to PNG |
 | `crop_strip.ps1` | crops the same rectangle out of several PNGs, side by side |
 | `tga_diff.ps1` | pixel-diffs two folders of screenshots (skip the HUD rows, mask run-to-run noise, write diff images) |
