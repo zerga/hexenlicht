@@ -943,10 +943,13 @@ void VK_PrintLightFit (qboolean score)
 	uint32_t		k;
 	double			largest = 0;
 
-	if (!fit.model || !fit.fitted)
+	/* a fit made for GL's shape stays when the shape changes: say it isn't used */
+	if (!fit.model || !fit.fitted || !r_maplight_fit.integer || VK_MapLightShape () != SPHERE_SHAPE_GL)
 	{
 		Con_Printf ("  fit (4.16): %s\n", !fit.model ? "none (no map, or no light data)" :
-			    !r_maplight_fit.integer ? "off (r_maplight_fit 0)" : "not used (a physical shape)");
+			    !r_maplight_fit.integer ? "off (r_maplight_fit 0)" :
+			    (VK_MapLightShape () != SPHERE_SHAPE_GL) ? "not used (a physical shape; r_maplight_shape 2 uses it)" :
+			    "not made yet");
 		return;
 	}
 	for (k = 0; k < fit.size; k++)

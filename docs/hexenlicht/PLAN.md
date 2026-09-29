@@ -22,11 +22,11 @@ see [Tracking](#tracking).
 | Toolchain | CMake + MSVC, developed in CLion. Existing Makefiles stay untouched |
 | Target hardware | RTX 4070 Ti, 1440p, 60+ fps with upscaling |
 | Game scope | Hexen II + Portal of Praevus: single-player and LAN co-op. **HexenWorld is out of scope** |
-| Lighting | Fully dynamic path-traced lighting from the maps' own light entities; baked lightmaps unused. Original mood is the reference |
+| Lighting | Fully dynamic path-traced lighting from the maps' own light entities; baked lightmaps unused. The original mood is a sanity reference (overall brightness, gameplay darkness), not a target: physical light, emissive lava, bounce light are the look (R107) |
 | Sky | Two modes per map: *faithful* (sky visible, not emissive) and *sky light* (dome + optional sun). Default chosen per map during calibration |
 | Materials | Own file-based PBR format (§6), looked up by Hexen II texture name |
 | Upscaling / denoising | Built-in A-SVGF + TAAU, FSR (MIT); DLSS SR/RR **optional** via Streamline with user-supplied NVIDIA DLLs (§5) |
-| Other renderers | Software (`hexen2`) and OpenGL (`glhexen2`) renderers stay untouched; `glhexen2` is the look reference |
+| Other renderers | Software (`hexen2`) and OpenGL (`glhexen2`) renderers stay untouched; `glhexen2` is the look's sanity reference |
 | Hosting | Public GitHub repo `hexenlicht` |
 
 ### Non-goals (for now)
@@ -198,18 +198,22 @@ opacity    cutout      # opaque | cutout | blend
   have inverse-square falloff. Calibration (E4) compares the same camera
   positions in `glhexen2` and Hexenlicht and tunes one global curve (the plan
   was to fix outliers per map through a per-map override file; since 4.11
-  what is off is fixed for every map, below). Since 4.15 that curve
-  is utils/light's own (each light gives a surface its lightmap value;
-  [DECISIONS.md](DECISIONS.md) R95): not physically based for the light's
+  what is off is fixed for every map, below). From 4.15 until 4.21 the
+  default curve was utils/light's own (each light gives a surface its
+  lightmap value; [DECISIONS.md](DECISIONS.md) R95): not physically based
+  for the light's
   first arrival, path traced after it; the physical shape stays a setting.
   Since 4.16 each light's sum with the others is GL's too, fitted to the
   map's own lightmaps (R102). Together they are the "Original" lighting
-  mode, the default; the physical shape without them is the "Physically
-  based" one (R103). Since 4.17 the 8-bit colors are GL's product (the 2.2
-  power, R104). The hubs (4.11) are calibrated without shipped per-map
-  files (owner, 2026-09-28): a difference with a renderer-wide cause is
-  fixed for every map, a hub is done when it is "close enough" (R105); the
-  map file (4.7, 4.8) stays for players, mods and experiments.
+  mode, the default until 4.21; the physical shape without them is the
+  "Physically based" one (R103), the default since 4.21 (owner,
+  2026-09-29: "Original = boring"; GL is a sanity reference, not a target,
+  R107). Since 4.17 the 8-bit colors are GL's product (the 2.2 power,
+  R104). The hubs (4.11) are reviewed without shipped per-map files (owner,
+  2026-09-28): a difference with a renderer-wide cause is fixed for every
+  map, a hub is done when it passes GL's sanity check and the owner's play
+  (R105, R107); the map file (4.7, 4.8) stays for players, mods and
+  experiments.
 
 ---
 
@@ -303,9 +307,9 @@ Goal: every map lit with no manual work; mood matches the original reasonably.
 | 4.15 | GL's light shape: utils/light's half-Lambert (0.5 + 0.5 cos) and its 16-unit lightmap texels' soft shadows light surfaces Hexenlicht leaves dark; candidates in the shader (half-Lambert, a GL-shaped falloff, larger spheres), measured with 4.9's tools (found in 4.9) | M | A candidate picked by the owner; the direct light's spread against GL's lightmaps below 4.9's 1.16 stops, or why not documented |
 | 4.16 | GL's sum of overlapping lights: GL added a texel's lights before its sRGB step and clipped the sum, 4.15's shape adds them after it with one factor (2), so a lone torch is twice GL's and fill-lit yards are dark; a factor per light list entry fitted to the map's lightmaps at load (found in 4.11a's survey; before 4.11a) | M | The direct light's spread against GL's lightmaps on Blackmarsh well below 1.1–1.2 stops, the lit image as bright as GL's at 4.9's bookmarks, no cost per frame, the physical shape unchanged |
 | 4.17 | GL's dark tones: textures and the image in a 2.2 power instead of the sRGB curve (GL multiplied 8-bit colors, which is linear light only under a power; sRGB's linear toe showed dark views at 0.44–0.62 of GL's look while the light matched; found in 4.11a's second survey; before 4.11a) | M | The look per view within about 0.85–1.2 of GL's at 4.11a's 43 Blackmarsh views and 4.9's bookmarks (lava rooms excepted), `r_maplight_fit_scale` 1, the sRGB curve a setting, no cost per frame |
-| 4.18 | GL's sum per lightmap texel: 4.16's one factor per light and cluster is too coarse (a lone light gets the overlap factor of its cluster: village5's torch 1.38 of GL's look, 1.07 at factor 1; brush entities borrow the cluster's factors: demo2's sliding doors 2.18); the fit's per-texel ratio as a small atlas looked up at world surfaces (found in 4.11a; backlog) | M | The direct light's spread against GL's lightmaps well below 4.16's 0.36–0.70 stops, no cost per frame, models and rotating doors on the per-entry factors |
-| 4.19 | The torch as GL shows it: GL adds R − \|h\| − ρ of a dynamic light to the texels, the torch sits at the player's feet, and Hexenlicht's physical light on the floor's plane lights the floor almost not at all (the torch adds 3–22 % of GL's light at 4.11a's dark views); dynamic lights in GL's shape for the Original mode (found in 4.11a; backlog) | M | The torch's added light within about 0.7–1.4 of GL's at those views, shadows path traced, the physically based mode unchanged, no cost per frame |
-| 4.11 | Calibrate hubs: Blackmarsh, Mazaera, Thysis, Septimus, the Eidolon finale, Tulku (Praevus) — one story per hub; each hub's views (`tools/hexenlicht/bookmarks_<hub>.txt`) against GL by TESTING.md's "Calibrating a hub", renderer-wide causes fixed for every map, no shipped per-map files (R105) | M each | Hub "close enough" (R105), reviewed and approved by the owner |
+| 4.19 | The torch in the hand: the torch (`EF_DIMLIGHT`) sits at the player's feet, where a physical light on the floor's plane lights the floor almost not at all (it adds 3–22 % of GL's torch's light at 4.11a's dark views); the view entity's own lights held at hand height, physically (found in 4.11a; re-scoped by the owner, 2026-09-29) | M | The torch lights the floor and walls around the player in dark places, a playable amount (GL's as a sanity check), its own shadow on the player's body left out (6.11), no cost per frame |
+| 4.21 | Physically based by default: `r_maplight_shape` 0, "Original" a setting, the lava emitting at ×32 in both; GL a sanity reference for the hubs, not a target (owner, 2026-09-29; found in 4.11b's survey) | S | The default switched, DECISIONS, PLAN and TESTING say so, Blackmarsh measured in it |
+| 4.11 | Calibrate hubs: Blackmarsh, Mazaera, Thysis, Septimus, the Eidolon finale, Tulku (Praevus) — one story per hub; each hub's views (`tools/hexenlicht/bookmarks_<hub>.txt`) against GL by TESTING.md's "Calibrating a hub", renderer-wide causes fixed for every map, no shipped per-map files (R105) | M each | Hub within GL's sanity check (R107), played and approved by the owner |
 
 ### E5 — Materials and texture pipeline
 Goal: edit a PNG, reload in game, see the change.
@@ -333,7 +337,8 @@ Goal: an effects checklist of both games fully ticked.
 | 6.7 | Cutscenes, intermissions, finale screens, demo playback | S | All play correctly |
 | 6.8 | Portal of Praevus specifics (Demoness, new effects) | M | Praevus checklist ticked |
 | 6.9 | Robustness: save/load, map change, `vid_restart`, Alt-Tab, resize | S | No leaks, no crashes |
-| 6.10 | Renderer settings menu (quality presets, upscaler, sky mode; since 4.9 also the exposure mode (fixed, `tm_auto_exposure 1` auto), colored light (`r_maplight_colors`, `gl_colored_dynamic_lights`) and the lava's glow (`r_emissive_scale`); since 4.16 the lighting mode, "Original" or "Physically based" (`r_maplight_shape` 2 or 0: GL's light shape and sum of lights, 4.15–4.16, or inverse square)) | S | Options in the video menu |
+| 6.10 | Renderer settings menu (quality presets, upscaler, sky mode; since 4.9 also the exposure mode (fixed, `tm_auto_exposure 1` auto), colored light (`r_maplight_colors`, `gl_colored_dynamic_lights`) and the lava's glow (`r_emissive_scale`); since 4.16 the lighting mode, "Physically based" or "Original" (`r_maplight_shape` 0, the default since 4.21, or 2: inverse square, or GL's light shape and sum of lights, 4.15–4.16)) | S | Options in the video menu |
+| 6.11 | The player's own model in shadows and reflections: in single player without the chase camera the local player's model where the player stands, seen by shadow, bounce, reflection and refraction rays, not by primary rays (Quake II RTX's first-person player model, `AS_FLAG_VIEWER_MODELS`); the player's own lights don't shadow on it (the owner's idea, 2026-09-29) | M | The body's shadow and reflection animated as the server sends it, nothing in the view, a setting, no cost per frame, `cl.light_level` unchanged |
 
 ### E7 — Playthrough, performance, release
 Goal: v1.0 on GitHub Releases.
@@ -357,7 +362,7 @@ Goal: v1.0 on GitHub Releases.
 | Risk | Mitigation |
 |---|---|
 | Path tracer effort (E3) | Reuse Q2RTX code; keep the debug view; small stories |
-| Mood mismatch (physical vs linear falloff) | Calibration tooling (4.9), GL's light shape and sum (4.15, 4.16), GL's colors (4.17), renderer-wide fixes for what the hubs show (4.11; no shipped per-map files) |
+| Mood mismatch (physical vs linear falloff) | Calibration tooling (4.9), GL's colors (4.17), GL's brightness as a sanity check for each hub rather than a target (4.21, R107: the physically based look is the point), renderer-wide fixes for what the hubs show (4.11; no shipped per-map files); GL's light shape and sum (4.15, 4.16) as the "Original" option |
 | Denoiser artefacts with translucency, particles, flickering lights | RR-ready G-buffer, handle translucency in a separate path as Q2RTX does |
 | Streamline lacking RR on Vulkan | Retired by spike 3.9: RR runs on our device; A-SVGF stays the default (RR costs more) |
 | Q2RTX archived — no upstream fixes | We own the imported code from day one |
