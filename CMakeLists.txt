@@ -268,6 +268,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_swapchain.c
 	${HEXENLICHT_DIR}/vk_shader.c
 	${HEXENLICHT_DIR}/vk_texture.c
+	${HEXENLICHT_DIR}/vk_imagefile.c
 	${HEXENLICHT_DIR}/vk_draw.c
 	${HEXENLICHT_DIR}/vk_buffer.c
 	${HEXENLICHT_DIR}/vk_material.c

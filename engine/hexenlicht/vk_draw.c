@@ -1079,6 +1079,15 @@ void VK_DrawBox (float x0, float y0, float x1, float y1, const float *rgba)
 	Draw_Quad (x0, y0, x1, y1, 0, 0, 1, 1, 0, Draw_PackColor (c[0], c[1], c[2], c[3]), false);
 }
 
+/* a texture slot over the box, alpha blended, over black with black
+ * (vk_imagefile.c's picture, 5.2) */
+void VK_DrawTexture (float x0, float y0, float x1, float y1, int slot, qboolean black)
+{
+	if (black)
+		Draw_Quad (x0, y0, x1, y1, 0, 0, 1, 1, 0, Draw_PackColor (0, 0, 0, 255), false);
+	Draw_Quad (x0, y0, x1, y1, 0, 0, 1, 1, (GLuint)slot, COLOR_WHITE, false);
+}
+
 void Draw_FadeScreen (void)
 {
 	int	bx, by, ex, ey;
