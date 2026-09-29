@@ -24,7 +24,7 @@ see [Tracking](#tracking).
 | Game scope | Hexen II + Portal of Praevus: single-player and LAN co-op. **HexenWorld is out of scope** |
 | Lighting | Fully dynamic path-traced lighting from the maps' own light entities; baked lightmaps unused. The original mood is a sanity reference (overall brightness, gameplay darkness), not a target (R107). By default a light's first arrival is GL's (its shape and sum, "Original"), everything after it path traced (shadows, bounce light), the lava emissive; "Physically based" (inverse square) is an option (R108) |
 | Sky | Two modes per map: *faithful* (sky visible, not emissive) and *sky light* (dome + optional sun). Default chosen per map during calibration |
-| Materials | Own file-based PBR format (§6), looked up by Hexen II texture name |
+| Materials | Own file-based PBR format ([MATERIALS.md](MATERIALS.md), §6), looked up by Hexen II texture name |
 | Upscaling / denoising | Built-in A-SVGF + TAAU, FSR (MIT); DLSS SR/RR **optional** via Streamline with user-supplied NVIDIA DLLs (§5) |
 | Other renderers | Software (`hexen2`) and OpenGL (`glhexen2`) renderers stay untouched; `glhexen2` is the look's sanity reference |
 | Hosting | Public GitHub repo `hexenlicht` |
@@ -132,45 +132,21 @@ client code, replaces the GL renderer files (`gl_rmain.c`, `gl_rsurf.c`,
 
 ---
 
-## 6. Material format (draft — finalised in E5)
+## 6. Material format
 
-Texture sets live in the game directory (loose files or inside a `.pak`) and
-are looked up by the Hexen II texture name. Everything but albedo is optional.
-
-```
-textures/<name>.png          albedo (+ alpha for cutout/translucent)
-textures/<name>_n.png        normal map, tangent space, OpenGL convention (+Y up)
-textures/<name>_r.png        roughness            ┐ or one packed _orm file
-textures/<name>_m.png        metallic             ┘ (R=occlusion, G=roughness, B=metallic)
-textures/<name>_e.png        emissive color
-textures/<name>_h.png        height (later)
-textures/<name>.mat          optional parameters (see below)
-```
-
-- Authoring formats: PNG, TGA. Shipping formats: DDS or KTX2 (BC7 for
-  color, BC5 for normals, BC4 for single channel).
-- Names:
-  - World textures: name from the BSP. `*` is not a legal Windows filename
-    character and is mapped to `#` (DarkPlaces/QuakeSpasm convention),
-    e.g. `*water1` → `textures/#water1.png`. Animated textures keep their
-    `+0`, `+1`, `+a` prefixes.
-  - Model skins: `textures/<model path>_<skin>.png`,
-    e.g. `textures/models/paladin.mdl_0.png`.
-  - Sprite frames: `textures/<sprite path>_<frame>.png`.
-- Defaults when a map is missing: albedo from the original palettized
-  texture, constant roughness, metallic 0, normal = flat; emissive: lava
-  (its texture) and the flames of the models at the map's lights (their
-  skins' bright texels). Hexen II has no fullbright texels (4.5, DECISIONS
-  R82); other emissive surfaces come from `.mat` files.
-- `.mat` example:
-
-```
-kind       lava        # default | water | slime | lava | glass | metal | sky
-emissive   4.0         # multiplier on _e (or albedo if there is no _e)
-roughness  0.6         # used when there is no _r / _orm
-ior        1.33
-opacity    cutout      # opaque | cutout | blend
-```
+Frozen in 5.1: [MATERIALS.md](MATERIALS.md) (DECISIONS M1–M7). In short:
+texture sets in the game's filesystem (loose files or inside a `.pak`),
+looked up by the Hexen II texture name under `textures/` (`*` as `#`; a
+`~<crc>` qualifier for the 100 names whose pixels differ between maps
+and the two skins that differ between the games);
+one image per map as tools write them: albedo, `_n` normal (OpenGL
+convention), `_r` roughness and `_m` metallic or a packed `_orm`, `_e`
+emissive, every one optional; albedo and emissive are 8-bit colors as the
+originals, the rest data; an optional `.mat` (`kind`, `roughness`,
+`metallic`, `bump`, `specular`, `emissive`); a texture without files
+keeps its original, matte look, and only an authored roughness makes a
+surface physically based. Authoring in PNG or TGA, shipping in DDS or
+KTX2 (BC7, BC5).
 
 - Output from AI tools (Remix AI texture tools, PBRify in chaiNNer,
   Substance Sampler, Materialize) is renamed to these conventions — the
@@ -317,10 +293,10 @@ Goal: edit a PNG, reload in game, see the change.
 | # | Story | Size | Done when |
 |---|---|---|---|
 | 5.1 | Finalise the material spec (§6) | S | Spec frozen in `docs/hexenlicht/MATERIALS.md` |
-| 5.2 | Loaders: PNG/TGA (stb_image), DDS/KTX2 (BC4/5/7), sRGB vs linear, mips | M | All formats load |
-| 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload | M | Live reload works |
-| 5.4 | Export command: all original textures with canonical names + manifest CSV | S | Full export of both games |
-| 5.5 | Special materials: water/slime/lava, glass, sky, animated textures | M | Correct in both games |
+| 5.2 | Loaders: PNG/TGA (stb_image), DDS/KTX2 (BC5/7; no BC4 since 5.1), colors vs data (UNORM formats, R104), mips | M | All formats load |
+| 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload; `get_material`'s reads as MATERIALS.md's "Shader changes" (since 5.1) | M | Live reload works |
+| 5.4 | Export command: all original textures with canonical names (`~<crc>` for every variant of a name whose pixels differ between maps, 5.1) + manifest CSV | S | Full export of both games |
+| 5.5 | Special materials: water/slime/lava, glass, chrome (since 5.1), sky, animated textures | M | Correct in both games |
 | 5.6 | Test pack (stone, metal, water, emissive, glass) + authoring guide | S | Pack looks right in game |
 
 ### E6 — Full Hexen II coverage
