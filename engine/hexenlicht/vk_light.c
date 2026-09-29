@@ -69,10 +69,9 @@
  * as a UBO sphere light's color is (the sampling gives its solid angle / pi,
  * the diffuse BRDF divides by pi again); Quake II RTX's add_dlights divides
  * a dlight's intensity by 25 first. The map's spheres have the map lights'
- * shape (4.15, VK_MapLightShape; by default the physical one since 4.21,
- * with GL's, 2, their color is the light of a full GL texel, their range
- * the level), test spheres the physical one. VK_PrepareUBO calls
- * VK_PrepareLights for each 3D frame.
+ * shape (4.15, VK_MapLightShape; by default GL's: their color is then the
+ * light of a full GL texel, their range the level), test spheres the
+ * physical one. VK_PrepareUBO calls VK_PrepareLights for each 3D frame.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.

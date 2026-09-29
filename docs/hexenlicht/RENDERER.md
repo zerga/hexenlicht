@@ -882,12 +882,11 @@ from `VK_LoadWorld` before the light lists):
   `r_maplight_colors 0`: white; a change rebuilds the lights.
 - **Brightness:** a sphere of `r_maplight_radius` (8, the test spheres')
   with a light shape (`r_maplight_shape`, 4.15, below;
-  [Lights](#lights-vk_lightc) has the shader side). Since 4.21 **shape 0,
-  physical, is the default** (the "Physically based" mode, R107); **shape
-  2, "Original"** (the default from 4.15 until 4.21): utils/light's own, each
-  light giving a surface the lightmap texel the compiler and GL made of it
-  alone, in linear light, times its
-  factor for GL's sum with the other lights in the cluster it lights (4.16,
+  [Lights](#lights-vk_lightc) has the shader side). **Shape 2, "Original",
+  the default** (since 4.15; 4.21 made shape 0 the default, 4.22 took it
+  back: R107, R108): utils/light's own, each light giving a surface the
+  lightmap texel the compiler and GL made of it alone, in linear light,
+  times its factor for GL's sum with the other lights in the cluster it lights (4.16,
   fitted to the map's lightmaps: [Light fit](#light-fit-vk_lightfitc);
   `r_maplight_gl_scale` 2, 4.15's one factor for all, where there is none);
   its range is the level.
@@ -961,9 +960,9 @@ from `VK_LoadWorld` before the light lists):
   | 2, power 1.8 / 1.5 (scale 1) | 0.86 / 1.15 | 0.89 / 0.93 | 0.75 / 0.66 | 0.72 / 0.96 | 0.77 / 0.91 |
   | 2, the exact sRGB decode (scale 1) | 0.61 | 0.97 | 0.80 | 0.52 | 0.62 |
 
-  **Shape 2 was the default from 4.15 until 4.21** (the owner's pick,
-  2026-09-28; a run with the defaults gave the same light, the lit image
-  0.98, a single frame): per bookmark the look is 0.75–1.36 of GL's (4.9: 0.60–1.63; castle4's
+  **Shape 2 is the default** (the owner's pick, 2026-09-28, again in 4.22
+  after 4.21's shape 0, R108; 4.15's run with the defaults gave the same
+  light, the lit image 0.98, a single frame): per bookmark the look is 0.75–1.36 of GL's (4.9: 0.60–1.63; castle4's
   corridor 0.92, keep1 0.93–1.03, romeric1 1.00), the hot spots next to torches are GL's flat,
   clipped halos, and the contrast is GL's (slope 0.87). At scale 1 it was
   0.56× GL's lightmaps: overlapping lights, which GL added before the sRGB
@@ -979,8 +978,8 @@ from `VK_LoadWorld` before the light lists):
   beside a torch gets about a fifth of its head-on light instead of almost
   none; its shadows (ray traced from the sphere) and all light after the
   first hit (bounces, reflections, materials) are path traced, and bounce
-  rays see the same shape. Shape 0 stayed a setting (6.10's menu) and is
-  the default since 4.21 (R107). Cost:
+  rays see the same shape. Shape 0 stays a setting (6.10's menu; the
+  default in 4.21, R107, R108). Cost:
   none measurable (1920x1080, Release, egypt4 and meso2: direct lighting
   +0.02 ms, the frame within the runs' scatter). Left out: decoding GL's
   sum (every light source in GL's encoding, and bounce rays and the
@@ -2614,7 +2613,7 @@ overlay, and a measuring mode.
 | `vk_images` | render targets and the blue noise |
 | `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (630 since 4.17; 740 in 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
-| `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103; the default since 4.21), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light ("original"; the default until 4.21, now 0: R107); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
+| `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103; the default in 4.21, R107), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"; again since 4.22, R108); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
