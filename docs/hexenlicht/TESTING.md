@@ -449,6 +449,40 @@ judged by eye; the log's lines are checked.
   half-transparent one and alpha 128: `vk_materials list` shows ", alpha"
   on the latter two only (M31).
 
+## Effects (6.1)
+
+E6's checklist (the body of epic #7, DECISIONS X1) names each effect's
+engine path, where the game shows it and its state. `effects_run.ps1`
+triggers what a player can trigger alone: every class's weapons, normal
+and with the tome, and the artifacts. It runs in glh2 and Hexenlicht
+from the same saves and takes paused shots at the same game time. All
+five classes in both engines take about 20 minutes in Debug; the configs
+are backed up.
+
+1. **The run:** `effects_run.ps1 -Out <folder>`.
+   - Options: `-Class` (1–4 by default; add 5 for the Demoness, which runs with `-portals`); `-Exe hexenlicht|glh2|both`; `-Release`.
+   - A Hexenlicht run saves each class at demo1's start, with god, notarget and `impulse 43` (every weapon, mana and item), at two spots:
+     - `-Near`: the statue's pedestal about 40 units ahead, for melee. A load levels the view (the save's pitch is lost), so the near steps look down 20° after it (`-NearPitch`, `+lookdown` at `cl_pitchspeed 100`) and the melee weapons (64 units) reach the pedestal.
+     - `-Far`: the pedestal 246 units ahead.
+   - Each engine then loads a save for every step:
+     - The four weapons from both spots, normal and with the tome (`impulse 25`). The fire button is held for 30 frames; shots are paused at 12, 30 and 50 frames of game time.
+     - Ten items from far (`impulse 99` + the inventory number: torch, summoning stone, invisibility, glyph, haste, blast radius, polymorph, cube of force, invincibility, teleport), shot at 10, 60 and 200 frames.
+   - That is 78 shots per class and engine: `<Out>\<exe>\c<n>_<near|far|item>_<step>_<delay>.tga`.
+2. **The summary**, per class and engine:
+   - The shots.
+   - Hexenlicht's frames with effects left out and instances left out for lack of room (`vk_effects` and `vk_models` after each step: 0).
+   - `Vulkan validation: 0 errors, 0 warnings`, for the saves' run too.
+   - The logs are `<Out>\<exe>\c<n>.log`.
+3. **Looking:** `calib_grid.ps1 -Out <folder> -Names c2_near_w1,c2_near_w2,... -Png <grid.png> -Columns 'GL 12|glh2\{0}_12.tga|1','HL 12|hexenlicht\{0}_12.tga|1',...` puts GL and Hexenlicht side by side at each delay (`-Half 0.25` for a class's eight weapon steps).
+
+Notes:
+- **Every step loads its save.** Shots move the player (the meteor staff's recoil) and break things (demo1's angel statue), and a summoned imp stays.
+- **The sunstaff fires about 10 frames after the button** (its fire animation), so a shorter burst fires nothing. A weapon switch takes up to 100 frames: the last weapon's deselect and this one's select.
+- **Not repeatable between runs:** where particles and chunks fly, and where the summoned imp and the cube fly.
+- **Needs a target, not in the run:** hits on monsters (`SpawnPuff`), the tomed gauntlets' `CE_WHITE_FLASH`, the tomed Staff of Set's chains, `CE_GHOST`, burning.
+- **Not in the run at all:** monsters', maps' and Praevus's own effects. The checklist names a map for each; `pak_entities.ps1 -Pattern 'monster_...'` finds more, and `mdl_flags.ps1 -Trails` lists the trail each model leaves.
+- **6.1's run** (2026-09-30, Debug, 960x540): all five classes in both engines, validation 0/0, nothing left out. Its near steps were still level (before `-NearPitch`); a second run of the Paladin and the Assassin checked the melee hits. What differs is in the checklist's "now" column.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`
