@@ -306,7 +306,7 @@ Goal: an effects checklist of both games fully ticked.
 | # | Story | Size | Done when |
 |---|---|---|---|
 | 6.1 | Effects inventory from `cl_effect.c`, `cl_tent.c`, `r_part.c` → checklist | S | Checklist in tracker |
-| 6.2 | Particle effects by group (weather, explosions/chunks, class weapons, spells) | L | Checklist groups ticked |
+| 6.2 | Particle effects by group (weather, explosions/chunks, class weapons, spells; since 6.1 also the monsters' and the world's effects and the effects' lights and HoT's glows, the checklist in epic #7, DECISIONS X1) | L | Checklist groups ticked |
 | 6.3 | Beams / lightning effects | S | Beams render and emit light |
 | 6.4 | Translucency: translucent entities, transparent models, cutout textures, glass (since 5.6: a material file's glass on a translucent brush entity, the game's breakable windows, is half the entity's blend and half glass, DECISIONS M33) | M | Matches original intent |
 | 6.5 | Water: refraction, underwater fog/tint | M | Above/below water correct |
@@ -316,6 +316,7 @@ Goal: an effects checklist of both games fully ticked.
 | 6.9 | Robustness: save/load, map change, `vid_restart`, Alt-Tab, resize | S | No leaks, no crashes |
 | 6.10 | Renderer settings menu (quality presets, upscaler, sky mode; since 4.9 also the exposure mode (fixed, `tm_auto_exposure 1` auto), colored light (`r_maplight_colors`, `gl_colored_dynamic_lights`) and the lava's glow (`r_emissive_scale`); since 4.16 the lighting mode, "Original" or "Physically based" (`r_maplight_shape` 2, the default, or 0: GL's light shape and sum of lights, 4.15–4.16, or inverse square)) | S | Options in the video menu |
 | 6.11 | The player's own model in shadows and reflections: in single player without the chase camera the local player's model where the player stands, seen by shadow, bounce, reflection and refraction rays, not by primary rays (Quake II RTX's first-person player model, `AS_FLAG_VIEWER_MODELS`); the player's own lights don't shadow on it (the owner's idea, 2026-09-29) | M | The body's shadow and reflection animated as the server sends it, nothing in the view, a setting, no cost per frame, `cl.light_level` unchanged |
+| 6.12 | GL's near plane for the view: GL clips everything within 4 units of the eye (`NEARCLIP`); Hexenlicht's primary rays start at the eye, only the weapon's at the near plane. So the Necromancer's proximity mine, which the gamecode spawns 6 units below the eye with the eye inside its model, blackens the view (found in 6.1, DECISIONS X3) | S | A model at the eye is left out of the view as in GL, the weapon unchanged, no cost per frame |
 
 ### E7 — Playthrough, performance, release
 Goal: v1.0 on GitHub Releases.
