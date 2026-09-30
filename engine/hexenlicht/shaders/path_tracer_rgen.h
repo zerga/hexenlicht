@@ -28,7 +28,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    light mode, not Quake II RTX's physical sky or environment map;
  *  - trace_effects_ray: pt_logic_sprite takes the hit distance, beams and
  *    explosions come with their story (6.3), no effects TLAS = no effects;
- *  - get_direct_illumination: the light statistics per light list entry
+ *  - get_direct_illumination: the receiving surface's model instance, which
+ *    a glowing projectile's light doesn't light (6.2, light_lists.h's
+ *    dynlight_weight); the light statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); for gradient
  *    samples the sampled list light's style change (nee_style_change, 4.13);
@@ -748,8 +750,9 @@ get_direct_illumination(
 	float direct_specular_weight, 
 	bool enable_polygonal,
 	bool enable_dynamic,
-	bool is_gradient, 
+	bool is_gradient,
 	int bounce,
+	uint receiver,	// Hexenlicht (6.2): the surface's model instance (~0u = the world), which its own light doesn't light
 	out vec3 diffuse,
 	out vec3 specular)
 {
@@ -819,6 +822,7 @@ get_direct_illumination(
 			normal,
 			geo_normal,
 			max_solid_angle,
+			receiver,
 			pos_on_light_dynamic,
 			contrib_dynamic,
 			rng);

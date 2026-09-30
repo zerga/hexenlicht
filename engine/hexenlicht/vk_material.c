@@ -161,6 +161,8 @@ void VK_ApplyMaterialFiles (int index)
 		m->emissive_texture = VK_LavaEmits () ? (own ? own : m->base_texture) : 0;
 	else if (m->flags & VK_MAT_FLAME)
 		m->emissive_texture = !VK_ModelsEmit () ? 0 : own ? own : VK_EmissiveSkin (m->original);	/* made when first asked for */
+	else if (m->flags & VK_MAT_GLOW)
+		m->emissive_texture = own ? own : m->base_texture;	/* 6.2: a glowing projectile's whole skin */
 	else
 		m->emissive_texture = own ? own : ((key > 0.0f) ? m->base_texture : 0);
 	m->emissive_factor = m->emissive_texture ? VK_EmissiveScale () * ((key >= 0.0f) ? key : 1.0f) : 1.0f;

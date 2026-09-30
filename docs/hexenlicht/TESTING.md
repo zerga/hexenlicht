@@ -460,7 +460,7 @@ five classes in both engines take about 20 minutes in Debug; the configs
 are backed up.
 
 1. **The run:** `effects_run.ps1 -Out <folder>`.
-   - Options: `-Class` (1–4 by default; add 5 for the Demoness, which runs with `-portals`); `-Exe hexenlicht|glh2|both`; `-Release`.
+   - Options: `-Class` (1–4 by default; add 5 for the Demoness, which runs with `-portals`); `-Exe hexenlicht|glh2|both`; `-Release`; `-HlCvars` (6.2), Hexenlicht's cvars after each load (e.g. `'r_effect_lights 0'` for a run to compare with; `-SkipSaves` with the saves a `-KeepSaves` run kept, so both use the same); `-NoPause` (6.2), the shots with the game running (see the notes: a paused game draws no client effects).
    - A Hexenlicht run saves each class at demo1's start, with god, notarget and `impulse 43` (every weapon, mana and item), at two spots:
      - `-Near`: the statue's pedestal about 40 units ahead, for melee. A load levels the view (the save's pitch is lost), so the near steps look down 20° after it (`-NearPitch`, `+lookdown` at `cl_pitchspeed 100`) and the melee weapons (64 units) reach the pedestal.
      - `-Far`: the pedestal 246 units ahead.
@@ -482,6 +482,9 @@ Notes:
 - **Needs a target, not in the run:** hits on monsters (`SpawnPuff`), the tomed gauntlets' `CE_WHITE_FLASH`, the tomed Staff of Set's chains, `CE_GHOST`, burning.
 - **Not in the run at all:** monsters', maps' and Praevus's own effects. The checklist names a map for each; `pak_entities.ps1 -Pattern 'monster_...'` finds more, and `mdl_flags.ps1 -Trails` lists the trail each model leaves.
 - **6.1's run** (2026-09-30, Debug, 960x540): all five classes in both engines, validation 0/0, nothing left out. Its near steps were still level (before `-NearPitch`); a second run of the Paladin and the Assassin checked the melee hits. What differs is in the checklist's "now" column.
+- **A paused game draws no client effects** (found in 6.2): `host.c` runs `CL_UpdateEffects`, which moves the `CE_*` effects and links their sprites and models, only while the server runs, so a paused shot shows none of them (`vk_effects` counts 0 sprites), only the server's entities (projectiles, their trails' particles, a server entity's sprite). `-NoPause` (6.2) shoots with the game running: game time is fixed (`host_framerate 0.02`), so two runs from the same saves show the same moments. A toggle on a paused frame (`r_effect_lights 0` / 1) is still the cleanest A/B for what the server draws (the glowing projectiles).
+- **6.2's runs** (2026-09-30, Debug, 960x540, Hexenlicht only): `-HlCvars 'r_effect_lights 0'` against the default, paused (classes 1–4) and `-NoPause` (1–5); validation 0/0, nothing left out. Hand-written scripts (not kept) did the rest: the glowing projectiles on a paused frame, lights on and off (the scarab, the summoning stone, the tomed purifier's ball and magic missiles: crops around the projectile); the summoning stone's floor explosion and a magic missile hit near the pedestal unpaused, a shot every 1–2 frames, a run each way.
+- **Effect lights' cost:** `vk_benchmark 1`, `profiler_samples` 20–30 over an effect's frames (the blast radius's seven flashes, `impulse 110`; the Demoness's fire storm from far, a 30-frame burst, as `effects_run.ps1` fires it), a load each way; the cap's upper bound with 32 `vk_testlight dlight`s around the view against none (Release, 1920x1080).
 
 ## Pixel regression (renderer refactors)
 

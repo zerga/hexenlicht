@@ -508,6 +508,7 @@ qboolean VK_BeginFrame (void)
 	if (!vk.swapchain)
 		return false;	/* minimized */
 	VK_DLSSBetweenFrames ();	/* the render targets follow DLSS's images (vk_dlss.c) */
+	VK_EffectLightsBetweenFrames ();	/* 6.2: the averages of sprite frames first drawn last frame */
 
 	f = &vk.frames[vk.frame_index];
 	VK_CHECK (vkWaitForFences (vk.device, 1, &f->fence, VK_TRUE, UINT64_MAX));

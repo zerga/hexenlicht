@@ -43,7 +43,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - no list lights for clusters past MAX_LIGHT_LISTS - 1;
  *  - a dynamic light is picked by its weight (luminance x solid angle,
  *    faded by its range), not uniformly, and a dynamic sphere may have a
- *    range, in spot_data (4.4: the game's dynamic lights, vk_light.c);
+ *    range, in spot_data (4.4: the game's dynamic lights, vk_light.c), and
+ *    a model instance it doesn't light (6.2: a glowing projectile's light);
  *  - a gradient sample weighs a list light by the larger of last frame's
  *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
  *    light that comes on can be picked;
@@ -678,13 +679,18 @@ dynlight_range(uint light_idx)
 /* Hexenlicht (4.4): a dynamic light's weight in the pick, a list sphere's
  * (sphere_light_mass without the specular lobe) times its luminance: its
  * solid angle, faded by its range, 0 entirely below the horizon; a spot's
- * its luminance */
+ * its luminance. 6.2: 0 for the model instance a sphere doesn't light
+ * (receiver; ~0u = the world): a glowing projectile's, the light inside it,
+ * its instance + 1 in the type's high 16 bits (vk_light.c) */
 float
-dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle)
+dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver)
 {
 	float lum = luminance(global_ubo.dyn_light_data[light_idx].color);
-	if((global_ubo.dyn_light_data[light_idx].type & 0xffff) != DYNLIGHT_SPHERE)
+	uint type = global_ubo.dyn_light_data[light_idx].type;
+	if((type & 0xffff) != DYNLIGHT_SPHERE)
 		return lum;
+	if((type >> 16) != 0u && (type >> 16) - 1u == receiver)
+		return 0;
 
 	vec3 c = global_ubo.dyn_light_data[light_idx].center - p;
 	float radius = global_ubo.dyn_light_data[light_idx].radius;
@@ -703,6 +709,7 @@ sample_dynamic_lights(
 		vec3 n,
 		vec3 gn,
 		float max_solid_angle,
+		uint receiver,	// Hexenlicht (6.2): the surface's model instance, ~0u = the world
 		out vec3 position_light,
 		out vec3 light_color,
 		vec3 rng)
@@ -718,7 +725,7 @@ sample_dynamic_lights(
 	uint num = min(global_ubo.num_dyn_lights, MAX_LIGHT_SOURCES);
 	float total = 0;
 	for(uint i = 0; i < num; i++)
-		total += dynlight_weight(i, p, n, max_solid_angle);
+		total += dynlight_weight(i, p, n, max_solid_angle, receiver);
 	if(total <= 0)
 		return;
 
@@ -727,7 +734,7 @@ sample_dynamic_lights(
 	float weight = 0;
 	for(uint i = 0; i < num; i++)
 	{
-		float w = dynlight_weight(i, p, n, max_solid_angle);
+		float w = dynlight_weight(i, p, n, max_solid_angle, receiver);
 		if(w <= 0)
 			continue;
 		light_idx = i; // the last with a weight, should rounding pass them all

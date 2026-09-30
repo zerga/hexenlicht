@@ -13,7 +13,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Buffers and layouts](#buffers-and-gpu-data-layouts) · [Materials](#materials-vk_materialc) ·
 [World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
-[Effects](#effects-vk_effectsc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
+[Effects](#effects-vk_effectsc) · [Effect lights](#effect-lights-vk_effectlightc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
 [Light fit](#light-fit-vk_lightfitc) ·
@@ -826,13 +826,15 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   "chrome", `vk_models check` expects it. `glass` isn't for skins.
 - One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
   precache on map load, others on demand); for `EF_HOLEY` models the skin is
-  its own `mask_texture`. A third key (4.5): emissive, for models at a map
+  its own `mask_texture`. A third key (4.5; `VK_SKIN_*`): emissive, for models at a map
   light's origin, a material flagged `VK_MAT_FLAME` with the skin's
   emissive texture (made on first use, `VK_EmissiveSkin`; 5.3: its own
   material also where the skin has no bright texels, so that an `_e` found
   later applies, and also with `r_emissive_models 0`, when it emits
   nothing, so that an `_e` doesn't glow on a flame whose map light lights
-  for it; see [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+  for it; see [Emissive surfaces](#emissive-surfaces-vk_emissivec)); or
+  glowing (6.2), flagged `VK_MAT_GLOW`, whose `_e` or albedo emits, for
+  the glowing projectiles ([Effect lights](#effect-lights-vk_effectlightc)).
 - **Material files** (5.3, [above](#material-files-vk_matfilesc)): a
   skin material's texture is the skin (under a player's colors the class
   model's last single skin, the one `R_TranslatePlayerSkin` translates,
@@ -881,9 +883,110 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   sprite's own direction to the camera (no game sprite has that type).
 - In the lit image both are scaled by the exposure so that they show at
   GL's colors (3.7, see [Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)).
-- `vk_effects [check]`: counts, drops, BLAS/TLAS sizes; `check` casts a ray at
+- `vk_effects [check]`: counts, drops, BLAS/TLAS sizes, the effect lights
+  ([below](#effect-lights-vk_effectlightc)); `check` casts a ray at
   every effect triangle of the last frame through the effects TLAS
   (`effects_check.comp`) and compares where it is reported.
+
+## Effect lights (`vk_effectlight.c`)
+
+Story 6.2: effects that glow emit light. GL gives no sprite a light (only
+`TE_EXPLOSION`, the projectiles' model flags and the `EF_*` effects make
+dynamic lights). `r_effect_lights 1` (not archived; 0 = GL's look, the
+image of 6.1's `main`) turns on both parts. The lights are the
+renderer's, not `cl_dlights`, so `cl.light_level` stays GL's (G9).
+
+- **Emitting sprites:** by name, the client effects' explosions
+  (`sm_expld`, `bg_expld`, `fl_expld`, `gen_expl`, `xbowexpl`,
+  `xpspblue`, `mm_expld`, `bonexpld`, `fcircle`, `xplod29`, `biggy`,
+  `flrexpl2`), flashes (`sm_white`, `gryspt`, `yr_flsh`, `bluflash`,
+  `sm_blue`, `redspt`), sparks and magic hits (`bspark`, `spark`,
+  `rspark`, `gspark`, `medhit`, `mezzoref`) and Praevus's fire
+  (`flamestr`, `firewal1`–`5`, `fboom`, `pow`, `xplsn_1`, `axplsn_1`,
+  `_2`, `_5`, `Bluexp3`, `muzzle1`); not smoke, clouds, ghosts,
+  bubbles, the teleport's puffs or the ice mace's snow hit (`icehit`).
+  A server entity showing one emits too, but not one that owns a
+  dynamic light (it has its light; with `r_dlights 0` it owns no lit one
+  and emits).
+- **The light of a frame** (`VK_SpriteLight`, from `vk_effects.c`'s
+  `WriteSprites`, which draws it): a sphere at the center of the quad as
+  drawn, of the frame's covered area (the quad's area times its mean
+  alpha: π r²), whose intensity is the light the frame shows towards the
+  camera (its premultiplied mean linear color times the quad's area,
+  times 0.33 when translucent) times `r_emissive_scale` (32), the
+  radiance lava and the flames emit for a texture color of 1 ([Emissive
+  surfaces](#emissive-surfaces-vk_emissivec)). The sprite itself stays at
+  GL's colors (R41): as a picture of a brighter fire (not physically
+  based there; the light's transport is: inverse square, shadows,
+  bounces). The frames darken as an effect ends, so its light fades with
+  them. The UBO sphere's color (π × radiance) is the intensity over r².
+  Its range (the dynamic lights' range fade) is where it gives a white
+  wall facing it 1/32 of a full GL texel's light, √(32 I / π) for the
+  intensity's luminance (GL's own dynamic lights stop at about a third).
+  Not scaled by the auto exposure (`tm_auto_exposure 1`), as the lava.
+- **The budget** (`VK_ChooseEffectLights`, from `VK_PrepareLights`,
+  inside the frame): the UBO's 32 dynamic spheres hold the game's lights,
+  the test lights, then as many effect lights as fit before the dark
+  ones, the largest luminance / distance² at the camera first; the rest
+  are counted. A chosen sphere shrinks (its intensity kept) to where 14
+  rays from its center (the axes and the diagonals), marched in 4-unit
+  steps, meet none of the world's solid (`Mod_PointInLeaf`), at least 2
+  units: a sphere at a wall doesn't reach through it (brush entities,
+  doors, aren't seen). A center in solid (a hit's spark at the wall it
+  hit) moves towards the camera, up to 4 units, or the light is left out.
+- **The frames' averages** (`VK_SpriteAverages`, `texture_average.comp`
+  premultiplied: each texel's linear color times its alpha, the mean
+  alpha in w): of the texture the frame shows (5.3's replaced albedo,
+  with the original's coverage where it has no alpha), by both color
+  curves (`r_srgb`). On the GPU outside frames: at map load for every
+  frame texture of an emitting sprite (`VK_SpriteLightAverages`, from
+  `VK_LoadModels`: the precached sprites and the client's own, loaded at
+  startup; 221 on demo1 in 28 ms, Debug) and after the material files
+  change (`r_reloadmaterials`); a frame first drawn later (a sprite loaded
+  mid-game) has no light that frame and gets its average before the next
+  (`VK_EffectLightsBetweenFrames`, in `VK_BeginFrame`: the pipeline is
+  made for each batch and the upload waits for the GPU, a short hitch;
+  none of the games' sprites needs it). A texture purge (a map change)
+  drops them.
+- **Glowing projectiles** (`vk_instance.c`'s `GlowKey`, with
+  `r_emissive_scale` above 0): an alias entity that owns a dynamic light
+  within its bounds ([Lights](#lights-vk_lightc)), or, without one, carries
+  one within 8 units of its origin keyed to a translucent part drawn with
+  it, not a player (a part the gamecode chains to it: the scarab's body,
+  whose translucent wings `scrbpwng` carry its `EF_SCARAB` light 6 units
+  off; `vk_light.c`'s `VK_GlowLight`; a light that another glows around
+  first isn't claimed again), whose
+  light isn't a muzzle flash (the only lights with a `minlight`: they
+  light what fires them), not a player (the torch, invincibility), a
+  stepping monster or a model over 64 units (its MDL radius, scaled:
+  burning monsters in Praevus, the Riders' deaths, Praevus himself;
+  projectiles are 3–60); it joins the light group: the scarab, the
+  summoning stone, the tomed purifier's ball, fireballs and the like; not
+  cutout or translucent ones, which aren't in the (opaque) light group:
+  the Eidolon's `glowball`, `lball`, the vorpal missile (the magic
+  missiles' `ball.mdl` glows). Its skin's material emits the whole skin
+  (`VK_MAT_GLOW`: its `_e`, else its albedo; [Skins](#skins-vk_skinc))
+  times `r_emissive_scale` and GL's light level where it has one
+  (abslight, power mode: the flames' rule, M17), flagged
+  `MATERIAL_FLAG_LIGHT` (its dynamic light is its light: diffuse bounces
+  don't add the emission). Its light doesn't light it: the owner's
+  instance + 1 is in the UBO sphere's `type` high 16 bits
+  (`VK_GlowingInstance`), and `dynlight_weight` gives it no weight for
+  that instance's surfaces, in direct light (the visibility buffer's
+  instance) and on bounces (the hit's). It casts no shadows while it
+  glows (the light group, R81: a shadow ray per light would have to skip
+  its owner). `vk_models` counts them.
+- **Cost** (Release, 1920x1080): the Demoness's fire storm (up to 19
+  effect lights in a frame) 4.41 → 4.63 ms a frame over the 30 frames
+  after a burst; the blast radius's seven flashes 4.25
+  → 4.33 ms a frame over the effect's frames; the 32 dynamic slots full
+  (the cap's upper bound) 4.16 → 4.95 ms (direct light 0.40 → 0.79,
+  bounce 0.65 → 1.04): the dynamic lights' pick runs over every one,
+  twice per sample.
+- `vk_lights` and `vk_effects` print the last frame's emitting sprites,
+  the effect lights and those left out (no slot, in solid, no average
+  yet, owning a dynamic light), the most in a frame and the brightest
+  since the map loaded, and the frame averages made.
 
 ## Acceleration structures (`vk_accel.c`)
 
@@ -1141,7 +1244,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   (their entries moved). The UBO's sphere lights have none, as in Q2RTX.
 - **Dynamic sphere lights:** up to `MAX_LIGHT_SOURCES` (32) in the UBO's
   `dyn_light_data` (Q2RTX's dynamic lights), written every 3D frame: the
-  game's (4.4, below), then the test ones. A pixel picks one by its weight
+  game's (4.4, below), then the test ones, then the effects' in the slots
+  left (6.2, [Effect lights](#effect-lights-vk_effectlightc)). A sphere's
+  `type` high 16 bits can name a model instance it doesn't light (its
+  index + 1: a glowing projectile's light). A pixel picks one by its weight
   (`dynlight_weight`: luminance × solid angle, faded by its range, 0
   entirely below the horizon; Q2RTX picks uniformly), two passes over them;
   a sphere's range is in the entry's `spot_data` (a float's bits, 0 =
@@ -1174,7 +1280,9 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   (`VK_DynamicLightOwner`, see [Map lights](#map-lights-vk_maplightsc)):
   the light is inside it, and it casts no shadows from any light while it
   owns it (a projectile; also the Eidolon's and the Fallen Angel's muzzle
-  flashes, 0.1 s per attack, the chase-cam player with the torch).
+  flashes, 0.1 s per attack, the chase-cam player with the torch). 6.2:
+  a glowing projectile among them emits from its skin and isn't lit by
+  its light ([Effect lights](#effect-lights-vk_effectlightc)).
   `r_dlights 0` turns them off. **Extra lights:** the client's
   `cl_dlights` count in `cl.light_level` ([Scene](#scene-r_scenec), GL's
   rule, which the server uses for how well monsters see the player and
@@ -1754,7 +1862,9 @@ radiance of a texture color of 1):
   +26–33 % in 32-pixel blocks; rough surfaces change only at the flames).
   Left out: the burner's flame (an entity 6 units over its light, not at
   its origin), glowing projectiles and other dynamic light owners, sprites
-  and particles (effects).
+  and particles (effects). *6.2: glowing projectiles emit their whole
+  skin, and the fire and explosion sprites are sphere lights ([Effect
+  lights](#effect-lights-vk_effectlightc)).*
 - **Left out** (not emissive in GL): runes, `+0fire` and `+0sun`
   (buttons), water, slime and the other turbulent textures (unlit in GL
   because they are turbulent; since 5.3 an `_e` or a `.mat`'s `emissive`
@@ -3135,7 +3245,8 @@ overlay, and a measuring mode.
 | `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103; the default in 4.21, R107), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"; again since 4.22, R108); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
-| `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
 | `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; an 8-bit color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |

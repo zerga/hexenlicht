@@ -7,8 +7,9 @@
  * translated colors show their own skin. It returns the material of that
  * texture: one per skin texture, created on demand (the precached models'
  * on map load, VK_AddSkinMaterials), with the skin as its cutout mask for
- * EF_HOLEY models, and one more with the skin's emissive texture for the
- * light models' flames (4.5, vk_emissive.c), made when first shown. The
+ * EF_HOLEY models, one more with the skin's emissive texture for the
+ * light models' flames (4.5, vk_emissive.c), made when first shown, and
+ * one whose whole skin emits for the glowing projectiles (6.2). The
  * skin's material files (5.3, vk_matfiles.c) apply to its materials
  * (VK_ApplyMaterialFiles): a replaced albedo with alpha is also a masked
  * skin's mask, one without keeps the original as the mask; a player whose
@@ -62,8 +63,10 @@ cvar_t		gl_nocolors = {"gl_nocolors", "0", CVAR_NONE};
 extern qmodel_t	*player_models[MAX_PLAYER_CLASS];		/* cl_parse.c */
 extern byte	player_8bit_texels[MAX_PLAYER_CLASS][620*245];	/* gl_model.c */
 
-/* [emissive][cutout][texture slot]: the skin's material, 0 = none yet */
-static short	skin_materials[2][2][VK_MAX_TEXTURES];
+/* [emission: VK_SKIN_*][cutout][texture slot]: the skin's material, 0 = none yet */
+static short	skin_materials[3][2][VK_MAX_TEXTURES];
+
+static const int	emission_flags[3] = { 0, VK_MAT_FLAME, VK_MAT_GLOW };
 static qboolean	batch_materials;	/* VK_AddSkinMaterials: the caller uploads them */
 static qboolean	player_skin_as_is[MAX_CLIENTS];	/* R_TranslatePlayerSkin: the player's colors leave the skin as it is */
 
@@ -94,11 +97,12 @@ qboolean VK_ModelHasCutouts (const qmodel_t *model)
 
 /* slot: the texture shown; files: the skin whose material files apply
  * (slot, or the model's skin under a player's colors, 5.3); name: for
- * textures loaded without one (pictures); emissive: with the skin's
- * emissive texture (vk_emissive.c: the light models' flames, an _e file),
- * made when first asked for; translated: a player's colors, which keep
- * the original albedo (MATERIALS.md) */
-static int SkinMaterial (int slot, int files, qboolean cutout, const char *name, qboolean emissive, qboolean translated)
+ * textures loaded without one (pictures); emission (VK_SKIN_*): with the
+ * skin's emissive texture (vk_emissive.c: the light models' flames, an _e
+ * file), made when first asked for, or the whole skin emitting (6.2: its
+ * _e, else its albedo); translated: a player's colors, which keep the
+ * original albedo (MATERIALS.md) */
+static int SkinMaterial (int slot, int files, qboolean cutout, const char *name, int emission, qboolean translated)
 {
 	const char	*slash;
 	vk_material_t	*mat;
@@ -108,11 +112,13 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 		slot = 0;
 	if (files < 0 || files >= VK_MAX_TEXTURES)
 		files = slot;
-	m = skin_materials[emissive][cutout][slot];
+	if (emission < VK_SKIN_LIT || emission > VK_SKIN_GLOW)
+		emission = VK_SKIN_LIT;
+	m = skin_materials[emission][cutout][slot];
 	if (m)
 	{
 		int	flags = VK_MAT_SKIN | (cutout ? VK_MAT_CUTOUT : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
-				(emissive ? VK_MAT_FLAME : 0);
+				emission_flags[emission];
 
 		mat = VK_GetMaterial (m);
 		if (mat->texture == files && !(mat->flags & VK_MAT_TRANSLATED) == !translated)
@@ -121,7 +127,7 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 		 * before, else another */
 		if ((m = VK_FindMaterial (files, slot, flags)) > 0)
 		{
-			skin_materials[emissive][cutout][slot] = (short)m;
+			skin_materials[emission][cutout][slot] = (short)m;
 			return m;
 		}
 	}
@@ -132,13 +138,12 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 	m = VK_AddMaterial (slash ? slash + 1 : name, slot);
 	mat = VK_GetMaterial (m);
 	mat->texture = files;
-	mat->flags = VK_MAT_SKIN | (cutout ? VK_MAT_CUTOUT : 0) | (translated ? VK_MAT_TRANSLATED : 0);
-	if (emissive)
-		mat->flags |= VK_MAT_FLAME;	/* the skin's emissive texture: VK_ApplyMaterialFiles */
+	mat->flags = VK_MAT_SKIN | (cutout ? VK_MAT_CUTOUT : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
+		     emission_flags[emission];	/* its emissive texture: VK_ApplyMaterialFiles */
 	if (!VK_TextureName (files)[0])
 		VK_MaterialSet (files, name, MATUSE_SKIN);	/* a picture: its set takes the name */
 	VK_ApplyMaterialFiles (m);
-	skin_materials[emissive][cutout][slot] = (short)m;
+	skin_materials[emission][cutout][slot] = (short)m;
 	if (!batch_materials)
 		VK_UploadMaterialRange (m, 1);
 	return m;
@@ -161,7 +166,7 @@ void VK_AddSkinMaterials (qmodel_t *model)
 	for (i = 0; i < hdr->numskins && i < MAX_SKINS; i++)
 	{
 		for (j = 0; j < 4; j++)
-			SkinMaterial ((int)hdr->gl_texturenum[i][j], (int)hdr->gl_texturenum[i][j], cutout, model->name, false, false);
+			SkinMaterial ((int)hdr->gl_texturenum[i][j], (int)hdr->gl_texturenum[i][j], cutout, model->name, VK_SKIN_LIT, false);
 	}
 	batch_materials = false;
 }
@@ -183,11 +188,11 @@ static qboolean IsPlayerModel (const qmodel_t *model)
 	return false;
 }
 
-/* R_DrawAliasModel's choice of texture, as a material index (emissive: with
- * the skin's emissive texture, if it has one); *bad_skin is set for skin
- * numbers the model doesn't have (GL prints them with developer 1; nothing
- * may print inside a frame) */
-int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, qboolean emissive, qboolean *bad_skin)
+/* R_DrawAliasModel's choice of texture, as a material index (emission:
+ * VK_SKIN_*, the flame's emissive texture or the whole skin glowing);
+ * *bad_skin is set for skin numbers the model doesn't have (GL prints them
+ * with developer 1; nothing may print inside a frame) */
+int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, int emission, qboolean *bad_skin)
 {
 	char		name[MAX_QPATH] = "skin";
 	int		skinnum = e->skinnum, slot, files, player;
@@ -232,7 +237,7 @@ int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, qboolean em
 			}
 		}
 	}
-	return SkinMaterial (slot, files, VK_ModelHasCutouts (e->model), name, emissive, translated);
+	return SkinMaterial (slot, files, VK_ModelHasCutouts (e->model), name, emission, translated);
 }
 
 

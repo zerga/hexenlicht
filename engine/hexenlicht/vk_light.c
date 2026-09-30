@@ -29,7 +29,10 @@
  * (VK_DynamicLightOwner: vk_instance.c's light group), as the map lights'
  * torches: the light is inside it (a glowing projectile; also a monster's
  * muzzle flash or an invincible player's light, whose shadows go while
- * they last).
+ * they last). 6.2: a glowing projectile's light (vk_instance.c) names its
+ * instance, which it doesn't light (light_lists.h's dynlight_weight), and
+ * the effect lights (vk_effectlight.c: the emitting sprites) take the
+ * slots the game's and the test lights leave.
  * The light lists (Quake II RTX's bsp_mesh.c collect_cluster_lights) are
  * built when the lights change: a light goes into the list of every
  * cluster in the PVS of the open leafs its emitter touches (Quake II RTX
@@ -591,10 +594,16 @@ static qboolean DynamicLightLit (const scene_dlight_t *s)
 	return r_dlights.integer && !s->dark && s->radius - s->minlight > 0;
 }
 
-/* does the entity own a dynamic light this frame (keyed by its number)
- * within radius of its origin (its model's bounds, where the light would
- * be inside it): vk_instance.c's light group */
-qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius)
+/* a game dynamic light that is a muzzle flash: the only ones with a
+ * minlight (CL_RelinkEntities' EF_MUZZLEFLASH, 18 units ahead of the gun) */
+static qboolean MuzzleFlash (const scene_dlight_t *s)
+{
+	return s->minlight > 0.0f;
+}
+
+/* does the entity own a lit dynamic light this frame (keyed by its number)
+ * within radius of its origin; no_flash: but a muzzle flash */
+static qboolean OwnsLight (int entnum, const vec3_t origin, float radius, qboolean no_flash)
 {
 	int	i;
 
@@ -604,21 +613,66 @@ qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius)
 		vec3_t			d;
 
 		VectorSubtract (s->origin, origin, d);
-		if (s->key == entnum && DynamicLightLit (s) && DotProduct (d, d) <= radius * radius)
+		if (s->key == entnum && DynamicLightLit (s) && DotProduct (d, d) <= radius * radius && !(no_flash && MuzzleFlash (s)))
 			return true;
 	}
 	return false;
 }
 
+/* does the entity own a dynamic light this frame within radius of its
+ * origin (its model's bounds, where the light would be inside it):
+ * vk_instance.c's light group */
+qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius)
+{
+	return OwnsLight (entnum, origin, radius, false);
+}
+
+/* 6.2's glowing projectiles (vk_instance.c): the key of a lit dynamic light
+ * that isn't a muzzle flash (in front of what fires it, which it lights):
+ * keyed to the entity within radius of its origin; else (chain above 0)
+ * the nearest keyed to another entity, not a player, within chain units
+ * of it (a part the gamecode chains to it, the scarab's wings, may carry
+ * its light; the caller checks the part); 0 = none */
+int VK_GlowLight (int entnum, const vec3_t origin, float radius, float chain)
+{
+	int	i, key = 0;
+	float	best = chain * chain;
+
+	for (i = 0; entnum > 0 && i < r_scene.num_dlights; i++)
+	{
+		const scene_dlight_t	*s = &r_scene.dlights[i];
+		vec3_t			d;
+		float			d2;
+
+		if (s->key <= 0 || !DynamicLightLit (s) || MuzzleFlash (s))
+			continue;
+		VectorSubtract (s->origin, origin, d);
+		d2 = DotProduct (d, d);
+		if (s->key == entnum)
+		{
+			if (d2 <= radius * radius)
+				return s->key;	/* its own */
+		}
+		else if (s->key > cl.maxclients && d2 <= best)
+		{
+			best = d2;
+			key = s->key;
+		}
+	}
+	return key;
+}
+
 /* a dynamic sphere in the UBO (range 0 = unlimited, in spot_data's bits:
- * light_lists.h's dynlight_range) */
-static void WriteDynamicLight (DynLightData *d, const vec3_t origin, float radius, const vec3_t color, float range)
+ * light_lists.h's dynlight_range); owner: the model instance it doesn't
+ * light (6.2: a glowing projectile's, the light inside it), -1 = none, in
+ * the type's high 16 bits plus 1 (a sphere has no style) */
+static void WriteDynamicLight (DynLightData *d, const vec3_t origin, float radius, const vec3_t color, float range, int owner)
 {
 	memset (d, 0, sizeof(*d));
 	VectorCopy (origin, d->center);
 	d->radius = radius;
 	VectorCopy (color, d->color);
-	d->type = DYNLIGHT_SPHERE;
+	d->type = DYNLIGHT_SPHERE | ((owner >= 0) ? ((uint32_t)(owner + 1) << 16) : 0u);
 	memcpy (&d->spot_data, &range, sizeof(d->spot_data));
 }
 
@@ -629,12 +683,15 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	LightBuffer	*lb = (LightBuffer *) buf->mapped;
 	const uint32_t	*sky_visibility;
 	const scene_dlight_t	*dark[MAX_LIGHT_SOURCES];
+	vk_effectlight_t	effect[MAX_LIGHT_SOURCES];
 	uint32_t	version;
-	int		i, k, cur, n = 0, num_dark = 0;
+	int		i, k, cur, n = 0, num_dark = 0, num_effect;
 
 	/* dynamic sphere lights (Quake II RTX's add_dlights): the game's (see the
-	 * top), then the test ones; the game's dark ones (4.10) after them, where
-	 * no shader samples them (shaders/darkness.glsl) */
+	 * top), then the test ones, then the effects' (6.2, vk_effectlight.c) in
+	 * the slots left; the game's dark ones (4.10) after them, where no shader
+	 * samples them (shaders/darkness.glsl). A glowing projectile's light
+	 * doesn't light its instance (vk_instance.c) */
 	dlight_stats.lit = dlight_stats.owned = dlight_stats.dark = dlight_stats.negative = 0;
 	for (i = 0; i < r_scene.num_dlights && r_dlights.integer; i++)
 	{
@@ -657,14 +714,18 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		intensity = 2.0f * VK_LightLevelIntensity (s->radius);
 		for (k = 0; k < 3; k++)
 			color[k] = VK_ColorToLinear (s->color[k]) * intensity;
-		WriteDynamicLight (&ubo->dyn_light_data[n++], s->origin, DYNAMIC_LIGHT_RADIUS, color, s->radius - s->minlight);
+		WriteDynamicLight (&ubo->dyn_light_data[n++], s->origin, DYNAMIC_LIGHT_RADIUS, color, s->radius - s->minlight,
+				   (s->key > 0 && !MuzzleFlash (s)) ? VK_GlowingInstance (s->key) : -1);
 		dlight_stats.lit++;
 		dlight_stats.owned += (s->key > 0);
 		dlight_stats.largest = q_max (dlight_stats.largest, intensity);
 	}
 	dlight_stats.most = q_max (dlight_stats.most, dlight_stats.lit);
 	for (i = 0; i < num_test_dlights && n + num_dark < MAX_LIGHT_SOURCES; i++)
-		WriteDynamicLight (&ubo->dyn_light_data[n++], test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f);
+		WriteDynamicLight (&ubo->dyn_light_data[n++], test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f, -1);
+	num_effect = VK_ChooseEffectLights (MAX_LIGHT_SOURCES - n - num_dark, effect);
+	for (i = 0; i < num_effect; i++)
+		WriteDynamicLight (&ubo->dyn_light_data[n++], effect[i].origin, effect[i].radius, effect[i].color, effect[i].range, -1);
 	ubo->num_dyn_lights = n;
 	/* the dark ones: GL's radius and minlight (in spot_data's bits), and
 	 * the light of a full GL lightmap texel that they take from: the light
@@ -675,7 +736,7 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	{
 		static const vec3_t	none = {0, 0, 0};
 
-		WriteDynamicLight (&ubo->dyn_light_data[n + i], dark[i]->origin, dark[i]->radius, none, dark[i]->minlight);
+		WriteDynamicLight (&ubo->dyn_light_data[n + i], dark[i]->origin, dark[i]->radius, none, dark[i]->minlight, -1);
 	}
 	ubo->num_dark_lights = num_dark;
 	ubo->dark_light_unit = exp2f (-q_min (q_max (VK_MapExposure (), -20.0f), 20.0f));
@@ -1047,6 +1108,7 @@ static void VK_Lights_f (void)
 		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.dark, dlight_stats.darkening,
 		    r_darklights.integer ? "" : ", r_darklights 0",
 		    dlight_stats.negative, dlight_stats.most, dlight_stats.largest);
+	VK_PrintEffectLights ();	/* 6.2: the sprites' in the slots left */
 	Con_Printf ("lists of %d clusters (of %d): %u entries (at most %d), mean %.1f, max %u (cluster %d), %d empty\n",
 		    num_lists, vk_pvs.num_clusters, num_nodes, MAX_LIGHT_LIST_NODES,
 		    num_lists ? (double)num_nodes / num_lists : 0.0, max_n, max_c, empty);

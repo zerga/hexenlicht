@@ -443,6 +443,7 @@ indirect_lighting(
 		    	global_ubo.pt_indirect_dyn_lights > 0,
 		    	is_gradient,
 		    	1, // bounce
+		    	triangle.instance_index, // Hexenlicht (6.2): the hit's model instance
 		    	bounce_diffuse,
 				bounce_specular);
 
