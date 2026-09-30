@@ -34,8 +34,10 @@
  *   quakefs.c: FS_LoadFile's Sys_Error, the loose files' wildcard lookup).
  * - Mips: the file's levels (at most its full chain), level 0 first.
  * - VK_ImageFileHasAlpha (5.3): whether level 0 has coverage (an alpha
- *   below 255; a BC7 block unless its mode or endpoints make it opaque),
- *   which decides whether an albedo is a masked skin's mask.
+ *   below 250, 5.6: BC7 compressors round an opaque image's 255 down to
+ *   251-254; a BC7 block unless its mode or endpoints make it opaque),
+ *   which decides whether an albedo is a masked skin's mask or a
+ *   sprite's coverage.
  * - The loader never prints (5.3 may load while a frame is recorded, when
  *   a print re-enters SCR_UpdateScreen); it says why in img->error.
  * vk_imagefile <file> [scale] reads a file, uploads it as the texture
@@ -69,6 +71,7 @@
 #define PREVIEW_TEXTURE	"*imagefile"
 #define MAX_DECODED_TEXELS	(8192 * 8192)	/* a PNG or TGA: 256 MB of RGBA (the GPU would take 32768 x 32768) */
 #define PRINTABLE(c)	((c) >= 32 && (c) < 127)
+#define OPAQUE_ALPHA	250	/* an alpha at least this (98 %) has no coverage (5.6: BC7's rounding of 255, see BC7BlockOpaque) */
 
 static const char *extensions[] = { ".png", ".tga", ".dds", ".ktx2" };
 #define NUM_EXTENSIONS	(int)(sizeof(extensions) / sizeof(extensions[0]))
@@ -528,10 +531,36 @@ static uint32_t BlockBits (const byte *b, int first, int count)
 	return v;
 }
 
-/* a BC7 block whose every texel's alpha is 255: modes 0-3 have none, the
- * others' alpha lies between endpoints (and their p-bits), so both at
- * their maximum make it 255; modes 4 and 5 may rotate a color channel
- * into alpha (the Khronos Data Format spec's BC7) */
+/* a BC7 endpoint of bits bits as 8 bits (the spec's unquantization: the
+ * top bits repeated below) */
+static uint32_t Expand (uint32_t v, int bits)
+{
+	return (v << (8 - bits)) | (v >> (2 * bits - 8));
+}
+
+/* the n endpoints of bits bits from bit first (with a p-bit each below them
+ * from bit pbits, if pbits >= 0) all at least OPAQUE_ALPHA */
+static qboolean EndpointsOpaque (const byte *b, int first, int bits, int n, int pbits)
+{
+	int	i;
+
+	for (i = 0; i < n; i++)
+	{
+		uint32_t	v = BlockBits (b, first + i * bits, bits);
+
+		if (pbits >= 0 ? Expand ((v << 1) | BlockBits (b, pbits + i, 1), bits + 1) < OPAQUE_ALPHA :
+				 Expand (v, bits) < OPAQUE_ALPHA)
+			return false;
+	}
+	return true;
+}
+
+/* a BC7 block whose every texel's alpha is at least OPAQUE_ALPHA: modes 0-3
+ * have none, the others' alpha lies between endpoints (with their p-bits),
+ * so all of them at least that make it so; modes 4 and 5 may rotate a color
+ * channel into alpha (the Khronos Data Format spec's BC7). 5.6: compressors
+ * (texconv) write an opaque image's blocks with a p-bit of 0 where the color
+ * wants it, 254 in mode 6, 251 in mode 7, which isn't coverage */
 static qboolean BC7BlockOpaque (const byte *b)
 {
 	int	mode, rot;
@@ -544,25 +573,22 @@ static qboolean BC7BlockOpaque (const byte *b)
 		return true;
 	case 4:		/* rotation 2, index mode 1, RGB 5 bits x 2 each, A 6 bits x 2 */
 		rot = (int)BlockBits (b, 5, 2);
-		if (rot)
-			return BlockBits (b, 8 + (rot - 1) * 10, 10) == 0x3ff;
-		return BlockBits (b, 38, 12) == 0xfff;
+		return rot ? EndpointsOpaque (b, 8 + (rot - 1) * 10, 5, 2, -1) : EndpointsOpaque (b, 38, 6, 2, -1);
 	case 5:		/* rotation 2, RGB 7 bits x 2 each, A 8 bits x 2 */
 		rot = (int)BlockBits (b, 6, 2);
-		if (rot)
-			return BlockBits (b, 8 + (rot - 1) * 14, 14) == 0x3fff;
-		return BlockBits (b, 50, 16) == 0xffff;
+		return rot ? EndpointsOpaque (b, 8 + (rot - 1) * 14, 7, 2, -1) : EndpointsOpaque (b, 50, 8, 2, -1);
 	case 6:		/* RGBA 7 bits x 2 each, then a p-bit per endpoint */
-		return BlockBits (b, 49, 14) == 0x3fff && BlockBits (b, 63, 2) == 3;
+		return EndpointsOpaque (b, 49, 7, 2, 63);
 	case 7:		/* partition 6, RGBA 5 bits x 4 each, then 4 p-bits */
-		return BlockBits (b, 74, 20) == 0xfffff && BlockBits (b, 94, 4) == 0xf;
+		return EndpointsOpaque (b, 74, 5, 4, 94);
 	default:	/* reserved: decodes to 0 */
 		return false;
 	}
 }
 
-/* coverage: a texel of level 0 whose alpha is below 255 (a BC7 block that
- * isn't certainly opaque; BC5 has no alpha) */
+/* coverage: a texel of level 0 whose alpha is below OPAQUE_ALPHA (a BC7
+ * block that isn't certainly opaque; BC5 has no alpha); 250 and more count
+ * as opaque, as BC7 compressors round 255 (above), in every format alike */
 qboolean VK_ImageFileHasAlpha (const vk_imagefile_t *img)
 {
 	const byte	*p;
@@ -575,7 +601,7 @@ qboolean VK_ImageFileHasAlpha (const vk_imagefile_t *img)
 	{
 		for (i = 3; i < img->size[0]; i += 4)
 		{
-			if (p[i] != 255)
+			if (p[i] < OPAQUE_ALPHA)
 				return true;
 		}
 		return false;

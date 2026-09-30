@@ -1,6 +1,9 @@
 /* ray_probe.comp -- vk_rayprobe: one ray through the main TLAS, every hit
  * a candidate (none confirmed), the first 32 recorded as uvec4 (t bits,
- * custom index, TLAS instance, primitive) after a count in h[0].x
+ * custom index, TLAS instance, primitive) after a count in h[0].x; the
+ * instances by a mask (5.6: vk_materials here takes the primary rays'),
+ * or with nearest every candidate confirmed and the nearest alone (the
+ * first 32 are in traversal order, not by distance)
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -34,23 +37,45 @@ layout(push_constant) uniform Push
 	DeviceAddress out_hits;
 	vec4 origin;
 	vec4 dir;
+	uint mask;	/* the instances' AS_FLAG_*: 0xff for vk_rayprobe, the primary rays' for vk_materials here (5.6) */
+	uint nearest;	/* 5.6: every candidate confirmed, the nearest (the committed hit) alone recorded */
 } push;
 
 void main()
 {
 	rayQueryEXT rq;
 	uint n = 0u;
+	float best = 65536.0;
 
-	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.tlas), gl_RayFlagsNoOpaqueEXT, 0xff,
+	rayQueryInitializeEXT(rq, accelerationStructureEXT(push.tlas), gl_RayFlagsNoOpaqueEXT, push.mask,
 			      push.origin.xyz, 0.0, push.dir.xyz, 65536.0);
 	while (rayQueryProceedEXT(rq))
 	{
+		if (push.nearest != 0u)
+		{
+			float t = rayQueryGetIntersectionTEXT(rq, false);
+
+			if (t < best)	/* committing shortens the ray; checked anyway */
+			{
+				rayQueryConfirmIntersectionEXT(rq);
+				best = t;
+			}
+			continue;
+		}
 		if (n < 32u)
 			OutBuffer(push.out_hits).h[1u + n] = uvec4(floatBitsToUint(rayQueryGetIntersectionTEXT(rq, false)),
 				uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false)),
 				uint(rayQueryGetIntersectionInstanceIdEXT(rq, false)),
 				uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)));
 		n++;
+	}
+	if (push.nearest != 0u && rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+	{
+		OutBuffer(push.out_hits).h[1] = uvec4(floatBitsToUint(rayQueryGetIntersectionTEXT(rq, true)),
+			uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true)),
+			uint(rayQueryGetIntersectionInstanceIdEXT(rq, true)),
+			uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)));
+		n = 1u;
 	}
 	OutBuffer(push.out_hits).h[0] = uvec4(n, 0u, 0u, 0u);
 }

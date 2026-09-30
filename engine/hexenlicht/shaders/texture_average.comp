@@ -9,6 +9,8 @@
  * by the 2.2 power, [1] by the sRGB curve (r_srgb, 4.17). On the GPU
  * because a BC7 file (MATERIALS.md's shipping format) has no decoder on
  * the CPU; the GPU's sampler decodes it. One workgroup per texture.
+ * Story 5.6: without the bias (no_bias), the plain mean of an albedo and
+ * its original for vk_materials here.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -47,7 +49,7 @@ layout(push_constant) uniform Push
 {
 	DeviceAddress	out_average;	/* vec4[2]: by the 2.2 power, by the sRGB curve */
 	uint		slot;
-	uint		pad;
+	uint		no_bias;	/* 5.6: 1 = the plain mean (vk_materials here's albedo) */
 } push;
 
 shared vec3 sum_power[THREADS];
@@ -59,14 +61,15 @@ void main()
 	ivec2	size = global_textureSize(push.slot, 0);
 	uint	n = uint(max(size.x, 0)) * uint(max(size.y, 0));
 	vec3	a = vec3(0.0), b = vec3(0.0);
+	float	bias = (push.no_bias != 0u) ? 0.0 : EMISSIVE_TRANSFORM_BIAS;
 
 	for (uint i = t; i < n; i += THREADS)
 	{
 		ivec2	p = ivec2(int(i % uint(size.x)), int(i / uint(size.x)));
 		vec3	c = texelFetch(global_texture_descriptors[nonuniformEXT(push.slot)], p, 0).rgb;
 
-		a += max(color_to_linear(c, 0u) + vec3(EMISSIVE_TRANSFORM_BIAS), vec3(0.0));
-		b += max(color_to_linear(c, 1u) + vec3(EMISSIVE_TRANSFORM_BIAS), vec3(0.0));
+		a += max(color_to_linear(c, 0u) + vec3(bias), vec3(0.0));
+		b += max(color_to_linear(c, 1u) + vec3(bias), vec3(0.0));
 	}
 	sum_power[t] = a;
 	sum_srgb[t] = b;

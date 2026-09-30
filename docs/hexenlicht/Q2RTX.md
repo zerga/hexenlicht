@@ -172,7 +172,10 @@ this repository) or one at a time with
   noisy for mirrors), or visible emitters. *4.5: the torches' and flames'
   models emit (DECISIONS R82), so smooth surfaces reflect them (castle5's
   start with `pt_roughness_override 0.05`); plain lights without a model
-  (most of them) still show no highlight there.*
+  (most of them) still show no highlight there.* *5.6: the test pack's
+  water (`roughness 0.05`) shows it, with the reflection pass skipping
+  water (DECISIONS R31) until 6.5: the ripples shade and glint, no
+  highlight of the map lights; left open (M33).*
 - **Dark albedo (E4, E5).** Hexen II's textures are dark in linear light:
   the cathedral's mean diffuse albedo is 0.04 (sRGB ~55), so one bounce adds
   2–3 % to the lit image, where lighter PBR textures would get tens of
@@ -181,7 +184,11 @@ this repository) or one at a time with
   the lightmapped world (the calibrated scale takes it in; DECISIONS R92);
   the materials (E5) may change it.* *5.1: a material's albedo is used as
   authored; the test pack (5.6) shows whether lighter albedo needs
-  anything (DECISIONS M3).*
+  anything (DECISIONS M3).* *5.6, answered: nothing in the engine. Stone at
+  real albedo (0.18) makes the starts of demo1 and the cathedral 5.4x and
+  3.5x as bright, the bounce 7–12 % of the lit image; AUTHORING.md tells
+  authors to keep an albedo's mean near the original's for Hexen II's look
+  (DECISIONS M29).*
 - **Checkerboard fields and RR (answered in 3.12).** At translucent surfaces Q2RTX puts one
   field on the surface and the other through it, so an interleaved G-buffer
   alternates between the two surfaces pixel by pixel there.

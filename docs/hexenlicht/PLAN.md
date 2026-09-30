@@ -297,7 +297,8 @@ Goal: edit a PNG, reload in game, see the change.
 | 5.3 | Material system: texture sets, `.mat` parser, defaults, `r_reloadmaterials` hot reload; `get_material`'s reads as MATERIALS.md's "Shader changes" (since 5.1); an index of the files (`quakefs.c`), skins, sprites, lava and flames (L since 5.3: they share the index and the sets) | L | Live reload works |
 | 5.4 | Export command: all original textures with canonical names (`~<crc>` for every variant of a name whose pixels differ between maps, 5.1) + manifest CSV; every occurrence in the search path, exactly as uploaded (M since 5.4: four formats, the variants, PNG writing and the round trip) | M | Full export of both games |
 | 5.5 | Special materials: water/slime/lava, glass, chrome (since 5.1), sky, animated textures (L since 5.5: the sky's layers from a file, lava's lights averaged on the GPU, the kinds in the world's geometry and on skins, a test set in both games) | L | Correct in both games |
-| 5.6 | Test pack (stone, metal, water, emissive, glass) + authoring guide | S | Pack looks right in game |
+| 5.6 | Test pack (stone, metal, water, emissive, glass) + authoring guide (M since 5.6: `vk_materials here`, the measurements of the dark albedo, PNG decoding and glass on the real panes; [AUTHORING.md](AUTHORING.md)) | M | Pack looks right in game |
+| 5.7 | PNG and TGA decoding on threads at map load and `r_reloadmaterials`, the uploads batched (found in 5.6: at 8x the originals a map's PNGs take 2.2 s, 1.75 s of it decoding, against 0.17 s as DDS; the owner will author above 4x; DECISIONS M30) | S | A map with a full PNG set loads as fast as the decoding on the CPU's cores allows, the materials the same as before |
 
 ### E6 — Full Hexen II coverage
 Goal: an effects checklist of both games fully ticked.
@@ -307,7 +308,7 @@ Goal: an effects checklist of both games fully ticked.
 | 6.1 | Effects inventory from `cl_effect.c`, `cl_tent.c`, `r_part.c` → checklist | S | Checklist in tracker |
 | 6.2 | Particle effects by group (weather, explosions/chunks, class weapons, spells) | L | Checklist groups ticked |
 | 6.3 | Beams / lightning effects | S | Beams render and emit light |
-| 6.4 | Translucency: translucent entities, transparent models, cutout textures, glass | M | Matches original intent |
+| 6.4 | Translucency: translucent entities, transparent models, cutout textures, glass (since 5.6: a material file's glass on a translucent brush entity, the game's breakable windows, is half the entity's blend and half glass, DECISIONS M33) | M | Matches original intent |
 | 6.5 | Water: refraction, underwater fog/tint | M | Above/below water correct |
 | 6.6 | View effects: damage/power-up flashes, underwater warp as post-process (GL's view blends, none drawn yet: also the power-up tints, e.g. the Icon of the Defender's yellow-green, and the hydra's blinding dark flash `df`; found in 4.10) | S | Matches `glhexen2` feel |
 | 6.7 | Cutscenes, intermissions, finale screens, demo playback | S | All play correctly |

@@ -15,6 +15,8 @@
  * opaque group) or glass (the transparent group, seen through, the PVS
  * connected across): the kind is its animation's first frame's, taken at
  * map load (VK_WorldKindsChanged tells r_reloadmaterials of a change).
+ * Each triangle's material stays on the CPU for vk_materials here (5.6,
+ * VK_WorldMaterialNow: the frame it shows now).
  *
  * The structure follows Quake II RTX's bsp_mesh.c; encode_normal and
  * get_triangle_off_center are ported from it.
@@ -37,6 +39,7 @@
 
 #include "quakedef.h"
 #include "vk_local.h"
+#include "r_scene.h"
 #include "shaders/hl_shared.h"
 
 #define ANIM_CYCLE	2	/* gl_model.c: tenths of a second per animation frame */
@@ -64,6 +67,7 @@ static struct
 static int	*texture_materials;		/* [worldmodel->numtextures], 0 = none */
 static int	*texture_kinds;			/* [worldmodel->numtextures]: MATKIND_* of its files when the geometry was built (5.5) */
 static int	notexture_material;
+static uint16_t	*prim_materials;		/* [vk_world.num_primitives]: each triangle's material, for vk_materials here (5.6) */
 
 
 /* ==========================================================================
@@ -460,6 +464,8 @@ static void VK_FreeWorld (void)
 	texture_materials = NULL;
 	free (texture_kinds);
 	texture_kinds = NULL;
+	free (prim_materials);
+	prim_materials = NULL;
 	memset (&vk_world, 0, sizeof(vk_world));
 }
 
@@ -544,6 +550,11 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	VK_LoadSky (worldmodel, prims, vk_world.num_primitives);	/* its textures; the sun's clusters need the final PVS */
 	VK_LoadMapLights (worldmodel);	/* the light entities, before their lists */
 	VK_LoadLightClusters (worldmodel, prims, vk_world.num_primitives);	/* the lists need the final PVS */
+	prim_materials = (uint16_t *) malloc (q_max (vk_world.num_primitives, 1) * sizeof(uint16_t));
+	if (!prim_materials)
+		Sys_Error ("%s: out of memory", __thisfunc__);
+	for (i = 0; i < vk_world.num_primitives; i++)
+		prim_materials[i] = (uint16_t)(prims[i].material_id & MATERIAL_INDEX_MASK);
 	free (data);
 	VK_UploadMaterials ();
 	VK_BuildWorldAccel ();
@@ -594,6 +605,16 @@ static int AnimateMaterial (int material, int frame, qboolean alternate)
 		}
 	}
 	return material;
+}
+
+/* 5.6, vk_materials here: the material a triangle of the world buffer
+ * shows now, its animation's frame as the shaders take it (vertex_buffer.h:
+ * global_ubo.anim_frame, a brush entity's frame choosing the alternate) */
+int VK_WorldMaterialNow (uint32_t prim, qboolean alternate)
+{
+	if (!prim_materials || prim >= vk_world.num_primitives || !prim_materials[prim])
+		return 0;
+	return AnimateMaterial (prim_materials[prim], (int)(r_scene.time * 5.0), alternate);	/* vk_ubo.c's anim_frame */
 }
 
 /* compares both for every animated texture over 20 seconds of time steps;

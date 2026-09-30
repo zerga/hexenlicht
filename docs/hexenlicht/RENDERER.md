@@ -297,7 +297,13 @@ names and puts the images into materials.
 - **`VK_ImageFileHasAlpha`** (5.3): coverage, an alpha below 255 in level
   0; a BC7 block counts as opaque when its mode has no alpha (0–3) or its
   alpha endpoints (and p-bits, and a rotated channel's in modes 4 and 5)
-  are all at their maximum; BC5 has none.
+  are all at their maximum; BC5 has none. *5.6: below `OPAQUE_ALPHA`
+  (250, 98 %), every endpoint unquantized as the spec does (`Expand`): texconv
+  writes an opaque image's BC7 blocks with a p-bit of 0 where the color
+  wants it, alpha 254 in mode 6 and 251 in mode 7 (0.1–2 % of the texels
+  of the test pack's albedos, every file flagged before), which made a
+  shipped sprite or holey skin without alpha lose the original's coverage
+  (DECISIONS M31).*
 
 ## Material files (`vk_matfiles.c`)
 
@@ -393,8 +399,9 @@ materials ([Materials](#materials-vk_materialc)).
   maps that don't apply, `.mat` lines) are collected per set and for the
   index (`vk_materials problems`); `R_NewMap` prints one line after the
   models (`VK_ReportMaterialFiles`) when there are files or problems:
-  textures with files, files read and their time, the images kept and
-  their video memory, problems.
+  textures with files, files read and their time (since 5.6 with the
+  decoding's share, `loads.decode_ms`: what threads would share), the
+  images kept and their video memory, problems.
 - **`r_reloadmaterials`**: `vkDeviceWaitIdle`, the index again, every set
   resolved again (reading what is new or changed, a deleted file's next
   candidate; with `r_materials 0` when it is 1 again), `VK_ReapplyMaterials` (the materials and the table; no
@@ -412,6 +419,21 @@ materials ([Materials](#materials-vk_materialc)).
   and their memory, problems; `list` each texture with files (its maps:
   the file, size, kind, format, alpha; refused or left out; the `.mat`'s
   settings); `problems` the problems.
+- **`vk_materials here`** (5.6, for authors): the texture at the view's
+  center, the nearest hit of the primary rays' instances
+  (`VK_ProbeView`, [Acceleration structures](#acceleration-structures-vk_accelc)):
+  what was hit and how far, the material's name, the file names that
+  apply to it (`<name>~<crc>` its pixels only, `<name>` every texture of
+  the name), its set's files as `list` prints them (or "none found"), its
+  problems' count, and its albedo's mean in linear light (both curves'
+  `r_srgb` one) and luminance against the original's, with the ratio
+  (`VK_TextureAverages` without the lights' bias: the shown texture as
+  the GPU samples it, a BC7 file too); the sky its name and file. A world
+  or brush entity triangle's material is the frame its animation shows now
+  (`VK_WorldMaterialNow`), a model's its skin's (the instance's). Every
+  candidate is confirmed, so the nearest wins: a masked skin's hole
+  counts, glass and water too; the effects (sprites) aren't in that TLAS.
+  The albedo's mean is over every texel, a skin's holes' colors too.
 - **Measured** (5.3, `material_set.ps1`, `material_check.ps1`, TESTING.md
   "Materials"): 26 checks at demo1's start, the Paladin's gauntlet and the
   player, the Crusader's ice mace, its hits (sprites) and a file held open
@@ -422,7 +444,15 @@ materials ([Materials](#materials-vk_materialc)).
   capitals reported); map load in Release with all 96 of demo1's world
   textures replaced at 512x512: noise PNGs 700–960 ms, BC7 DDS 58–63 ms
   (the world's build 53–56 ms without files); decoding PNGs on threads
-  is left to 5.6's test pack.
+  is left to 5.6's test pack. *5.6 (`test_pack.ps1 -LoadSet`, TESTING.md
+  "Test pack"): demo1's 96 world textures with albedo, `_n` and `_orm`
+  (288 files), warm: at 4x the originals 533 ms as PNG (379 decoding, 164
+  MB kept), 90 ms as BC7/BC5 DDS (41 MB); at 8x 2.15–2.22 s as PNG
+  (1.74–1.77 s decoding, 656 MB), 160–180 ms as DDS (164 MB); the first
+  load after the PNGs were written takes 1.5 s longer (not the decoding;
+  not looked into, possibly the virus scanner's first look at new files).
+  Decoding is 70–80 % of a PNG map load and the upload (a submit and wait
+  per image) most of the rest: story 5.7 (DECISIONS M30).*
 
 ## Texture export (`vk_export.c`)
 
@@ -641,6 +671,15 @@ the starting points for authors and their tools.
   geometry again for a kind change; `r_reloadmaterials` reports a
   changed one (`VK_WorldKindsChanged`, the kinds the geometry was built
   with, `texture_kinds`). Brush entities keep their triangles' kind.
+  *5.6: Hexen II's windows are brush entities (breakable panes of
+  `rtex018`, `rtex083`, `rtex199`, `ttex210`...; only castle5 has glass on
+  world faces), whose triangles don't connect the PVS (the pane is no
+  wall in the BSP: nothing needs connecting); `vk_world`'s count is the
+  world's.*
+- Each triangle's material index stays on the CPU (`prim_materials`, 2
+  bytes each, 5.6) for `vk_materials here`: `VK_WorldMaterialNow` gives the
+  frame the animation shows now (`r_scene.time` x 5, `vertex_buffer.h`'s
+  `anim_frame`; a brush entity's frame choosing the alternate).
 - `vk_world [materials]` prints statistics (with the lava lights; the
   kinds, chrome and glass too) and checks the animation table against
   `R_TextureAnimation`; `materials` lists each material with its
@@ -884,7 +923,12 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   the camera towards a point through the last TLAS, every hit a candidate so
   hits behind the first are listed too: the first 32 by distance with what
   they are — world range, brush entity, model instance and triangle;
-  `ray_probe.comp`); `vk_rtcheck` (a 64x48 ray grid from the camera compared
+  `ray_probe.comp`, its instance mask pushed since 5.6: 0xff here; the
+  first 32 are those found first, in traversal order, then sorted;
+  `VK_ProbeView` takes the primary rays' mask, `path_tracer_rgen.h`'s
+  `PRIMARY_RAY_CULL_MASK`, along the view's center with `nearest`, every
+  candidate confirmed so the committed hit is the nearest, and its
+  material for `vk_materials here`); `vk_rtcheck` (a 64x48 ray grid from the camera compared
   with CPU hull traces — world hull 0 + each brush entity's hull, rotated like
   `SV_ClipMoveToEntity` — allowing for the hull's DIST_EPSILON, re-tracing
   shifted rays at edges, skipping rays through water/lava/sky; model
@@ -1732,7 +1776,8 @@ radiance of a texture color of 1):
   stays `AverageColor`'s. `vk_lights` prints each lava material's color
   ("its file's"), its key ("x 2") and the averages' time (meso9's 64x64
   file: 29 ms at a map load in Debug with the pipeline made, 3 ms on a
-  reload). A flame shows
+  reload). `VK_TextureAverages` is shared since 5.6: without the bias
+  (`no_bias`) it gives `vk_materials here` an albedo's plain mean. A flame shows
   its skin's `_e` instead of the fake emissive texture (castle4's torch
   green in the test); `r_emissive_models 0` turns both off (the light
   models keep their flame materials, which then emit nothing). Any other
@@ -3073,7 +3118,7 @@ overlay, and a measuring mode.
 | `vk_info` | device, extensions, BC texture support and the largest image, swapchain, validation counts |
 | `vk_imagefile <file> [scale]`, `vk_imagefile` | 5.2: reads an image file of [MATERIALS.md](MATERIALS.md) (without an extension: `.png`, `.tga`, `.dds`, `.ktx2` in turn), prints what it read and the times, shows it at the top left, scale screen pixels per texel (0 fits); alone hides it (see [Image files](#image-files-vk_imagefilec)) |
 | `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
-| `r_reloadmaterials`, `r_materials 0/1`, `vk_materials [list\|problems]` | 5.3: the material files again (the new and changed ones read, the materials applied; no map reload); the material files apply (1) or the original textures only (0, not archived; A/B comparisons); the index, textures with files, images, problems; each texture's files; the problems (see [Material files](#material-files-vk_matfilesc)) |
+| `r_reloadmaterials`, `r_materials 0/1`, `vk_materials [list\|problems\|here]` | 5.3: the material files again (the new and changed ones read, the materials applied; no map reload); the material files apply (1) or the original textures only (0, not archived; A/B comparisons); the index, textures with files, images, problems; each texture's files; the problems; 5.6: the texture at the view's center, its file names, files and albedo against the original's (see [Material files](#material-files-vk_matfilesc), [AUTHORING.md](AUTHORING.md)) |
 | `r_exporttextures [folder]` | 5.4: every original texture of the search path's maps, models, sprites and stone and ice pictures as a PNG under its material file name, exactly as uploaded, and `textures.csv`, into `<game folder>/export` (or folder; run with `-portals` for both games; see [Texture export](#texture-export-vk_exportc)) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |

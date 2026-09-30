@@ -235,9 +235,11 @@ void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color)
 		     m->emissive_texture ? m->emissive_factor : VK_EmissiveScale (), color);
 }
 
-/* the average linear colors (texture_average.comp) of n texture slots;
- * the GPU idle, outside frames */
-static void TextureAverages (const int *slots, int n, vec3_t (*colors)[2])
+/* the average linear colors (texture_average.comp) of n texture slots,
+ * [0] by the 2.2 power, [1] by the sRGB curve; bias: lava's lights' (Quake
+ * II RTX's EMISSIVE_TRANSFORM_BIAS per texel), else the plain mean (5.6,
+ * vk_materials here's albedo); the GPU idle, outside frames */
+void VK_TextureAverages (const int *slots, int n, qboolean bias, vec3_t (*colors)[2])
 {
 	VkPipelineLayout	layout;
 	VkPipeline		pipeline;
@@ -245,7 +247,7 @@ static void TextureAverages (const int *slots, int n, vec3_t (*colors)[2])
 	VkMemoryBarrier2	barrier;
 	VkDependencyInfo	dep;
 	vk_buffer_t		out;
-	struct { VkDeviceAddress out; uint32_t slot, pad; } push;
+	struct { VkDeviceAddress out; uint32_t slot, no_bias; } push;
 	const float		*v;
 	int			i, k, c;
 
@@ -262,6 +264,7 @@ static void TextureAverages (const int *slots, int n, vec3_t (*colors)[2])
 		memset (&push, 0, sizeof(push));
 		push.out = out.address + (VkDeviceAddress)i * 2 * 4 * sizeof(float);
 		push.slot = (uint32_t)slots[i];
+		push.no_bias = bias ? 0u : 1u;
 		VK_DispatchComputeLayout (cmd, pipeline, layout, &push, sizeof(push), 1, 1, 1);	/* one workgroup */
 	}
 	memset (&barrier, 0, sizeof(barrier));
@@ -319,7 +322,7 @@ void VK_LavaFileColors (void)
 	{
 		double	t0 = Sys_DoubleTime ();
 
-		TextureAverages (slots, n, colors);
+		VK_TextureAverages (slots, n, true, colors);
 		lava_averages.ms = (Sys_DoubleTime () - t0) * 1000.0;
 	}
 	for (i = 0; i < n; i++)

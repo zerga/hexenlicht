@@ -26,7 +26,9 @@
  * (rt_check.comp) and compares the hits with the engine's own collision
  * traces: the world's hull and each brush entity's, rotated the way the
  * server does it (world.c's SV_ClipMoveToEntity). Alias models have no
- * hulls, so the rays go through them.
+ * hulls, so the rays go through them. vk_rayprobe lists one ray's hits
+ * (ray_probe.comp); VK_ProbeView (5.6) gives vk_materials here the
+ * material at the view's center, the nearest of the primary rays' hits.
  *
  * The structure follows Quake II RTX's path_tracer.c.
  *
@@ -1041,11 +1043,23 @@ static void VK_RTCheck_f (void)
 }
 
 
-/* vk_rayprobe x y z: one ray from the camera towards the point through the
- * last TLAS, every hit a candidate (ray_probe.comp); lists the first 32 by
- * distance with what they are (world range, brush entity, model instance
- * and triangle), for questions like "why don't I see that?" */
-static void VK_RayProbe_f (void)
+/* one ray's hits (ray_probe.comp) */
+typedef struct
+{
+	float		t;
+	uint32_t	custom;		/* the instance's custom index: VERTEX_BUFFER_* */
+	uint32_t	instance;	/* in the TLAS */
+	uint32_t	primitive;	/* in its BLAS */
+} probe_hit_t;
+
+#define MAX_PROBE_HITS	32	/* ray_probe.comp's */
+
+/* one ray from origin along dir through the last TLAS, every hit of the
+ * instances in mask a candidate (ray_probe.comp); the first MAX_PROBE_HITS
+ * found into hits, sorted by distance (*num of them); returns how many
+ * there were. nearest: every candidate confirmed, the nearest alone (the
+ * first ones found aren't the nearest: traversal isn't by distance) */
+static uint32_t ProbeRay (const vec3_t origin, const vec3_t dir, uint32_t mask, qboolean nearest, probe_hit_t *hits, int *num)
 {
 	VkPushConstantRange		push_range;
 	VkPipelineLayoutCreateInfo	layout_info;
@@ -1057,18 +1071,11 @@ static void VK_RayProbe_f (void)
 	VkMemoryBarrier2		barrier;
 	VkDependencyInfo		dep;
 	vk_buffer_t			out;
-	struct { VkDeviceAddress tlas, out; float origin[4], dir[4]; } push;
+	struct { VkDeviceAddress tlas, out; float origin[4], dir[4]; uint32_t mask, nearest, pad[2]; } push;
 	const uint32_t			*h;
-	int				i, j, n, order[32];
-	vec3_t				target;
+	uint32_t			total;
+	int				i, j, n;
 
-	if (last_tlas < 0 || Cmd_Argc () < 4)
-	{
-		Con_Printf ("vk_rayprobe x y z (in a map)\n");
-		return;
-	}
-	for (i = 0; i < 3; i++)
-		target[i] = (float) atof (Cmd_Argv (i + 1));
 	vkDeviceWaitIdle (vk.device);
 
 	module = VK_LoadShader ("ray_probe.comp");
@@ -1089,15 +1096,16 @@ static void VK_RayProbe_f (void)
 	pipe_info.layout = layout;
 	VK_CHECK (vkCreateComputePipelines (vk.device, VK_NULL_HANDLE, 1, &pipe_info, NULL, &pipeline));
 	vkDestroyShaderModule (vk.device, module, NULL);
-	VK_CreateBuffer (&out, 33 * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+	VK_CreateBuffer (&out, (MAX_PROBE_HITS + 1) * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			 VK_MEMORY_READBACK);
 
 	memset (&push, 0, sizeof(push));
 	push.tlas = tlas[last_tlas].address;
 	push.out = out.address;
-	VectorCopy (r_scene.vieworg, push.origin);
-	VectorSubtract (target, r_scene.vieworg, push.dir);
-	VectorNormalize (push.dir);
+	VectorCopy (origin, push.origin);
+	VectorCopy (dir, push.dir);
+	push.mask = mask;
+	push.nearest = nearest ? 1u : 0u;
 
 	cmd = VK_BeginUpload ();
 	vkCmdBindPipeline (cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
@@ -1118,59 +1126,129 @@ static void VK_RayProbe_f (void)
 	VK_CHECK (vmaInvalidateAllocation (vk.allocator, out.allocation, 0, VK_WHOLE_SIZE));
 
 	h = (const uint32_t *) out.mapped;
-	n = q_min ((int)h[0], 32);
+	total = h[0];
+	n = (int) q_min (total, (uint32_t)MAX_PROBE_HITS);
 	for (i = 0; i < n; i++)
-		order[i] = i;
+	{
+		const uint32_t	*e = &h[4 + i * 4];
+
+		memcpy (&hits[i].t, &e[0], 4);
+		hits[i].custom = e[1];
+		hits[i].instance = e[2];
+		hits[i].primitive = e[3];
+	}
 	for (i = 1; i < n; i++)		/* by distance */
 	{
-		for (j = i; j > 0; j--)
+		for (j = i; j > 0 && hits[j-1].t > hits[j].t; j--)
 		{
-			float	a, b;
-			int	tmp;
-			memcpy (&a, &h[4 + order[j-1] * 4], 4);
-			memcpy (&b, &h[4 + order[j] * 4], 4);
-			if (a <= b)
-				break;
-			tmp = order[j]; order[j] = order[j-1]; order[j-1] = tmp;
+			probe_hit_t	tmp = hits[j];
+			hits[j] = hits[j-1];
+			hits[j-1] = tmp;
 		}
 	}
-	Con_Printf ("rayprobe from %.1f %.1f %.1f to %.1f %.1f %.1f: %u hits\n", r_scene.vieworg[0], r_scene.vieworg[1],
-			r_scene.vieworg[2], target[0], target[1], target[2], h[0]);
-	for (i = 0; i < n; i++)
-	{
-		const uint32_t	*e = &h[4 + order[i] * 4];
-		float		t;
-		char		desc[96];
-
-		memcpy (&t, &e[0], 4);
-		if (e[1] == VERTEX_BUFFER_INSTANCED && e[2] < MAX_TLAS_INSTANCES)
-		{
-			uint32_t	p = ((const TlasInstanceInfo *) tlas[last_tlas].info.mapped)[e[2]].prim_offset + e[3];
-			int		k;
-
-			q_snprintf (desc, sizeof(desc), "model triangle %u (no instance)", p);
-			for (k = 0; k < VK_NumInstances (); k++)
-			{
-				const ModelInstance	*mi = VK_GetInstance (k);
-				if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED && p >= mi->render_prim_offset &&
-				    p < mi->render_prim_offset + mi->prim_count)
-				{
-					q_snprintf (desc, sizeof(desc), "instance %d %s triangle %u", k, VK_InstanceEntity (k)->model->name,
-						    p - mi->render_prim_offset);
-					break;
-				}
-			}
-		}
-		else
-		{
-			DescribeTLASInstance (e[2], desc, sizeof(desc));
-		}
-		Con_Printf ("  t %8.2f custom %u tlas instance %u primitive %u: %s\n", t, e[1], e[2], e[3], desc);
-	}
+	*num = n;
 
 	VK_DestroyBuffer (&out);
 	vkDestroyPipeline (vk.device, pipeline, NULL);
 	vkDestroyPipelineLayout (vk.device, layout, NULL);
+	return total;
+}
+
+/* what a hit is (world range, brush entity, model instance and triangle)
+ * and the material it shows now (0 = none known): a world or brush
+ * entity triangle's own, animated as the shaders do (vertex_buffer.h), a
+ * model's its instance's (its skin) */
+static int DescribeHit (const probe_hit_t *e, char *desc, size_t size)
+{
+	const TlasInstanceInfo	*info = (const TlasInstanceInfo *) tlas[last_tlas].info.mapped;
+	int			k;
+
+	if (e->custom == VERTEX_BUFFER_INSTANCED && e->instance < MAX_TLAS_INSTANCES)
+	{
+		uint32_t	p = info[e->instance].prim_offset + e->primitive;
+
+		q_snprintf (desc, size, "model triangle %u (no instance)", p);
+		for (k = 0; k < VK_NumInstances (); k++)
+		{
+			const ModelInstance	*mi = VK_GetInstance (k);
+			if (mi->render_buffer_idx == VERTEX_BUFFER_INSTANCED && p >= mi->render_prim_offset &&
+			    p < mi->render_prim_offset + mi->prim_count)
+			{
+				q_snprintf (desc, size, "instance %d %s triangle %u", k, VK_InstanceEntity (k)->model->name,
+					    p - mi->render_prim_offset);
+				return (int)(mi->material & MATERIAL_INDEX_MASK);
+			}
+		}
+		return 0;
+	}
+	DescribeTLASInstance (e->instance, desc, size);
+	if (e->custom == VERTEX_BUFFER_WORLD && e->instance < MAX_TLAS_INSTANCES)
+	{
+		int	mi = info[e->instance].model_instance;
+
+		/* a brush entity whose frame isn't 0 shows the alternate animation */
+		return VK_WorldMaterialNow (info[e->instance].prim_offset + e->primitive,
+					    mi >= 0 && VK_InstanceEntity (mi)->frame != 0);
+	}
+	return 0;
+}
+
+/* vk_rayprobe x y z: one ray from the camera towards the point through the
+ * last TLAS, every hit a candidate (ray_probe.comp); lists the first 32 by
+ * distance with what they are (world range, brush entity, model instance
+ * and triangle), for questions like "why don't I see that?" */
+static void VK_RayProbe_f (void)
+{
+	probe_hit_t	hits[MAX_PROBE_HITS];
+	uint32_t	total;
+	int		i, n;
+	vec3_t		target, dir;
+
+	if (last_tlas < 0 || Cmd_Argc () < 4)
+	{
+		Con_Printf ("vk_rayprobe x y z (in a map)\n");
+		return;
+	}
+	for (i = 0; i < 3; i++)
+		target[i] = (float) atof (Cmd_Argv (i + 1));
+	VectorSubtract (target, r_scene.vieworg, dir);
+	VectorNormalize (dir);
+	total = ProbeRay (r_scene.vieworg, dir, 0xff, false, hits, &n);
+
+	Con_Printf ("rayprobe from %.1f %.1f %.1f to %.1f %.1f %.1f: %u hits\n", r_scene.vieworg[0], r_scene.vieworg[1],
+			r_scene.vieworg[2], target[0], target[1], target[2], total);
+	for (i = 0; i < n; i++)
+	{
+		char	desc[96];
+
+		DescribeHit (&hits[i], desc, sizeof(desc));
+		Con_Printf ("  t %8.2f custom %u tlas instance %u primitive %u: %s\n", hits[i].t, hits[i].custom,
+			    hits[i].instance, hits[i].primitive, desc);
+	}
+}
+
+/* 5.6: the surface at the view's center, for vk_materials here: the
+ * nearest hit of the primary rays' instances, every candidate confirmed
+ * (the viewer's own model left out, as in first person; a masked skin's
+ * holes count as hits, the effects aren't in this TLAS); false: none, or
+ * no TLAS */
+qboolean VK_ProbeView (int *material, float *t, char *what, size_t size)
+{
+	probe_hit_t	hits[MAX_PROBE_HITS];
+	int		n;
+
+	*material = 0;
+	*t = 0.0f;
+	what[0] = '\0';
+	if (last_tlas < 0)
+		return false;
+	ProbeRay (r_scene.vieworg, r_scene.forward, AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_TRANSPARENT |
+		  AS_FLAG_VIEWER_WEAPON | AS_FLAG_SKY, true, hits, &n);	/* path_tracer_rgen.h's PRIMARY_RAY_CULL_MASK */
+	if (n <= 0)
+		return false;
+	*t = hits[0].t;
+	*material = DescribeHit (&hits[0], what, size);
+	return true;
 }
 
 
