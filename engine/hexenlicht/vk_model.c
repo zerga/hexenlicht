@@ -626,7 +626,8 @@ static void VK_ModelsCheck (void)
 			}
 			look = (g == MODEL_GROUP_WEAPON) ? mf->weapon_look : g;
 			if (g == NUM_MODEL_GROUPS || weapon != (g == MODEL_GROUP_WEAPON) ||
-			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) ||
+			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL :
+				     (mat->kind == MATKIND_CHROME) ? MATERIAL_KIND_CHROME_MODEL : MATERIAL_KIND_REGULAR) ||	/* 5.5 */
 			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture && mat->mask_texture != mat->original) ||
 			    ((look == MODEL_GROUP_OPAQUE || look == MODEL_GROUP_LIGHT) && mat->mask_texture))
 				group_bad++;

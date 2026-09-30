@@ -11,7 +11,9 @@ authoring guide (5.6). Since 5.2 the engine reads the image files
 the materials use them (RENDERER.md's "Material files";
 `r_reloadmaterials`, `r_materials`, `vk_materials`; DECISIONS M11–M18),
 since 5.4 `r_exporttextures` writes the original textures under these
-names ([below](#the-export-54); DECISIONS M19–M21).
+names ([below](#the-export-54); DECISIONS M19–M21), and 5.5 makes the
+special ones work: chrome and glass, liquids, lava's light, the sky,
+animated textures ([below](#special-materials-55); DECISIONS M22–M27).
 
 ## Files
 
@@ -45,7 +47,8 @@ inverted: flip its green channel. `_r` and `_m` must have the same size
   as `#` (DarkPlaces' and QuakeSpasm's convention): `*lava1` →
   `textures/#lava1.png`. Animated textures keep their prefixes (`+0`–`+9`,
   `+a`–`+j`); each frame has its own files. The sky (`sky000`, `sky001`)
-  is named so too; how its two layers are replaced is 5.5's.
+  is named so too: one file holds its two layers, as the original does
+  ([below](#special-materials-55)).
 - **Model skins:** `textures/<model path>_<skin>`, and
   `_<skin>_<frame>` for a skin group's frames (`gl_model.c`'s names; none
   of the games' models has a group): `textures/models/paladin.mdl_0.png`;
@@ -103,7 +106,7 @@ R89).
 
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `kind` | `regular`, `chrome`, `glass` (world textures); `regular`, `chrome` (skins) | `regular` | Quake II RTX's material kinds: `chrome` a mirror tinted by the albedo where its roughness is below 0.02 (Quake II RTX's `MAX_MIRROR_ROUGHNESS`), shaded as `regular` with its `metallic` above (set `metallic 1` for metal; at the default roughness 1 no mirror); `glass` refracts and goes into the transparent geometry; both are 5.5's. The kinds the name or the entity gives stay and can't be set: by the name (`gl_model.c`) `sky…` the sky, turbulent `*` textures `lava` (`*lava…`), `slime` (`*slime…`), Quake II RTX's transparent kind (`*rtex078`, `*lowlight`), `water` (the others); by the entity Quake II RTX's transparent-model kind (models drawn translucent: `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`, `DRF_TRANSLUCENT`) |
+| `kind` | `regular`, `chrome`, `glass` (world textures); `regular`, `chrome` (skins) | `regular` | Quake II RTX's material kinds: `chrome` a mirror tinted by the albedo where its roughness is below 0.02 (Quake II RTX's `MAX_MIRROR_ROUGHNESS`), shaded as `regular` with its `metallic` above (set `metallic 1` for metal; at the default roughness 1 no mirror); `glass` refracts and goes into the transparent geometry; both tinted by the albedo (a light one for a clear mirror or glass). Since 5.5: a world texture's kind at the next map load, a skin's at once; an animated texture's is its first frame's (`+0…`, `+a…`; [below](#special-materials-55)). The kinds the name or the entity gives stay and can't be set: by the name (`gl_model.c`) `sky…` the sky, turbulent `*` textures `lava` (`*lava…`), `slime` (`*slime…`), Quake II RTX's transparent kind (`*rtex078`, `*lowlight`), `water` (the others); by the entity Quake II RTX's transparent-model kind (models drawn translucent: `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`, `DRF_TRANSLUCENT`) |
 | `roughness` | 0–1 | 1 | without a roughness map the roughness, with one a factor on it (glTF's rule) |
 | `metallic` | 0–1 | 0 without a map, 1 with one | without a metallic map the metallic value, with one a factor on it |
 | `bump` | ≥ 0 | 1 | the normal map's strength (Quake II RTX's `bump_scale`, times `pt_bump_scale`) |
@@ -115,13 +118,15 @@ surroundings only through bounce rays: the light lists hold the map
 lights and lava's triangles; the flames are flagged so that bounce rays
 skip them, because their map light lights for them (R82); `r_lava_light`
 is lava's alone. A lava texture's replaced albedo or `_e` is what emits;
-its triangles' light color follows it (5.5).
+since 5.5 its triangles' light color follows it: the file's average
+color, times its `emissive` (`vk_lights` prints it).
 
 Left out: `opacity` (holes are the model's, `EF_HOLEY` and sprites, as in
 GL; the world's geometry is opaque, so a world texture with holes needs a
 masked world group first), `ior` (Quake II RTX has no index of refraction
 per material), `blend` (translucency is the entity's, `EF_TRANSLUCENT`,
-and the kind's; 5.5), Quake II RTX's surface-light keys (`is_light`,
+and the kind's: `*rtex078` and `*lowlight` stay at 0.33; the game's own
+translucency is 6.4's), Quake II RTX's surface-light keys (`is_light`,
 `light_styles`, `bsp_radiance`, `default_radiance`, `synth_emissive`,
 `emissive_threshold`: Hexen II's lights are its light entities), texture
 paths (`texture_base` and the like: the names decide), several textures
@@ -216,14 +221,61 @@ sprite file) it is used in and the paks it is from. Run the game with
   transparent texels is RGBA, the alpha the engine made (holes 0, a
   transparent skin's 0.33, a special-trans skin's translucency): keep it
   in an edited albedo, or drop it to keep the original's holes (above).
+  The sky (since 5.5) with its front layer's holes as alpha (its left
+  half: [below](#special-materials-55)).
 - Names longer than 40 characters (the index of the material files
   takes `textures/<name>~<crc>_orm.ktx2` in 63) and names with a `~`
   (the qualifier's) aren't exported but reported; the games have none.
 - Unchanged in `textures\`, the files change nothing (5.4 checked the
   view pixel by pixel), so a copy is where an albedo starts; the
-  manifest's `used in` finds a map's textures. Left out: the 2D pictures,
-  the sky's two layers (5.5), DDS or KTX2 (texconv converts the PNGs).
+  manifest's `used in` finds a map's textures (5.5 checked the skies'
+  too). Left out: the 2D pictures, DDS or KTX2 (texconv converts the
+  PNGs).
   A new export overwrites an earlier one's files and deletes none.
+
+## Special materials (5.5)
+
+What the kinds and the special textures take (DECISIONS M22–M27).
+
+- **Chrome** (`kind chrome`, world textures and skins): a mirror where
+  the roughness is below 0.02 (`roughness 0.01` in the `.mat`, or a
+  roughness map that dark), tinted by the albedo: the original's dark
+  stone makes a dark mirror, so give it a light albedo (a polished
+  metal's color). Above 0.02 it is shaded regular (a rough metal with
+  `metallic 1`). No Fresnel term: the albedo is the reflectance at every
+  angle. A skin's kind shows at once (`r_reloadmaterials`); a translucent
+  model stays translucent.
+- **Glass** (`kind glass`, world textures): thin glass, seen through
+  (refracted at 1.52) and reflecting (Fresnel, 5 % head-on), tinted by
+  the albedo (white is clear). It casts no shadow and doesn't tint the
+  light that passes it. For panes: a thin brush with the glass texture
+  on both sides; on one face of a solid wall the view goes into the wall.
+- **A world texture's kind applies at the next map load** (`map`,
+  `restart`, a level change): it is in the geometry. `r_reloadmaterials`
+  says when one changed. An animated texture's kind is its first
+  frame's (`+0…`, `+a…`); a kind on another frame is refused. A surface
+  that switches to its alternate frames (a pressed button, `+0…` to
+  `+a…`) keeps the kind of the sequence the map gave it.
+- **Liquids** (the turbulent `*` textures): every map applies, warped as
+  the albedo; a normal map shades both faces of a liquid's surface alike
+  (up and down). The water stays opaque, as GL draws it, until story 6.5
+  (refraction, underwater fog); the translucent `*rtex078` and
+  `*lowlight` stay at 0.33. Their kind is their name's (`kind` refused).
+- **Lava** (`*lava…`): its replaced albedo or its `_e` emits and lights
+  the room with its average color (times `emissive`).
+- **The sky** (`textures/sky001.png`, qualified as other names:
+  `sky001~6566` is demo1's and the mission pack's, `sky001~4893` Mazaera's;
+  `sky000` has three): one image, the original's layout at any size, 2:1:
+  the **left half is the front layer**, the **right half the back**, each
+  square. The front is drawn over the back at `r_skyalpha` (0.67); where
+  its **alpha** is 0 the back shows. Without alpha the original's holes
+  stay (scaled). Bilinear, no mipmaps, as GL. PNG, TGA or an RGBA8 DDS or
+  KTX2 (not BC7: the engine splits and edits the layers). Only the
+  albedo applies (the sky is unlit: its color is what it shows); in the
+  sky light mode the dome takes the new layers' average. The export
+  writes each sky in this layout with its holes as alpha.
+- **Animated textures** (`+0…`–`+9…`, the alternate `+a…`–`+j…`): each
+  frame has its own files; frames without files stay the original's.
 
 ## Shader changes (5.3)
 

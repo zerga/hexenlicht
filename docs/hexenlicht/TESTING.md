@@ -340,6 +340,59 @@ M19–M21). About 15 minutes in Release, the configs backed up.
    whose name has 39 characters too; `r_exporttextures con` and
    `r_exporttextures textures` are refused. Delete them afterwards.
 
+## Special materials (5.5)
+
+Chrome and glass, liquids, lava's lights, the sky, animated textures
+(MATERIALS.md's "Special materials", DECISIONS M22–M27); about ten
+minutes in Release, twenty in Debug, the configs backed up.
+
+1. **The set:** `special_set.ps1 -Texconv <texconv.exe>` writes 21
+   generated files into `data1\textures` (refused if other files are
+   there) and the scripts `spectest_a.cfg` to `_d` and `_p`: demo1's
+   floor `rtex429` chrome and its pedestal `rtex426` glass (both with a
+   light albedo), the player's and the gauntlet's skins chrome,
+   `+1rune2.mat` a refused kind, the pool `#rtex346` an albedo and a
+   tilted normal map, `#lowlight` an albedo, `+0rune1`–`+4rune1` five
+   colors, meso9's `#lava000` blue with `emissive 1`, the sky
+   `sky001~6566` 512x256 red over blue with a checker of holes,
+   `sky000` yellow over green without alpha (and a `sky000_n.png` it
+   refuses), `sky001~4893.dds` in BC7 (refused).
+2. **The run:** `special_set.ps1 -Run` (`-Release`): 19 shots at 960x540
+   (demo1's start in the base color and kinds views with
+   `pt_reflect_refract` 0 and 2, lit, the player in the chase camera,
+   the pool's shading and geometric normals and base color three times
+   0.2 s apart, `#lowlight`, the sky looking up; meso9's lava; demo1's
+   sky after the swap; the kinds after the next map load; egypt1's
+   sky). At `T55_SWAP_A` it writes `emissive 2` into `#lava000.mat`,
+   at `T55_SWAP_B` the sky without alpha and `kind regular` into
+   `rtex426.mat`; the scripts reload after each. Then `special_set.ps1
+   -Run -Portals`: keep1's sky (the same file).
+3. **The check:** `special_check.ps1` (`-Shots`, `-Log`, `-PortalsShots`,
+   `-PortalsLog`; the data folder's by default; `-Debug` for a Debug run:
+   then both validation lines must be there): 30 checks in Debug, 28 in
+   Release, PASS or FAIL each, among them the pool's shading normal the
+   same over the pool (a mirrored frame on its back face speckles it:
+   the check fails on such shots), the domes against the values computed by hand
+   (0.2072 0 0.5436 with the holes; 0.2777 0 0.3884 without alpha: the
+   original's 5405 of 16384 transparent texels), the lava's `vk_lights`
+   line ("its file's", "x 1", then "x 2") and its wall's blue share, the
+   kind change's line, the three refusals, and in Debug the validation
+   line of both runs.
+4. **Without files, against `main`:** a worktree of `main` (its own
+   build), and the same repeatable views (5.4's round-trip scripts and
+   the skies and kinds views) on both: identical. The scenes that vary
+   between runs (the ice mace's hits, the meteor, meso9's lava and
+   imps) vary as much between two runs of `main`: run it twice.
+5. **The round trip:** the `-portals` export (the skies with their
+   alpha; `export_check.ps1`: no differences) in `data1\textures`: the
+   same views identical to no files, the skies too, and `vk_sky`'s
+   averages the same.
+6. `special_set.ps1 -Remove`; restore the configs; delete the worktree.
+
+- **Cost:** `vk_benchmark 1`, `profiler_samples 120` and `vk_profiler`
+  at demo1's start at 1920x1080 with the set and without files (the
+  reflection pass, the frame).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

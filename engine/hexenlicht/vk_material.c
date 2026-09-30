@@ -17,7 +17,9 @@
  * specular r_specular: as before E5). The emission: lava its albedo
  * (4.5, r_lava_light), the light models' flames their skin's fake
  * emissive texture (vk_emissive.c), an _e file or the .mat's emissive
- * key on any lit texture; times r_emissive_scale and the key.
+ * key on any lit texture; times r_emissive_scale and the key. The .mat's
+ * kind (5.5) is kept with the material: a skin's instance takes it every
+ * frame (vk_instance.c), the world's primitives at map load (vk_world.c).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -153,6 +155,7 @@ void VK_ApplyMaterialFiles (int index)
 	/* an authored roughness makes it physically based (M4), else r_specular */
 	m->specular = (s && s->specular >= 0.0f) ? s->specular :
 		      ((s && (s->roughness_map || s->roughness >= 0.0f)) ? 1.0f : -1.0f);
+	m->kind = s ? s->kind : MATKIND_REGULAR;	/* a skin's instance takes it (5.5); the world's primitives at map load */
 
 	if (m->flags & VK_MAT_LAVA)
 		m->emissive_texture = VK_LavaEmits () ? (own ? own : m->base_texture) : 0;

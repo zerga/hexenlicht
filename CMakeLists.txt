@@ -217,6 +217,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/fsr_rcas_fp32.comp
 	${HEXENLICHT_SHADER_DIR}/debug_view.comp
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
+	${HEXENLICHT_SHADER_DIR}/texture_average.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
 )
 

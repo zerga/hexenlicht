@@ -25,7 +25,10 @@
  *   pictures TEX_ALPHA | TEX_NEAREST. The alpha is written where the
  *   conversion made one (TEX_ALPHA) and a texel's is below 255: holey,
  *   transparent and special-trans skins, sprites and pictures with
- *   transparent texels; the rest is RGB (their alpha isn't read).
+ *   transparent texels; the rest is RGB (their alpha isn't read). The
+ *   sky (5.5) as vk_sky.c uploads its layers: its left half, the front,
+ *   transparent at color 0 (and the palette's 255), which its material
+ *   file's alpha replaces.
  * - The files are read here (fopen of the pak or loose file), not through
  *   quakefs.c: nothing of the running game changes (no GPU work, no
  *   texture slots, no model cache). A console command, outside frames: it
@@ -1138,6 +1141,20 @@ static void R_ExportTextures_f (void)
 			}
 		}
 		VK_Convert8Pixels (v->pixels, v->width, v->height, &flags, rgba);
+		if (v->kind == KIND_SKY)
+		{	/* 5.5: the front layer (the left half) as vk_sky.c uploads it: color 0 transparent, and the palette's 255 */
+			int	x, y;
+
+			for (y = 0; y < v->height; y++)
+			{
+				for (x = 0; x < v->width / 2; x++)
+				{
+					if (v->pixels[y * v->width + x] == 0 || v->pixels[y * v->width + x] == 255)
+						rgba[y * v->width + x] &= 0x00ffffffu;	/* R,G,B,A in memory */
+				}
+			}
+			flags |= TEX_ALPHA;
+		}
 		if (flags & TEX_ALPHA)
 		{
 			size_t	t;

@@ -1191,7 +1191,11 @@ get_material(
 		if(dot(triangle.tangents[0], triangle.tangents[0]) > 0)
 		{
 			vec3 tangent = normalize(triangle.tangents * bary);
-			vec3 bitangent = cross(geo_normal, tangent);
+			// Hexenlicht (5.5): the bitangent from the triangle's own normal,
+			// not geo_normal, which faces the ray: a surface seen from behind
+			// keeps its map's frame (a liquid's two coincident faces, up and
+			// down, shade alike: Quake II RTX mirrored the map on the back one)
+			vec3 bitangent = cross(normalize(triangle.normals * bary), tangent);
 
 			if((triangle.material_id & MATERIAL_FLAG_HANDEDNESS) != 0)
         		bitangent = -bitangent;

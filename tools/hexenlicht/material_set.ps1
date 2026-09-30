@@ -183,7 +183,7 @@ Png 'orm.tga' 'textures\rtex040_orm.png'
 Png 'grey255.tga' 'textures\rtex429_m.png'
 Text 'textures\rtex429.mat' @('# the metallic map (255) times 0.5', 'metallic 0.5')
 Text 'textures\rtex388.mat' @('# values without maps', 'roughness 0.3', 'metallic 0.7', 'specular 0.5  # a comment after a value',
-	'# problems: an unknown key, a value out of range, 5.5''s kind, no value', 'foo 1', 'roughness 2', 'kind chrome', 'specular')
+	'# problems: an unknown key, a value out of range, a kind that is none, no value', 'foo 1', 'roughness 2', 'kind metal', 'specular')
 Png 'red.tga' 'textures\rtex430~6995.png'
 Png 'blue.tga' 'textures\rtex430.png'
 Png 'green.tga' 'textures\rtex430~ffff.png'

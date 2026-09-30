@@ -774,7 +774,10 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 		   VK_MapLightAt (e->origin);	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
 	material = VK_SkinMaterial (e, hdr, emissive, &bad_skin);
 	model_frame.bad_skins += bad_skin;
-	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL : MATERIAL_KIND_REGULAR) |
+	/* 5.5: a skin's files' chrome, Quake II RTX's chrome model (a mirror
+	 * below roughness 0.02); a translucent entity stays translucent */
+	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL :
+			(VK_GetMaterial (material)->kind == MATKIND_CHROME) ? MATERIAL_KIND_CHROME_MODEL : MATERIAL_KIND_REGULAR) |
 		       MATERIAL_FLAG_MODEL | (uint32_t)material;	/* 4.10: dark lights leave models lit (shaders/darkness.glsl) */
 	if (e->kind == SCENE_ENT_VIEWMODEL)
 		mi->material |= MATERIAL_FLAG_WEAPON;
@@ -1039,7 +1042,8 @@ static void VK_Instances_f (void)
 				    mi->prim_offset_curr_pose_curr_frame / am->num_pose_verts,
 				    mi->prim_offset_prev_pose_curr_frame / am->num_pose_verts, mi->pose_lerp_curr_frame,
 				    e->skinnum, mat->name,
-				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL) ? " transp" : "",
+				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL) ? " transp" :
+				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_CHROME_MODEL) ? " chrome" : "",
 				    mat->mask_texture ? " cutout" : "");
 			if (e->scale && e->scale != 100)
 				q_strlcat (extra, va(" scale %d%%", e->scale), sizeof(extra));

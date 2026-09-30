@@ -10,7 +10,11 @@
  * sequences (+0..+9) and alternate sequences (+a..+j). Transparent world
  * triangles connect the PVS of the leaves on their two sides (vk_pvs.c).
  * Lava emits, and its world triangles whose front leaf isn't lava are
- * lights, flagged MATERIAL_FLAG_LIGHT (4.5, vk_emissive.c).
+ * lights, flagged MATERIAL_FLAG_LIGHT (4.5, vk_emissive.c). A regular
+ * texture's material files (5.5) may make it Quake II RTX's chrome (the
+ * opaque group) or glass (the transparent group, seen through, the PVS
+ * connected across): the kind is its animation's first frame's, taken at
+ * map load (VK_WorldKindsChanged tells r_reloadmaterials of a change).
  *
  * The structure follows Quake II RTX's bsp_mesh.c; encode_normal and
  * get_triangle_off_center are ported from it.
@@ -49,6 +53,7 @@ static struct
 {
 	uint32_t	into_solid;		/* world triangles left out: facing into solid */
 	uint32_t	lava_lights;		/* lava triangles facing out of the lava: lights (4.5) */
+	uint32_t	glass_connected;	/* glass triangles with a leaf past their pane: the PVS connected across (5.5) */
 	uint32_t	kinds[16];		/* triangles per MATERIAL_KIND */
 	int		num_textures;		/* world textures that became materials */
 	double		build_time;
@@ -57,6 +62,7 @@ static struct
 /* the world model's textures and their materials; the loader substitutes
  * r_notexture_mip for missing ones, which gets a material of its own */
 static int	*texture_materials;		/* [worldmodel->numtextures], 0 = none */
+static int	*texture_kinds;			/* [worldmodel->numtextures]: MATKIND_* of its files when the geometry was built (5.5) */
 static int	notexture_material;
 
 
@@ -144,6 +150,19 @@ static texture_t *FirstFrame (texture_t *tx)
 	return tx;
 }
 
+/* the kind a world texture's files give (5.5; MATKIND_REGULAR without
+ * them, with r_materials 0, and for the turbulent and sky textures, whose
+ * names give theirs) */
+static int FileKind (const texture_t *tx)
+{
+	const vk_matset_t	*s;
+
+	if (!tx || tx->name[0] == '*' || !strncmp (tx->name, "sky", 3))
+		return MATKIND_REGULAR;
+	s = VK_MaterialSet ((int)tx->gl_texturenum, NULL, MATUSE_WORLD);
+	return s ? s->kind : MATKIND_REGULAR;
+}
+
 static void AddWorldMaterials (qmodel_t *m)
 {
 	vk_material_t	*mat;
@@ -151,7 +170,8 @@ static void AddWorldMaterials (qmodel_t *m)
 	int		i;
 
 	texture_materials = (int *) calloc (q_max (m->numtextures, 1), sizeof(int));
-	if (!texture_materials)
+	texture_kinds = (int *) calloc (q_max (m->numtextures, 1), sizeof(int));
+	if (!texture_materials || !texture_kinds)
 		Sys_Error ("%s: out of memory", __thisfunc__);
 	notexture_material = 0;
 
@@ -159,6 +179,7 @@ static void AddWorldMaterials (qmodel_t *m)
 	{
 		if ((tx = m->textures[i]) != NULL)
 			texture_materials[i] = VK_AddMaterial (tx->name, (int)tx->gl_texturenum);
+		texture_kinds[i] = FileKind (tx);
 	}
 	stats.num_textures = vk_num_materials - 1;
 
@@ -183,8 +204,10 @@ static void AddWorldMaterials (qmodel_t *m)
  * Surfaces to triangles
  * ========================================================================== */
 
-/* the material ID bits for a surface's kind and flags */
-static uint32_t SurfaceKind (const msurface_t *surf)
+/* the material ID bits for a surface's kind and flags: the name's, and
+ * (5.5) a regular texture's files' chrome or glass, its animation's first
+ * frame's (the triangles keep their kind as the frames change) */
+static uint32_t SurfaceKind (const qmodel_t *m, const msurface_t *surf)
 {
 	const char	*name = surf->texinfo->texture->name;
 	uint32_t	kind;
@@ -192,7 +215,16 @@ static uint32_t SurfaceKind (const msurface_t *surf)
 	if (surf->flags & SURF_DRAWSKY)
 		return MATERIAL_KIND_SKY;
 	if (!(surf->flags & SURF_DRAWTURB))
-		return MATERIAL_KIND_REGULAR;
+	{
+		int	i = TextureIndex (m, FirstFrame (surf->texinfo->texture));
+
+		switch ((i >= 0 && texture_kinds) ? texture_kinds[i] : MATKIND_REGULAR)
+		{
+		case MATKIND_CHROME:	return MATERIAL_KIND_CHROME;
+		case MATKIND_GLASS:	return MATERIAL_KIND_GLASS;
+		default:		return MATERIAL_KIND_REGULAR;
+		}
+	}
 
 	if (surf->flags & SURF_TRANSLUCENT)
 		kind = MATERIAL_KIND_TRANSPARENT;
@@ -215,6 +247,7 @@ static int SurfacePass (uint32_t kind)
 	case MATERIAL_KIND_WATER:
 	case MATERIAL_KIND_SLIME:
 	case MATERIAL_KIND_TRANSPARENT:
+	case MATERIAL_KIND_GLASS:	/* 5.5: seen through, the PVS connected across (Quake II RTX's geom_transparent) */
 		return PASS_TRANSPARENT;
 	default:
 		return PASS_OPAQUE;
@@ -246,6 +279,26 @@ static int TriangleLeaf (qmodel_t *world, const VboPrimitive *p, float side)
 		leaf = VK_PointCluster (world, center);
 	}
 	return q_max (leaf, -1);
+}
+
+#define GLASS_MAX_THICKNESS	32.0f	/* 5.5: a pane's brush this thick at most */
+
+/* 5.5: the leaf behind a glass triangle: a pane is a brush, so just behind
+ * its face is solid; the leaf past it, stepping up to GLASS_MAX_THICKNESS,
+ * so that the PVS connects the rooms on its two sides (the lights beyond
+ * a window are in the near side's lists); -1 = none (a solid wall) */
+static int GlassBackLeaf (qmodel_t *world, const VboPrimitive *p)
+{
+	vec3_t	center;
+	float	d;
+	int	leaf = TriangleLeaf (world, p, -1.0f);
+
+	for (d = 2.0f; leaf < 0 && d <= GLASS_MAX_THICKNESS; d *= 2.0f)
+	{
+		get_triangle_off_center (p, center, -d);
+		leaf = q_max (VK_PointCluster (world, center), -1);
+	}
+	return leaf;
 }
 
 /* Writes the surface's triangles to out and returns how many (out == NULL:
@@ -322,7 +375,14 @@ static uint32_t EmitSurface (qmodel_t *m, msurface_t *surf, uint32_t material_id
 			stats.into_solid++;
 			continue;	/* overwritten by the next one */
 		}
-		if (world && SurfacePass (material_id) == PASS_TRANSPARENT)
+		if (world && (material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_GLASS)
+		{
+			int	back = GlassBackLeaf (m, out);
+
+			VK_ConnectPVSAcross (out->cluster, back);
+			stats.glass_connected += (back >= 0);
+		}
+		else if (world && SurfacePass (material_id) == PASS_TRANSPARENT)
 			VK_ConnectPVSAcross (out->cluster, TriangleLeaf (m, out, -1.0f));
 		/* lava facing out of the lava is a light (vk_emissive.c); bounce rays
 		 * that hit it don't add what the direct light samples */
@@ -366,7 +426,7 @@ static uint32_t EmitModels (qmodel_t *world, VboPrimitive *out)
 			for (s = bm->firstface; s < bm->firstface + bm->numfaces; s++)
 			{
 				msurface_t	*surf = &world->surfaces[s];
-				uint32_t	kind = SurfaceKind (surf);
+				uint32_t	kind = SurfaceKind (world, surf);
 				uint32_t	material;
 
 				if (SurfacePass (kind) != pass)
@@ -398,7 +458,28 @@ static void VK_FreeWorld (void)
 	free (vk_world.models);
 	free (texture_materials);
 	texture_materials = NULL;
+	free (texture_kinds);
+	texture_kinds = NULL;
 	memset (&vk_world, 0, sizeof(vk_world));
+}
+
+int VK_WorldKindsChanged (char *first, size_t size)
+{
+	qmodel_t	*m = vk_world.worldmodel;
+	int		i, n = 0;
+
+	first[0] = '\0';
+	if (!m || !texture_kinds)
+		return 0;
+	for (i = 0; i < m->numtextures; i++)
+	{
+		if (m->textures[i] && FileKind (m->textures[i]) != texture_kinds[i])
+		{
+			if (!n++)
+				q_strlcpy (first, m->textures[i]->name, size);
+		}
+	}
+	return n;
 }
 
 void VK_LoadWorld (qmodel_t *worldmodel)
@@ -438,6 +519,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	vk_world.num_primitives = EmitModels (worldmodel, prims);
 	for (i = 1; i < (uint32_t)vk_num_materials; i++)
 		VK_ApplyMaterialFiles ((int)i);	/* the material files (5.3), the lava's emission (flagged by EmitModels) */
+	VK_LavaFileColors ();	/* 5.5: its lights' colors follow a file it emits; before the light lists */
 	prims_size = vk_world.num_primitives * sizeof(VboPrimitive);
 	size = prims_size + vk_world.num_primitives * 9 * sizeof(float);
 	positions = (float *) (data + prims_size);
@@ -555,6 +637,8 @@ static const char *KindName (uint32_t kind)
 	case MATERIAL_KIND_SLIME:	return "slime";
 	case MATERIAL_KIND_SKY:		return "sky";
 	case MATERIAL_KIND_TRANSPARENT:	return "transparent";
+	case MATERIAL_KIND_CHROME:	return "chrome";
+	case MATERIAL_KIND_GLASS:	return "glass";
 	default:			return "other";
 	}
 }
@@ -595,6 +679,9 @@ static void VK_World_f (void)
 			Con_Printf (" %s %u", KindName ((uint32_t)i << 28), stats.kinds[i]);
 	}
 	Con_Printf ("\n");
+	if (stats.kinds[MATERIAL_KIND_GLASS >> 28])
+		Con_Printf ("glass: %u of the world's triangles connect the PVS past their pane (%g units at most; of %u in all)\n",
+			    stats.glass_connected, GLASS_MAX_THICKNESS, stats.kinds[MATERIAL_KIND_GLASS >> 28]);
 
 	/* the animation sequences, each from its first frame */
 	for (i = 0; i < world->numtextures; i++)
@@ -629,6 +716,8 @@ static void VK_World_f (void)
 			if (m->base_texture != m->original || m->normal_texture || m->rm_texture)	/* material files (5.3) */
 				Con_Printf (" (original %d) normal %d%s rm %d roughness %g metallic %g", m->original, m->normal_texture,
 						m->normal_bc5 ? " BC5" : "", m->rm_texture, m->roughness, m->metallic);
+			if (m->kind != MATKIND_REGULAR)	/* the files' (5.5): a skin's is live, the world's triangles' from the map load */
+				Con_Printf (" kind %s", (m->kind == MATKIND_CHROME) ? "chrome" : "glass");
 			Con_Printf ("\n");
 		}
 	}
