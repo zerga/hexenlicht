@@ -386,6 +386,7 @@ void VK_InitWorld (void);
 void VK_ShutdownWorld (void);
 void VK_LoadWorld (qmodel_t *worldmodel);	/* on map change, outside frames */
 int VK_WorldKindsChanged (char *first, size_t size);	/* world textures whose files' kind isn't the one the geometry was built with (5.5: applies at the next map load); first: the first's name */
+int VK_WorldMaterialNow (uint32_t prim, qboolean alternate);	/* 5.6: the material a world buffer triangle shows now (its animation's frame), 0 = none */
 
 /* vk_pvs.c: the world's potentially visible sets. A cluster is a vis leaf
  * (leaf number - 1; -1 = none, e.g. the solid leaf). The matrix has one
@@ -464,6 +465,7 @@ qboolean VK_AddLavaLight (const struct VboPrimitive *p);	/* a world lava triangl
 int VK_NumLavaLights (void);			/* the lava's polygon lights, none with r_lava_light 0 */
 void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color);	/* its corners (emitting along cross(p1 - p0, p2 - p0)) and radiance */
 void VK_LavaFileColors (void);			/* after the materials are applied (map load, r_reloadmaterials, r_materials): the lights' colors of lava emitting a file (5.5); outside frames, then VK_RebuildLights */
+void VK_TextureAverages (const int *slots, int n, qboolean bias, vec3_t (*colors)[2]);	/* texture_average.comp: each slot's mean linear color, [0] by the 2.2 power, [1] the sRGB curve; bias: lava's lights'; the GPU idle, outside frames */
 qboolean VK_OverLava (const vec3_t origin);	/* within 16 units of a lava light, either side (vk_maplights.c: a fake lava light) */
 qboolean VK_LavaLightsOn (void);		/* vk_light.c: the lava's lights are in the light buffer (the fake lava lights out) */
 qboolean VK_ModelsEmit (void);			/* r_emissive_models */
@@ -566,6 +568,7 @@ VkDeviceAddress VK_TLASInfoAddress (void);	/* its TlasInstanceInfo[] */
 qboolean VK_TLASBuiltThisFrame (void);
 VkDeviceAddress VK_EffectsTLASAddress (void);	/* the current frame's, 0 = no effects */
 VkDeviceAddress VK_LastEffectsTLAS (int *slot, uint64_t *frame_count);	/* the last one built (0 = none), for checks */
+qboolean VK_ProbeView (int *material, float *t, char *what, size_t size);	/* 5.6: the nearest primary ray hit at the view's center: its material (0 = none known), distance, what it is; outside frames */
 void VK_PrintEffectsAccel (void);	/* the effects' BLASes and TLAS, for vk_effects */
 
 /* vk_matrix.c: 4x4 matrices in columns (m[column * 4 + row]), Quake II

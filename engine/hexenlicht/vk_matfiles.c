@@ -61,7 +61,8 @@
  * applies at the next map load). r_materials 0 shows the original
  * textures only (A/B comparisons), the same way.
  * vk_materials [list|problems] prints the counts, each texture's files,
- * the problems.
+ * the problems; vk_materials here (5.6) the texture at the view's center:
+ * its names, files, and its albedo's mean against the original's.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -381,6 +382,7 @@ static struct
 {
 	int	read, refused;		/* files read (again) since the last map load or reload */
 	double	ms;			/* their reading, decoding and uploading */
+	double	decode_ms;		/* of it the decoding (5.6: what threads would share; PNG and TGA) */
 } loads;
 
 static void SetId (fileid_t *id, int f)
@@ -467,6 +469,7 @@ static qboolean ReadIndexImage (int f, vk_imagefile_t *img, char *why, size_t wh
 		return false;
 	ok = VK_ParseImageFile (idx.files[f].name, data, len, img);
 	img->read_ms = (Sys_DoubleTime () - t0) * 1000.0 - img->decode_ms;
+	loads.decode_ms += img->decode_ms;
 	free (data);
 	if (!ok)
 		q_strlcpy (why, img->error, whysize);
@@ -1226,8 +1229,8 @@ void VK_ReportMaterialFiles (void)
 	Count (&c);
 	if (!c.with_files && !c.problems)
 		return;
-	Con_Printf ("materials: %d of %d textures with files, %d files read in %.0f ms (%d images kept, %.1f MB)%s",
-		    c.with_files, c.sets, loads.read, loads.ms, c.images, c.mb, c.problems ? ", " : "\n");
+	Con_Printf ("materials: %d of %d textures with files, %d files read in %.0f ms (%.0f decoding; %d images kept, %.1f MB)%s",
+		    c.with_files, c.sets, loads.read, loads.ms, loads.decode_ms, c.images, c.mb, c.problems ? ", " : "\n");
 	if (c.problems)
 		Con_Printf ("%d problems (vk_materials problems)\n", c.problems);
 }
@@ -1281,8 +1284,8 @@ static void R_ReloadMaterials_f (void)
 	}
 	FilesChanged ();
 	Count (&c);
-	Con_Printf ("r_reloadmaterials: %d of %d textures with files, %d files read (%.0f ms), %d problems; %.0f ms in all\n",
-		    c.with_files, c.sets, loads.read, loads.ms, c.problems, (Sys_DoubleTime () - t0) * 1000.0);
+	Con_Printf ("r_reloadmaterials: %d of %d textures with files, %d files read (%.0f ms, %.0f decoding), %d problems; %.0f ms in all\n",
+		    c.with_files, c.sets, loads.read, loads.ms, loads.decode_ms, c.problems, (Sys_DoubleTime () - t0) * 1000.0);
 	ReportKinds ();
 }
 
@@ -1343,11 +1346,111 @@ static void PrintSet (const texset_t *s)
 	Con_Printf ("\n");
 }
 
+/* the mean of a texture's colors in linear light, and its luminance */
+static void PrintMean (const char *label, const vec3_t mean)
+{
+	Con_Printf ("%s %.3f %.3f %.3f (luminance %.3f)", label, mean[0], mean[1], mean[2],
+		    0.2126f * mean[0] + 0.7152f * mean[1] + 0.0722f * mean[2]);
+}
+
+/* vk_materials here (5.6): the texture at the view's center (the nearest
+ * primary ray hit, vk_accel.c's VK_ProbeView): its names as MATERIALS.md
+ * spells them, its files, and its albedo's mean in linear light against
+ * the original's (texture_average.comp, without the lights' bias: the
+ * shown texture as the GPU samples it, a BC7 file too) */
+static void MaterialHere (void)
+{
+	const vk_material_t	*m;
+	texset_t		*s;
+	char			what[96];
+	float			t;
+	int			material, slots[2], n = 1, srgb = VK_ColorsSRGB () ? 1 : 0;
+	vec3_t			means[2][2];
+
+	if (vk_num_materials <= 1)
+	{
+		Con_Printf ("vk_materials here: no map\n");
+		return;
+	}
+	if (!VK_ProbeView (&material, &t, what, sizeof(what)))
+	{
+		Con_Printf ("vk_materials here: nothing at the view's center\n");
+		return;
+	}
+	if (material <= 0 || material >= vk_num_materials)
+	{
+		Con_Printf ("here: %s, %.0f units away: no material\n", what, t);
+		return;
+	}
+	m = VK_GetMaterial (material);
+	Con_Printf ("here: %s, %.0f units away: %s (material %d)\n", what, t, m->name, material);
+
+	if (!(m->flags & VK_MAT_SKIN) && !q_strncasecmp (m->name, "sky", 3))	/* the sky's set has no slot (VK_SkyImageFile) */
+	{
+		if (sky_set.name[0])
+			Con_Printf ("  the sky: %s~%04x (this sky) or %s (every sky of the name), 2:1, the layers side by side%s%s\n",
+				    sky_set.name, sky_set.crc, sky_set.name, sky_file.file[0] ? "; read " : "",
+				    sky_file.file[0] ? sky_file.file : "");
+		return;
+	}
+	s = GetSet (m->texture, NULL, (m->flags & VK_MAT_SKIN) ? MATUSE_SKIN : MATUSE_WORLD);
+	if (!s || !s->name[0])
+	{
+		Con_Printf ("  no material file name (too long)\n");
+		return;
+	}
+	Con_Printf ("  files: %s~%04x (this texture's pixels only) or %s (every texture of the name)\n", s->name, s->crc, s->name);
+	if (!r_materials.integer)
+		Con_Printf ("  r_materials 0: the original texture only\n");
+	else if (!s->resolved)	/* read-only: resolving here would read files the material doesn't show */
+		Con_Printf ("  not looked up since the last map load or reload (r_reloadmaterials)\n");
+	else
+	{
+		if (s->any)
+		{
+			Con_Printf ("  ");
+			PrintSet (s);
+		}
+		else
+			Con_Printf ("  none found\n");
+		if (s->problems.count)
+			Con_Printf ("  %d problems (vk_materials problems)\n", s->problems.count);
+	}
+
+	slots[0] = m->base_texture;
+	if (m->original && m->original != m->base_texture)
+		slots[n++] = m->original;
+	vkDeviceWaitIdle (vk.device);
+	VK_TextureAverages (slots, n, false, means);
+	if (n == 2)
+	{
+		float	y0 = 0.2126f * means[0][srgb][0] + 0.7152f * means[0][srgb][1] + 0.0722f * means[0][srgb][2];
+		float	y1 = 0.2126f * means[1][srgb][0] + 0.7152f * means[1][srgb][1] + 0.0722f * means[1][srgb][2];
+
+		PrintMean ("  albedo: mean", means[0][srgb]);
+		PrintMean (", the original's", means[1][srgb]);
+		if (y1 > 0.0f)
+			Con_Printf (": %.2f times", y0 / y1);
+		Con_Printf (" (linear light, r_srgb %d)\n", srgb);
+	}
+	else
+	{
+		PrintMean ("  albedo: the original's, mean", means[0][srgb]);
+		Con_Printf (" (linear light, r_srgb %d)\n", srgb);
+	}
+}
+
 static void VK_Materials_f (void)
 {
 	const char	*arg = (Cmd_Argc () > 1) ? Cmd_Argv (1) : "";
 	counts_t	c;
 	int		i;
+
+	if (!q_strcasecmp (arg, "here"))
+	{
+		MaterialHere ();
+		return;
+	}
 
 	if (!q_strcasecmp (arg, "list"))
 	{
@@ -1376,7 +1479,7 @@ static void VK_Materials_f (void)
 	}
 	if (arg[0])
 	{
-		Con_Printf ("vk_materials [list|problems]\n");
+		Con_Printf ("vk_materials [list|problems|here]\n");
 		return;
 	}
 	Count (&c);

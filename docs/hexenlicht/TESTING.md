@@ -393,6 +393,62 @@ minutes in Release, twenty in Debug, the configs backed up.
   at demo1's start at 1920x1080 with the set and without files (the
   reflection pass, the frame).
 
+## Test pack (5.6)
+
+The test material pack and the measurements behind AUTHORING.md
+(DECISIONS M28–M33): about two minutes for the pack in Debug, twenty for
+the load sets in Release, the configs backed up. The pack's views are
+judged by eye; the log's lines are checked.
+
+1. **The pack:** `test_pack.ps1 -Texconv <texconv.exe>` writes 32
+   generated files (no game data) into `data1\textures` (refused if other
+   files are there) and the scripts `packtest_a.cfg` to `_d`: stone
+   (`rtex022`, `rtex005`, `rtex429`), iron plates (`rtex011`, `rtex054`),
+   water (`#rtex346`, `#rtex078`: ripples and a `.mat`), runes (`rtex426`
+   with `_e`), glass (`rtex018`, `rtex083`, `rtex199`: a leaded albedo and
+   `kind glass`), at 4x the originals (`-Scale`), the albedo at real values;
+   `-Albedo matched -Export <portals\export>` scales the stone to the
+   originals' means (5.4's export); `-Dds` ships it through
+   `pack_dds.ps1`.
+2. **The run:** `test_pack.ps1 -Run` (Debug; `-Release`) at 1280x720:
+   `shots\p_*.tga`, 8 frames averaged each (`vk_screenshot`, the
+   denoiser on, paused): demo1's start (lit, base color, shading normals,
+   roughness/metallic/specular, Physically based), the wall, the cobbles,
+   the metal (its specular, both light shapes, from the side), the pool
+   (its normals, both shapes), the blue water, the runes (their emission),
+   the stained window from outside (its kinds) and inside, the skylight;
+   the cathedral's window from both sides and its panes; village1's clear
+   window from both sides; castle5 for `vk_world`. The log: `vk_materials
+   here` at each view names the view's texture (the metal view's is the
+   pillar in front of the plates), `vk_materials problems` none, each
+   map's `vk_world` glass line, `Vulkan validation: 0 errors, 0 warnings`.
+3. **Looking** (`tga2png.ps1`): blocks and cobbles lit from the lights'
+   side (the normal map's convention), the iron reflecting the room and
+   the sky blurred by its roughness, the rust matte, the pool's ripples in
+   its shading, the runes glowing, the room behind the stained and clear
+   glass tinted and the lead dark, from both sides of each pane.
+4. **Load sets:** `test_pack.ps1 -Texconv <texconv.exe> -Export
+   <portals\export> -LoadSet demo1,cath` (`-Scale 8`, `-Dds`, `-Albedo
+   matched`: 126 textures, 378 files; 4x in a minute, 8x in four), then
+   `test_pack.ps1 -Run -Release` twice (the first load after the PNGs
+   were written is 1.5 s slower, M30): each map's `materials:` line (files,
+   ms, decoding, MB kept) and `shots\load_<map>_lit`, `_direct`
+   (`pt_num_bounce_rays 0`), `_base` at the start, 64 frames averaged
+   with the denoiser off. Without files: keep a copy of `loadtest_a.cfg`,
+   `-Remove`, and run the copy with `hl_run.ps1 -Release -Width 1280
+   -Height 720`. `tga_luminance.ps1 -Files ...` gives each shot's mean
+   luminance in linear light: the ratios of M29.
+5. `test_pack.ps1 -Remove`; restore the configs.
+
+- **A pak, by hand (5.6):** the pack made with `-Dds`, its
+  `data1\textures` moved into a new `data1\pak2.pak` (a pak's layout:
+  `PACK`, the directory's offset and length, 64-byte entries of a 56-byte
+  name, position and length): `vk_materials list` shows the 32 files from
+  it, `problems` none.
+- **Coverage (5.6):** BC7 albedos made by texconv from an opaque image, a
+  half-transparent one and alpha 128: `vk_materials list` shows ", alpha"
+  on the latter two only (M31).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

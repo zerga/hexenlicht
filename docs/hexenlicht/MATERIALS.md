@@ -14,6 +14,9 @@ since 5.4 `r_exporttextures` writes the original textures under these
 names ([below](#the-export-54); DECISIONS M19–M21), and 5.5 makes the
 special ones work: chrome and glass, liquids, lava's light, the sky,
 animated textures ([below](#special-materials-55); DECISIONS M22–M27).
+How to make a pack, step by step, is [AUTHORING.md](AUTHORING.md) (5.6,
+with a generated test pack, `tools/hexenlicht/test_pack.ps1`; DECISIONS
+M28–M33).
 
 ## Files
 
@@ -95,7 +98,12 @@ inverted: flip its green channel. `_r` and `_m` must have the same size
 - **The albedo is used as authored,** without a correction. Physically
   based albedo is usually lighter than Hexen II's (the cathedral's mean
   is 0.04 in linear light), which makes bounce light brighter; 5.6's test
-  pack shows whether that needs anything.
+  pack shows whether that needs anything. *5.6: nothing in the engine;
+  stone at real albedo (0.18, the originals' 0.01–0.05) lights the
+  starts of demo1 and the cathedral 5.4x and 3.5x as bright. For Hexen
+  II's look keep an albedo's mean near the original's (`vk_materials
+  here` prints both): [AUTHORING.md](AUTHORING.md#5-how-bright), DECISIONS
+  M29.*
 
 ## Settings (`.mat`)
 
@@ -153,7 +161,9 @@ in one file (Quake II RTX's `materials/*.mat` sections).
 - **Sprites** are unlit effects without a material: only an albedo (with
   its alpha) applies.
 - **Holes kept from the original:** an albedo without alpha (every texel
-  255; a BC7 file: every block certainly opaque) keeps the original's
+  at least 250, 98 %: since 5.6, as BC7 compressors round an opaque
+  image's 255 down to 251–254; a BC7 file: every block's alpha endpoints
+  at least that, DECISIONS M31) keeps the original's
   coverage. A masked skin then takes the original as its mask; a sprite,
   which has no mask, takes the original's alpha as its coverage (5.3:
   read in the shader beside the albedo, not merged into the image at
@@ -175,7 +185,9 @@ in one file (Quake II RTX's `materials/*.mat` sections).
   format as its UNORM twin, the same bytes: the shaders decode colors,
   R104). `_r` and `_m` only as PNG or TGA: the engine packs them into one
   roughness and metallic texture at load, which a compressed file can't be
-  repacked into; so no BC4.
+  repacked into; so no BC4. *5.6: `tools/hexenlicht/pack_dds.ps1` converts
+  a folder as authored (texconv; BC needs sizes in multiples of 4;
+  [AUTHORING.md](AUTHORING.md#7-ship-it)).*
 - **Mips** come from the file; an uncompressed image without them gets
   them made at load, as the originals'; a compressed one without them is
   used without (the GPU can't write compressed mips).
@@ -250,6 +262,13 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   the albedo (white is clear). It casts no shadow and doesn't tint the
   light that passes it. For panes: a thin brush with the glass texture
   on both sides; on one face of a solid wall the view goes into the wall.
+  *5.6:* Hexen II's windows are such panes, breakable brush entities
+  (`rtex018`, `rtex083`, `rtex199`, `ttex210`, ...; the manifest's `used
+  in` finds them); glass has no opaque parts, so lead cames or a frame are
+  a dark tint in the albedo (the originals' paint a scene behind the
+  lead, which would tint the view: make the albedo new). A window drawn
+  translucent (village1's clear `rtex199`, `DRF_TRANSLUCENT`) is half the
+  entity's blend, half glass until story 6.4 (DECISIONS M33).
 - **A world texture's kind applies at the next map load** (`map`,
   `restart`, a level change): it is in the geometry. `r_reloadmaterials`
   says when one changed. An animated texture's kind is its first
@@ -261,6 +280,10 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   (up and down). The water stays opaque, as GL draws it, until story 6.5
   (refraction, underwater fog); the translucent `*rtex078` and
   `*lowlight` stay at 0.33. Their kind is their name's (`kind` refused).
+  *5.6:* so a smooth water (`roughness 0.05`) shows its ripples in the
+  shading and glints of what emits, but no mirror image (the reflection
+  pass skips water) and no highlight of the map lights (below 0.18,
+  DECISIONS M33).
 - **Lava** (`*lava…`): its replaced albedo or its `_e` emits and lights
   the room with its average color (times `emissive`).
 - **The sky** (`textures/sky001.png`, qualified as other names:
