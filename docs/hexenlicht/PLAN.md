@@ -301,12 +301,12 @@ Goal: edit a PNG, reload in game, see the change.
 | 5.7 | PNG and TGA decoding on threads at map load and `r_reloadmaterials`, the uploads batched (found in 5.6: at 8x the originals a map's PNGs take 2.2 s, 1.75 s of it decoding, against 0.17 s as DDS; the owner will author above 4x; DECISIONS M30) | S | A map with a full PNG set loads as fast as the decoding on the CPU's cores allows, the materials the same as before |
 
 ### E6 — Full Hexen II coverage
-Goal: an effects checklist of both games fully ticked.
+Goal: an effects checklist of both games, its stories' lines ticked (since 6.2's scope, DECISIONS X4: the lines no story takes are looked at in 7.1's playthroughs).
 
 | # | Story | Size | Done when |
 |---|---|---|---|
 | 6.1 | Effects inventory from `cl_effect.c`, `cl_tent.c`, `r_part.c` → checklist | S | Checklist in tracker |
-| 6.2 | Particle effects by group (weather, explosions/chunks, class weapons, spells; since 6.1 also the monsters' and the world's effects and the effects' lights and HoT's glows, the checklist in epic #7, DECISIONS X1) | L | Checklist groups ticked |
+| 6.2 | Effects that glow emit light (since 6.2's split proposal, owner 2026-09-30, DECISIONS X4; the rest of "particle effects by group" not planned). The fire, explosion, flash and spark sprites light the scene: a sphere light each from its shown frame's average color and coverage, renderer-only, sharing R81's 32 dynamic spheres; Praevus's fire sprites too. Glowing projectiles (entities owning their dynamic light, R81's light group) emit from their skin instead of being lit by the light inside them. `r_effect_lights` (0 = GL's look). HoT's missile glows left out | M | Explosions and fire light walls and monsters, with shadows, in `effects_run.ps1`'s shots against `r_effect_lights 0`; the scarab, the summoning stone and the tomed purifier's ball glow without being lit by their own light; the cost measured on a busy scene; validation 0/0; the checklist's emitting lines ticked |
 | 6.3 | Beams / lightning effects | S | Beams render and emit light |
 | 6.4 | Translucency: translucent entities, transparent models, cutout textures, glass (since 5.6: a material file's glass on a translucent brush entity, the game's breakable windows, is half the entity's blend and half glass, DECISIONS M33) | M | Matches original intent |
 | 6.5 | Water: refraction, underwater fog/tint | M | Above/below water correct |
@@ -316,7 +316,7 @@ Goal: an effects checklist of both games fully ticked.
 | 6.9 | Robustness: save/load, map change, `vid_restart`, Alt-Tab, resize | S | No leaks, no crashes |
 | 6.10 | Renderer settings menu (quality presets, upscaler, sky mode; since 4.9 also the exposure mode (fixed, `tm_auto_exposure 1` auto), colored light (`r_maplight_colors`, `gl_colored_dynamic_lights`) and the lava's glow (`r_emissive_scale`); since 4.16 the lighting mode, "Original" or "Physically based" (`r_maplight_shape` 2, the default, or 0: GL's light shape and sum of lights, 4.15–4.16, or inverse square)) | S | Options in the video menu |
 | 6.11 | The player's own model in shadows and reflections: in single player without the chase camera the local player's model where the player stands, seen by shadow, bounce, reflection and refraction rays, not by primary rays (Quake II RTX's first-person player model, `AS_FLAG_VIEWER_MODELS`); the player's own lights don't shadow on it (the owner's idea, 2026-09-29) | M | The body's shadow and reflection animated as the server sends it, nothing in the view, a setting, no cost per frame, `cl.light_level` unchanged |
-| 6.12 | GL's near plane for the view: GL clips everything within 4 units of the eye (`NEARCLIP`); Hexenlicht's primary rays start at the eye, only the weapon's at the near plane. So the Necromancer's proximity mine, which the gamecode spawns 6 units below the eye with the eye inside its model, blackens the view (found in 6.1, DECISIONS X3) | S | A model at the eye is left out of the view as in GL, the weapon unchanged, no cost per frame |
+| 6.12 | GL's near plane for the view: GL clips everything within 4 units of the eye (`NEARCLIP`); Hexenlicht's primary rays start at the eye, only the weapon's at the near plane. So the Necromancer's proximity mine, which the gamecode spawns 6 units below the eye with the eye inside its model, blackens the view (found in 6.1, DECISIONS X3). The effect rays too: particles within 4 units of the eye are large blobs, e.g. haste's dark field around the player (found in 6.2's proposal) | S | A model or particle at the eye is left out of the view as in GL, the weapon unchanged, no cost per frame |
 
 ### E7 — Playthrough, performance, release
 Goal: v1.0 on GitHub Releases.
