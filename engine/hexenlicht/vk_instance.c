@@ -17,7 +17,8 @@
  * of the model that the instance blends (r_lerpmodels); stepping monsters
  * glide between their moves (r_lerpmove). The instance
  * carries the material of the skin (vk_skin.c), the fixed light level and
- * the colorshade tint GL uses. The first-person weapon (cl.viewent) comes
+ * the colorshade tint GL uses (6.2: a glowing projectile's skin emits
+ * whole, and its light doesn't light it). The first-person weapon (cl.viewent) comes
  * last, in a group of its own as Quake II RTX's viewer weapon, with GL's
  * fov compensation; it looks like the group it would be in otherwise.
  *
@@ -71,6 +72,17 @@ static const scene_entity_t	*instance_entities[MAX_MODEL_INSTANCES];	/* their so
 static int			instance_submodels[MAX_MODEL_INSTANCES];	/* *N, for vk_accel.c; 0 = alias */
 static vk_modelframe_t		model_frame;
 static uint32_t			weapon_reserve;	/* the weapon's triangles, kept free: it comes last */
+
+/* 6.2: this frame's glowing projectiles, by their light's key, whose light
+ * doesn't light them (vk_light.c); an entity owns at most one dynamic
+ * light (CL_AllocDlight's key) */
+#define GLOW_MAX_RADIUS		64.0f	/* the largest model that glows (its MDL radius, scaled): projectiles are 3-60 units, the monsters with a light over 100 */
+#define GLOW_CHAIN_DISTANCE	8.0f	/* another entity's light this near its origin is its too: a chained part's (the scarab's wings, 6 units off) */
+static struct
+{
+	int	key, instance;
+}				glowing[MAX_DLIGHTS];
+static int			num_glowing;
 
 /* for each of last frame's instances its index in this frame's, ~0u =
  * gone: Quake II RTX's model_prev_to_current, by which the denoiser's
@@ -496,6 +508,77 @@ static void AddBrushInstance (const scene_entity_t *e)
  * Alias model entities
  * ========================================================================== */
 
+/* the model's bounds (Mod_LoadAliasModel's, 10 units past its frames) as a
+ * sphere around its origin, scaled */
+static float AliasBoundsRadius (const scene_entity_t *e)
+{
+	const float	*mins = e->model->mins, *maxs = e->model->maxs;
+	float		r2 = 0.0f;
+	int		k;
+
+	for (k = 0; k < 3; k++)
+		r2 += q_max (mins[k] * mins[k], maxs[k] * maxs[k]);
+	return sqrtf (r2) * (e->scale ? e->scale / 100.0f : 1.0f);
+}
+
+/* 6.2: can the entity glow (r_effect_lights, r_emissive_scale above 0): a
+ * projectile; not a player (the torch, invincibility), a stepping monster
+ * or a large model (burning monsters, the Riders' deaths, Praevus) */
+static qboolean GlowCandidate (const scene_entity_t *e)
+{
+	const aliashdr_t	*hdr;
+
+	if (!VK_EffectLightsOn () || !(VK_EmissiveScale () > 0.0f) || e->kind != SCENE_ENT_DYNAMIC ||
+	    e->num <= cl.maxclients || e->movestep || e->model->type != mod_alias)
+		return false;
+	hdr = (const aliashdr_t *) Mod_Extradata (e->model);
+	return hdr->boundingradius * (e->scale ? e->scale / 100.0f : 1.0f) <= GLOW_MAX_RADIUS;
+}
+
+/* is the entity of the number drawn translucent this frame (a part chained
+ * to a projectile, which can't glow itself: the scarab's wings) */
+static qboolean TranslucentPart (int entnum)
+{
+	int	i;
+
+	for (i = 0; i < r_scene.num_entities; i++)
+	{
+		const scene_entity_t	*p = &r_scene.entities[i];
+
+		if (p->kind == SCENE_ENT_DYNAMIC && p->num == entnum)
+			return (p->drawflags & DRF_TRANSLUCENT) || (p->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS));
+	}
+	return false;
+}
+
+/* 6.2: the key of a glowing projectile's light, 0 = none: a lit one that
+ * isn't a muzzle flash (which lights what fires it), its own within its
+ * bounds, else one a translucent part chained to it carries near its
+ * origin (vk_light.c's VK_GlowLight). Its whole skin emits, and the light
+ * doesn't light it */
+static int GlowKey (const scene_entity_t *e)
+{
+	int	key;
+
+	if (!GlowCandidate (e))
+		return 0;
+	key = VK_GlowLight (e->num, e->origin, AliasBoundsRadius (e), GLOW_CHAIN_DISTANCE);
+	return (key == e->num || (key && TranslucentPart (key))) ? key : 0;
+}
+
+/* the instance this frame's light of the key doesn't light (vk_light.c), -1 = none */
+int VK_GlowingInstance (int key)
+{
+	int	i;
+
+	for (i = 0; i < num_glowing; i++)
+	{
+		if (glowing[i].key == key)
+			return glowing[i].instance;
+	}
+	return -1;
+}
+
 /* The groups of the instanced buffer, in Quake II RTX's order. GL draws
  * all but the opaque ones in its translucent pass (R_DrawEntitiesOnList);
  * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. Opaque models at
@@ -503,7 +586,7 @@ static void AddBrushInstance (const scene_entity_t *e)
  * game code spawns there, whose mesh surrounds the light: shadow rays
  * don't see their group (vk_maplights.c); nor those of an entity that
  * owns a dynamic light this frame within its bounds (4.4: a glowing
- * projectile, the light inside it; vk_light.c) */
+ * projectile, the light inside it; vk_light.c); 6.2: nor a glowing one's */
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
@@ -512,19 +595,8 @@ static int AliasGroup (const scene_entity_t *e)
 		return MODEL_GROUP_MASKED;
 	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
 		return MODEL_GROUP_LIGHT;
-	if (e->kind == SCENE_ENT_DYNAMIC)
-	{
-		/* the model's bounds (Mod_LoadAliasModel's, 10 units past its frames) as a
-		 * sphere around its origin, scaled */
-		const float	*mins = e->model->mins, *maxs = e->model->maxs;
-		float		r2 = 0.0f;
-		int		k;
-
-		for (k = 0; k < 3; k++)
-			r2 += q_max (mins[k] * mins[k], maxs[k] * maxs[k]);
-		if (VK_DynamicLightOwner (e->num, e->origin, sqrtf (r2) * (e->scale ? e->scale / 100.0f : 1.0f)))
-			return MODEL_GROUP_LIGHT;
-	}
+	if (e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e)))
+		return MODEL_GROUP_LIGHT;
 	return MODEL_GROUP_OPAQUE;
 }
 
@@ -693,11 +765,11 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
 	scene_entity_t		shown;		/* e where r_lerpmove shows it */
-	qboolean		continues, jumped, bad_skin, emissive;
+	qboolean		continues, jumped, bad_skin, emissive, glow;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
-	int			instance = num_instances;
+	int			instance = num_instances, glow_key;
 	uint32_t		reserve = (e->kind == SCENE_ENT_VIEWMODEL) ? 0 : weapon_reserve;
 
 	if (index < 0)
@@ -769,10 +841,15 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	 * RTX's viewer weapon. A model at a map light's origin that GL draws
 	 * with MLS_ABSLIGHT shows its skin's emissive texture (4.5,
 	 * vk_emissive.c: the flames of torches and the like, lit; not what
-	 * passes that point), flagged as a light: the map light is its light */
+	 * passes that point), flagged as a light: the map light is its light.
+	 * 6.2: a glowing projectile's whole skin emits, flagged as a light: its
+	 * dynamic light is its light, which doesn't light it (vk_light.c) */
 	emissive = group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
 		   VK_MapLightAt (e->origin);	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
-	material = VK_SkinMaterial (e, hdr, emissive, &bad_skin);
+	glow_key = (!emissive && group == MODEL_GROUP_LIGHT && num_glowing < (int)Q_COUNTOF(glowing) &&
+		    !VK_MapLightAt (e->origin)) ? GlowKey (e) : 0;
+	glow = glow_key != 0 && VK_GlowingInstance (glow_key) < 0;	/* a light doesn't light one instance only */
+	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : glow ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	/* 5.5: a skin's files' chrome, Quake II RTX's chrome model (a mirror
 	 * below roughness 0.02); a translucent entity stays translucent */
@@ -785,6 +862,13 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	{
 		mi->material |= MATERIAL_FLAG_LIGHT;
 		model_frame.emissive++;
+	}
+	if (glow)
+	{
+		mi->material |= MATERIAL_FLAG_LIGHT;
+		glowing[num_glowing].key = glow_key;
+		glowing[num_glowing++].instance = instance;
+		model_frame.glowing++;
 	}
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;
@@ -828,6 +912,7 @@ void VK_UpdateInstances (void)
 	uint32_t	next_prim = 0;
 
 	num_instances = 0;
+	num_glowing = 0;
 	memset (&model_frame, 0, sizeof(model_frame));
 	model_frame.dropped_total = dropped_total;
 	memset (prev_to_current, 0xff, sizeof(prev_to_current));
@@ -935,6 +1020,7 @@ const vk_modelframe_t *VK_ModelFrame (void)
 void VK_ClearInstances (void)
 {
 	num_instances = 0;
+	num_glowing = 0;
 	memset (&model_frame, 0, sizeof(model_frame));
 	memset (history_dynamic, 0, sizeof(history_dynamic));
 	memset (history_static, 0, sizeof(history_static));

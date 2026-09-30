@@ -13,7 +13,8 @@
  * coverage; vk_matfiles.c). The sprite quads share a static index
  * buffer. vk_accel.c builds a BLAS over each and puts them into the
  * effects TLAS, which the view pass walks for the effects in front of
- * what it hit.
+ * what it hit. Story 6.2: each sprite drawn goes to vk_effectlight.c too,
+ * where the fire, explosion, flash and spark sprites become sphere lights.
  *
  * vk_effects prints statistics; "vk_effects check" casts a ray at every
  * effect triangle of the last frame (effects_check.comp) and checks that
@@ -306,9 +307,12 @@ static void WriteSprites (vk_effectsframe_t *f, float *pos, EffectSprite *out)
 	const scene_entity_t	*e;
 	const msprite_t		*psprite;
 	const mspriteframe_t	*frame;
-	vec3_t			up, right, down_pt, up_pt;
-	int			i, n = 0;
+	vec3_t			up, right, down_pt, up_pt, center;
+	int			i, n = 0, texture, original;
+	qboolean		coverage;
+	float			alpha;
 
+	VK_ClearSpriteLights ();
 	for (i = 0; i < r_scene.num_entities; i++)
 	{
 		e = &r_scene.entities[i];
@@ -329,18 +333,15 @@ static void WriteSprites (vk_effectsframe_t *f, float *pos, EffectSprite *out)
 			continue;
 		}
 
-		{	/* its replaced albedo (5.3) */
-			int		original;
-			qboolean	coverage;
-
-			out[n].texture = (uint32_t)VK_SpriteTexture ((int)frame->gl_texturenum, &original, &coverage);
-			out[n].original = (uint32_t)original;
-			out[n].coverage = coverage ? 1u : 0u;
-		}
+		/* its replaced albedo (5.3) */
+		texture = VK_SpriteTexture ((int)frame->gl_texturenum, &original, &coverage);
+		out[n].texture = (uint32_t)texture;
+		out[n].original = (uint32_t)original;
+		out[n].coverage = coverage ? 1u : 0u;
 		/* GL: blended with the texture's alpha, times r_wateralpha if
 		 * translucent; unlit (GL_REPLACE, or white GL_MODULATE) */
-		out[n].alpha = ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & EF_TRANSPARENT)) ?
-				TRANSLUCENT_ALPHA : 1.0f;
+		alpha = ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & EF_TRANSPARENT)) ? TRANSLUCENT_ALPHA : 1.0f;
+		out[n].alpha = alpha;
 
 		VectorMA (e->origin, frame->down, up, down_pt);
 		VectorMA (e->origin, frame->up, up, up_pt);
@@ -348,6 +349,13 @@ static void WriteSprites (vk_effectsframe_t *f, float *pos, EffectSprite *out)
 		VectorMA (up_pt, frame->left, right, pos + 3);
 		VectorMA (up_pt, frame->right, right, pos + 6);
 		VectorMA (down_pt, frame->right, right, pos + 9);
+
+		/* 6.2: an emitting sprite's light, at the quad's center (vk_effectlight.c);
+		 * from the values, not the mapped buffer (write-combined: slow to read) */
+		VectorMA (e->origin, (frame->down + frame->up) * 0.5f, up, center);
+		VectorMA (center, (frame->left + frame->right) * 0.5f, right, center);
+		VK_SpriteLight (e, (int)frame->gl_texturenum, texture, coverage ? original : 0, alpha, center,
+				(frame->right - frame->left) * (frame->up - frame->down));
 		pos += 12;
 		n++;
 	}
@@ -398,6 +406,7 @@ void VK_ClearEffects (void)
 {
 	dropped_frames = 0;
 	last_slot = -1;
+	VK_ClearEffectLights ();	/* 6.2 */
 }
 
 
@@ -618,6 +627,7 @@ static void VK_Effects_f (void)
 	Con_Printf ("effects buffer: %.2f MB per frame in flight, room for %d particles and %d sprites\n",
 			EFFECTS_BUFFER_SIZE / (1024.0 * 1024.0), MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES);
 	VK_PrintEffectsAccel ();
+	VK_PrintEffectLights ();	/* 6.2 */
 }
 
 
@@ -660,6 +670,7 @@ void VK_InitEffects (void)
 	free (indices);
 
 	R_InitParticleTexture ();
+	VK_InitEffectLights ();	/* 6.2 */
 
 	Cmd_AddCommand ("vk_effects", VK_Effects_f);
 }

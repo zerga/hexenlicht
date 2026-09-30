@@ -1244,6 +1244,7 @@ static void FilesChanged (void)
 	VK_LavaFileColors ();
 	VK_RebuildLights ();
 	VK_ReloadSkyFile ();
+	VK_SpriteLightAverages ();	/* 6.2: the emitting sprites' frames show their files */
 }
 
 /* a world texture's kind is in the geometry: a changed one applies at the

@@ -296,6 +296,8 @@ BEGIN_SHADER_STRUCT( DynLightData )
 	float radius;
 	vec3 color;
 	uint type; // Combines type (sphere vs spot) and "style" of light (eg spotlight emission profile)
+	           // Hexenlicht (6.2): a sphere's high 16 bits are the model instance it doesn't light + 1, 0 = none
+	           // (a glowing projectile's light; vk_light.c, light_lists.h's dynlight_weight)
 	vec3 spot_direction;
 	/* spot_data depends on spotlight emssion profile:
 	 * DYNLIGHT_SPOT_EMISSION_PROFILE_FALLOFF -> contains packed2x16 with cosTotalWidth, cosFalloffStart

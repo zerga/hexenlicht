@@ -20,6 +20,14 @@
 #     vk_models after each step (what was left out for lack of room since the
 #     step's load): the summary prints the frames with effects left out, the
 #     instances left out and the validation lines (the saves' run's too).
+# -HlCvars (6.2) sets Hexenlicht's cvars after each load (e.g. "r_effect_lights
+# 0" for a run to compare with; glh2 runs without them).
+# -NoPause (6.2) takes the shots with the game running: a paused game draws
+# no client effects (the CE_* sprites and models: host.c runs CL_UpdateEffects
+# only while the server runs), so paused shots show only the server's
+# entities. Game time is fixed (host_framerate), so two runs from the same
+# saves show the same moments (particles and chunks still fly differently);
+# the denoiser has less history than in a paused shot.
 # -SkipSaves uses saves an earlier run kept (-KeepSaves).
 # The Debug build by default (validation), -Release for speed; -Bin another
 # build's folder for the Hexenlicht runs. config.cfg and hexenlicht.cfg of the
@@ -33,7 +41,7 @@ param([int[]]$Class = @(1, 2, 3, 4), [Parameter(Mandatory)][string]$Out,
       [string[]]$Items = @('torch=1', 'summon=7', 'invisibility=8', 'glyph=9', 'haste=10', 'blast=11',
 			   'polymorph=12', 'cube=14', 'invincibility=15', 'teleport=5'),
       [switch]$SkipSaves, [switch]$KeepSaves, [switch]$Release, [int]$Width = 960, [int]$Height = 540,
-      [string]$Data = '', [string]$Bin = '')
+      [string]$Data = '', [string]$Bin = '', [string]$HlCvars = '', [switch]$NoPause)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Data) { $Data = if ($env:HEXENLICHT_DATA) { $env:HEXENLICHT_DATA } else { Join-Path (Split-Path $repo) 'Hexenlicht-data' } }
@@ -125,7 +133,7 @@ function Invoke-Shots([string]$exe, [string]$game, [string]$cfg, [string[]]$dest
 }
 
 # one step: $start (e.g. +attack), $stop after $hold frames of game time, a
-# paused shot at each delay (frames of game time since $start; shots don't
+# shot at each delay, paused unless -NoPause (frames of game time since $start; shots don't
 # advance it), then $settle frames; returns the block and the shots' names
 function Step([string]$prelude, [string]$start, [string]$stop, [int]$hold, [int[]]$delays, [string]$name, [int]$settle) {
 	$events = @()
@@ -135,6 +143,7 @@ function Step([string]$prelude, [string]$start, [string]$stop, [int]$hold, [int[
 	foreach ($e in ($events | Sort-Object At, @{ Expression = { $_.Shot -ne '' } })) {
 		$lines += Waits ($e.At - $t); $t = $e.At
 		if ($e.Cmd) { $lines += $e.Cmd }
+		elseif ($NoPause) { $lines += 'screenshot'; $shots += $e.Shot }	# the next frame, the game running
 		else { $lines += 'pause', (Waits 8), 'screenshot', (Waits 5), 'pause'; $shots += $e.Shot }
 	}
 	$lines += Waits $settle
@@ -146,6 +155,7 @@ $common = @('wait;wait;wait', 'vid_vsync 0', 'host_framerate 0.02', 'viewsize 13
 	    'con_notifytime 0', 'gamma 1', 'scr_centertime 0', 'r_drawviewmodel 1', 'cl_pitchspeed 100; lookspring 0',
 	    'gl_missile_glows 1; gl_glows 0; gl_other_glows 0')
 $quit = @('toggleconsole', (Waits 5), 'quit')
+$hlMark = '//hlcvars'	# replaced by -HlCvars in Hexenlicht's scripts, by nothing in glh2's
 $summary = @()
 
 foreach ($group in ($Class | Group-Object { if ($_ -eq 5) { 'portals' } else { 'data1' } })) {
@@ -176,7 +186,7 @@ foreach ($group in ($Class | Group-Object { if ($_ -eq 5) { 'portals' } else { '
 		foreach ($spot in @(@('near', 'n'), @('far', 'f'))) {
 			foreach ($tome in '', 't') {
 				foreach ($w in 1..4) {
-					$pre = @("load hlfx_c$c$($spot[1])", (Waits 100))
+					$pre = @("load hlfx_c$c$($spot[1])", (Waits 100), $hlMark)
 					if ($spot[0] -eq 'near' -and $NearPitch) { $pre += '+lookdown', (Waits ($NearPitch / 2)), '-lookdown' }
 					if ($tome) { $pre += 'impulse 25', (Waits 40) }
 					$pre += "impulse $w", (Waits 100)	# the last weapon's deselect and this one's select
@@ -185,7 +195,7 @@ foreach ($group in ($Class | Group-Object { if ($_ -eq 5) { 'portals' } else { '
 			}
 		}
 		foreach ($i in $itemList) {
-			$steps += Step "load hlfx_c${c}f`n$(Waits 100)" "impulse $($i.Impulse)" '' 0 $ItemDelays "c${c}_item_$($i.Name)" 5
+			$steps += Step "load hlfx_c${c}f`n$(Waits 100)`n$hlMark" "impulse $($i.Impulse)" '' 0 $ItemDelays "c${c}_item_$($i.Name)" 5
 		}
 		$names = @($steps | ForEach-Object { $_.Shots } | Where-Object { $_ })
 		if ($names.Count -gt 100) { throw "class ${c}: $($names.Count) shots, the engines number at most 100" }
@@ -195,7 +205,8 @@ foreach ($group in ($Class | Group-Object { if ($_ -eq 5) { 'portals' } else { '
 			# Hexenlicht counts what it left out since the last map load (a load
 			# is one): after each step
 			$tail = if ($e -eq 'hexenlicht') { "`nvk_effects`nvk_models" } else { '' }
-			$first = Write-Scripts $dir 'hlfx_r' $common ($steps | ForEach-Object { $_.Block + $tail }) $quit
+			$cvars = if ($e -eq 'hexenlicht') { $HlCvars } else { '' }	# after each load (6.2)
+			$first = Write-Scripts $dir 'hlfx_r' $common ($steps | ForEach-Object { $_.Block.Replace($hlMark, $cvars) + $tail }) $quit
 			$dests = foreach ($n in $names) { Join-Path $odir "$n.tga" }
 			try { $log = Invoke-Shots $e $game $first @($dests) } finally { Remove-Scripts $dir 'hlfx_r' }
 			Set-Content (Join-Path $odir "c$c.log") $log

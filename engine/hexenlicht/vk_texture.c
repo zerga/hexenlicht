@@ -750,6 +750,7 @@ void D_ClearOpenGLTextures (int last_tex)
 	numgltextures = last_tex;
 	Draw_ClearCachedPics ();	/* some were in the purged slots */
 	VK_MaterialFilesPurged (last_tex);	/* and the material files' (5.3) */
+	VK_EffectLightsPurged ();		/* and the sprite frames' averages (6.2) */
 
 	Con_DPrintf ("Purged textures\n");
 }

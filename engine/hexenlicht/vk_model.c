@@ -273,6 +273,7 @@ void VK_LoadModels (void)
 	loading_models = false;
 	if (vk_num_materials > first_material)
 		VK_UploadMaterialRange (first_material, vk_num_materials - first_material);
+	VK_SpriteLightAverages ();	/* 6.2: the emitting sprites' frames, with their files */
 }
 
 
@@ -812,7 +813,8 @@ static void VK_Models_f (void)
 			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
-	Con_Printf ("%d instances with an emissive skin (the light models' flames)\n", mf->emissive);
+	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2)\n",
+		    mf->emissive, mf->glowing);
 }
 
 
