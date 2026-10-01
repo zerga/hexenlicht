@@ -437,6 +437,7 @@ void VK_DestroyModelPipelines (void);
 void VK_LoadModels (void);		/* on map change, after VK_LoadWorld: every alias model in cl.model_precache */
 int VK_AliasModelIndex (qmodel_t *model);	/* builds the model's data on first use; -1 = can't be drawn */
 const vk_aliasmodel_t *VK_GetAliasModel (int index);
+int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius);	/* 6.3: its triangles' texture coordinates and mean areas over the poses; the farthest vertex from its x axis */
 void VK_UpdateModelGeometry (void);	/* in R_RenderView, after VK_UpdateInstances */
 qboolean VK_ModelGeometryBuiltThisFrame (void);
 const vk_buffer_t *VK_InstancedBuffer (void);	/* the current frame's */
@@ -459,6 +460,7 @@ enum
 	VK_SKIN_GLOW		/* a glowing projectile: the whole skin emits (6.2) */
 };
 int VK_SkinMaterial (const struct scene_entity_s *e, const aliashdr_t *hdr, int emission, qboolean *bad_skin);	/* emission: VK_SKIN_* */
+int VK_GlowSkinMaterial (qmodel_t *model, int skinnum);	/* 6.3: the material of the model's skin glowing (VK_SKIN_GLOW), made if needed; outside frames */
 
 /* vk_emissive.c: emissive surfaces (4.5): lava, whose world triangles facing
  * out of it are polygon lights, and the flames of the models at the map's
@@ -474,6 +476,8 @@ void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color);	/* its corners (emittin
 void VK_LavaFileColors (void);			/* after the materials are applied (map load, r_reloadmaterials, r_materials): the lights' colors of lava emitting a file (5.5); outside frames, then VK_RebuildLights */
 void VK_TextureAverages (const int *slots, int n, qboolean bias, vec3_t (*colors)[2]);	/* texture_average.comp: each slot's mean linear color, [0] by the 2.2 power, [1] the sRGB curve; bias: lava's lights'; the GPU idle, outside frames */
 void VK_SpriteAverages (const int *slots, const int *alpha_slots, int n, float (*colors)[2][4]);	/* the same premultiplied, the mean alpha in [3] (alpha_slots: its texture, 0 = own; 6.2's sprite lights) */
+void VK_TriangleAverages (int slot, int alpha_slot, qboolean premultiply, const float (*uvs)[6], int n,
+			  float (*colors)[2][4]);	/* 6.3: the texels inside each triangle (u v x 3), premultiplied by alpha_slot's alpha (0 = own) or not; outside frames */
 qboolean VK_OverLava (const vec3_t origin);	/* within 16 units of a lava light, either side (vk_maplights.c: a fake lava light) */
 qboolean VK_LavaLightsOn (void);		/* vk_light.c: the lava's lights are in the light buffer (the fake lava lights out) */
 qboolean VK_ModelsEmit (void);			/* r_emissive_models */
@@ -519,6 +523,7 @@ typedef struct
 	int		bad_skins;	/* the same for skin numbers */
 	int		emissive;	/* instances with an emissive skin (4.5: the light models' flames) */
 	int		glowing;	/* glowing projectiles (6.2): the whole skin emits, not lit by their own light */
+	int		beams;		/* glowing beam segments and ends (6.3, vk_beamlight.c) */
 } vk_modelframe_t;
 
 void VK_InitInstances (void);
@@ -566,10 +571,13 @@ int VK_ParticleTexture (void);
  * projectiles */
 typedef struct
 {
-	vec3_t	origin;
-	float	radius;
-	vec3_t	color;		/* pi x radiance: a UBO sphere's */
-	float	range;		/* where its light fades to 0 */
+	vec3_t		origin;		/* a line's start */
+	float		radius;
+	vec3_t		color;		/* pi x radiance: a UBO sphere's or line's */
+	float		range;		/* where its light fades to 0 */
+	qboolean	line;		/* 6.3: a beam's line light (DYNLIGHT_LINE), from origin to end */
+	vec3_t		end;
+	qboolean	beam;		/* 6.3: a beam's light (a line, the sunstaff's hit): doesn't light what is flagged a light */
 } vk_effectlight_t;
 
 void VK_InitEffectLights (void);		/* its cvar, from VK_InitEffects */
@@ -582,8 +590,21 @@ void VK_ClearSpriteLights (void);		/* vk_effects.c, each frame before its sprite
 struct scene_entity_s;
 void VK_SpriteLight (const struct scene_entity_s *e, int slot, int shown, int alpha_slot, float alpha,
 		     const vec3_t center, float area);	/* vk_effects.c: a sprite drawn this frame */
+qboolean VK_BeamLineLight (const vec3_t a, const vec3_t b, float radius, const vec3_t power);	/* 6.3, vk_beamlight.c after the sprites: a beam's line light (power per unit length) */
+qboolean VK_BeamEndLight (const vec3_t center, float radius, const vec3_t intensity);	/* 6.3: the sunstaff's hit, a sphere */
 int VK_ChooseEffectLights (int room, vk_effectlight_t *out);	/* vk_light.c's VK_PrepareLights, inside the frame: the brightest at the camera first */
 void VK_PrintEffectLights (void);		/* vk_lights */
+
+/* vk_beamlight.c: beams (6.3): the client's streams (cl_tent.c, r_scene's
+ * beams) that are light glow (vk_instance.c) and light the scene (a line
+ * light each through vk_effectlight.c), from their models' glowing
+ * surfaces */
+qboolean VK_BeamGlows (const struct scene_entity_s *e);	/* vk_instance.c: a beam segment or end (a temporary entity) that glows (r_effect_lights, r_emissive_scale above 0) */
+void VK_BeamLights (void);			/* vk_effects.c, after the sprites: the frame's beams' lights */
+void VK_BeamLightAverages (void);		/* VK_LoadModels, after the material files change: the beam models' glowing surfaces; outside frames */
+void VK_BeamLightsBetweenFrames (void);		/* VK_EffectLightsBetweenFrames: those of models first drawn last frame */
+void VK_BeamLightsPurged (void);		/* VK_EffectLightsPurged: texture slots freed */
+void VK_PrintBeamLights (void);			/* vk_lights, vk_effects */
 
 /* vk_accel.c: acceleration structures. Static BLASes for the world's and
  * the submodels' primitive ranges are built on map load; every frame, the

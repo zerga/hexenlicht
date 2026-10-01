@@ -93,7 +93,7 @@ this repository) or one at a time with
 | `vertex_buffer.c` | world and model buffers, light buffer, light stats | `vk_world.c`, `vk_model.c` (E2); light buffer `vk_light.c` (3.3, lights and lists only; 3.4: spheres, lists copied when they change; 4.1: a spotlight's cone in a sphere's entry; 4.2: the style scales per frame); light stats `vk_light.c` (3.4, per list entry); the light buffer's sky visibility copied by `vk_light.c` (4.6) | E2, 3.3, 3.4, 4.1, 4.2, 4.6 |
 | `models.c` | MD2/MD3/IQM loading | `vk_model.c` (Hexen II's MDL) | — |
 | `material.c/.h` | materials, `.mat` files | `vk_material.c` (2.1); PBR materials 5.3 | 2.1, 5.3 |
-| `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams 6.3 | 2.5, 6.3 |
+| `transparency.c` | particles, sprites, beams | `vk_effects.c` (2.5); beams not used: Hexen II's are alias models (6.3, `vk_beamlight.c`), whose light is a UBO line light (`light_lists.h`'s `dynlight_line`), not `vkpt_build_beam_lights`' cylinders of light polygons in the per-cluster lists (ours are built only when the lights change, R81) | 2.5, 6.3 |
 | `asvgf.c` | A-SVGF denoiser, TAA | `vk_asvgf.c` (3.6: gradient reprojection and the filters, with the history reset of `main.c`'s `temporal_frame_valid`; `model_prev_to_current` from the entity history in `vk_instance.c`); `vkpt_taa` in `vk_upscale.c` (3.8) | 3.6, 3.8 |
 | `tone_mapping.c`, `bloom.c` | tone mapping, auto exposure, bloom | `vk_tonemap.c`, `vk_bloom.c` (3.7: SDR only; no under-water bloom or menu blur; the effects scaled by the exposure with one factor for particles and sprites, `pt_particle_brightness` 15) | 3.7 |
 | `fsr.c`, `fsr/` | AMD FSR 1 | `vk_upscale.c` (3.8: SDR and FP32 pipelines only; AMD's v1.0.2 headers in `libs/fsr1` instead of Q2RTX's `fsr/`, whose `ffx_fsr1.h` predates v1.0.2's RCAS fix) | 3.8 |
@@ -124,7 +124,7 @@ this repository) or one at a time with
 | `fsr_easu_fp32.comp`, `fsr_rcas_fp32.comp`, `fsr_easu.glsl`, `fsr_rcas.glsl`, `fsr_utils.glsl` | FSR 1 (3.8: the `.comp` files and `fsr_utils.glsl` unchanged; EASU's and RCAS's input clamped to the rendered part and the view, no writes past the view); the FP16 variants not imported (7.2) | 3.8 |
 | `physical_sky*.comp`, `precomputed_sky*`, `sky.h`, `sky_buffer_resolve.comp` | skies | not imported (4.6, DECISIONS R88) |
 | `normalize_normal_map.comp` | PBR materials | 5.3 |
-| `path_tracer_beam.*` | beams | 6.3 |
+| `path_tracer_beam.*` | beams | not used: Hexen II's beams are alias models (6.3) |
 | `*.rchit`, `*.rahit`, `*.rmiss`, `*.rint` | not used: ray queries only | — |
 | `animate_materials.comp` | not used: materials animate while tracing (`vertex_buffer.h`) | — |
 | `god_rays*.comp`, `shadow_map.vert`, `debug_line.*` | not planned | — |
@@ -254,7 +254,10 @@ this repository) or one at a time with
 - **Effects brightness (6.3, 6.2).** Since 3.7 particles and sprites share
   one exposure factor (`pt_particle_brightness` 15, measured on meteor
   staff particles); Q2RTX has separate ones for sprites, beams and
-  explosions. Beams (6.3) and the effect groups (6.2) check it against GL.
+  explosions. Beams (6.3) and the effect groups (6.2) check it against GL. *Answered
+  in 6.3 for beams: they are models, which glow by the flames' and the
+  glowing projectiles' rule (`r_emissive_scale` × GL's light level),
+  not by the effects' exposure factor (DECISIONS X10).*
 - **Lights inside solid (answered in 4.1).** Some light entities have their origin
   inside a wall: demo1 43 of 332, demo3 26, village1 26, village2 11, a few
   elsewhere; nearly all plain `light` entities (a `light_torch_meso`,

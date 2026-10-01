@@ -13,7 +13,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Buffers and layouts](#buffers-and-gpu-data-layouts) · [Materials](#materials-vk_materialc) ·
 [World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
-[Effects](#effects-vk_effectsc) · [Effect lights](#effect-lights-vk_effectlightc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
+[Effects](#effects-vk_effectsc) · [Effect lights](#effect-lights-vk_effectlightc) · [Beams](#beams-vk_beamlightc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
 [Map lights](#map-lights-vk_maplightsc) · [Map light colors](#map-light-colors-vk_lightcolorc) ·
 [Light fit](#light-fit-vk_lightfitc) ·
@@ -556,8 +556,16 @@ the starting points for authors and their tools.
   `r_origin`/`vpn`/`vright`/`vup` — the client's sound and effects read them —
   view leaf, `V_CalcBlend`) and fills the global `r_scene`: camera, entities
   (`cl_visedicts`, all static entities, the view model; not culled to the
-  view), active dlights, light style values, the active particle list and the
-  view blend. The 3D renderer reads only `r_scene`; `r_dumpscene` prints it.
+  view), active dlights, light style values, the active particle list, the
+  beams (6.3) and the view blend. The 3D renderer reads only `r_scene`;
+  `r_dumpscene` prints it.
+- **Beams** (6.3): `cl_tent.c`'s `CL_UpdateTEnts` hands over the streams it
+  draws each frame (`R_ClearBeams`, then `R_AddBeam` per stream after its
+  source follows its entity: type, skin, source, dest, end time, its four
+  models), a guarded upstream hot spot ([UPSTREAM.md](UPSTREAM.md));
+  `R_BuildScene` copies them into `r_scene.beams` (none with
+  `r_drawentities 0`). The segments themselves are temporary entities as
+  before. See [Beams](#beams-vk_beamlightc).
 - The order in `R_RenderView`: `R_SetupFrame` → `R_ViewModelLight` →
   `R_BuildScene` (fills `r_scene`) → `VK_UpdateInstances` →
   `VK_UpdateModelGeometry` → `VK_UpdateEffects` → `VK_BuildTLAS` →
@@ -723,7 +731,9 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   spawns there, whose mesh surrounds the light; they cast no shadows, see
   [Map lights](#map-lights-vk_maplightsc); since 4.5 they show their
   skin's emissive texture, flagged `MATERIAL_FLAG_LIGHT`, see
-  [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+  [Emissive surfaces](#emissive-surfaces-vk_emissivec); 4.4 and 6.2:
+  the owners of a dynamic light and the glowing projectiles; 6.3: the
+  opaque glowing beam parts, [Beams](#beams-vk_beamlightc)).
 - **The first-person weapon** (`cl.viewent`, `SCENE_ENT_VIEWMODEL`) comes
   last, in `MODEL_GROUP_WEAPON` (Q2RTX's viewer weapon, triangles flagged
   `MATERIAL_FLAG_WEAPON`). It looks like the group it would otherwise be in
@@ -834,7 +844,10 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   nothing, so that an `_e` doesn't glow on a flame whose map light lights
   for it; see [Emissive surfaces](#emissive-surfaces-vk_emissivec)); or
   glowing (6.2), flagged `VK_MAT_GLOW`, whose `_e` or albedo emits, for
-  the glowing projectiles ([Effect lights](#effect-lights-vk_effectlightc)).
+  the glowing projectiles ([Effect lights](#effect-lights-vk_effectlightc))
+  and (6.3) the glowing beams, also a cutout's or a transparent model's
+  (`VK_GlowSkinMaterial` makes a skin's outside frames for the beams'
+  powers; [Beams](#beams-vk_beamlightc)).
 - **Material files** (5.3, [above](#material-files-vk_matfilesc)): a
   skin material's texture is the skin (under a player's colors the class
   model's last single skin, the one `R_TranslatePlayerSkin` translates,
@@ -969,7 +982,7 @@ renderer's, not `cl_dlights`, so `cl.light_level` stays GL's (G9).
   times `r_emissive_scale` and GL's light level where it has one
   (abslight, power mode: the flames' rule, M17), flagged
   `MATERIAL_FLAG_LIGHT` (its dynamic light is its light: diffuse bounces
-  don't add the emission). Its light doesn't light it: the owner's
+  don't add the emission; 6.3: nor do beam lights light it). Its light doesn't light it: the owner's
   instance + 1 is in the UBO sphere's `type` high 16 bits
   (`VK_GlowingInstance`), and `dynlight_weight` gives it no weight for
   that instance's surfaces, in direct light (the visibility buffer's
@@ -986,7 +999,90 @@ renderer's, not `cl_dlights`, so `cl.light_level` stays GL's (G9).
 - `vk_lights` and `vk_effects` print the last frame's emitting sprites,
   the effect lights and those left out (no slot, in solid, no average
   yet, owning a dynamic light), the most in a frame and the brightest
-  since the map loaded, and the frame averages made.
+  since the map loaded, and the frame averages made; since 6.3 also the
+  beams' ([Beams](#beams-vk_beamlightc)).
+- **Beams' lights** (6.3) join the same budget: a **line light** per
+  glowing beam (`VK_BeamLineLight`: its power per unit length, ranked by
+  its whole intensity across it, power / π × its length, over the
+  distance² to its nearest point) and a sphere at the sunstaff's hit
+  (`VK_BeamEndLight`, as a sprite's). A line's UBO color is its power over
+  2 r (a cylinder of radiance L and radius r gives L 2πr per unit length),
+  its range where a white wall beside a long one gets 1/32 of a full texel
+  (power / (2π h)), its ends pulled in by a unit (the game's traces stop
+  them in open space: no solid test). `r_effect_lights 0` turns them off.
+
+## Beams (`vk_beamlight.c`)
+
+Story 6.3: beams glow and light the scene. Hexen II's beams are the
+client's streams (`cl_tent.c`): every frame `CL_UpdateTEnts` draws a
+model segment every 30 units from a stream's source to its dest (the
+sunstaff two: its core and a translucent sheath) and two balls at the
+sunstaff's dest, all at GL's fixed light level (abslight 128, about half);
+GL gives them no light. [Scene](#scene-r_scenec) gets the streams
+(`r_scene.beams`).
+
+- **Glow:** the beams of light's models, chosen by name as 6.2's sprites
+  (`stsunsf1`–`5`, `stlghtng`, `stltng2`, `stclrbm`, `stmedgaz`,
+  `fambeam`; `VK_BeamGlows`), emit their skin as the glowing projectiles
+  do (`VK_SKIN_GLOW`: the `_e`, else the albedo, × `r_emissive_scale` ×
+  GL's light level: ×16), with `r_effect_lights` and `r_emissive_scale`
+  above 0. `vk_instance.c` puts the opaque ones in the light group (no
+  shadows); translucent ones (the sheath, the hit's glow, the lightning's
+  last 0.25 s, the color beam) stay transparent models, which 6.4 blends;
+  the gaze stays a cutout. All but the gaze are flagged
+  `MATERIAL_FLAG_LIGHT`: their line light (and the hit's sphere) is their
+  light, which doesn't light what is flagged a light
+  (`DYNLIGHT_NOT_ON_LIGHTS`, `light_lists.h`'s `dynlight_weight`; found by
+  6.3's review: the hit's sphere lit its own glowing balls), and
+  diffuse bounces don't add their emission. The gaze has no line light (a
+  cutout casts shadows, the masked group's alpha test, so its own geometry
+  would block it): it glows and lights through bounces only. The chain
+  and the ice chunks aren't light: lit by the world. `vk_models` counts
+  the glowing beam parts.
+- **Light:** each beam of light (sunstaff, lightning, the color beam,
+  Famine's) is one line light from its source to its dest; the sunstaff's
+  hit a sphere at the dest. Its power is what its glowing surface shows:
+  per segment, the sum over its triangles of the area (the mean over the
+  poses) times the mean emitted color of the texels it covers; times the
+  alpha (0.33 translucent; the color beam's texture's), GL's light level
+  and the material's emissive factor (`r_emissive_scale` × the `.mat`'s
+  `emission`), per 30 units. The cylinder's radius is the segments' widest
+  vertex from their axis (its near field is capped there; the light
+  itself doesn't depend on it). The hit's balls at their mean scale (GL's
+  80–95 % and 150–165 %), a sphere showing that radiance (intensity:
+  power / 4). The lightning fades with GL's level after its end
+  (128 − 192 × the time past it, as an int) at 0.33. The areas are the
+  mean over the poses: the lightning draws its six frames at random, the
+  never-sent sunstaff2 its eight in turn, the other light models have one.
+  A stream that runs out of GL's 128 segment entities keeps its whole
+  light (`R_AddBeam` comes before its segments); the streams after it
+  aren't drawn and get none.
+- **The powers** (`MakePowers`): `vk_model.c`'s `VK_AliasTriangleAreas`
+  gives each triangle's texture coordinates and mean area, the glow
+  material (`VK_GlowSkinMaterial`, made if needed) its emissive texture,
+  `texture_average.comp`'s triangle mode (`VK_TriangleAverages`) the mean
+  of the texels whose centers are inside each triangle (the centroid's
+  sample for a sliver; premultiplied by the texture's alpha for a
+  transparent model, by the mask for a cutout) by both color curves.
+  Outside frames: at map load for the precached beam models' skins
+  (`VK_BeamLightAverages`, 12 on demo1 in 7 ms Release, 20 ms Debug),
+  after the material files change, and between frames for a model first
+  drawn later (no light that frame). Measured from the paks (6.3's
+  proposal): a white wall 64 units from a long sunbeam gets 0.31 of a full
+  texel, from the lightning 0.23, Famine's 0.11 (red), the red color beam
+  0.06 (0.28 in red), the white one 0.40; the sunstaff's hit 0.13.
+- **Check** (`vk_testlight line`, [Lights](#lights-vk_lightc)): below
+  the middle of a 248-unit test line of power 100, 64 units above demo1's
+  floor, the direct light (`r_debugview 15`) is 0.2367 against the
+  cylinder's analytic 0.2378; 31 test spheres of the same power along it
+  0.2212 against their 0.2210.
+- **Cost** (Release, 1920x1080, a paused frame of the tomed sunstaff's
+  six beams with GL's 128 segments, six lines and six hit spheres):
+  4.67–4.69 → 4.98–4.99 ms a frame (direct light 0.39 → 0.53, bounce
+  0.81–0.82 → 0.93–0.94), each twice.
+- `vk_lights` and `vk_effects` print the last frame's beams, lines and
+  hits offered and lit, the parts without a power yet, and the powers
+  made.
 
 ## Acceleration structures (`vk_accel.c`)
 
@@ -1069,7 +1165,8 @@ bindings.
   `anim_frame`, brush entities with a frame show alternates),
   `path_tracer.h` (UBO in set 0), `path_tracer_hit_shaders.h`
   (`pt_logic_rchit`, `pt_logic_masked` testing alpha, `pt_logic_particle` and
-  `pt_logic_sprite` with GL's look; beams and explosions come with 6.3),
+  `pt_logic_sprite` with GL's look; no Q2RTX beams or explosions: Hexen
+  II's beams are alias models, 6.3, its explosions sprites),
   `path_tracer_rgen.h` (3.2: the passes' common code — `trace_geometry_ray`,
   `trace_effects_ray`, `get_material`, `get_rng`, `env_map` — with the TLASes
   by device address; `env_map` is Hexen II's sky and the sky light's dome
@@ -1253,6 +1350,25 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   a sphere's range is in the entry's `spot_data` (a float's bits, 0 =
   unlimited; `dynlight_range`), where its light fades as a list sphere's
   (`sphere_light_window`). Spot lights come with the code, unused.
+  **Line lights** (6.3, `DYNLIGHT_LINE`, a beam's, `dynlight_line`): a thin
+  cylinder of the entry's radius around the segment from `center` to
+  `center + spot_direction` (no layout change), of uniform radiance (the
+  color is π × it, as a sphere's). Seen from a point at the distance h
+  from its axis (at least the radius: its near field is capped there), a
+  piece dl at the distance d and the angle φ from the axis has the solid
+  angle 2r sin φ dl / d² = (2r / h) d(sin θ), θ the angle from the point's
+  foot on the axis; so the whole cylinder's is (2r / h)(sin θ_b − sin θ_a)
+  between its ends, its weight in the pick as a sphere's, and a point
+  sampled uniformly in sin θ has the pdf of its solid angle: an exact
+  importance sample. The shadow ray goes to that point on the axis (in
+  open space where the beam is drawn); the range fades with the distance
+  to the segment. The entry's `type` holds the type in its low 8 bits
+  (`DYNLIGHT_TYPE_MASK`); a beam's lights (a line, the sunstaff's hit
+  sphere) carry `DYNLIGHT_NOT_ON_LIGHTS` and don't light a surface
+  flagged `MATERIAL_FLAG_LIGHT` (`receiver_glows`: the beams' own glowing
+  parts; also the glowing projectiles, the light models whole, torch and
+  flame, and lava). Checked with `vk_testlight line` (flagged too)
+  against spheres ([Beams](#beams-vk_beamlightc)).
 - **The game's dynamic lights** (4.4): the client's `cl_dlights` (32,
   `MAX_DLIGHTS`), which `r_scene.c` copies into the scene: its entity
   effects (`EF_MUZZLEFLASH` a 0.1 s flash 18 units ahead, `EF_BRIGHTLIGHT`
@@ -1329,6 +1445,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
     light in the lists at the eye (8, 1000, white, 0 = unlimited);
   - `vk_testlight dlight [radius] [intensity] [r g b]`: a dynamic sphere
     light at the eye (no range; in the UBO slots the game's lights leave);
+  - `vk_testlight line [length] [power] [radius] [r g b]` (6.3): a dynamic
+    line light, a beam's, through the eye along the view's right (128,
+    100, 2, white; its power per unit length is its radiance times its
+    area per unit length);
   - `vk_testlight quad [size] [intensity] [r g b]`: a square polygon light
     at the eye facing the view direction (32, 50, white; two triangles);
   - `vk_testlight list`, `vk_testlight clear` (the test lights only).
@@ -1887,7 +2007,10 @@ radiance of a texture color of 1):
   ("its file's"), its key ("x 2") and the averages' time (meso9's 64x64
   file: 29 ms at a map load in Debug with the pipeline made, 3 ms on a
   reload). `VK_TextureAverages` is shared since 5.6: without the bias
-  (`no_bias`) it gives `vk_materials here` an albedo's plain mean. A flame shows
+  (`no_bias`) it gives `vk_materials here` an albedo's plain mean; 6.2's
+  sprite lights take it premultiplied (`VK_SpriteAverages`), 6.3's beams
+  over the texels inside each triangle (`VK_TriangleAverages`,
+  [Beams](#beams-vk_beamlightc)). A flame shows
   its skin's `_e` instead of the fake emissive texture (castle4's torch
   green in the test); `r_emissive_models 0` turns both off (the light
   models keep their flame materials, which then emit nothing). Any other
@@ -3240,7 +3363,7 @@ overlay, and a measuring mode.
 | `vk_rtcheck` | ray grid vs. CPU hull traces |
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
-| `vk_testlight sphere, dlight, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
+| `vk_testlight sphere, dlight, line, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
 | `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (630 since 4.17; 740 in 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
 | `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103; the default in 4.21, R107), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"; again since 4.22, R108); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |

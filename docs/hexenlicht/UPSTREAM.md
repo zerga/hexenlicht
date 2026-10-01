@@ -114,6 +114,14 @@ changes one, with a line on what we changed:
   `hexenlicht.cfg` when that file exists (story 1.8), so `hexen.rc` loads it.
 - `engine/hexen2/render.h` — `entity_t` ends with an `#if defined(HEXENLICHT)`
   field `movestep` (story 2.9), after all upstream fields.
+- `engine/hexen2/cl_tent.c` — the streams (beams) reach the renderer
+  (story 6.3): under `#if defined(HEXENLICHT)`, the prototypes of
+  `R_ClearBeams` and `R_AddBeam` (`engine/hexenlicht/r_scene.c`) after the
+  "EXTERNAL FUNCTION PROTOTYPES" banner; in `CL_UpdateTEnts`,
+  `R_ClearBeams ()` after `StreamEntityCount = 0`, and `R_AddBeam (...)`
+  for each drawn stream after its attached source is updated (type,
+  skin, source, dest, end time, its models). `engine/hexen2` only:
+  HexenWorld's client has its own `cl_tent.c`.
 - `engine/hexen2/cl_parse.c` — in `CL_ParseUpdate`, after the `U_NOLERP`
   check, `#if defined(HEXENLICHT)` sets `ent->movestep` from `U_NOLERP`
   (story 2.9): `CL_RelinkEntities` clears `forcelink` before the renderer

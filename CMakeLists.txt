@@ -286,6 +286,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_instance.c
 	${HEXENLICHT_DIR}/vk_effects.c
 	${HEXENLICHT_DIR}/vk_effectlight.c
+	${HEXENLICHT_DIR}/vk_beamlight.c
 	${HEXENLICHT_DIR}/vk_accel.c
 	${HEXENLICHT_DIR}/vk_matrix.c
 	${HEXENLICHT_DIR}/vk_ubo.c

@@ -41,6 +41,11 @@
  * loaded mid-game) has none that frame and gets it before the next
  * (VK_BeginFrame).
  *
+ * 6.3: the beams' lights (vk_beamlight.c) join the same budget: a line
+ * light along each glowing beam (DYNLIGHT_LINE, a thin cylinder: its
+ * power per unit length, ranked by its whole intensity across it over the
+ * distance^2 to its nearest point) and a sphere at the sunstaff's hit.
+ *
  * Copyright (C) 2026  Hexenlicht contributors
  *
  * This program is free software; you can redistribute it and/or modify
@@ -100,17 +105,22 @@ static frame_average_t	averages[VK_MAX_TEXTURES];
 static int		pending[VK_MAX_TEXTURES];	/* slots whose average is to be made, each once */
 static int		num_pending;
 
-/* the frame's sprites that emit */
+/* the frame's sprites that emit, and the beams' lights (6.3) */
 typedef struct
 {
-	vec3_t		origin;
-	float		radius;		/* its covered area's */
-	vec3_t		intensity;	/* the radiance times the projected area */
+	vec3_t		origin;		/* a line's start */
+	float		radius;		/* its covered area's; a line's cylinder's */
+	vec3_t		intensity;	/* the radiance times the projected area; a line's power per unit length */
 	float		priority;	/* its luminance / distance^2 at the camera */
+	qboolean	line;		/* 6.3: a beam's line light, from origin to end */
+	vec3_t		end;
+	qboolean	beam;		/* 6.3: a beam's light (a line, or the sunstaff's hit) */
 } candidate_t;
 
-static candidate_t	candidates[MAX_EFFECT_SPRITES];
-static int		order[MAX_EFFECT_SPRITES];
+#define MAX_CANDIDATES	(MAX_EFFECT_SPRITES + 2 * MAX_SCENE_BEAMS)
+
+static candidate_t	candidates[MAX_CANDIDATES];
+static int		order[MAX_CANDIDATES];
 static int		num_candidates;
 static uint64_t		candidates_frame;	/* vk.frame_count they were collected in */
 
@@ -124,6 +134,8 @@ static struct
 	int	solid;		/* left out: the center in solid */
 	int	unknown;	/* left out: no average yet */
 	int	owned;		/* left out: the entity owns a dynamic light */
+	int	beams;		/* 6.3: the beams' lights offered (lines and the sunstaff's hits) */
+	int	beams_lit;	/* of them, in the UBO */
 	int	most;		/* since the map loaded: the most lit in a frame */
 	float	brightest;	/* the largest intensity's luminance */
 	int	averages;	/* the frame averages made */
@@ -259,10 +271,12 @@ void VK_SpriteLightAverages (void)
 	MakeAverages ();
 }
 
-/* VK_BeginFrame, outside frames: the frames first drawn last frame */
+/* VK_BeginFrame, outside frames: the frames first drawn last frame (and
+ * the beam models, 6.3) */
 void VK_EffectLightsBetweenFrames (void)
 {
 	MakeAverages ();
+	VK_BeamLightsBetweenFrames ();
 }
 
 /* D_ClearOpenGLTextures freed slots (a map change): the next map's load
@@ -271,6 +285,7 @@ void VK_EffectLightsPurged (void)
 {
 	memset (averages, 0, sizeof(averages));
 	num_pending = 0;
+	VK_BeamLightsPurged ();	/* 6.3 */
 }
 
 /* on map change (VK_ClearEffects): the statistics since the map loaded */
@@ -283,15 +298,89 @@ void VK_ClearEffectLights (void)
 
 
 /* ==========================================================================
- * The frame's sprite lights
+ * The frame's sprite and beam lights
  * ========================================================================== */
 
-/* vk_effects.c's WriteSprites, before its sprites */
+/* vk_effects.c's WriteSprites, before its sprites (and the beams' lights) */
 void VK_ClearSpriteLights (void)
 {
 	num_candidates = 0;
 	candidates_frame = vk.frame_count;
-	stats.sprites = stats.owned = stats.unknown = 0;
+	stats.sprites = stats.owned = stats.unknown = stats.beams = 0;
+}
+
+static float Luminance (const vec3_t c)
+{
+	return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
+}
+
+/* a sphere of the radius and intensity at center; NULL: none */
+static candidate_t *AddSphere (const vec3_t center, float radius, const vec3_t intensity)
+{
+	candidate_t	*c;
+	vec3_t		d;
+	float		lum = Luminance (intensity), r2;
+
+	if (!(lum > 0.0f) || num_candidates >= MAX_CANDIDATES)
+		return NULL;
+	c = &candidates[num_candidates++];
+	memset (c, 0, sizeof(*c));
+	VectorCopy (center, c->origin);
+	VectorCopy (intensity, c->intensity);
+	c->radius = q_max (radius, MIN_RADIUS);
+	VectorSubtract (center, r_scene.vieworg, d);
+	r2 = q_max (DotProduct (d, d), c->radius * c->radius);
+	c->priority = lum / r2;
+	stats.brightest = q_max (stats.brightest, lum);
+	return c;
+}
+
+/* 6.3 (vk_beamlight.c, after the sprites): a beam's line light from a to
+ * b, a cylinder of the radius whose power per unit length (the radiance
+ * of its surface times its area, per unit of its length) is power; its
+ * intensity across it per unit length is power / pi (a cylinder of
+ * radiance L and radius r: L 2 r, its power L 2 pi r); false: none */
+qboolean VK_BeamLineLight (const vec3_t a, const vec3_t b, float radius, const vec3_t power)
+{
+	candidate_t	*c;
+	vec3_t		ab, ap, d;
+	float		lum = Luminance (power), len, t, r2;
+
+	if (!r_effect_lights.integer || !(lum > 0.0f) || num_candidates >= MAX_CANDIDATES)
+		return false;
+	VectorSubtract (b, a, ab);
+	len = VectorLength (ab);
+	if (len < 1.0f)
+		return false;
+	stats.beams++;
+	c = &candidates[num_candidates++];
+	memset (c, 0, sizeof(*c));
+	c->line = c->beam = true;
+	VectorCopy (a, c->origin);
+	VectorCopy (b, c->end);
+	VectorCopy (power, c->intensity);
+	c->radius = q_max (radius, 1.0f);
+	/* its nearest point to the camera */
+	VectorSubtract (r_scene.vieworg, a, ap);
+	t = q_min (q_max (DotProduct (ap, ab) / (len * len), 0.0f), 1.0f);
+	VectorMA (a, t, ab, d);
+	VectorSubtract (d, r_scene.vieworg, d);
+	r2 = q_max (DotProduct (d, d), c->radius * c->radius);
+	c->priority = lum * len / (float)M_PI / r2;
+	stats.brightest = q_max (stats.brightest, lum * len / (float)M_PI);
+	return true;
+}
+
+/* 6.3 (vk_beamlight.c): the sunstaff's hit, a sphere as a sprite's; false: none */
+qboolean VK_BeamEndLight (const vec3_t center, float radius, const vec3_t intensity)
+{
+	candidate_t	*c;
+
+	if (!r_effect_lights.integer || (c = AddSphere (center, radius, intensity)) == NULL)
+		return false;
+	c->beam = true;
+	stats.beams++;
+	return true;
 }
 
 /* a sprite drawn this frame: slot its frame's original texture, shown the
@@ -300,9 +389,8 @@ void VK_ClearSpriteLights (void)
 void VK_SpriteLight (const scene_entity_t *e, int slot, int shown, int alpha_slot, float alpha, const vec3_t center, float area)
 {
 	const frame_average_t	*a;
-	candidate_t		*c;
-	vec3_t			d;
-	float			scale, lum, r2;
+	vec3_t			intensity;
+	float			scale;
 	int			k, curve;
 
 	if (!r_effect_lights.integer || !SpriteEmits (e->model))
@@ -313,7 +401,7 @@ void VK_SpriteLight (const scene_entity_t *e, int slot, int shown, int alpha_slo
 		stats.owned++;	/* it has its light */
 		return;
 	}
-	if (slot <= 0 || slot >= VK_MAX_TEXTURES || num_candidates >= MAX_EFFECT_SPRITES)
+	if (slot <= 0 || slot >= VK_MAX_TEXTURES || num_candidates >= MAX_CANDIDATES)
 		return;
 	a = &averages[slot];
 	if (a->state != AVERAGE_KNOWN || a->shown != shown || a->alpha_slot != alpha_slot)
@@ -326,19 +414,11 @@ void VK_SpriteLight (const scene_entity_t *e, int slot, int shown, int alpha_slo
 
 	curve = VK_ColorsSRGB () ? 1 : 0;
 	scale = area * alpha * VK_EmissiveScale ();
-	c = &candidates[num_candidates];
 	for (k = 0; k < 3; k++)
-		c->intensity[k] = a->color[curve][k] * scale;
-	lum = 0.2126f * c->intensity[0] + 0.7152f * c->intensity[1] + 0.0722f * c->intensity[2];
-	if (!(lum > 0.0f) || !(a->alpha > 0.0f))
+		intensity[k] = a->color[curve][k] * scale;
+	if (!(a->alpha > 0.0f))
 		return;
-	VectorCopy (center, c->origin);
-	c->radius = q_max (sqrtf (area * a->alpha / (float)M_PI), MIN_RADIUS);
-	VectorSubtract (center, r_scene.vieworg, d);
-	r2 = q_max (DotProduct (d, d), c->radius * c->radius);
-	c->priority = lum / r2;
-	stats.brightest = q_max (stats.brightest, lum);
-	num_candidates++;
+	AddSphere (center, sqrtf (area * a->alpha / (float)M_PI), intensity);
 }
 
 static int ComparePriority (const void *a, const void *b)
@@ -419,14 +499,39 @@ static float FreeRadius (const vec3_t center, float radius)
 	return q_max (reach, MIN_RADIUS);
 }
 
+/* 6.3: a beam's line light: the UBO line's color is pi x its radiance, its
+ * power over 2 r (a cylinder of radiance L: L 2 pi r per unit length); its
+ * range where it gives a white wall facing it 1/32 of a full texel's
+ * light, power / (2 pi h) next to a long one; its ends pulled in by a unit,
+ * so the shadow rays' points stay off the wall the game's trace stopped at
+ * (they are in open space, where the beam is drawn: no solid test) */
+static void LineLight (const candidate_t *c, vk_effectlight_t *l)
+{
+	vec3_t	dir;
+	float	len, pull;
+	int	k;
+
+	VectorSubtract (c->end, c->origin, dir);
+	len = VectorNormalize (dir);
+	pull = q_min (1.0f, len * 0.25f);
+	memset (l, 0, sizeof(*l));
+	l->line = l->beam = true;
+	VectorMA (c->origin, pull, dir, l->origin);
+	VectorMA (c->end, -pull, dir, l->end);
+	l->radius = c->radius;
+	for (k = 0; k < 3; k++)
+		l->color[k] = c->intensity[k] / (2.0f * c->radius);
+	l->range = Luminance (c->intensity) / (2.0f * (float)M_PI * RANGE_FRACTION);
+}
+
 /* vk_light.c's VK_PrepareLights, inside the frame: up to room of this
- * frame's sprite lights, the brightest at the camera first */
+ * frame's sprite lights and beam lights, the brightest at the camera first */
 int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 {
 	int	i, n = 0, count;
 	vec3_t	origin;
 
-	stats.lit = stats.over = stats.solid = 0;
+	stats.lit = stats.over = stats.solid = stats.beams_lit = 0;
 	if (!r_effect_lights.integer || candidates_frame != vk.frame_count || !r_scene.worldmodel)
 		return 0;
 	count = num_candidates;
@@ -446,6 +551,12 @@ int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 			stats.over += count - i;
 			break;
 		}
+		if (c->line)
+		{
+			LineLight (c, &out[n++]);
+			stats.beams_lit++;
+			continue;
+		}
 		VectorCopy (c->origin, origin);
 		radius = OutOfSolid (origin) ? FreeRadius (origin, c->radius) : 0.0f;
 		if (radius <= 0.0f)
@@ -453,13 +564,16 @@ int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 			stats.solid++;
 			continue;
 		}
+		stats.beams_lit += c->beam;
 		l = &out[n++];
+		memset (l, 0, sizeof(*l));
+		l->beam = c->beam;	/* the sunstaff's hit doesn't light its glowing balls */
 		VectorCopy (origin, l->origin);
 		l->radius = radius;
 		/* a UBO sphere's color is pi x its radiance: the intensity over r^2 */
 		for (k = 0; k < 3; k++)
 			l->color[k] = c->intensity[k] / (radius * radius);
-		lum = 0.2126f * c->intensity[0] + 0.7152f * c->intensity[1] + 0.0722f * c->intensity[2];
+		lum = Luminance (c->intensity);
 		l->range = sqrtf (lum / (RANGE_FRACTION * (float)M_PI));
 	}
 	stats.lit = n;
@@ -474,11 +588,14 @@ void VK_PrintEffectLights (void)
 
 	for (i = 0; i < VK_MAX_TEXTURES; i++)
 		known += (averages[i].state == AVERAGE_KNOWN);
-	Con_Printf ("effect lights (6.2)%s: last frame %d emitting sprites, %d lights; left out: %d over the 32 slots, %d in solid, "
+	Con_Printf ("effect lights (6.2, 6.3)%s: last frame %d emitting sprites, %d lights; left out: %d over the 32 slots, %d in solid, "
 		    "%d without an average yet, %d owning a dynamic light; the most in a frame %d, the brightest %.0f\n",
 		    r_effect_lights.integer ? "" : " off (r_effect_lights 0)", stats.sprites, stats.lit, stats.over, stats.solid,
 		    stats.unknown, stats.owned, stats.most, stats.brightest);
 	Con_Printf ("  frame averages: %d known, %d made since startup in %.1f ms\n", known, stats.averages, stats.ms);
+	Con_Printf ("  beam lights (6.3): last frame %d offered (lines, the sunstaff's hits), %d of them lit; ",
+		    stats.beams, stats.beams_lit);
+	VK_PrintBeamLights ();
 }
 
 void VK_InitEffectLights (void)

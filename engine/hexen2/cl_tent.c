@@ -74,6 +74,13 @@ typedef struct
 
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
 
+#if defined(HEXENLICHT)
+/* Hexenlicht's renderer (engine/hexenlicht/r_scene.c, story 6.3): the
+ * frame's beams, for their light */
+void R_ClearBeams (void);
+void R_AddBeam (int type, int skin, const vec3_t source, const vec3_t dest, float end_time, struct qmodel_s *const *models);
+#endif
+
 // PUBLIC FUNCTION PROTOTYPES ----------------------------------------------
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
@@ -421,6 +428,9 @@ void CL_UpdateTEnts(void)
 
 	// Update streams
 	StreamEntityCount = 0;
+#if defined(HEXENLICHT)
+	R_ClearBeams ();
+#endif
 	for (i = 0, stream = cl_Streams; i < MAX_STREAMS; i++, stream++)
 	{
 		if (!stream->models[0])// || stream->endTime < cl.time)
@@ -439,6 +449,9 @@ void CL_UpdateTEnts(void)
 		{ // Attach the start position to owner
 			VectorAdd(cl_entities[stream->entity].origin, stream->offset, stream->source);
 		}
+#if defined(HEXENLICHT)
+		R_AddBeam (stream->type, stream->skin, stream->source, stream->dest, stream->endTime, stream->models);
+#endif
 
 		VectorSubtract(stream->dest, stream->source, dist);
 		if (dist[1] == 0 && dist[0] == 0)

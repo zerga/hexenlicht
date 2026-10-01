@@ -172,6 +172,21 @@ void VK_AddSkinMaterials (qmodel_t *model)
 }
 
 
+/* 6.3 (vk_beamlight.c): the material of a model's skin glowing (its _e,
+ * else its albedo emits), as a beam's drawn segment gets it; made if
+ * needed, outside frames */
+int VK_GlowSkinMaterial (qmodel_t *model, int skinnum)
+{
+	const aliashdr_t	*hdr = (const aliashdr_t *) Mod_Extradata (model);
+	int			slot;
+
+	if (skinnum < 0 || skinnum >= hdr->numskins)
+		skinnum = 0;
+	slot = (int)hdr->gl_texturenum[skinnum][0];
+	return SkinMaterial (slot, slot, VK_ModelHasCutouts (model), model->name, VK_SKIN_GLOW, false);
+}
+
+
 /* ==========================================================================
  * The skin an entity shows
  * ========================================================================== */

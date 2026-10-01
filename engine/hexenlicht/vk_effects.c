@@ -382,6 +382,7 @@ void VK_UpdateEffects (void)
 	memset (f, 0, sizeof(*f));
 	WriteParticles (f, pos, (EffectParticle *) ((byte *) b->mapped + PARTICLES_OFFSET));
 	WriteSprites (f, pos + f->num_particles * 9, (EffectSprite *) ((byte *) b->mapped + SPRITES_OFFSET));
+	VK_BeamLights ();	/* 6.3: after the sprites' lights (vk_beamlight.c) */
 	if (f->dropped_particles || f->dropped_sprites)
 		dropped_frames++;
 

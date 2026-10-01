@@ -32,7 +32,9 @@
  * they last). 6.2: a glowing projectile's light (vk_instance.c) names its
  * instance, which it doesn't light (light_lists.h's dynlight_weight), and
  * the effect lights (vk_effectlight.c: the emitting sprites) take the
- * slots the game's and the test lights leave.
+ * slots the game's and the test lights leave; 6.3: the beams' among them
+ * are lines (DYNLIGHT_LINE: a thin cylinder from center to center +
+ * spot_direction, light_lists.h's dynlight_line).
  * The light lists (Quake II RTX's bsp_mesh.c collect_cluster_lights) are
  * built when the lights change: a light goes into the list of every
  * cluster in the PVS of the open leafs its emitter touches (Quake II RTX
@@ -128,6 +130,8 @@ typedef struct
 	float		radius;
 	float		range;		/* 0 = unlimited */
 	vec3_t		color;		/* pi x radiance */
+	qboolean	line;		/* 6.3: a dynamic line light (DYNLIGHT_LINE) from origin to end */
+	vec3_t		end;
 } test_sphere_t;
 
 typedef struct
@@ -722,10 +726,30 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	}
 	dlight_stats.most = q_max (dlight_stats.most, dlight_stats.lit);
 	for (i = 0; i < num_test_dlights && n + num_dark < MAX_LIGHT_SOURCES; i++)
-		WriteDynamicLight (&ubo->dyn_light_data[n++], test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f, -1);
+	{
+		DynLightData	*d = &ubo->dyn_light_data[n++];
+
+		WriteDynamicLight (d, test_dlights[i].origin, test_dlights[i].radius, test_dlights[i].color, 0.0f, -1);
+		if (test_dlights[i].line)
+		{	/* 6.3: a beam's light */
+			d->type = DYNLIGHT_LINE | DYNLIGHT_NOT_ON_LIGHTS;
+			VectorSubtract (test_dlights[i].end, test_dlights[i].origin, d->spot_direction);
+		}
+	}
 	num_effect = VK_ChooseEffectLights (MAX_LIGHT_SOURCES - n - num_dark, effect);
 	for (i = 0; i < num_effect; i++)
-		WriteDynamicLight (&ubo->dyn_light_data[n++], effect[i].origin, effect[i].radius, effect[i].color, effect[i].range, -1);
+	{
+		DynLightData	*d = &ubo->dyn_light_data[n++];
+
+		WriteDynamicLight (d, effect[i].origin, effect[i].radius, effect[i].color, effect[i].range, -1);
+		if (effect[i].line)
+		{	/* 6.3: a beam's, from origin to end (light_lists.h's dynlight_line) */
+			d->type = DYNLIGHT_LINE;
+			VectorSubtract (effect[i].end, effect[i].origin, d->spot_direction);
+		}
+		if (effect[i].beam)	/* 6.3: not on the beam's own glowing parts */
+			d->type |= DYNLIGHT_NOT_ON_LIGHTS;
+	}
 	ubo->num_dyn_lights = n;
 	/* the dark ones: GL's radius and minlight (in spot_data's bits), and
 	 * the light of a full GL lightmap texel that they take from: the light
@@ -898,6 +922,7 @@ static void VK_TestLight_f (void)
 			return;
 		}
 		s = dlight ? &test_dlights[num_test_dlights++] : &test_spheres[num_test_spheres++];
+		memset (s, 0, sizeof(*s));
 		VectorCopy (r_scene.vieworg, s->origin);
 		s->radius = q_max (ArgFloat (2, TEST_SPHERE_RADIUS), 0.1f);
 		ParseColor (4, ArgFloat (3, TEST_SPHERE_INTENSITY), s->color);
@@ -907,6 +932,31 @@ static void VK_TestLight_f (void)
 			VK_UpdateLights ();
 			PrintBuild ();
 		}
+		return;
+	}
+	if (!q_strcasecmp (what, "line"))
+	{	/* 6.3: a beam's light, through the eye along the view's right */
+		test_sphere_t	*s;
+		float		half, power;
+		vec3_t		color;
+
+		if (!WorldReady ())
+			return;
+		if (num_test_dlights == MAX_LIGHT_SOURCES)
+		{
+			Con_Printf ("vk_testlight: at most %d dynamic lights\n", MAX_LIGHT_SOURCES);
+			return;
+		}
+		s = &test_dlights[num_test_dlights++];
+		memset (s, 0, sizeof(*s));
+		s->line = true;
+		half = q_max (ArgFloat (2, 128.0f), 2.0f) * 0.5f;
+		VectorMA (r_scene.vieworg, -half, r_scene.right, s->origin);
+		VectorMA (r_scene.vieworg, half, r_scene.right, s->end);
+		s->radius = q_max (ArgFloat (4, 2.0f), 0.1f);
+		power = ArgFloat (3, 100.0f);
+		ParseColor (5, power, color);
+		VectorScale (color, 1.0f / (2.0f * s->radius), s->color);	/* pi x radiance: the power per unit length over 2 r */
 		return;
 	}
 	if (!q_strcasecmp (what, "quad"))
@@ -954,10 +1004,15 @@ static void VK_TestLight_f (void)
 				    test_spheres[i].radius, test_spheres[i].color[0], test_spheres[i].color[1],
 				    test_spheres[i].color[2], test_spheres[i].range);
 		for (i = 0; i < num_test_dlights; i++)
-			Con_Printf ("dlight %3d at %.1f %.1f %.1f radius %.1f color %.1f %.1f %.1f\n", i,
+		{
+			Con_Printf ("%s %3d at %.1f %.1f %.1f radius %.1f color %.1f %.1f %.1f", test_dlights[i].line ? "line  " : "dlight", i,
 				    test_dlights[i].origin[0], test_dlights[i].origin[1], test_dlights[i].origin[2],
 				    test_dlights[i].radius, test_dlights[i].color[0], test_dlights[i].color[1],
 				    test_dlights[i].color[2]);
+			if (test_dlights[i].line)
+				Con_Printf (" to %.1f %.1f %.1f", test_dlights[i].end[0], test_dlights[i].end[1], test_dlights[i].end[2]);
+			Con_Printf ("\n");
+		}
 		for (i = 0; i < num_test_quads; i++)
 		{
 			vec3_t	c, side;
@@ -975,6 +1030,8 @@ static void VK_TestLight_f (void)
 	Con_Printf ("vk_testlight sphere [radius] [intensity] [r g b] [range]: a sphere light at the eye\n"
 		    "  (8, 1000, 1 1 1, 0 = unlimited); the intensity is pi x its radiance\n"
 		    "vk_testlight dlight [radius] [intensity] [r g b]: the same as a dynamic sphere light\n"
+		    "vk_testlight line [length] [power] [radius] [r g b]: a dynamic line light (a beam's, 6.3) through the eye along\n"
+		    "  the view's right (128, 100, 2, 1 1 1); its power per unit length is its radiance x its area per unit length\n"
 		    "vk_testlight quad [size] [intensity] [r g b]: a square light at the eye, facing the view (32, 50, 1 1 1)\n"
 		    "vk_testlight list | clear: the test lights (the map's: vk_lights, r_maplights)\n");
 }
