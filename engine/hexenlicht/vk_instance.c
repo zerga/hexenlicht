@@ -18,7 +18,8 @@
  * glide between their moves (r_lerpmove). The instance
  * carries the material of the skin (vk_skin.c), the fixed light level and
  * the colorshade tint GL uses (6.2: a glowing projectile's skin emits
- * whole, and its light doesn't light it). The first-person weapon (cl.viewent) comes
+ * whole, and its light doesn't light it; 6.3: so does a glowing beam's,
+ * vk_beamlight.c, the opaque ones in the light group). The first-person weapon (cl.viewent) comes
  * last, in a group of its own as Quake II RTX's viewer weapon, with GL's
  * fov compensation; it looks like the group it would be in otherwise.
  *
@@ -586,13 +587,16 @@ int VK_GlowingInstance (int key)
  * game code spawns there, whose mesh surrounds the light: shadow rays
  * don't see their group (vk_maplights.c); nor those of an entity that
  * owns a dynamic light this frame within its bounds (4.4: a glowing
- * projectile, the light inside it; vk_light.c); 6.2: nor a glowing one's */
+ * projectile, the light inside it; vk_light.c); 6.2: nor a glowing one's;
+ * 6.3: nor a glowing beam's (its line light is along it, vk_beamlight.c) */
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
 		return MODEL_GROUP_TRANSPARENT;
 	if (e->model->flags & EF_HOLEY)
 		return MODEL_GROUP_MASKED;
+	if (VK_BeamGlows (e))
+		return MODEL_GROUP_LIGHT;
 	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
 		return MODEL_GROUP_LIGHT;
 	if (e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e)))
@@ -765,7 +769,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
 	scene_entity_t		shown;		/* e where r_lerpmove shows it */
-	qboolean		continues, jumped, bad_skin, emissive, glow;
+	qboolean		continues, jumped, bad_skin, emissive, glow, beam;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
@@ -843,13 +847,17 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	 * vk_emissive.c: the flames of torches and the like, lit; not what
 	 * passes that point), flagged as a light: the map light is its light.
 	 * 6.2: a glowing projectile's whole skin emits, flagged as a light: its
-	 * dynamic light is its light, which doesn't light it (vk_light.c) */
-	emissive = group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
+	 * dynamic light is its light, which doesn't light it (vk_light.c).
+	 * 6.3: so does a glowing beam's, in any group: its line light
+	 * (vk_beamlight.c) is its light, which doesn't light what is flagged a
+	 * light; not the gaze's, a cutout without one (bounces gather it) */
+	beam = VK_BeamGlows (e);
+	emissive = !beam && group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
 		   VK_MapLightAt (e->origin);	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
-	glow_key = (!emissive && group == MODEL_GROUP_LIGHT && num_glowing < (int)Q_COUNTOF(glowing) &&
+	glow_key = (!beam && !emissive && group == MODEL_GROUP_LIGHT && num_glowing < (int)Q_COUNTOF(glowing) &&
 		    !VK_MapLightAt (e->origin)) ? GlowKey (e) : 0;
 	glow = glow_key != 0 && VK_GlowingInstance (glow_key) < 0;	/* a light doesn't light one instance only */
-	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : glow ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
+	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : (glow || beam) ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	/* 5.5: a skin's files' chrome, Quake II RTX's chrome model (a mirror
 	 * below roughness 0.02); a translucent entity stays translucent */
@@ -869,6 +877,12 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 		glowing[num_glowing].key = glow_key;
 		glowing[num_glowing++].instance = instance;
 		model_frame.glowing++;
+	}
+	if (beam)
+	{
+		if (!VK_ModelHasCutouts (e->model))
+			mi->material |= MATERIAL_FLAG_LIGHT;
+		model_frame.beams++;
 	}
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;

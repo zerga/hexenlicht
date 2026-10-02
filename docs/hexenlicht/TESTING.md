@@ -486,6 +486,45 @@ Notes:
 - **6.2's runs** (2026-09-30, Debug, 960x540, Hexenlicht only): `-HlCvars 'r_effect_lights 0'` against the default, paused (classes 1–4) and `-NoPause` (1–5); validation 0/0, nothing left out. Hand-written scripts (not kept) did the rest: the glowing projectiles on a paused frame, lights on and off (the scarab, the summoning stone, the tomed purifier's ball and magic missiles: crops around the projectile); the summoning stone's floor explosion and a magic missile hit near the pedestal unpaused, a shot every 1–2 frames, a run each way.
 - **Effect lights' cost:** `vk_benchmark 1`, `profiler_samples` 20–30 over an effect's frames (the blast radius's seven flashes, `impulse 110`; the Demoness's fire storm from far, a 30-frame burst, as `effects_run.ps1` fires it), a load each way; the cap's upper bound with 32 `vk_testlight dlight`s around the view against none (Release, 1920x1080).
 
+## Beams (6.3)
+
+Beams are the client's streams (`cl_tent.c`), which a paused game keeps
+drawing (`CL_UpdateTEnts` runs every client frame; `r_dumpscene` lists
+`r_scene.beams`), so a paused frame with `r_effect_lights` toggled is the
+cleanest A/B: fire, `pause`, wait ~10 frames, `vk_screenshot <name> 16`,
+`r_effect_lights 0`, ~20 frames (the denoiser's history), the second shot.
+`vk_lights` or `vk_effects` print the last frame's beams (a frame drawn
+with `r_effect_lights 0` counts none).
+
+- **The weapons:** `effects_run.ps1 -Class 2 -NoPause` (the sunstaff,
+  tomed: three beams and their reflections, which fill GL's 128 segment
+  entities; the ice mace's chunks, not light) and `-Class 5` (the tempest
+  staff's lightning), with `-KeepSaves`, then `-SkipSaves -HlCvars
+  'r_effect_lights 0'` for the comparison. Unpaused runs differ in random
+  frames and particles. Near the player the sunstaff's own `EF_BRIGHTLIGHT`
+  dominates: the beam's light shows on the walls it hits and the far
+  reflections.
+- **The line light against spheres** (6.3's check, Debug): demo1, `noclip`,
+  `vk_setpos -918 -2034 14 90 90` (the eye 64 units above the floor,
+  looking down), `r_maplights 0`, `r_dlights 0`, `r_effect_lights 0`,
+  `r_debugview 15` (the direct light without the albedo), then
+  `vk_testlight line 248 100 2` against 31 `vk_testlight dlight 2 50` set
+  every 8 units along the same segment (a `vk_setpos` of the eye before
+  each; the same power: a sphere's color P Δ / (4 r²)); the mean of the
+  view's center (0.2367 against 0.2212; the analytic 0.2378 and 0.2210,
+  DECISIONS X11). `vk_testlight clear` between them.
+- **Map beams:** tower's always-running lightning (no trigger: `noclip`,
+  `vk_setpos -1088 820 340 20 90`, the bolts every 2–5 s for 3 s); rider1a's
+  Famine (the start, `god` without `notarget`, `skill 1`: its beam within
+  the first ~100 frames); the other weather beams are triggered
+  (`pak_entities.ps1 -Pattern 'weather_lightning_start|weather_sunbeam_start'
+  -Keys wait,lifespan,spawnflags,target`). The bronze golem's color beam,
+  the medusa's gaze (no `monster_medusa_*` in the maps' entity lumps) and
+  the chains (a living target) weren't looked at in 6.3.
+- **Cost:** a paused frame of the tomed sunstaff from the far save,
+  `vk_benchmark 1`, `profiler_samples 120`, ~200 frames, `vk_profiler`,
+  `r_effect_lights 0`, again (Release, 1920x1080).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

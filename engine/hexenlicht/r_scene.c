@@ -43,6 +43,11 @@ cvar_t		r_drawviewmodel = {"r_drawviewmodel", "1", CVAR_NONE};
 
 extern particle_t	*active_particles;	/* r_part.c */
 
+/* 6.3: the beams cl_tent.c's CL_UpdateTEnts drew last (each client frame,
+ * before the renderer runs; it has MAX_SCENE_BEAMS streams) */
+static scene_beam_t	client_beams[MAX_SCENE_BEAMS];
+static int		num_client_beams;
+
 
 /*
 ==================
@@ -194,6 +199,30 @@ static void R_AddExtraDynamicLights (void)
 	}
 }
 
+/* 6.3: cl_tent.c's CL_UpdateTEnts, before its streams (an upstream hot
+ * spot: docs/hexenlicht/UPSTREAM.md) */
+void R_ClearBeams (void)
+{
+	num_client_beams = 0;
+}
+
+/* 6.3: CL_UpdateTEnts, each stream it draws this frame, after its source
+ * follows the entity it is attached to */
+void R_AddBeam (int type, int skin, const vec3_t source, const vec3_t dest, float end_time, qmodel_t *const *models)
+{
+	scene_beam_t	*b;
+
+	if (num_client_beams >= MAX_SCENE_BEAMS)
+		return;
+	b = &client_beams[num_client_beams++];
+	b->type = type;
+	b->skin = skin;
+	VectorCopy (source, b->source);
+	VectorCopy (dest, b->dest);
+	b->end_time = end_time;
+	memcpy (b->models, models, sizeof(b->models));
+}
+
 static void R_BuildScene (void)
 {
 	int		i;
@@ -255,6 +284,9 @@ static void R_BuildScene (void)
 		sdl->die = dl->die;
 	}
 	R_AddExtraDynamicLights ();
+
+	r_scene.num_beams = r_drawentities.integer ? num_client_beams : 0;
+	memcpy (r_scene.beams, client_beams, r_scene.num_beams * sizeof(client_beams[0]));
 
 	for (i = 0; i < MAX_LIGHTSTYLES; i++)
 		r_scene.lightstyles[i] = d_lightstylevalue[i] / 256.0f;
@@ -318,6 +350,7 @@ void R_NewMap (void)
 
 	r_viewleaf = NULL;
 	memset (&r_scene, 0, sizeof(r_scene));	/* no scene until the first frame */
+	num_client_beams = 0;			/* the old map's, until CL_UpdateTEnts runs */
 
 	R_ClearParticles ();
 
@@ -444,6 +477,17 @@ static void R_DumpScene_f (void)
 				dl->key, dl->origin[0], dl->origin[1], dl->origin[2],
 				dl->radius, dl->minlight, dl->color[0], dl->color[1], dl->color[2],
 				dl->dark ? " dark" : "", dl->die - r_scene.time);
+	}
+
+	Con_Printf ("beams: %d\n", r_scene.num_beams);	/* 6.3 */
+	for (i = 0; i < r_scene.num_beams; i++)
+	{
+		const scene_beam_t	*b = &r_scene.beams[i];
+
+		Con_Printf ("type %2d %-20s skin %d from %.0f %.0f %.0f to %.0f %.0f %.0f, %.2fs left\n",
+				b->type, b->models[0] ? b->models[0]->name : "-", b->skin,
+				b->source[0], b->source[1], b->source[2], b->dest[0], b->dest[1], b->dest[2],
+				b->end_time - r_scene.time);
 	}
 
 	/* the style strings are the client's, printed for reference */

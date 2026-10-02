@@ -45,6 +45,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    faded by its range), not uniformly, and a dynamic sphere may have a
  *    range, in spot_data (4.4: the game's dynamic lights, vk_light.c), and
  *    a model instance it doesn't light (6.2: a glowing projectile's light);
+ *  - a dynamic light can be a line (6.3, DYNLIGHT_LINE: a beam's light), a
+ *    thin cylinder sampled by its solid angle (dynlight_line); a beam's
+ *    lights (DYNLIGHT_NOT_ON_LIGHTS) don't light surfaces that are
+ *    themselves lights (the beams);
  *  - a gradient sample weighs a list light by the larger of last frame's
  *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
  *    light that comes on can be picked;
@@ -676,18 +680,75 @@ dynlight_range(uint light_idx)
 	return uintBitsToFloat(global_ubo.dyn_light_data[light_idx].spot_data);
 }
 
+/* Hexenlicht (6.3): a line light (DYNLIGHT_LINE, vk_light.c: a beam's), a
+ * thin cylinder of the light's radius r around the segment from its center
+ * to center + spot_direction, of uniform radiance (its color is pi times
+ * it, as a sphere's). Seen from p at the distance h from its axis (at least
+ * r: the near field is capped there), a piece dl of it at the distance d
+ * and the angle phi from the axis has the solid angle 2 r sin(phi) dl / d^2
+ * = (2 r / h) d(sin theta), theta the angle from the perpendicular foot of
+ * p on the axis; so the whole one's is (2 r / h)(sin theta_b - sin theta_a)
+ * between its ends, and a point sampled uniformly in sin theta has the
+ * pdf of its solid angle. Returns that solid angle / pi (as
+ * compute_dynlight_sphere), the point (rng.y) on the axis for the shadow
+ * ray (in open space: the beam's ends are where the game's trace stopped)
+ * and p's distance from the segment, for the range fade */
+float
+dynlight_line(uint light_idx, vec3 p, float u, out vec3 position_light, out float dist)
+{
+	vec3 a = global_ubo.dyn_light_data[light_idx].center;
+	vec3 seg = global_ubo.dyn_light_data[light_idx].spot_direction;
+	float radius = global_ubo.dyn_light_data[light_idx].radius;
+	float len = length(seg);
+	vec3 axis = (len > 0) ? seg / len : vec3(0, 0, 1);
+
+	float ta = dot(a - p, axis);	// the ends along the axis, from p's foot on it
+	float tb = ta + len;
+	vec3 foot = a - axis * ta;
+	float h_true = length(p - foot);
+	float h = max(h_true, max(radius, 1e-3));
+	float sa = ta / sqrt(h * h + ta * ta);
+	float sb = tb / sqrt(h * h + tb * tb);
+
+	float s = clamp(mix(sa, sb, u), -0.999999, 0.999999);
+	float t = clamp(h * s / sqrt(1 - s * s), ta, tb);
+	position_light = foot + axis * t;
+
+	float t_near = (ta > 0) ? ta : (tb < 0) ? tb : 0;
+	dist = sqrt(h_true * h_true + t_near * t_near);
+
+	return 2 * radius / h * max(sb - sa, 0) / M_PI;
+}
+
 /* Hexenlicht (4.4): a dynamic light's weight in the pick, a list sphere's
  * (sphere_light_mass without the specular lobe) times its luminance: its
  * solid angle, faded by its range, 0 entirely below the horizon; a spot's
  * its luminance. 6.2: 0 for the model instance a sphere doesn't light
  * (receiver; ~0u = the world): a glowing projectile's, the light inside it,
- * its instance + 1 in the type's high 16 bits (vk_light.c) */
+ * its instance + 1 in the type's high 16 bits (vk_light.c). 6.3: a line's
+ * its solid angle the same way; a beam's light (DYNLIGHT_NOT_ON_LIGHTS: a
+ * line, the sunstaff's hit sphere) 0 for a receiver that is a light itself
+ * (receiver_glows: the beam, its light inside it) */
 float
-dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver)
+dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver, bool receiver_glows)
 {
 	float lum = luminance(global_ubo.dyn_light_data[light_idx].color);
 	uint type = global_ubo.dyn_light_data[light_idx].type;
-	if((type & 0xffff) != DYNLIGHT_SPHERE)
+	if(receiver_glows && (type & DYNLIGHT_NOT_ON_LIGHTS) != 0u)
+		return 0;
+	if((type & DYNLIGHT_TYPE_MASK) == DYNLIGHT_LINE)
+	{
+		vec3 a = global_ubo.dyn_light_data[light_idx].center - p;
+		vec3 b = a + global_ubo.dyn_light_data[light_idx].spot_direction;
+		float r = global_ubo.dyn_light_data[light_idx].radius;
+		if(dot(n, a) <= -r && dot(n, b) <= -r)
+			return 0;
+		vec3 position_light;
+		float dist;
+		float solid_angle = min(dynlight_line(light_idx, p, 0.5, position_light, dist), max_solid_angle);
+		return lum * solid_angle * sphere_light_window(dist, dynlight_range(light_idx));
+	}
+	if((type & DYNLIGHT_TYPE_MASK) != DYNLIGHT_SPHERE)
 		return lum;
 	if((type >> 16) != 0u && (type >> 16) - 1u == receiver)
 		return 0;
@@ -710,6 +771,7 @@ sample_dynamic_lights(
 		vec3 gn,
 		float max_solid_angle,
 		uint receiver,	// Hexenlicht (6.2): the surface's model instance, ~0u = the world
+		bool receiver_glows,	// Hexenlicht (6.3): the surface is a light (MATERIAL_FLAG_LIGHT): no beam lights
 		out vec3 position_light,
 		out vec3 light_color,
 		vec3 rng)
@@ -725,7 +787,7 @@ sample_dynamic_lights(
 	uint num = min(global_ubo.num_dyn_lights, MAX_LIGHT_SOURCES);
 	float total = 0;
 	for(uint i = 0; i < num; i++)
-		total += dynlight_weight(i, p, n, max_solid_angle, receiver);
+		total += dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows);
 	if(total <= 0)
 		return;
 
@@ -734,7 +796,7 @@ sample_dynamic_lights(
 	float weight = 0;
 	for(uint i = 0; i < num; i++)
 	{
-		float w = dynlight_weight(i, p, n, max_solid_angle, receiver);
+		float w = dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows);
 		if(w <= 0)
 			continue;
 		light_idx = i; // the last with a weight, should rounding pass them all
@@ -750,13 +812,17 @@ sample_dynamic_lights(
 
 	light_color = global_ubo.dyn_light_data[light_idx].color;
 
-	uint light_type = global_ubo.dyn_light_data[light_idx].type & 0xffff;
+	uint light_type = global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_TYPE_MASK;	// Hexenlicht (6.3): its flags above
 	uint light_style = global_ubo.dyn_light_data[light_idx].type >> 16;
 
 	float irradiance;
 	if(light_type == DYNLIGHT_SPHERE) {
 		irradiance = min(compute_dynlight_sphere(light_idx, light_center, p, position_light, rng), max_solid_angle);
 		irradiance *= sphere_light_window(length(light_center - p), dynlight_range(light_idx));
+	} else if(light_type == DYNLIGHT_LINE) {	// Hexenlicht (6.3)
+		float dist;
+		irradiance = min(dynlight_line(light_idx, p, rng.y, position_light, dist), max_solid_angle);
+		irradiance *= sphere_light_window(dist, dynlight_range(light_idx));
 	} else {
 		irradiance = min(compute_dynlight_spot(light_idx, light_style, light_center, p, position_light, rng), max_solid_angle);
 	}

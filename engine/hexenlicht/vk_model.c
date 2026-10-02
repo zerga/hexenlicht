@@ -274,6 +274,7 @@ void VK_LoadModels (void)
 	if (vk_num_materials > first_material)
 		VK_UploadMaterialRange (first_material, vk_num_materials - first_material);
 	VK_SpriteLightAverages ();	/* 6.2: the emitting sprites' frames, with their files */
+	VK_BeamLightAverages ();	/* 6.3: the beam models' glowing surfaces, with their files */
 }
 
 
@@ -385,6 +386,60 @@ static void PosePosition (const aliashdr_t *hdr, const trivertx_t *v, vec3_t out
 static const float *PoseNormal (const trivertx_t *v)
 {
 	return vertex_normals[q_min (v->lightnormalindex, NUM_VERTEX_NORMALS - 1)];
+}
+
+/* 6.3 (vk_beamlight.c): a model's triangles as drawn (gl_mesh.c's, with
+ * the seam fix): each one's texture coordinates (u v of its three corners)
+ * and its area averaged over the model's poses (model units, unscaled), up
+ * to max of them; *axis_radius: the farthest a pose vertex is from the
+ * model's x axis (a beam segment's axis). Returns the number of triangles,
+ * 0 when there is nothing to draw */
+int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius)
+{
+	const aliashdr_t	*hdr;
+	const trivertx_t	*poses;
+	AliasTriangle		*tris;
+	vec3_t			p[3], e1, e2, n;
+	int			num_tris, t, pose, k;
+
+	*axis_radius = 0.0f;
+	if (!model || model->type != mod_alias)
+		return 0;
+	hdr = (const aliashdr_t *) Mod_Extradata (model);
+	num_tris = AliasTriangles (hdr, NULL);
+	if (num_tris <= 0 || hdr->numposes <= 0 || hdr->poseverts <= 0 || hdr->poseverts > 0xffff)
+		return 0;
+	tris = (AliasTriangle *) malloc (num_tris * sizeof(AliasTriangle));
+	if (!tris)
+		Sys_Error ("%s: out of memory", __thisfunc__);
+	AliasTriangles (hdr, tris);
+	poses = (const trivertx_t *) ((const byte *)hdr + hdr->posedata);
+	num_tris = q_min (num_tris, max);
+	for (t = 0; t < num_tris; t++)
+	{
+		const int	corner[3] = { (int)(tris[t].verts[0] & 0xffff), (int)(tris[t].verts[0] >> 16),
+					      (int)(tris[t].verts[1] & 0xffff) };
+
+		uvs[t][0] = tris[t].uv0[0];	uvs[t][1] = tris[t].uv0[1];
+		uvs[t][2] = tris[t].uv1[0];	uvs[t][3] = tris[t].uv1[1];
+		uvs[t][4] = tris[t].uv2[0];	uvs[t][5] = tris[t].uv2[1];
+		areas[t] = 0.0f;
+		for (pose = 0; pose < hdr->numposes; pose++)
+		{
+			for (k = 0; k < 3; k++)
+			{
+				PosePosition (hdr, &poses[pose * hdr->poseverts + corner[k]], p[k]);
+				*axis_radius = q_max (*axis_radius, sqrtf (p[k][1] * p[k][1] + p[k][2] * p[k][2]));
+			}
+			VectorSubtract (p[1], p[0], e1);
+			VectorSubtract (p[2], p[0], e2);
+			CrossProduct (e1, e2, n);
+			areas[t] += 0.5f * VectorLength (n);
+		}
+		areas[t] /= (float)hdr->numposes;
+	}
+	free (tris);
+	return num_tris;
 }
 
 static void TransformPoint4 (const mat4 m, const vec3_t in, vec3_t out)
@@ -813,8 +868,8 @@ static void VK_Models_f (void)
 			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
-	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2)\n",
-		    mf->emissive, mf->glowing);
+	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2), "
+		    "%d glowing beam parts (6.3)\n", mf->emissive, mf->glowing, mf->beams);
 }
 
 

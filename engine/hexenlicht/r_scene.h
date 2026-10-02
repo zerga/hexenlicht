@@ -2,7 +2,7 @@
  *
  * R_RenderView fills r_scene once per frame from the client state: the
  * camera, every entity to draw, dynamic lights, light style values,
- * particles and the view blend. The 3D renderer reads the scene only, not
+ * particles, the beams (6.3) and the view blend. The 3D renderer reads the scene only, not
  * the client structures it was built from, so everything the renderer
  * depends on is gathered in one place.
  *
@@ -71,6 +71,19 @@ typedef struct
 	float		die;		/* cl.time when it goes out */
 } scene_dlight_t;
 
+/* 6.3: a beam the client draws this frame (cl_tent.c's streams: a model
+ * segment every 30 units from source to dest), for its light */
+#define MAX_SCENE_BEAMS		32	/* cl_tent.c's MAX_STREAMS */
+
+typedef struct
+{
+	int		type;		/* TE_STREAM_* (cl_tent.c) */
+	int		skin;		/* the color beam's color */
+	vec3_t		source, dest;
+	float		end_time;	/* cl.time it ends; the lightning fades for 0.25 s after it */
+	qmodel_t	*models[4];	/* the segments' (0, 1) and the end's (2, 3), NULL = none */
+} scene_beam_t;
+
 typedef struct
 {
 	int		framecount;	/* r_framecount when filled */
@@ -93,6 +106,9 @@ typedef struct
 	int		num_dlights;
 	scene_dlight_t	dlights[MAX_DLIGHTS];
 
+	int		num_beams;
+	scene_beam_t	beams[MAX_SCENE_BEAMS];
+
 	/* light style values, 1.0 = 256: "m" (normal) is 264/256 */
 	float		lightstyles[MAX_LIGHTSTYLES];
 
@@ -107,6 +123,11 @@ typedef struct
 extern scene_t	r_scene;
 
 void R_InitScene (void);
+
+/* 6.3: cl_tent.c's CL_UpdateTEnts hands over its streams (an upstream hot
+ * spot, docs/hexenlicht/UPSTREAM.md); R_BuildScene copies them */
+void R_ClearBeams (void);
+void R_AddBeam (int type, int skin, const vec3_t source, const vec3_t dest, float end_time, qmodel_t *const *models);
 
 /* r_light.c: GL's light level on the first-person weapon, into
  * cl.light_level (the server's player light_level: how well monsters see

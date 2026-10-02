@@ -174,6 +174,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // Dynamic light types
 #define DYNLIGHT_SPHERE         0
 #define DYNLIGHT_SPOT           1
+#define DYNLIGHT_LINE           2   // Hexenlicht (6.3): a beam's, a thin cylinder (light_lists.h)
+#define DYNLIGHT_TYPE_MASK      0xff    // Hexenlicht (6.3): the type in DynLightData's type
+#define DYNLIGHT_NOT_ON_LIGHTS  0x100   // Hexenlicht (6.3): a beam's light, which doesn't light surfaces flagged a light
 
 //
 // Spotlight styles (emission profiles)

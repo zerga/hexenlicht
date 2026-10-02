@@ -26,11 +26,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    device address (VERTEX_BUFFER_DESC_SET_IDX's value is unused);
  *  - env_map is Hexen II's sky (4.6, hexen2_sky) and the dome of the sky
  *    light mode, not Quake II RTX's physical sky or environment map;
- *  - trace_effects_ray: pt_logic_sprite takes the hit distance, beams and
- *    explosions come with their story (6.3), no effects TLAS = no effects;
+ *  - trace_effects_ray: pt_logic_sprite takes the hit distance; no beams or
+ *    explosions (Hexen II's beams are alias models, 6.3, its explosions
+ *    sprites), no effects TLAS = no effects;
  *  - get_direct_illumination: the receiving surface's model instance, which
  *    a glowing projectile's light doesn't light (6.2, light_lists.h's
- *    dynlight_weight); the light statistics per light list entry
+ *    dynlight_weight), and whether it is a light, which beam lights don't
+ *    light (6.3); the light statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); for gradient
  *    samples the sampled list light's style change (nee_style_change, 4.13);
@@ -461,7 +463,7 @@ trace_effects_ray(Ray ray, bool skip_procedural)
 
 		if (isProcedural)
 		{
-			// Hexenlicht: beams, the procedural primitives, come with 6.3
+			// Hexenlicht: none: Hexen II's beams are alias models (6.3), not Quake II RTX's procedural beams
 		}
 		else
 		{
@@ -471,7 +473,7 @@ trace_effects_ray(Ray ray, bool skip_procedural)
 				transparent = pt_logic_particle(primitiveID, bary);
 				break;
 
-			// Hexenlicht: explosions (SBTO_EXPLOSION) come with 6.3
+			// Hexenlicht: no explosions (SBTO_EXPLOSION): Hexen II's are sprites
 
 			case SBTO_SPRITE: // sprites
 				transparent = pt_logic_sprite(primitiveID, bary, hitT);	// Hexenlicht: with the distance
@@ -823,6 +825,7 @@ get_direct_illumination(
 			geo_normal,
 			max_solid_angle,
 			receiver,
+			(material_id & MATERIAL_FLAG_LIGHT) != 0,	// Hexenlicht (6.3): a beam isn't lit by beam lights
 			pos_on_light_dynamic,
 			contrib_dynamic,
 			rng);

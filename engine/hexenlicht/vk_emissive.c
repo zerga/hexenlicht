@@ -238,8 +238,9 @@ void VK_GetLavaLight (int i, vec3_t p[3], vec3_t color)
 /* texture_average.comp over n texture slots: out[i][0] by the 2.2 power,
  * [1] by the sRGB curve, the mean alpha in [3] when premultiplied (then
  * alpha_slots, if given, name each one's alpha texture, 0 = its own);
+ * uvs, if given (6.3), each one's triangle: only the texels inside it;
  * outside frames */
-static void Averages (const int *slots, const int *alpha_slots, int n, qboolean bias, qboolean premultiply,
+static void Averages (const int *slots, const int *alpha_slots, const float (*uvs)[6], int n, qboolean bias, qboolean premultiply,
 		      float (*colors)[2][4])
 {
 	VkPipelineLayout	layout;
@@ -248,7 +249,7 @@ static void Averages (const int *slots, const int *alpha_slots, int n, qboolean 
 	VkMemoryBarrier2	barrier;
 	VkDependencyInfo	dep;
 	vk_buffer_t		out;
-	struct { VkDeviceAddress out; uint32_t slot, no_bias, premultiply, alpha_slot; } push;
+	struct { VkDeviceAddress out; uint32_t slot, no_bias, premultiply, alpha_slot, triangle, pad; float uv[6]; } push;
 	const float		*v;
 	int			i, k, c;
 
@@ -268,6 +269,11 @@ static void Averages (const int *slots, const int *alpha_slots, int n, qboolean 
 		push.no_bias = bias ? 0u : 1u;
 		push.premultiply = premultiply ? 1u : 0u;
 		push.alpha_slot = (premultiply && alpha_slots) ? (uint32_t)alpha_slots[i] : 0u;
+		if (uvs)
+		{
+			push.triangle = 1u;	/* 6.3: only the texels inside it */
+			memcpy (push.uv, uvs[i], sizeof(push.uv));
+		}
 		VK_DispatchComputeLayout (cmd, pipeline, layout, &push, sizeof(push), 1, 1, 1);	/* one workgroup */
 	}
 	memset (&barrier, 0, sizeof(barrier));
@@ -312,7 +318,7 @@ void VK_TextureAverages (const int *slots, int n, qboolean bias, vec3_t (*colors
 	v = (float (*)[2][4]) malloc (n * sizeof(*v));
 	if (!v)
 		Sys_Error ("%s: out of memory", __thisfunc__);
-	Averages (slots, NULL, n, bias, false, v);
+	Averages (slots, NULL, NULL, n, bias, false, v);
 	for (i = 0; i < n; i++)
 	{
 		for (k = 0; k < 2; k++)
@@ -328,7 +334,33 @@ void VK_TextureAverages (const int *slots, int n, qboolean bias, vec3_t (*colors
  * frames */
 void VK_SpriteAverages (const int *slots, const int *alpha_slots, int n, float (*colors)[2][4])
 {
-	Averages (slots, alpha_slots, n, false, true, colors);
+	Averages (slots, alpha_slots, NULL, n, false, true, colors);
+}
+
+/* 6.3 (vk_beamlight.c): the mean linear color of the texels inside each of
+ * n triangles of a texture slot (texture coordinates u v, three corners
+ * each), [0] by the 2.2 power, [1] by the sRGB curve; premultiplied by
+ * alpha_slot's alpha (0 = the slot's own) with the mean alpha in [3], else
+ * 1 there; a triangle covering no texel center, its centroid's sample;
+ * outside frames */
+void VK_TriangleAverages (int slot, int alpha_slot, qboolean premultiply, const float (*uvs)[6], int n,
+			  float (*colors)[2][4])
+{
+	int	*slots, *alpha_slots, i;
+
+	if (n <= 0)
+		return;
+	slots = (int *) malloc (2 * n * sizeof(int));
+	if (!slots)
+		Sys_Error ("%s: out of memory", __thisfunc__);
+	alpha_slots = slots + n;
+	for (i = 0; i < n; i++)
+	{
+		slots[i] = slot;
+		alpha_slots[i] = alpha_slot;
+	}
+	Averages (slots, alpha_slots, uvs, n, false, premultiply, colors);
+	free (slots);
 }
 
 /* 5.5: the lava that emits a material file (its _e, else its replaced

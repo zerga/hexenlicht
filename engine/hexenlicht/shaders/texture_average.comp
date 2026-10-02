@@ -16,6 +16,12 @@
  * mean alpha in w; the alpha is alpha_slot's where it isn't 0 (a
  * replaced albedo without alpha keeps the original's coverage, sampled
  * at the texel's center as the sprite shader samples it).
+ * Story 6.3 (vk_beamlight.c): with a triangle, the mean of the texels
+ * whose centers are inside it (its texture coordinates, wrapped as the
+ * sampler repeats), premultiplied or not, the mean alpha in w (1 when
+ * not); a triangle that covers no texel center, its centroid's
+ * bilinear sample. A beam model's light is its triangles' means times
+ * their areas.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -57,10 +63,33 @@ layout(push_constant) uniform Push
 	uint		no_bias;	/* 5.6: 1 = the plain mean (vk_materials here's albedo) */
 	uint		premultiply;	/* 6.2: 1 = times the alpha, the mean alpha in w */
 	uint		alpha_slot;	/* 6.2: the alpha's texture, 0 = slot's own */
+	uint		triangle;	/* 6.3: 1 = only the texels inside uv[] */
+	uint		pad;
+	vec2		uv[3];		/* 6.3: the triangle's texture coordinates */
 } push;
 
 shared vec4 sum_power[THREADS];
 shared vec3 sum_srgb[THREADS];
+shared float sum_count[THREADS];
+
+/* which side of a -> b the point c is on (twice the signed area) */
+float edge_side(vec2 a, vec2 b, vec2 c)
+{
+	return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/* the texel's linear color by both curves (rgb, the 2.2 power; the sRGB
+ * curve's in srgb) and its weight (the alpha when premultiplied) */
+float texel_color(vec4 c, vec2 tc, float bias, out vec3 power, out vec3 srgb)
+{
+	float	w = 1.0;
+
+	if (push.premultiply != 0u)
+		w = (push.alpha_slot != 0u) ? global_textureLod(push.alpha_slot, tc, 0).a : c.a;
+	power = max(color_to_linear(c.rgb, 0u) + vec3(bias), vec3(0.0)) * w;
+	srgb = max(color_to_linear(c.rgb, 1u) + vec3(bias), vec3(0.0)) * w;
+	return w;
+}
 
 void main()
 {
@@ -69,23 +98,49 @@ void main()
 	uint	n = uint(max(size.x, 0)) * uint(max(size.y, 0));
 	vec4	a = vec4(0.0);
 	vec3	b = vec3(0.0);
+	float	count = 0.0;
 	float	bias = (push.no_bias != 0u || push.premultiply != 0u) ? 0.0 : EMISSIVE_TRANSFORM_BIAS;
+	vec2	p0 = vec2(0.0), p1 = vec2(0.0), p2 = vec2(0.0);
+	ivec2	lo = ivec2(0), extent = size;
+	float	sides = 0.0;
+
+	if (push.triangle != 0u)
+	{
+		/* the texels of the triangle's box, in texel units */
+		p0 = push.uv[0] * vec2(size);
+		p1 = push.uv[1] * vec2(size);
+		p2 = push.uv[2] * vec2(size);
+		lo = ivec2(floor(min(p0, min(p1, p2))));
+		extent = max(ivec2(ceil(max(p0, max(p1, p2)))) - lo, ivec2(0));
+		n = (size.x > 0 && size.y > 0) ? uint(extent.x) * uint(extent.y) : 0u;
+		sides = edge_side(p0, p1, p2);
+	}
 
 	for (uint i = t; i < n; i += THREADS)
 	{
-		ivec2	p = ivec2(int(i % uint(size.x)), int(i / uint(size.x)));
-		vec4	c = texelFetch(global_texture_descriptors[nonuniformEXT(push.slot)], p, 0);
-		float	w = 1.0;
+		ivec2	p = lo + ivec2(int(i % uint(extent.x)), int(i / uint(extent.x)));
+		vec3	power, srgb;
 
-		if (push.premultiply != 0u)
-			w = (push.alpha_slot != 0u) ?
-			    global_textureLod(push.alpha_slot, (vec2(p) + 0.5) / vec2(size), 0).a : c.a;
-		a.rgb += max(color_to_linear(c.rgb, 0u) + vec3(bias), vec3(0.0)) * w;
+		if (push.triangle != 0u)
+		{
+			vec2	c = vec2(p) + 0.5;
+			float	e0 = edge_side(p1, p2, c), e1 = edge_side(p2, p0, c), e2 = edge_side(p0, p1, c);
+
+			if (sides == 0.0 || (sides > 0.0 ? min(e0, min(e1, e2)) < 0.0 : max(e0, max(e1, e2)) > 0.0))
+				continue;
+			p -= size * ivec2(floor(vec2(p) / vec2(size)));	/* the sampler repeats (GLSL's % is undefined below 0) */
+		}
+		vec4	c = texelFetch(global_texture_descriptors[nonuniformEXT(push.slot)], p, 0);
+		float	w = texel_color(c, (vec2(p) + 0.5) / vec2(size), bias, power, srgb);
+
+		a.rgb += power;
 		a.w += w;
-		b += max(color_to_linear(c.rgb, 1u) + vec3(bias), vec3(0.0)) * w;
+		b += srgb;
+		count += 1.0;
 	}
 	sum_power[t] = a;
 	sum_srgb[t] = b;
+	sum_count[t] = count;
 	barrier();
 	for (uint s = THREADS / 2u; s > 0u; s >>= 1)
 	{
@@ -93,14 +148,35 @@ void main()
 		{
 			sum_power[t] += sum_power[t + s];
 			sum_srgb[t] += sum_srgb[t + s];
+			sum_count[t] += sum_count[t + s];
 		}
 		barrier();
 	}
 	if (t == 0u)
 	{
-		float	inv = (n > 0u) ? 1.0 / float(n) : 0.0;
-		float	alpha = (push.premultiply != 0u) ? sum_power[0].w * inv : 0.0;
+		float	inv, alpha;
 
+		if (push.triangle != 0u)
+		{
+			if (sum_count[0] == 0.0 && size.x > 0 && size.y > 0)
+			{
+				/* a sliver: its centroid's sample */
+				vec2	tc = (push.uv[0] + push.uv[1] + push.uv[2]) / 3.0;
+				vec3	power, srgb;
+				float	w = texel_color(global_textureLod(push.slot, tc, 0), tc, bias, power, srgb);
+
+				sum_power[0] = vec4(power, w);
+				sum_srgb[0] = srgb;
+				sum_count[0] = 1.0;
+			}
+			inv = (sum_count[0] > 0.0) ? 1.0 / sum_count[0] : 0.0;
+			alpha = (push.premultiply != 0u) ? sum_power[0].w * inv : 1.0;
+		}
+		else
+		{
+			inv = (n > 0u) ? 1.0 / float(n) : 0.0;
+			alpha = (push.premultiply != 0u) ? sum_power[0].w * inv : 0.0;
+		}
 		AverageOut(push.out_average).v[0] = vec4(sum_power[0].rgb * inv, alpha);
 		AverageOut(push.out_average).v[1] = vec4(sum_srgb[0] * inv, alpha);
 	}

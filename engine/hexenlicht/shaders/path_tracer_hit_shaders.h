@@ -34,7 +34,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    are, with one factor for both; the sprite's color becomes linear
  *    light here (UNORM textures, transfer.glsl, 4.17), the particles'
  *    comes linear (vk_effects.c);
- *  - beams and explosions come with their stories (6.3). */
+ *  - no beams or explosions: Hexen II's beams are alias models (6.3,
+ *    cl_tent.c's streams; vk_beamlight.c) and its explosions sprites, so
+ *    Quake II RTX's beam and explosion logic is left out. */
 
 #include "hl_shared.h"
 
