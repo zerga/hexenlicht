@@ -724,8 +724,10 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
 - **Alias models** follow in four groups, Q2RTX's order and one of ours
   (`MODEL_GROUP_*`, `VK_ModelFrame` has their ranges): opaque; transparent
   (`DRF_TRANSLUCENT`, `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`; kind
-  `MATERIAL_KIND_TRANSP_MODEL`, alpha = 0.33 for `DRF_TRANSLUCENT` times
-  the texture's; blending is 6.4); masked (`EF_HOLEY` cutouts); light
+  `MATERIAL_KIND_TRANSP_MODEL`, alpha = 0.33 for `DRF_TRANSLUCENT` but on
+  `EF_SPECIAL_TRANS`, as GL; the rays multiply it by the skin's, 6.4, see
+  [3D view](#3d-view-vk_viewc); a translucent cutout is here, its holes
+  tested); masked (`EF_HOLEY` cutouts); light
   (4.1: opaque models at a map light's origin, `VK_MapLightAt`: the
   torches, flames, candles and the like that the light entities' game code
   spawns there, whose mesh surrounds the light; they cast no shadows, see
@@ -825,18 +827,20 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `VK_FindTexture`) unless `gl_nocolors`.
 - `VK_SkinTextureMode` is the texture mode `Mod_LoadAllSkins` gives a
   model's skins by its flags (holey, transparent, special-trans), for the
-  translated player skins, `VK_ModelHasCutouts` and (5.4) the texture
-  export.
+  translated player skins, `VK_ModelHasCutouts`, `VK_SkinHasAlpha` (6.4:
+  any of the three) and (5.4) the texture export.
 - **Chrome** (5.5): a skin whose files' `.mat` says `kind chrome` makes
   its instance Q2RTX's `MATERIAL_KIND_CHROME_MODEL` (`vk_instance.c`,
   every frame, so a reload shows it at once; a mirror only below
   roughness 0.02); a translucent entity stays Q2RTX's transparent model
-  (6.4); the player under its colors takes its skin's (the files of the
+  (6.4: blended); the player under its colors takes its skin's (the files of the
   skin `R_TranslatePlayerSkin` translates). `vk_instances` shows
   "chrome", `vk_models check` expects it. `glass` isn't for skins.
-- One material per skin texture and cutout use (`VK_AddSkinMaterials` for the
-  precache on map load, others on demand); for `EF_HOLEY` models the skin is
-  its own `mask_texture`. A third key (4.5; `VK_SKIN_*`): emissive, for models at a map
+- One material per skin texture and use of its alpha (`VK_AddSkinMaterials` for the
+  precache on map load, others on demand); where the skin's alpha matters
+  (`VK_MAT_ALPHA`: `EF_HOLEY`'s holes; 6.4: `EF_TRANSPARENT`'s and
+  `EF_SPECIAL_TRANS`'s opacity, which the rays blend by, see
+  [3D view](#3d-view-vk_viewc)) the skin is its own `mask_texture`. A third key (4.5; `VK_SKIN_*`): emissive, for models at a map
   light's origin, a material flagged `VK_MAT_FLAME` with the skin's
   emissive texture (made on first use, `VK_EmissiveSkin`; 5.3: its own
   material also where the skin has no bright texels, so that an `_e` found
@@ -853,7 +857,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   model's last single skin, the one `R_TranslatePlayerSkin` translates,
   whatever the group frame or skin number), `VK_ApplyMaterialFiles` does
   the rest: a replaced albedo with
-  alpha is also an `EF_HOLEY` skin's mask, one without keeps the original
+  alpha is also the mask of a skin whose alpha matters (holes, 6.4:
+  opacity), one without keeps the original
   as the mask (`vk_models check` accepts either); the stone and ice
   pictures are named `gfx/skin100` and `101` (unnamed slots: the set takes
   the picture's name).
@@ -1028,7 +1033,8 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
   GL's light level: ×16), with `r_effect_lights` and `r_emissive_scale`
   above 0. `vk_instance.c` puts the opaque ones in the light group (no
   shadows); translucent ones (the sheath, the hit's glow, the lightning's
-  last 0.25 s, the color beam) stay transparent models, which 6.4 blends;
+  last 0.25 s, the color beam) stay transparent models, blended and
+  glowing at their opacity since 6.4;
   the gaze stays a cutout. All but the gaze are flagged
   `MATERIAL_FLAG_LIGHT`: their line light (and the hit's sphere) is their
   light, which doesn't light what is flagged a light
@@ -1093,7 +1099,14 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
     group (fast build, rebuilt every frame, created with room to grow like
     Q2RTX's, per frame in flight); the masked group's TLAS instance is
     `FORCE_NO_OPAQUE` so its hits are candidates alpha-tested against the
-    material's `mask_texture`, and so is the weapon's when it has cutouts
+    material's `mask_texture`, and so is the weapon's when it has cutouts;
+    6.4: so is the transparent group's (and the weapon's when it looks
+    transparent), where only clear texels are no hit (alpha below
+    `TRANSP_MODEL_MIN_ALPHA`, 0.02: `EF_TRANSPARENT`'s color 0, holes; the
+    rays blend the rest by it), still culled (`FORCE_NO_OPAQUE` alone: GL
+    culls all but `EF_SPECIAL_TRANS`, and a reflection or refraction ray
+    through a translucent model meets the world behind it, not its own
+    far side, which would take a pass)
     (**a dynamic BLAS's geometry flags must not change between size query and
     builds**, hence the weapon's geometry is always non-opaque and its
     instance flags decide); the weapon's mask is `AS_FLAG_VIEWER_WEAPON`,
@@ -1104,7 +1117,7 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
   - in one call, the TLAS (world BLASes + a submodel's BLASes per brush
     instance + the dynamic BLASes with an identity transform and custom index
     `VERTEX_BUFFER_INSTANCED`; Q2RTX's `AS_FLAG_*` masks; force-opaque except
-    cutouts) and Q2RTX's second, effects-only TLAS (`VK_EffectsTLASAddress`,
+    cutouts and, 6.4, transparent models) and Q2RTX's second, effects-only TLAS (`VK_EffectsTLASAddress`,
     0 = no effects; mask `AS_FLAG_EFFECTS` in its own namespace,
     `FORCE_NO_OPAQUE` + cull disable, custom index
     `EFFECTS_PARTICLES`/`EFFECTS_SPRITES`; effects never block rays through the
@@ -2579,6 +2592,14 @@ Story 4.10: Hexen II's darkness as GL shows it.
   the sky polygons instead). Translucent surfaces (alpha < 1) split the fields as in
   Q2RTX: the even field stays on the surface, the odd one goes through it
   (their material kind), which `reflect_refract.rgen` follows (3.5b, below).
+  6.4: a translucent model's alpha is its entity's times its skin's where
+  it was hit (`get_hit_alpha`: the material's mask, [Skins](#skins-vk_skinc),
+  250 and up opaque, as M31's coverage;
+  GL's blend: `EF_TRANSPARENT` clear at color 0 and 0.33 at odd colors,
+  `EF_SPECIAL_TRANS`'s table, a translucent cutout's holes), and the field
+  going through doesn't show the surface's emission (Q2RTX's both did, so
+  a translucent surface glowed at full strength, not at its opacity; it
+  does when no pass follows: the field then ends on it).
   Textures are sampled with Q2RTX's anisotropic ray-cone gradients; liquids
   warp as Q2RTX's `lava_uv_warp`, which is Hexen II's software renderer's
   turbulence (`d_scan.c`), with game time.
@@ -2596,15 +2617,29 @@ Story 4.10: Hexen II's darkness as GL shows it.
     `*lowlight` at 0.33, 2.1; translucent entities, 2.4b): the odd field
     continues through them (Q2RTX's slight distortion needs a normal map:
     none until E5). The next pass continues through a translucent layer
-    behind it only on the same instance (Q2RTX's rule against showing a
+    behind it on the same instance (Q2RTX's rule against showing a
     model's inside; all world triangles are one instance, so a world
-    layer behind a world layer is passed through), else the path ends on
-    that layer. The rays cull back faces as in Q2RTX, which skips the
-    inside faces of turbulent volumes; the primary rays don't (R11), so a
-    two-sided `EF_SPECIAL_TRANS` model seen from behind through a
-    translucent surface loses its back faces (6.4). A ray from inside a
+    layer behind a world layer is passed through); 6.4: a layer of
+    another instance (a window behind a window, a translucent model
+    behind one) is passed with the probability of its transparency, a
+    blue-noise number per pixel and frame (`RNG_TRANSLUCENT_LAYER`), and
+    shown otherwise, so that on average it shows at its opacity as GL
+    blends it (Q2RTX's path ended on it: shown solid); passed, it doesn't
+    show its emission; the last pass shows it (no pass to continue). The
+    rays cull back faces as in Q2RTX, which skips the
+    inside faces of turbulent volumes and a translucent model's far side;
+    the primary rays don't (R11), so a two-sided `EF_SPECIAL_TRANS` model
+    seen from behind through a translucent surface loses its back faces
+    (kept in 6.4: culling them is what lets a ray through a translucent
+    model reach the world in one pass). A ray from inside a
     liquid leaves it through a translucent turbulent surface (they bound
     liquid volumes).
+  - Translucent brush entities (`DRF_TRANSLUCENT`: the game's breakable
+    windows) are lit, as Raven's software renderer lit them (its lit
+    surface cache through its translucency table; GL draws them unlit, at
+    the texture's colors); 6.4: a material file's glass on one replaces
+    the entity's blend (`vertex_buffer.h`: its triangles keep alpha 1),
+    so it is glass alone.
   - Mirrors and glass (Q2RTX's `chrome` and `glass` kinds) come from a
     texture's `.mat` since 5.5 ([World](#world-vk_worldc),
     [Skins](#skins-vk_skinc)): chrome (and a chrome model) reflects about
@@ -2728,7 +2763,7 @@ Story 4.10: Hexen II's darkness as GL shows it.
   the G-buffer and lighting channels, reading each screen pixel from its
   field (`checkerboard_interleave.comp`'s mapping); it traces no rays: 1
   base color with the effects over it, 2 shading normals, 3 material
-  kinds (cutouts yellow, the weapon cyan, chrome red since 5.5, glass pale
+  kinds (cutouts yellow, since 6.4 also skins with alpha, the weapon cyan, chrome red since 5.5, glass pale
   cyan; with `pt_reflect_refract 0`
   translucent surfaces alternate between regular and their kind, else the
   odd field shows what is behind them: the debug view reads the G-buffer

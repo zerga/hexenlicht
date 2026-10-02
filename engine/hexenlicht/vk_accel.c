@@ -77,6 +77,12 @@ static VkDeviceSize	blas_scratch_size;
  * (particles; sprites, indexed quads), with Quake II RTX's masks and
  * instance flags: the masked models' hits are candidates, alpha tested
  * against their cutout mask; so are the weapon's when it has cutouts;
+ * 6.4: so are the transparent models' (and the weapon's when it looks
+ * transparent), against their skin's opacity: only clear texels are no
+ * hit (path_tracer_hit_shaders.h), the rays blend the rest; their
+ * instance stays culled (as GL culls all but EF_SPECIAL_TRANS): a
+ * reflection or refraction ray through a translucent model then meets
+ * the world behind it, not its own far side;
  * every effect hit is a candidate. The effects' masks are the effects
  * TLAS's own. */
 enum { DYN_PARTICLES = NUM_MODEL_GROUPS, DYN_SPRITES, NUM_DYN };
@@ -94,16 +100,27 @@ static const uint32_t dyn_max[NUM_DYN] =	/* triangles */
 
 #define NO_OPAQUE_INSTANCE	(VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
 
-/* are a dynamic BLAS's hits candidates (cutouts, effects)? */
+/* are a dynamic BLAS's hits candidates (cutouts, 6.4: transparent models,
+ * effects)? Constant for each group but the weapon, whose geometry is
+ * always non-opaque (a dynamic BLAS's geometry flags must not change) */
 static qboolean DynCandidates (int d)
 {
-	return d == MODEL_GROUP_MASKED || d >= DYN_PARTICLES ||
-	       (d == MODEL_GROUP_WEAPON && VK_ModelFrame ()->weapon_look == MODEL_GROUP_MASKED);
+	int	look;
+
+	if (d == MODEL_GROUP_MASKED || d == MODEL_GROUP_TRANSPARENT || d >= DYN_PARTICLES)
+		return true;
+	look = VK_ModelFrame ()->weapon_look;
+	return d == MODEL_GROUP_WEAPON && (look == MODEL_GROUP_MASKED || look == MODEL_GROUP_TRANSPARENT);
 }
 
 static VkGeometryInstanceFlagsKHR DynInstanceFlags (int d)
 {
-	return DynCandidates (d) ? NO_OPAQUE_INSTANCE : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+	if (!DynCandidates (d))
+		return VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+	/* 6.4: transparent models alpha tested but culled (see above) */
+	if (d == MODEL_GROUP_TRANSPARENT || (d == MODEL_GROUP_WEAPON && VK_ModelFrame ()->weapon_look == MODEL_GROUP_TRANSPARENT))
+		return VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+	return NO_OPAQUE_INSTANCE;
 }
 
 /* a dynamic BLAS's shader binding table offset (Quake II RTX's SBTO_*),

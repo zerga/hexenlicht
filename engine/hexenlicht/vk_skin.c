@@ -6,12 +6,13 @@
  * cycle at 10 Hz (skin groups; gl_model.c fills them), and players with
  * translated colors show their own skin. It returns the material of that
  * texture: one per skin texture, created on demand (the precached models'
- * on map load, VK_AddSkinMaterials), with the skin as its cutout mask for
- * EF_HOLEY models, one more with the skin's emissive texture for the
+ * on map load, VK_AddSkinMaterials), with the skin as its mask where its
+ * alpha matters (EF_HOLEY's holes; 6.4: EF_TRANSPARENT's and
+ * EF_SPECIAL_TRANS's opacity), one more with the skin's emissive texture for the
  * light models' flames (4.5, vk_emissive.c), made when first shown, and
  * one whose whole skin emits for the glowing projectiles (6.2). The
  * skin's material files (5.3, vk_matfiles.c) apply to its materials
- * (VK_ApplyMaterialFiles): a replaced albedo with alpha is also a masked
+ * (VK_ApplyMaterialFiles): a replaced albedo with alpha is also such a
  * skin's mask, one without keeps the original as the mask; a player whose
  * colors leave the skin as it is (the translation changes no texel, as
  * top and bottom color 0 do) shows the replaced albedo, other players
@@ -63,7 +64,7 @@ cvar_t		gl_nocolors = {"gl_nocolors", "0", CVAR_NONE};
 extern qmodel_t	*player_models[MAX_PLAYER_CLASS];		/* cl_parse.c */
 extern byte	player_8bit_texels[MAX_PLAYER_CLASS][620*245];	/* gl_model.c */
 
-/* [emission: VK_SKIN_*][cutout][texture slot]: the skin's material, 0 = none yet */
+/* [emission: VK_SKIN_*][alpha: VK_MAT_ALPHA][texture slot]: the skin's material, 0 = none yet */
 static short	skin_materials[3][2][VK_MAX_TEXTURES];
 
 static const int	emission_flags[3] = { 0, VK_MAT_FLAME, VK_MAT_GLOW };
@@ -95,6 +96,13 @@ qboolean VK_ModelHasCutouts (const qmodel_t *model)
 	return (VK_SkinTextureMode (model->flags) & TEX_HOLEY) != 0;
 }
 
+/* 6.4: the skins' alpha matters: holes (TEX_HOLEY), or the opacity GL
+ * blends them with (TEX_TRANSPARENT, TEX_SPECIAL_TRANS) */
+qboolean VK_SkinHasAlpha (const qmodel_t *model)
+{
+	return (VK_SkinTextureMode (model->flags) & (TEX_TRANSPARENT | TEX_HOLEY | TEX_SPECIAL_TRANS)) != 0;
+}
+
 /* slot: the texture shown; files: the skin whose material files apply
  * (slot, or the model's skin under a player's colors, 5.3); name: for
  * textures loaded without one (pictures); emission (VK_SKIN_*): with the
@@ -102,7 +110,7 @@ qboolean VK_ModelHasCutouts (const qmodel_t *model)
  * file), made when first asked for, or the whole skin emitting (6.2: its
  * _e, else its albedo); translated: a player's colors, which keep the
  * original albedo (MATERIALS.md) */
-static int SkinMaterial (int slot, int files, qboolean cutout, const char *name, int emission, qboolean translated)
+static int SkinMaterial (int slot, int files, qboolean alpha, const char *name, int emission, qboolean translated)
 {
 	const char	*slash;
 	vk_material_t	*mat;
@@ -114,10 +122,10 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 		files = slot;
 	if (emission < VK_SKIN_LIT || emission > VK_SKIN_GLOW)
 		emission = VK_SKIN_LIT;
-	m = skin_materials[emission][cutout][slot];
+	m = skin_materials[emission][alpha][slot];
 	if (m)
 	{
-		int	flags = VK_MAT_SKIN | (cutout ? VK_MAT_CUTOUT : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
+		int	flags = VK_MAT_SKIN | (alpha ? VK_MAT_ALPHA : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
 				emission_flags[emission];
 
 		mat = VK_GetMaterial (m);
@@ -127,7 +135,7 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 		 * before, else another */
 		if ((m = VK_FindMaterial (files, slot, flags)) > 0)
 		{
-			skin_materials[emission][cutout][slot] = (short)m;
+			skin_materials[emission][alpha][slot] = (short)m;
 			return m;
 		}
 	}
@@ -138,12 +146,12 @@ static int SkinMaterial (int slot, int files, qboolean cutout, const char *name,
 	m = VK_AddMaterial (slash ? slash + 1 : name, slot);
 	mat = VK_GetMaterial (m);
 	mat->texture = files;
-	mat->flags = VK_MAT_SKIN | (cutout ? VK_MAT_CUTOUT : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
+	mat->flags = VK_MAT_SKIN | (alpha ? VK_MAT_ALPHA : 0) | (translated ? VK_MAT_TRANSLATED : 0) |
 		     emission_flags[emission];	/* its emissive texture: VK_ApplyMaterialFiles */
 	if (!VK_TextureName (files)[0])
 		VK_MaterialSet (files, name, MATUSE_SKIN);	/* a picture: its set takes the name */
 	VK_ApplyMaterialFiles (m);
-	skin_materials[emission][cutout][slot] = (short)m;
+	skin_materials[emission][alpha][slot] = (short)m;
 	if (!batch_materials)
 		VK_UploadMaterialRange (m, 1);
 	return m;
@@ -159,14 +167,14 @@ void VK_ClearSkins (void)
 void VK_AddSkinMaterials (qmodel_t *model)
 {
 	const aliashdr_t	*hdr = (const aliashdr_t *) Mod_Extradata (model);
-	qboolean		cutout = VK_ModelHasCutouts (model);
+	qboolean		alpha = VK_SkinHasAlpha (model);
 	int			i, j;
 
 	batch_materials = true;
 	for (i = 0; i < hdr->numskins && i < MAX_SKINS; i++)
 	{
 		for (j = 0; j < 4; j++)
-			SkinMaterial ((int)hdr->gl_texturenum[i][j], (int)hdr->gl_texturenum[i][j], cutout, model->name, VK_SKIN_LIT, false);
+			SkinMaterial ((int)hdr->gl_texturenum[i][j], (int)hdr->gl_texturenum[i][j], alpha, model->name, VK_SKIN_LIT, false);
 	}
 	batch_materials = false;
 }
@@ -183,7 +191,7 @@ int VK_GlowSkinMaterial (qmodel_t *model, int skinnum)
 	if (skinnum < 0 || skinnum >= hdr->numskins)
 		skinnum = 0;
 	slot = (int)hdr->gl_texturenum[skinnum][0];
-	return SkinMaterial (slot, slot, VK_ModelHasCutouts (model), model->name, VK_SKIN_GLOW, false);
+	return SkinMaterial (slot, slot, VK_SkinHasAlpha (model), model->name, VK_SKIN_GLOW, false);
 }
 
 
@@ -252,7 +260,7 @@ int VK_SkinMaterial (const scene_entity_t *e, const aliashdr_t *hdr, int emissio
 			}
 		}
 	}
-	return SkinMaterial (slot, files, VK_ModelHasCutouts (e->model), name, emission, translated);
+	return SkinMaterial (slot, files, VK_SkinHasAlpha (e->model), name, emission, translated);
 }
 
 

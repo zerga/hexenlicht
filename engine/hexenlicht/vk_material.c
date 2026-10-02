@@ -9,7 +9,7 @@
  * and (5.3) the roughness and metallic texture in its spare words.
  * A material is its original texture slot, the slot it shows without
  * files (the original, or a player's translated skin) and flags (a skin,
- * a cutout, lava, a light model's flame); VK_ApplyMaterialFiles makes the
+ * a skin with alpha, lava, a light model's flame); VK_ApplyMaterialFiles makes the
  * rest from those and the texture's material files (5.3, vk_matfiles.c,
  * MATERIALS.md): the albedo, the normal map, the roughness and metallic
  * map, the emission and the .mat's factors, or the defaults without
@@ -142,7 +142,7 @@ void VK_ApplyMaterialFiles (int index)
 
 	m->base_texture = albedo ? s->albedo : m->original;
 	m->mask_texture = 0;
-	if (m->flags & VK_MAT_CUTOUT)	/* an albedo without alpha keeps the original's holes */
+	if (m->flags & VK_MAT_ALPHA)	/* an albedo without alpha keeps the original's holes or opacity */
 		m->mask_texture = (albedo && s->albedo_alpha) ? s->albedo : m->original;
 	m->normal_texture = s ? s->normal : 0;
 	m->normal_bc5 = s && s->normal && s->normal_bc5;

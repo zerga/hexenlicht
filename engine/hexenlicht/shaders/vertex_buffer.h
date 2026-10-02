@@ -32,6 +32,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    time (global_ubo.anim_frame), and brush entities whose frame is not 0
  *    show the alternate animation; Quake II RTX animates the world buffer
  *    with animate_materials.comp and steps instances by their frame;
+ *  - a brush entity's alpha (DRF_TRANSLUCENT) leaves its glass triangles
+ *    opaque (6.4: a material file's glass replaces the game's blend);
  *  - the light buffer (vk_light.c) has only the lights and the light lists
  *    (3.3); a light is a polygon or, for Hexen II's point lights, a sphere
  *    (3.4); Quake II RTX's also holds the material table (ours is
@@ -358,7 +360,10 @@ load_and_transform_triangle(int instance_idx, uint buffer_idx, uint prim_id)
 		t.material_id = animate_material(t.material_id, global_ubo.anim_frame, frame != 0);
 		t.cluster = mi.cluster;
 		t.emissive_factor = 1.0;
-		t.alpha *= unpackHalf2x16(mi.alpha_and_frame).x;
+		// Hexenlicht (6.4): a material file's glass replaces a translucent brush
+		// entity's blend (the game's windows): it is seen through by refraction
+		if ((t.material_id & MATERIAL_KIND_MASK) != MATERIAL_KIND_GLASS)
+			t.alpha *= unpackHalf2x16(mi.alpha_and_frame).x;
 
 		// Store the index of that instance and the prim offset relative to the instance.
 		t.instance_index = uint(instance_idx);

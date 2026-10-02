@@ -75,6 +75,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MATERIAL_KIND_CHROME_MODEL   0xd0000000
 #define MATERIAL_KIND_TRANSP_MODEL   0xe0000000 // Transparent models. No distortion, just "see through".
 
+// Hexenlicht (6.4): a translucent model's texels below this opacity are no hit
+// (clear: EF_TRANSPARENT's color 0, a hole); below the least of EF_SPECIAL_TRANS's
+// table (8/255)
+#define TRANSP_MODEL_MIN_ALPHA       0.02
+
 #define MATERIAL_FLAG_LIGHT          0x08000000
 #define MATERIAL_FLAG_MODEL          0x04000000 // Hexenlicht (4.10): an alias model's (the dark lights leave it lit, darkness.glsl)
 #define MATERIAL_FLAG_HANDEDNESS     0x02000000

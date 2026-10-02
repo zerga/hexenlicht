@@ -525,6 +525,44 @@ with `r_effect_lights 0` counts none).
   `vk_benchmark 1`, `profiler_samples 120`, ~200 frames, `vk_profiler`,
   `r_effect_lights 0`, again (Release, 1920x1080).
 
+## Translucency (6.4)
+
+`translucency_run.ps1` shoots the translucency views from saves: first
+`-Saves` (a Hexenlicht run that saves each view in `data1` as
+`hl64_<view>`), then once per engine and build, `-Tag` naming the
+folder: `-Exe glh2`, `-Bin` another build's folder (`main`'s, for a
+before/after). Paused views are shot averaged (8 frames) and single
+(`<view>_1`: the noise the denoiser leaves); weapon steps and the turning
+view with the game running (repeatable moments, but flying shards and
+wandering animals differ between runs). About two minutes a run in
+Debug; the configs are backed up, the saves kept (delete `data1\hl64_*`
+afterwards). The views:
+
+- **village1's bay window** (`*44`–`*46`, translucent breakables): from the
+  front and at an angle; along it (`v1_side_l`, `_r`) through both
+  diagonal panes, a window behind a window: the log's `vk_rayprobe` lists
+  the panes a ray meets (`probe v1_side_l: *44, *44, *46, *46, world`);
+  `v1_side_turn` turns the view there. GL draws the panes unlit at the
+  texture's colors, Hexenlicht lit (DECISIONS X19): its panes are lighter.
+- **Effects:** a breaking pane's glass shards (the Assassin's crossbow),
+  the purifier's smoke rings (translucent cutouts), the magic missile's
+  hand effect, the tomed sunstaff's sheath paused (with `-Extra
+  'r_emissive_scale 2'` its glow is ×1, not saturated: the emission at
+  the sheath's opacity shows).
+- **Effects run:** `effects_run.ps1` classes 1–4 and `-SkipSaves -Exe
+  hexenlicht -Bin <main's folder>` for the before: the vorpal sword's
+  shock (`c1_near_w2t`) and swipe (`c1_far_w2`) show their transparent
+  skins.
+- **Noise:** per-pixel RMS of a single frame against the 8-frame average
+  in a region (6.4's measure, a small C# helper over the TGAs, not kept):
+  through both panes 1.0–1.1 levels (`main` 0.8), elsewhere 0.8–0.9.
+- **Not scripted:** frozen and stoned monsters (the ice mace must kill a
+  flesh monster, a medusa stone one; two attempts at meso1's scorpions
+  didn't freeze one), special-trans models (the Riders' and the Eidolon's
+  effects, the soul spheres), the fallen angel lords (not drawn at the
+  cathedral's spots without a trigger) and the crystal golem (village2,
+  behind a trigger: dark, as GL's fixed light level is left out, X4).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`
