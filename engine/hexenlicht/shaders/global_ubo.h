@@ -23,7 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - a Hexenlicht block before the cvars: the frame's buffers by device
  *    address, which Quake II RTX binds as descriptors (the instance buffer,
  *    the TLASes, shaders/vertex_buffer.h's buffers), debug view values and
- *    the sky's (4.6, vk_sky.c; the sun is Quake II RTX's sun_* fields);
+ *    the sky's (4.6, vk_sky.c; the sun is Quake II RTX's sun_* fields),
+ *    the water's settings (6.5);
  *  - ModelInstance has Hexen II's fields at the end; Quake II RTX's
  *    InstanceBuffer is our instance buffer (instance_buffer.model_instances,
  *    .model_prev_to_current) and the TLAS's TlasInstanceInfo (its
@@ -287,6 +288,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(int,             num_dark_lights)      /* GL's dark lights (4.10, darkness.glsl): dyn_light_data after num_dyn_lights */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           dark_light_unit)      /* the light of a full GL lightmap texel: 2^-r_map_exposure */ \
 	GLOBAL_UBO_VAR_LIST_DO(uint,            color_srgb)           /* r_srgb: 8-bit colors are sRGB, 0 = a 2.2 power (4.17, transfer.glsl) */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             water)                /* r_water: the liquids' physical surfaces and medium (6.5, water.glsl), 0 = as before */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           water_waves)          /* r_water_waves: the waves' slope */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           water_fog)            /* r_water_fog: the distance at which the medium is as dense as GL's tint, 0 = clear */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           water_light)          /* cl.light_level / 200: GL's light on a model at the camera, the medium's light */ \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

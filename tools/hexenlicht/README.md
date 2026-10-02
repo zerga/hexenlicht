@@ -42,4 +42,5 @@ or `Hexenlicht-data` next to the repository.
 | `mdl_stats.ps1`, `mdl_flags.ps1`, `mdl_skingroups.ps1` | alias model statistics, effect flags (`-Trails`: the trail each model leaves, 6.1), skin groups |
 | `effects_run.ps1` | every class weapon (normal and with the tome of power) and the artifacts fired in `glh2` and Hexenlicht from the same saves, paused shots named by effect, what Hexenlicht left out and the validation line (6.1, E6's checklist) |
 | `translucency_run.ps1` | the translucency views from saves in `glh2` and Hexenlicht (6.4): village1's translucent windows (a window behind a window, with `vk_rayprobe`), glass shards, smoke rings, the hand effect, the tomed sunstaff's sheath |
+| `water_run.ps1` | the water views from saves in `glh2` and Hexenlicht (6.5): above and below translucent and opaque water, across pools at grazing angles, turning above and below, lava, the crossbow's bubbles ([TESTING.md](../../docs/hexenlicht/TESTING.md) "Water (6.5)") |
 | `spr_stats.ps1` | sprites: orientation type, frames, sizes |

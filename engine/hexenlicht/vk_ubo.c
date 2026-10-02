@@ -8,8 +8,9 @@
  * the checkerboard fields' swap, time, the medium the camera is in, the
  * cvars of Quake II RTX's UBO_CVAR_LIST (registered here with its
  * defaults; each does something once the pass that reads it is imported)
- * and the Hexenlicht block: the frame's buffers and the debug view's
- * values; vk_sky.c fills the sky's fields and the sun's (4.6).
+ * and the Hexenlicht block: the frame's buffers, the debug view's values
+ * and the water's settings (6.5: r_water, r_water_waves, r_water_fog,
+ * registered here); vk_sky.c fills the sky's fields and the sun's (4.6).
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -43,7 +44,8 @@ COMPILE_TIME_ASSERT(ubo_sky_dome, offsetof(QVKUniformBuffer_t, sky_dome) == 3792
 COMPILE_TIME_ASSERT(ubo_maplight_gamma, offsetof(QVKUniformBuffer_t, maplight_gamma) == 3816);
 COMPILE_TIME_ASSERT(ubo_num_dark_lights, offsetof(QVKUniformBuffer_t, num_dark_lights) == 3820);
 COMPILE_TIME_ASSERT(ubo_color_srgb, offsetof(QVKUniformBuffer_t, color_srgb) == 3828);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3832);
+COMPILE_TIME_ASSERT(ubo_water, offsetof(QVKUniformBuffer_t, water) == 3832);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3848);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -54,6 +56,11 @@ COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3
 #define UBO_CVAR_DO(name, default_value) static cvar_t cvar_##name = { #name, #default_value, CVAR_NONE };
 UBO_CVAR_LIST
 #undef UBO_CVAR_DO
+
+/* 6.5: the liquids (shaders/water.glsl) */
+static cvar_t	r_water = {"r_water", "1", CVAR_NONE};		/* physical water; 0 = as before 6.5 */
+static cvar_t	r_water_waves = {"r_water_waves", "1", CVAR_NONE};	/* the waves' slope, 0 = flat */
+static cvar_t	r_water_fog = {"r_water_fog", "512", CVAR_NONE};	/* the distance (units) at which the medium is as dense as GL's tint, 0 = clear */
 
 uint32_t		vk_render_frame;	/* 3D frames rendered: the UBO's current_frame_idx */
 
@@ -272,6 +279,10 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.debug_view = (uint32_t)debug_view;
 	ubo.view_cluster = r_scene.viewleaf ? (int)(r_scene.viewleaf - r_scene.worldmodel->leafs) - 1 : -1;
 	ubo.color_srgb = VK_ColorsSRGB () ? 1u : 0u;	/* the 8-bit colors' curve (4.17, transfer.glsl) */
+	ubo.water = (r_water.integer != 0);
+	ubo.water_waves = q_max (0.0f, r_water_waves.value);
+	ubo.water_fog = q_max (0.0f, r_water_fog.value);
+	ubo.water_light = (float)cl.light_level / 200.0f;	/* GL's light on a model at the camera (r_light.c) */
 
 	ubo_valid = true;
 	memcpy (ubo_buffers[vk.frame_index].mapped, &ubo, sizeof(ubo));
@@ -293,6 +304,9 @@ void VK_InitUBO (void)
 #define UBO_CVAR_DO(name, default_value) Cvar_RegisterVariable (&cvar_##name);
 	UBO_CVAR_LIST
 #undef UBO_CVAR_DO
+	Cvar_RegisterVariable (&r_water);
+	Cvar_RegisterVariable (&r_water_waves);
+	Cvar_RegisterVariable (&r_water_fog);
 
 	memset (&binding, 0, sizeof(binding));
 	binding.binding = GLOBAL_UBO_BINDING_IDX;

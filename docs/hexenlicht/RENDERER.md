@@ -664,6 +664,19 @@ the starting points for authors and their tools.
 - Lava (4.5): its materials emit, and a world lava triangle whose front
   leaf isn't lava is a light, flagged `MATERIAL_FLAG_LIGHT` (see
   [Emissive surfaces](#emissive-surfaces-vk_emissivec)).
+- **A liquid's surface** (6.5): a world water or slime triangle
+  (translucent or not; not lava) whose two sides' leaves are the liquid
+  and the air (`IsLiquidSurface`: the front leaf's and the one behind its
+  center's contents) and that isn't vertical (\|z\| ≥ 0.1, Quake II RTX's
+  test: Hexen II's vertical liquid faces are walls, egypt's `*rtex386`)
+  is flagged `MATERIAL_FLAG_LIQUID`, and `MATERIAL_FLAG_LIQUID_TRANSLUCENT`
+  where GL draws it translucent (`*rtex078`, `*lowlight`): physical water
+  with `r_water 1` (see [3D view](#3d-view-vk_viewc), "Water"). The
+  translucent ones keep Quake II RTX's transparent kind and their 0.33
+  (`TRANSLUCENT_LIQUID_ALPHA`) for `r_water 0`; the shaders give them the
+  water kind. `vk_world` counts the surfaces' triangles (demo1 305, 293 of
+  them translucent; demo2 261; castle4 725; romeric3 247; egypt1 none,
+  its 192 water triangles vertical) and the others.
 - **Kinds from material files** (5.5): a regular texture's `.mat` `kind`
   (its set's, resolved before the triangles are emitted: `FileKind`) makes
   its triangles Q2RTX's `MATERIAL_KIND_CHROME` (the opaque group) or
@@ -689,7 +702,7 @@ the starting points for authors and their tools.
   frame the animation shows now (`r_scene.time` x 5, `vertex_buffer.h`'s
   `anim_frame`; a brush entity's frame choosing the alternate).
 - `vk_world [materials]` prints statistics (with the lava lights; the
-  kinds, chrome and glass too) and checks the animation table against
+  kinds, chrome and glass too; the liquids' surfaces) and checks the animation table against
   `R_TextureAnimation`; `materials` lists each material with its
   emissive texture and factor, and a kind other than regular.
 
@@ -1155,8 +1168,11 @@ bindings.
 - **Shader headers** from Q2RTX: `constants.h` (blue noise
   `BLUE_NOISE_RES 64`, `NUM_BLUE_NOISE_TEX 256`), `shader_structs.h`,
   `projection.glsl`, `path_tracer_transparency.glsl`, `brdf.glsl`,
-  `water.glsl`, `asvgf.glsl` (the last five unchanged), `utils.glsl` (3.3:
-  `packRGBE` clamps to what it can store); adapted:
+  `asvgf.glsl` (the last four unchanged), `utils.glsl` (3.3:
+  `packRGBE` clamps to what it can store), `water.glsl` (6.5: Quake II
+  RTX's waves and extinction for `r_water 0`, and the physical water's
+  medium, waves and Fresnel term, see [3D view](#3d-view-vk_viewc),
+  "Water"); adapted:
   `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
@@ -1165,7 +1181,8 @@ bindings.
   and readback buffers (3.7) — the particle
   texture slot, `anim_frame`, `debug_view`, `view_cluster`, and the sky's
   fields (4.6: its textures, scroll, `r_skyalpha`, the dome; the sun uses
-  Q2RTX's `sun_*` fields), `maplight_gamma` (4.15, `r_maplight_gamma`); our
+  Q2RTX's `sun_*` fields), `maplight_gamma` (4.15, `r_maplight_gamma`),
+  the water's (6.5: `water`, `water_waves`, `water_fog`, `water_light`); our
   `ModelInstance`; `TlasInstanceInfo` instead of Q2RTX's `InstanceBuffer`;
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
   buffer-reference macros), `global_textures.h` (render-target lists; set 1:
@@ -1207,7 +1224,9 @@ bindings.
   flight; `VK_PrepareUBO` fills V/invV/P/invP and their `_prev`, the sizes,
   jitter, TAA mode and FSR constants `vk_upscale.c` decided (3.8, see
   [Upscaling](#upscaling-vk_upscalec)), time,
-  medium, the Hexenlicht block and `UBO_CVAR_LIST`'s cvars (registered with
+  medium, the Hexenlicht block (6.5: the water's settings, `r_water`,
+  `r_water_waves`, `r_water_fog`, registered there, and the medium's light,
+  `cl.light_level` / 200) and `UBO_CVAR_LIST`'s cvars (registered with
   Q2RTX's defaults, inert until their pass). `vk_render_frame` counts 3D
   frames (= `current_frame_idx`, picks the even/odd image set). Three offset
   asserts guard the C struct's layout; after changing the list, compare every
@@ -2582,7 +2601,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
   two-sided); threads past the fields' size return (the dispatch is rounded
   up to 8x8 groups); no readback, god rays or light-buffer PVS overlay; water keeps
   its geometric normal while there is no water normal map (Q2RTX's global
-  waves, 6.5; a texture's own `_n` applies since 5.3, warped as the
+  waves; since 6.5 a liquid's surface has Hexen II's turbulence as its
+  waves, "Water" below; a texture's own `_n` applies since 5.3, warped as the
   albedo, and alike on a liquid's two coincident faces since 5.5, see
   [Materials](#materials-vk_materialc)); vertical water
   and slime stay water (3.5b: Q2RTX makes them glass for its force fields;
@@ -2655,13 +2675,16 @@ Story 4.10: Hexen II's darkness as GL shows it.
     (5.5, demo1's start at 1920x1080, Release, full power: a chrome floor
     and a glass pedestal over much of the view): the pass 0.06 → 0.30 ms,
     the frame 3.53 → 3.65 ms. Screens and security cameras are Quake II's.
-  - Water and slime stay opaque and textured as GL draws them (only
-    `SURF_TRANSLUCENT` surfaces and translucent entities blend there):
-    they are skipped, and vertical ones stay water; Q2RTX's physical water
-    (Fresnel reflection and refraction, extinction, a waves normal map) is
-    in the shader for 6.5.
+  - Water and slime: a liquid's surface is physical water with `r_water 1`
+    (6.5, "Water" below); the other water and slime (vertical, or not
+    against the air), and all of it with `r_water 0`, stay opaque and
+    textured as GL draws them (only `SURF_TRANSLUCENT` surfaces and
+    translucent entities blend there): they are skipped, and vertical
+    ones stay water.
 
-  Hexenlicht's changes: the launch check; water and slime skipped, no
+  Hexenlicht's changes: the launch check (`reflect_refract_follows`,
+  which the passes before also ask whether the path goes on); water and
+  slime skipped but for a liquid's surface (6.5), no
   vertical water as glass; the weapon is in no reflection or refraction
   ray (as R20, R27), and the ray through a translucent weapon starts at the
   eye from GL's near plane (the weapon can reach into a wall); the
@@ -2672,6 +2695,61 @@ Story 4.10: Hexen II's darkness as GL shows it.
   Measured
   (3.5b, the cathedral's holy water font filling much of the view,
   2560x1440, Release): 0.30 ms for one pass, 0.35 ms for two.
+- **Water** (6.5, `water.glsl`, `r_water 1`; DECISIONS X21–X24): a
+  liquid's surface ([World](#world-vk_worldc): `MATERIAL_FLAG_LIQUID`) is
+  Quake II RTX's water.
+  - The primary rays (and a later pass that meets one) give it its
+    liquid's kind (the translucent ones are Quake II RTX's transparent
+    kind for `r_water 0`), split no path at its alpha, and give it the
+    waves: the slope of Hexen II's turbulence (`get_turbulence_normal`:
+    `lava_uv_warp`'s 128-unit cycle at 20 units a second, x tilted by a
+    sine of y and y by one of x, 0.08 × `r_water_waves`, framed by the
+    surface's upward normal so that its two coincident faces are one
+    surface), unless its material has a normal map.
+  - `reflect_refract.rgen` follows it: the exact dielectric Fresnel term
+    at 1.33 (`fresnel_dielectric`; total internal reflection from below
+    past 48.8°), an unsplit path split (the even field reflects, × 2F;
+    the odd one refracts, × 2(1 − F)), a split one following the likelier
+    (F < 0.5 refracts). The refracted field passes the surface's texture
+    layer at GL's opacity (`water_fog_layer`: 0.33 for `*rtex078` and
+    `*lowlight`, which are always water: qbsp takes a brush's contents
+    from its texture's name); on an opaque liquid it stays on the surface
+    instead (the G-buffer's surface, made regular, without a specular
+    lobe of its own: the diffuse body under the other field's
+    reflection; not followed further). A wave that
+    turns away from the ray, or would reflect under the surface, gives way
+    to the flat surface.
+  - The medium: a path's fog is a vec4, `.a` what its final surface's
+    albedo is multiplied by (the medium's and the layers' transmittance),
+    `.rgb` the layers' albedo added to it. Each segment in a liquid
+    (around the camera, `global_ubo.medium`; then each traced ray in one)
+    multiplies `.a` by the extinction (one for all colors: 1 − GL's tint
+    opacity, 128/255 for water and 150/255 for slime and lava, at
+    `r_water_fog` units, 512) and adds the light the medium scatters,
+    GL's contents color (`V_SetContentsColor`'s 130 80 50, 0 25 5,
+    255 80 0) lit as GL lit a model at the camera (`water_light`,
+    `cl.light_level` / 200: the light maps with their styles and the
+    dynamic lights, decoded as the textures' colors, in the light of a
+    full texel, `dark_light_unit`), to `PT_TRANSPARENT` times the path's
+    throughput; the effects in it are dimmed by half its extinction.
+    Where the next pass follows the path (`reflect_refract_follows`), the
+    fog goes with it in `PT_VIEW_DIRECTION2` (free until
+    `indirect_lighting.rgen`'s second bounce writes it) and the surface's
+    emission is dimmed (a liquid's: its layer's share); else the surface
+    shows it (`water_fog_apply`: base color × `.a` + `.rgb`, metallic,
+    specular factor and emission × `.a`; a metal behind the fog is an
+    approximation: its reflectance takes the layers' albedo), so a layer
+    is lit as what is seen through it. Where a pass's path ends on the
+    sky, the sky is seen through the medium and a layer on the way is lit
+    by it (`env × (.a + .rgb)`). The medium's light is GL's `cl.light_level`, which keeps its last
+    value while no weapon model is shown.
+  - It replaces Quake II RTX's extinction (absorption only: the view
+    under water went black-teal) and GL's contents tint (6.6 leaves it
+    out of the view blends); with `r_water 0` both water and the medium
+    are as before 6.5, bit for bit. `pt_reflect_refract 0` leaves a
+    liquid opaque (the path ends on it, as on a translucent surface).
+  - Cost (Release, 1920x1080, full power): +0.11–0.30 ms a frame where
+    water fills the view, nearly all of it in the reflection pass (X24).
 - **The lighting passes** (3.3), after the primary rays:
   `direct_lighting.rgen` (the same fields; one light sample and shadow ray
   per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
@@ -3196,8 +3274,8 @@ archived (a menu option with 6.10).
   visible with the test lights). Both images are rgba16f, sampled
   linearly. `bloom_enable`, `bloom_debug 1-3` (the stages stretched over
   the view). Left out: Q2RTX's stronger, wider bloom under water (Hexen
-  II's underwater look is GL's warp and tint, 6.6) and its blur behind
-  menus.
+  II's underwater look is the liquid's medium since 6.5 and GL's warp,
+  6.6) and its blur behind menus.
 - **Tone mapping** (`vk_tonemap.c`, Q2RTX's `tone_mapping.c`, Eilertsen,
   Mantiuk and Unger's noise-aware tone mapping with Q2RTX's changes; its
   shaders explain it): `tone_mapping_histogram.comp` bins the image's log
@@ -3404,6 +3482,7 @@ overlay, and a measuring mode.
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |

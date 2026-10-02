@@ -31,12 +31,18 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * specialization constant), with these changes:
  *  - threads past the fields' size return at once (the dispatch is rounded
  *    up to 8x8 workgroups);
- *  - water and slime stay opaque and textured, as GL draws them (only
- *    SURF_TRANSLUCENT surfaces and translucent entities blend there): they
- *    are not reflected or refracted, and a vertical one stays water (Quake
- *    II RTX makes vertical water glass for its force fields; Hexen II's
- *    vertical turbulent surfaces are walls, e.g. egypt1's skull and rune
- *    walls); Quake II RTX's physical water is 6.5's;
+ *  - water and slime are followed only as a liquid's surface with r_water 1
+ *    (6.5, water.glsl: MATERIAL_FLAG_LIQUID, between the liquid and the
+ *    air, not vertical): the exact Fresnel term at 1.33, one field
+ *    reflecting and the other refracting through the surface's texture
+ *    layer at GL's opacity (or staying on an opaque liquid's surface), the
+ *    liquid a medium whose fog goes along the path (PT_VIEW_DIRECTION2)
+ *    and is shown by the surface it ends on; with r_water 0, and for the
+ *    other water and slime, they stay opaque and textured as GL draws them
+ *    (only SURF_TRANSLUCENT surfaces and translucent entities blend there),
+ *    and a vertical one stays water (Quake II RTX makes vertical water
+ *    glass for its force fields; Hexen II's vertical turbulent surfaces
+ *    are walls, e.g. egypt1's skull and rune walls);
  *  - the weapon is in no reflection or refraction ray, as in the bounces
  *    (Quake II RTX's weapon is in them when it has no first-person model);
  *    the ray through a translucent weapon starts at the eye, from GL's near
@@ -46,8 +52,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    Hexen II's water and slime and alpha-1 models, which would vanish;
  *  - a ray through a translucent turbulent surface (*rtex078, *lowlight)
  *    leaves the liquid it was in: they bound liquid volumes;
- *  - the water keeps its geometric normal while there is no water normal
- *    map, as in primary_rays.rgen;
+ *  - a liquid's surface has 6.5's waves (get_turbulence_normal); other
+ *    water keeps its geometric normal while there is no water normal map,
+ *    as in primary_rays.rgen;
  *  - 6.4: a translucent model's opacity is its entity's times its skin's
  *    (get_hit_alpha); a path going on through a translucent surface
  *    doesn't show its emission; a further translucent layer of another
@@ -117,12 +124,9 @@ main()
 	bool primary_is_camera = is_camera(material_id);
 	bool primary_is_transparent = is_transparent(material_id);
 
-	// Hexenlicht: not water and slime, which stay opaque (see the top)
-	if(!( primary_is_glass ||
-		  primary_is_chrome || 
-		  primary_is_screen || 
-		  primary_is_camera || 
-		  primary_is_transparent ))
+	// Hexenlicht: water and slime only as a liquid's surface with r_water 1
+	// (see the top)
+	if(!reflect_refract_follows(material_id))
 		return;
 
 	bool is_odd_checkerboard = (rt_LaunchID.z != 0) || (push_constants.gpu_index == 1);
@@ -147,6 +151,10 @@ main()
 	
 	int primary_medium = int(material_id & MATERIAL_LIGHT_STYLE_MASK) >> MATERIAL_LIGHT_STYLE_SHIFT;
 	bool primary_is_weapon = (material_id & MATERIAL_FLAG_WEAPON) != 0;
+
+	// Hexenlicht (6.5): the medium on the path so far (water.glsl), from the
+	// pass before (PT_VIEW_DIRECTION2)
+	vec4 fog = (global_ubo.water != 0) ? imageLoad(IMG_PT_VIEW_DIRECTION2, ipos) : WATER_FOG_NONE;
 	
 	int correct_motion_vector = 0; // 1 -> flat reflection, 2 -> flat refraction
 	bool include_player_model = !primary_is_weapon;
@@ -160,125 +168,80 @@ main()
 
 	if(primary_is_water || primary_is_slime)
 	{
-		// Water and slime are very similar, the only difference is the extinction coefficients.
-		vec3 reflected_direction = reflect(direction, normal);
-		float n_dot_v = abs(dot(direction, normal));
+		// Hexenlicht (6.5): a liquid's surface with r_water 1 (the launch check,
+		// water.glsl). Fresnel by the exact dielectric formula at water's 1.33
+		// (Quake II RTX: Schlick's from 10 % head-on, its N.V stretched below
+		// the water towards total internal reflection); an unsplit path splits,
+		// one field reflecting and the other refracting, a split one follows
+		// the likelier. The refracted path goes through the surface's texture
+		// layer at GL's opacity (water_fog_layer: 0.33 for *rtex078 and
+		// *lowlight); on an opaque liquid it stays on the surface instead
+		bool from_inside = primary_medium != MEDIUM_NONE;
+		float eta = from_inside ? 1.0 / WATER_INDEX_OF_REFRACTION : WATER_INDEX_OF_REFRACTION;	// n2 / n1
+		vec3 incident = direction;
 
-		const float index_of_refraction = 1.34;
+		// a wave turned away from the ray: the flat surface
+		if(dot(direction, normal) >= 0)
+			normal = geo_normal;
 
-		if(primary_medium != MEDIUM_NONE)
+		float F = fresnel_dielectric(clamp(-dot(direction, normal), 0, 1), eta);
+		vec3 refracted_direction = refract(direction, normal, 1.0 / eta);
+		if(dot(refracted_direction, refracted_direction) == 0.0)
+			F = 1.0;
+
+		bool do_split = bitCount(checkerboard_flags) == 1 && F < 1.0;
+		bool do_refraction = do_split ? is_odd_checkerboard : (F < 0.5);
+		float correction_factor = do_refraction ? 1.0 - F : F;
+
+		if(do_split)
 		{
-			// Looking up from under water
-			vec3 refracted_direction = refract(direction, normal, index_of_refraction);
+			correction_factor *= 2;
+			checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION | CHECKERBOARD_FLAG_REFRACTION;
+		}
+		else if(checkerboard_flags == CHECKERBOARD_FLAG_PRIMARY)
+		{
+			checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION;	// total internal reflection
+		}
 
-			// Adjust N.V to make the Fresnel term work under water and blend smoothly with total internal reflection
-			n_dot_v = 1.0 - (1.0 - n_dot_v) * 3;
+		throughput *= correction_factor;
 
-			if(n_dot_v <= 0.0 || dot(refracted_direction, refracted_direction) == 0.0)
-			{
-				// Total internal reflection - single ray
-				direction = reflected_direction;
-				if(spec_bounce_index == 0)
-				{
-					checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION;
-				}
-	 			correct_motion_vector = 1;
-			}
-			else
-			{
-				// Mix of reflection and refraction
-				float F = pow(1.0 - n_dot_v, 5.0);
-				
-				float correction_factor;
+		if(do_refraction && liquid_layer_alpha(material_id) >= 1.0)
+		{
+			// An opaque liquid: this field stays on its surface, which the
+			// G-buffer holds, shown through the medium in front of it and not
+			// followed further (lit as a regular surface): the diffuse body
+			// under the reflection, which the other field is, so without a
+			// specular lobe of its own
+			vec2 metallic_roughness = imageLoad(IMG_PT_METALLIC_A, ipos).rg;
+			float specular_factor = 0;
+			vec3 no_emission = vec3(0);	// added by the pass that found it
+			water_fog_apply(fog, primary_base_color, metallic_roughness.r, specular_factor, no_emission);
+			material_id = (material_id & ~MATERIAL_KIND_MASK) | MATERIAL_KIND_REGULAR;
+			imageStore(IMG_PT_BASE_COLOR_A, ipos, vec4(primary_base_color, specular_factor));
+			imageStore(IMG_PT_METALLIC_A, ipos, vec4(metallic_roughness, 0, 0));
+			imageStore(IMG_PT_SHADING_POSITION, ipos, vec4(position, uintBitsToFloat(material_id)));
+			imageStore(IMG_PT_VIEW_DIRECTION, ipos, vec4(direction, float(checkerboard_flags | checkerboard_weapon_flag)));
+			imageStore(IMG_PT_THROUGHPUT, ipos, vec4(throughput, optical_path_length));
+			return;
+		}
 
-				bool do_split;
-				bool do_refraction;
-				if(spec_bounce_index == 0)
-				{
-					do_split = true;
-					do_refraction = is_odd_checkerboard;
-				}
-				else
-				{
-					do_split = bitCount(checkerboard_flags) == 1;
-					do_refraction = do_split ? is_odd_checkerboard : (F < 0.1);
-				}
-
-				if(do_refraction)
-				{
-					direction = refracted_direction;
-					correction_factor = (1 - F);
-					primary_medium = MEDIUM_NONE;
-	 				correct_motion_vector = 2;
-				}
-				else
-				{
-					direction = reflected_direction;
-			 		correction_factor = F;
-	 				correct_motion_vector = 1;
-				}
-
-				if(do_split)
-				{
-					correction_factor *= 2;
-					checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION | CHECKERBOARD_FLAG_REFRACTION;
-				}
-
-				throughput *= correction_factor;
-			}
-
-			include_player_model = false; // hide the player model from reflections or refractions
+		if(do_refraction)
+		{
+			fog = water_fog_layer(fog, primary_base_color, liquid_layer_alpha(material_id));
+			direction = refracted_direction;
+			primary_medium = from_inside ? MEDIUM_NONE : primary_is_slime ? MEDIUM_SLIME : MEDIUM_WATER;
+			correct_motion_vector = 2;
 		}
 		else
 		{
-			// Looking down on water surface
-			vec3 refracted_direction = refract(direction, normal, 1.0 / index_of_refraction);
-
-			// Fresnel
-			float F = 0.1 + 0.9 * pow(1.0 - n_dot_v, 5.0);
-
-			// Since our sampling PDF doesn't match the actual blending factor, we need to correct the result intensity
-			float correction_factor;
-
-			bool do_split;
-			bool do_refraction;
-			if(spec_bounce_index == 0)
-			{
-				do_split = true;
-				do_refraction = is_odd_checkerboard;
-			}
-			else
-			{
-				do_split = bitCount(checkerboard_flags) == 1;
-				do_refraction = do_split ? is_odd_checkerboard : (F < 0.1);
-			}
-
-			if(do_refraction)
-			{
-				// Refraction
-				primary_medium = primary_is_water ? MEDIUM_WATER : primary_is_slime ? MEDIUM_SLIME : MEDIUM_NONE;
-				direction = refracted_direction;
-				correction_factor = (1 - F);
-				include_player_model = false; // hide the player model from refractions
-	 			correct_motion_vector = 2;
-			}
-			else
-			{
-				// Reflection
-				direction = reflect(direction, normal);
-			 	correction_factor = F;
-	 			correct_motion_vector = 1;
-			}
-
-			if(do_split)
-			{
-				correction_factor *= 2;
-				checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION | CHECKERBOARD_FLAG_REFRACTION;
-			}
-
-			throughput *= correction_factor;
+			direction = reflect(direction, normal);
+			// a wave can't send the reflection under the surface
+			if(dot(direction, geo_normal) < 0.01)
+				direction = reflect(incident, geo_normal);
+			correct_motion_vector = 1;
 		}
 
+		include_player_model = false; // hide the player model from reflections or refractions
 	}
 	else if(primary_is_screen)
 	{
@@ -564,8 +527,20 @@ main()
 	 	triangle = get_hit_triangle(ray_payload_geometry);
 	}
 
+	// Hexenlicht (6.5): the medium along the ray (water.glsl): it dims what is
+	// behind it (the effects in it by half its extinction) and adds the light
+	// it scatters
+	vec4 fog_before = fog;
+	vec3 fog_light = vec3(0);
+	if(global_ubo.water != 0)
+		fog_light = water_fog_segment(fog, primary_medium, reflection_ray.t_max - reflection_ray.t_min);
+
 	vec4 effects = trace_effects_ray(reflection_ray, /* skip_procedural = */ false);
+	if(global_ubo.water != 0)
+		effects.rgb *= sqrt(fog_before.a * fog.a);
 	transparent = alpha_blend_premultiplied(transparent, effects * vec4(throughput, 1));
+	if(global_ubo.water != 0)
+		transparent = alpha_blend_premultiplied(transparent, vec4(fog_light * throughput, 0));
 
 	if(!found_intersection(ray_payload_geometry) || is_sky(triangle.material_id))
 	{
@@ -574,6 +549,11 @@ main()
 
 		vec3 env = env_map(direction, false);
 		env *= global_ubo.pt_env_scale;
+
+		// Hexenlicht (6.5): seen through the medium, and a liquid's texture
+		// layer on the way lit by the sky it shows
+		if(global_ubo.water != 0)
+			env *= fog.a + fog.rgb;
 
 		transparent = alpha_blend(transparent, vec4(env * throughput, 1));
 
@@ -595,7 +575,8 @@ main()
 	// Hexenlicht: no god rays (Quake II RTX stores the throughput before extinction
 	// into IMG_PT_GODRAYS_THROUGHPUT_DIST)
 
-	if(primary_medium != MEDIUM_NONE)
+	// Hexenlicht (6.5): Quake II RTX's extinction with r_water 0
+	if(global_ubo.water == 0 && primary_medium != MEDIUM_NONE)
 	{
 		// Extinction along the reflected/refracted ray
 		throughput *= extinction(primary_medium, ray_payload_geometry.hit_distance);
@@ -608,6 +589,11 @@ main()
 	vec3 new_geo_normal = normalize(triangle.normals * bary);
 	material_id    = triangle.material_id;
 	cluster_idx    = triangle.cluster;
+
+	// Hexenlicht (6.5): a liquid's surface is physical water, as in primary_rays.rgen
+	bool hit_is_liquid = is_physical_liquid(material_id);
+	if(hit_is_liquid && !is_slime(material_id))
+		material_id = (material_id & ~MATERIAL_KIND_MASK) | MATERIAL_KIND_WATER;
 
 	vec3 new_flat_normal = normalize(cross(
 		triangle.positions[1] - triangle.positions[0],
@@ -724,9 +710,15 @@ main()
 
 	if(is_water(material_id) || is_slime(material_id))
 	{
-		// Hexenlicht: only with a water normal map, as in primary_rays.rgen; and a
-		// vertical one stays water (see the top)
-		if(global_ubo.water_normal_texture != 0)
+		// Hexenlicht: as in primary_rays.rgen: a liquid's surface has the waves
+		// (6.5) unless its material has a normal map; else only with a water
+		// normal map; and a vertical one stays water (see the top)
+		if(hit_is_liquid)
+		{
+			if(global_ubo.water_waves > 0 && get_material_info(triangle.material_id).normals_texture == 0)
+				normal = get_turbulence_normal(geo_normal, position);
+		}
+		else if(global_ubo.water_normal_texture != 0)
 			normal = get_water_normal(material_id, geo_normal, triangle.tangents[0], position, false);
 	}
 
@@ -770,7 +762,7 @@ main()
 	// through this surface needs (else it ends here and shows it)
 	bool pass_follows = push_constants.bounce_index < global_ubo.pt_reflect_refract - 1;
 
-	if (triangle.alpha < 1.0)
+	if (triangle.alpha < 1.0 && !hit_is_liquid)
 	{
 		// Translucent objects.
 		if (bitCount(checkerboard_flags & CHECKERBOARD_FLAG_FIELD_MASK) == 1)
@@ -812,6 +804,20 @@ main()
 					primary_emissive = vec3(0);
 			}
 		}
+	}
+
+	// Hexenlicht (6.5): the medium in front of the surface, as in
+	// primary_rays.rgen: on with the path where the next pass follows it,
+	// else shown by the surface
+	if(global_ubo.water != 0)
+	{
+		if(pass_follows && reflect_refract_follows(material_id))
+		{
+			imageStore(IMG_PT_VIEW_DIRECTION2, ipos, fog);
+			primary_emissive *= fog.a * (hit_is_liquid ? liquid_layer_alpha(material_id) : 1.0);
+		}
+		else
+			water_fog_apply(fog, primary_base_color, primary_metallic, primary_specular_factor, primary_emissive);
 	}
 
 	if(luminance(primary_emissive) > 0) {

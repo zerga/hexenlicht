@@ -1,5 +1,6 @@
 /*
 Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
+Copyright (C) 2026  Hexenlicht contributors
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,6 +16,134 @@ You should have received a copy of the GNU General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
+
+/* Hexenlicht (6.5): with r_water 1 (global_ubo.water) a liquid's surface
+ * (MATERIAL_FLAG_LIQUID: between the liquid and the air, not vertical,
+ * vk_world.c) is physical water: Fresnel reflection and refraction
+ * (reflect_refract.rgen), its texture a layer of GL's opacity (0.33 for the
+ * translucent *rtex078 and *lowlight, else 1) over what is seen through it,
+ * waves from Hexen II's turbulence (get_turbulence_normal), and the liquid
+ * a medium (water_fog_*): extinction, and in-scattering of GL's contents
+ * color lit as a model at the camera, added to PT_TRANSPARENT segment by
+ * segment. A path's medium so far is a vec4: what its final surface's
+ * albedo is multiplied by (.a: the medium's and the texture layers'
+ * transmittance) and the texture layers' albedo added to it (.rgb);
+ * water_fog_apply puts it into the final surface's material, so a layer
+ * is lit as what is seen through it. Quake II RTX's get_water_normal and
+ * extinction stay for r_water 0 (its water normal map is in its media:
+ * water_normal_texture is 0) */
+
+bool is_physical_liquid(uint material_id)
+{
+	return global_ubo.water != 0 && (material_id & MATERIAL_FLAG_LIQUID) != 0;
+}
+
+// the opacity of a liquid surface's texture layer: GL's
+float liquid_layer_alpha(uint material_id)
+{
+	return ((material_id & MATERIAL_FLAG_LIQUID_TRANSLUCENT) != 0) ? TRANSLUCENT_LIQUID_ALPHA : 1.0;
+}
+
+// the medium's color: GL's V_SetContentsColor colors (view.c's
+// cshift_water, cshift_slime, cshift_lava), 8-bit
+vec3 water_fog_color(int medium)
+{
+	if(medium == MEDIUM_WATER)
+		return vec3(130, 80, 50) / 255.0;
+	if(medium == MEDIUM_SLIME)
+		return vec3(0, 25, 5) / 255.0;
+	if(medium == MEDIUM_LAVA)
+		return vec3(255, 80, 0) / 255.0;
+	return vec3(0);
+}
+
+// the light the medium scatters towards the eye where it is dense: its color
+// lit as GL lit a model at the camera (R_DrawViewModel: cl.light_level / 200,
+// the light maps with their styles and the dynamic lights there, 8-bit,
+// decoded as the textures' colors, 4.17), in the light of a full light map
+// texel (4.10's dark_light_unit); one light for the whole medium
+vec3 water_fog_radiance(int medium)
+{
+	vec3 c = min(water_fog_color(medium) * global_ubo.water_light, vec3(1));
+	return color_to_linear(c, global_ubo.color_srgb) * global_ubo.dark_light_unit;
+}
+
+// the medium's extinction per unit: it passes 1 - GL's tint opacity (water
+// 128/255, slime and lava 150/255) at r_water_fog units (0 = clear)
+float water_fog_density(int medium)
+{
+	if(global_ubo.water_fog <= 0 || (medium != MEDIUM_WATER && medium != MEDIUM_SLIME && medium != MEDIUM_LAVA))
+		return 0;
+	float tint = (medium == MEDIUM_WATER) ? 128.0 / 255.0 : 150.0 / 255.0;
+	return -log(1.0 - tint) / global_ubo.water_fog;
+}
+
+const vec4 WATER_FOG_NONE = vec4(0, 0, 0, 1);
+
+// a path segment of length d through the medium: dims what is behind it
+// (fog.a) and returns the light it scatters towards the eye (times the
+// path's throughput, for PT_TRANSPARENT)
+vec3 water_fog_segment(inout vec4 fog, int medium, float d)
+{
+	float density = water_fog_density(medium);
+	if(density <= 0)
+		return vec3(0);
+	float T = exp(-density * d);
+	vec3 scattered = fog.a * (1.0 - T) * water_fog_radiance(medium);
+	fog.a *= T;
+	return scattered;
+}
+
+// a liquid surface's texture layer over what is seen through it
+vec4 water_fog_layer(vec4 fog, vec3 color, float alpha)
+{
+	fog.rgb += fog.a * alpha * color;
+	fog.a *= 1.0 - alpha;
+	return fog;
+}
+
+// the path ends on this surface: what it shows through the medium
+void water_fog_apply(vec4 fog, inout vec3 base_color, inout float metallic, inout float specular_factor, inout vec3 emissive)
+{
+	base_color = base_color * fog.a + fog.rgb;
+	metallic *= fog.a;
+	specular_factor *= fog.a;
+	emissive *= fog.a;
+}
+
+// unpolarized Fresnel reflectance of a dielectric boundary, eta = n2 / n1;
+// 1 at total internal reflection
+float fresnel_dielectric(float cos_i, float eta)
+{
+	float sin_t2 = (1.0 - cos_i * cos_i) / (eta * eta);
+	if(sin_t2 >= 1.0)
+		return 1.0;
+	float cos_t = sqrt(1.0 - sin_t2);
+	float rs = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+	float rp = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+	return 0.5 * (rs * rs + rp * rp);
+}
+
+#define WATER_INDEX_OF_REFRACTION 1.33
+#define WATER_WAVE_SLOPE 0.08	// at r_water_waves 1
+
+// the waves: the slope of Hexen II's turbulence (utils.glsl's lava_uv_warp,
+// d_scan.c: a 128-unit cycle at 20 units a second, s shifted by a sine of t
+// and t by one of s), so what is seen through and in the water wobbles as the
+// water's texture does; in world units (a liquid's texture is 64 units wide).
+// A liquid's surface isn't vertical (vk_world.c): its upward normal frames
+// the waves, so its two coincident faces (up and down) are one surface
+vec3 get_turbulence_normal(vec3 geo_normal, vec3 position)
+{
+	float side = (geo_normal.z < 0) ? -1.0 : 1.0;
+	mat3 basis = construct_ONB_frisvad(geo_normal * side);
+	vec2 p = vec2(dot(position, basis[0]), dot(position, basis[2]));
+	vec2 phase = fract(p / 128.0 + global_ubo.time * 20.0 / 128.0) * 2 * M_PI;
+	float slope = WATER_WAVE_SLOPE * global_ubo.water_waves;
+	vec3 n = normalize(vec3(slope * sin(phase.y), 1, slope * sin(phase.x)));
+
+	return (basis * n) * side;
+}
 
 vec3 get_water_normal(uint material_id, vec3 geo_normal, vec3 tangent, vec3 position, bool local_space)
 {

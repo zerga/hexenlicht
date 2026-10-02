@@ -42,7 +42,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    adapted luminance since 3.7), no god rays (not planned), no PVS overlay (it
  *    needs the light buffer; r_debugview 5 shows the PVS);
  *  - the water keeps its geometric normal while there is no water normal
- *    map (Quake II RTX's comes with its media);
+ *    map (Quake II RTX's comes with its media); 6.5: with r_water 1 a
+ *    liquid's surface (MATERIAL_FLAG_LIQUID, water.glsl) is physical
+ *    water: its liquid's kind, no alpha split, the waves of Hexen II's
+ *    turbulence, followed by reflect_refract.rgen; the medium around the
+ *    camera is a fog (instead of Quake II RTX's extinction), carried to
+ *    reflect_refract.rgen in PT_VIEW_DIRECTION2 where it follows the path,
+ *    else shown by the surface;
  *  - vertical water and slime stay water (3.5b): Quake II RTX makes them
  *    glass for its force fields, but Hexen II's vertical turbulent surfaces
  *    are walls (egypt1's skull and rune walls), which reflect_refract.rgen
@@ -322,13 +328,31 @@ main()
     	primary_emissive,
     	primary_specular_factor);
 
+	// Hexenlicht (6.5): with r_water 1 the medium around the camera fogs the
+	// path (water.glsl): it dims what is behind it (the effects in it by half
+	// its extinction) and adds the light it scatters; Quake II RTX's
+	// extinction (absorption only) with r_water 0
+	vec4 fog = WATER_FOG_NONE;
+	vec3 fog_light = vec3(0);
+	if(global_ubo.water != 0)
+	{
+		fog_light = water_fog_segment(fog, global_ubo.medium, length(position - ray.origin));
+		effects.rgb *= sqrt(fog.a);
+	}
     // Extinction in the primary ray
-	if(global_ubo.medium != MEDIUM_NONE)
+	else if(global_ubo.medium != MEDIUM_NONE)
 	{
 		throughput *= extinction(global_ubo.medium, length(position - global_ubo.cam_pos.xyz));
 	}
 
 	uint material_id = triangle.material_id;
+
+	// Hexenlicht (6.5): a liquid's surface is physical water, of its liquid's
+	// kind (the translucent ones are Quake II RTX's transparent kind for
+	// r_water 0): no alpha split, reflect_refract.rgen follows it
+	bool primary_is_liquid = is_physical_liquid(material_id);
+	if(primary_is_liquid && !is_slime(material_id))
+		material_id = (material_id & ~MATERIAL_KIND_MASK) | MATERIAL_KIND_WATER;
 	// will be used in case of transparency, to retain difference between TRANSPARENT and TRANSP_MODEL
 	// default to TRANSP_MODEL so transparency on other material kind works (needed for eg gunalpha)
 	uint transparency_kind = (material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSPARENT ? MATERIAL_KIND_TRANSPARENT : MATERIAL_KIND_TRANSP_MODEL;
@@ -398,7 +422,7 @@ main()
 	// Hexenlicht (6.4): a translucent model's skin's alpha too
 	triangle.alpha = get_hit_alpha(triangle, tex_coord, tex_coord_x, tex_coord_y);
 
-	if (triangle.alpha < 1.0)
+	if (triangle.alpha < 1.0 && !primary_is_liquid)
 	{
 		// Translucent objects: split the path.
 		throughput *= 2;
@@ -424,14 +448,36 @@ main()
 
 	if(is_water(material_id) || is_slime(material_id))
 	{
-		// Hexenlicht: only with a water normal map (see the top)
-		if(global_ubo.water_normal_texture != 0)
+		// Hexenlicht (6.5): a liquid's surface has the waves unless its material
+		// has a normal map; else only with Quake II RTX's water normal map (see the top)
+		if(primary_is_liquid)
+		{
+			if(global_ubo.water_waves > 0 && get_material_info(triangle.material_id).normals_texture == 0)
+				normal = get_turbulence_normal(geo_normal, position);
+		}
+		else if(global_ubo.water_normal_texture != 0)
 			normal = get_water_normal(material_id, geo_normal, triangle.tangents[0], position, false);
 
 		// Hexenlicht: a vertical one stays water (see the top); Quake II RTX makes it
 		// glass: "hack to detect actual water vs. vertical force fields"
 	}
-		
+
+	// Hexenlicht (6.5): the medium in front of the surface: where
+	// reflect_refract.rgen follows the path on, the fog goes with it
+	// (PT_VIEW_DIRECTION2: free until indirect_lighting.rgen), the surface's
+	// emission seen through it (a liquid's: its layer's share); else the
+	// surface shows the fog
+	if(global_ubo.water != 0)
+	{
+		if(global_ubo.pt_reflect_refract > 0 && reflect_refract_follows(material_id))
+		{
+			imageStore(IMG_PT_VIEW_DIRECTION2, ipos, fog);
+			primary_emissive *= fog.a * (primary_is_liquid ? liquid_layer_alpha(material_id) : 1.0);
+		}
+		else
+			water_fog_apply(fog, primary_base_color, primary_metallic, primary_specular_factor, primary_emissive);
+	}
+
 	// Store the surface parameters into the G-buffer for the lighting shaders
 	if(is_camera(material_id))
 	{
@@ -464,7 +510,8 @@ main()
 	// buffer's cluster_debug_mask (r_debugview 5 shows the PVS)
 
 	// Start the transparency accumulation from the primary surface emissive component, with zero alpha
-	vec4 transparent = vec4(primary_emissive * throughput, 0);
+	// Hexenlicht (6.5): and the light the medium in front of it scatters
+	vec4 transparent = vec4((primary_emissive + fog_light) * throughput, 0);
 
 	if(global_ubo.pt_show_sky != 0 && is_sky(triangle.material_id))
 	{
