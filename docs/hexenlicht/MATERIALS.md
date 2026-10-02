@@ -264,7 +264,9 @@ What the kinds and the special textures take (DECISIONS M22–M27).
 - **Glass** (`kind glass`, world textures): thin glass, seen through
   (refracted at 1.52) and reflecting (Fresnel, 5 % head-on), tinted by
   the albedo (white is clear). It casts no shadow and doesn't tint the
-  light that passes it. For panes: a thin brush with the glass texture
+  light that passes it; *6.14: with `pt_caustics 1` (the default) the
+  light through it is tinted by the albedo (blurred: the texture's mip
+  2) and dimmed by its Fresnel term, so dark lead casts its pattern*. For panes: a thin brush with the glass texture
   on both sides; on one face of a solid wall the view goes into the wall.
   *5.6:* Hexen II's windows are such panes, breakable brush entities
   (`rtex018`, `rtex083`, `rtex199`, `ttex210`, ...; the manifest's `used

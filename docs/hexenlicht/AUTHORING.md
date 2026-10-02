@@ -157,7 +157,9 @@ MATERIALS.md "Special materials" has the rules; what matters for authors:
   albedo: give it a metal's light albedo.
 - **Glass** (`kind glass`, world textures): the albedo is the tint of what
   is seen through it, and glass has no opaque parts: lead cames and frames
-  are a dark tint (0.02). Hexen II's windows are breakable brush entities
+  are a dark tint (0.02). Since 6.14 the albedo also tints the light
+  through the pane (blurred: the texture's mip 2), so the cames cast a
+  soft pattern of shade on the floor. Hexen II's windows are breakable brush entities
   with the texture on both sides of a thin pane (the stained glass
   `rtex018`, the panes `rtex083`, the clear `rtex199`, the mission pack's
   `ttex210`); the originals paint a scene behind the lead, which would

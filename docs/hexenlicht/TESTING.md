@@ -594,6 +594,45 @@ fog leaves). Delete `data1\hl65_*` afterwards. The views:
   brightness under water against GL's tint (darker in dark pools), the
   waves' wobble in reflections and through Snell's window.
 
+## Light through (6.14)
+
+`caustics_run.ps1` shoots each view paused twice in one run, with
+`pt_caustics` 0 and 1 (`<view>_c0`, `_c1`, 8 frames averaged), from 6.4's
+and 6.5's saves (run `translucency_run.ps1` and `water_run.ps1` with
+`-Saves` first); `-Extra 'r_debugview 15; pt_num_bounce_rays 0;
+r_debugview_scale 0.05'` shoots the direct light alone, unsaturated (the
+change is easier to see there: the lit image adds the bounces, the water's
+texture layer and the fog). The log's `vk_models` counts each view's
+translucent models around a light (the sheath: 64). Delete the saves
+afterwards. The views:
+
+- **A test light behind a pane** (`vk_testlight dlight`, a dynamic sphere:
+  no light lists, so no PVS): inside village1's bay window, seen from the
+  street: what is lit through the pane (the street, the weapon) dims to
+  0.67, the room behind it doesn't change. With the test pack
+  (`test_pack.ps1`: `kind glass` on `rtex199`) the panes are glass: the
+  light is tinted and dimmed by 1 − F.
+- **The sun through the bay** (`r_sky_light 1`, `r_sun 1`, set after the
+  load: per-map cvars): the room and the statue behind the panes darker.
+- **A test light above a pool** (demo1's, demo2's and romeric3's, and
+  demo1's from below): the floor dims by the medium on the light's path
+  and shows the waves' pattern (subtle at the default focus; the shader's
+  `CAUSTIC_FOCUS_DEPTH` at 64 makes it plain for a check: build
+  `hexenlicht_shaders`, then `vk_reload_shaders`).
+- **Effects:** the tomed sunstaff's sheath (its own line light unchanged:
+  with the carrier rule off, `trace_caustic_ray(..., false)` in
+  `get_direct_illumination`, its beams' light dims), the purifier's smoke
+  rings.
+- **Checks:** `pt_caustics 0` must give `main`'s shots (6.14: the water
+  views identical; village1's paused views aren't repeatable between runs,
+  `main` against itself as much); the ratio of the two shots per 6-pixel
+  block (a small C# helper over the TGAs, 6.14's `ratio.ps1`, not kept)
+  shows where the light changed; Debug validation 0/0; the cost by
+  alternating `pt_caustics` 0 and 1 on paused saves with `vk_benchmark 1`
+  (a scratch script, as 6.5's; DECISIONS X28).
+- `vk_setpos` needs ~10 waits before a `pause`: paused, the server sends
+  no new origin, and the shot is taken from the old one.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

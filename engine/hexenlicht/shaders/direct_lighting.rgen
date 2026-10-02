@@ -36,8 +36,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - the sun (4.6, get_sunlight): the models around a light (at a map
  *    light's origin, owning a dynamic light) cast its shadows; they are
  *    only out of the shadow rays of the lights inside them;
- *  - caustics stay off (the specialization constant is 0): they need a
- *    water normal map;
+ *  - caustics (the specialization constant, pt_caustics; Quake II RTX's,
+ *    off until 6.14): the light through water, glass and translucent
+ *    things on the shadow rays of the map's and dynamic lights and the
+ *    sun (path_tracer_rgen.h's trace_caustic_ray);
  *  - it clears PT_SPECULAR_HIT_DIST, which indirect_lighting.rgen writes
  *    where it traces a specular ray;
  *  - a gradient sample writes its sampled light's style change into its

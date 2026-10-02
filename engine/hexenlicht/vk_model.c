@@ -872,7 +872,8 @@ static void VK_Models_f (void)
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2), "
-		    "%d glowing beam parts (6.3)\n", mf->emissive, mf->glowing, mf->beams);
+		    "%d glowing beam parts (6.3), %d translucent ones around a light (6.14)\n",
+		    mf->emissive, mf->glowing, mf->beams, mf->carriers);
 }
 
 

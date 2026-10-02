@@ -61,10 +61,13 @@
  * (shaders/hl_shared.h's DEBUGVIEW_*); 0 since the maps have lights (4.1) */
 static cvar_t	r_debugview = {"r_debugview", "0", CVAR_NONE};
 static cvar_t	r_debugview_scale = {"r_debugview_scale", "1", CVAR_NONE};	/* the debug views times this (4.9) */
+/* 6.14: light through water, glass and translucent things (direct_lighting.rgen's
+ * caustic ray, its specialization constant; Quake II RTX's cvar), 0 = none */
+static cvar_t	pt_caustics = {"pt_caustics", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
 static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction pass, the others */
-static VkPipeline		direct_pipeline;	/* the same */
+static VkPipeline		direct_pipelines[2];	/* the same; without and with caustics (spec_enable_caustics) */
 static VkPipeline		indirect_pipelines[2];	/* the first and second bounce */
 static VkPipeline		compositing_pipeline;
 static VkPipeline		interleave_pipelines[3];	/* the same; without DLSS's inputs, SR's, RR's (spec_dlss_inputs) */
@@ -186,13 +189,14 @@ void VK_DestroyViewPipelines (void)
 
 	if (primary_pipeline)
 		vkDestroyPipeline (vk.device, primary_pipeline, NULL);
-	if (direct_pipeline)
-		vkDestroyPipeline (vk.device, direct_pipeline, NULL);
 	for (i = 0; i < 2; i++)
 	{
 		if (reflect_pipelines[i])
 			vkDestroyPipeline (vk.device, reflect_pipelines[i], NULL);
 		reflect_pipelines[i] = VK_NULL_HANDLE;
+		if (direct_pipelines[i])
+			vkDestroyPipeline (vk.device, direct_pipelines[i], NULL);
+		direct_pipelines[i] = VK_NULL_HANDLE;
 		if (indirect_pipelines[i])
 			vkDestroyPipeline (vk.device, indirect_pipelines[i], NULL);
 		indirect_pipelines[i] = VK_NULL_HANDLE;
@@ -209,7 +213,7 @@ void VK_DestroyViewPipelines (void)
 		vkDestroyPipeline (vk.device, debug_pipeline, NULL);
 	if (composite_pipeline)
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
-	primary_pipeline = direct_pipeline = compositing_pipeline = VK_NULL_HANDLE;
+	primary_pipeline = compositing_pipeline = VK_NULL_HANDLE;
 	debug_pipeline = composite_pipeline = VK_NULL_HANDLE;
 }
 
@@ -284,6 +288,7 @@ void VK_RenderView3D (void)
 	uint32_t		width, height;
 	float			num_bounces;
 	int			num_reflect, i, mode = q_min (q_max (r_debugview.integer, DEBUGVIEW_LIT), DEBUGVIEW_MAX);
+	int			caustics;
 	qboolean		denoise, dlss_ran = false;
 
 	view_drawn = false;
@@ -311,8 +316,9 @@ void VK_RenderView3D (void)
 		if (!reflect_pipelines[i])
 			reflect_pipelines[i] = VK_CreateComputePipelineSpec ("reflect_refract.rgen", VK_PathTracerLayout (), (uint32_t)i);
 	}
-	if (!direct_pipeline)
-		direct_pipeline = VK_CreateComputePipeline ("direct_lighting.rgen", VK_PathTracerLayout ());
+	caustics = pt_caustics.value != 0.0f;
+	if (!direct_pipelines[caustics])
+		direct_pipelines[caustics] = VK_CreateComputePipelineSpec ("direct_lighting.rgen", VK_PathTracerLayout (), (uint32_t)caustics);
 	for (i = 0; i < 2; i++)
 	{
 		if (!indirect_pipelines[i])
@@ -368,7 +374,7 @@ void VK_RenderView3D (void)
 	}
 	/* direct lighting of the G-buffer's surfaces, in the same fields */
 	VK_ProfilerStart (cmd, PROF_DIRECT);
-	VK_DispatchRays (cmd, direct_pipeline, &push, width / 2, height, 2);
+	VK_DispatchRays (cmd, direct_pipelines[caustics], &push, width / 2, height, 2);
 	VK_ComputeBarrier (cmd);
 	VK_ProfilerStop (cmd, PROF_DIRECT);
 	/* the G-buffer's debug views before the bounces: with two, the first
@@ -532,6 +538,7 @@ void VK_InitView (void)
 {
 	Cvar_RegisterVariable (&r_debugview);
 	Cvar_RegisterVariable (&r_debugview_scale);
+	Cvar_RegisterVariable (&pt_caustics);
 	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(composite_push_t));
 }
 

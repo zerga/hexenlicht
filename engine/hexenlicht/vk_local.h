@@ -527,6 +527,7 @@ typedef struct
 	int		emissive;	/* instances with an emissive skin (4.5: the light models' flames) */
 	int		glowing;	/* glowing projectiles (6.2): the whole skin emits, not lit by their own light */
 	int		beams;		/* glowing beam segments and ends (6.3, vk_beamlight.c) */
+	int		carriers;	/* translucent ones around a light (6.14: MATERIAL_FLAG_CARRIES_LIGHT) */
 } vk_modelframe_t;
 
 void VK_InitInstances (void);

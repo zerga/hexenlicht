@@ -589,18 +589,25 @@ int VK_GlowingInstance (int key)
  * don't see their group (vk_maplights.c); nor those of an entity that
  * owns a dynamic light this frame within its bounds (4.4: a glowing
  * projectile, the light inside it; vk_light.c); 6.2: nor a glowing one's;
- * 6.3: nor a glowing beam's (its line light is along it, vk_beamlight.c) */
+ * 6.3: nor a glowing beam's (its line light is along it, vk_beamlight.c).
+ * 6.14: a translucent one around a light is flagged instead
+ * (MATERIAL_FLAG_CARRIES_LIGHT): the caustic ray passes it */
+static qboolean AroundLight (const scene_entity_t *e)
+{
+	if (VK_BeamGlows (e))
+		return true;
+	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
+		return true;
+	return e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e));
+}
+
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
 		return MODEL_GROUP_TRANSPARENT;
 	if (e->model->flags & EF_HOLEY)
 		return MODEL_GROUP_MASKED;
-	if (VK_BeamGlows (e))
-		return MODEL_GROUP_LIGHT;
-	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
-		return MODEL_GROUP_LIGHT;
-	if (e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e)))
+	if (AroundLight (e))
 		return MODEL_GROUP_LIGHT;
 	return MODEL_GROUP_OPAQUE;
 }
@@ -884,6 +891,13 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 		if (!VK_ModelHasCutouts (e->model))
 			mi->material |= MATERIAL_FLAG_LIGHT;
 		model_frame.beams++;
+	}
+	/* 6.14: a translucent model around a light (see AliasGroup) doesn't
+	 * shadow the map's and dynamic lights in the caustic ray */
+	if (group == MODEL_GROUP_TRANSPARENT && AroundLight (e))
+	{
+		mi->material |= MATERIAL_FLAG_CARRIES_LIGHT;
+		model_frame.carriers++;
 	}
 	mi->cluster = InstanceCluster (e->model, mi->transform);
 	mi->source_buffer_idx = VERTEX_BUFFER_FIRST_MODEL + (uint32_t)index;

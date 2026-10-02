@@ -93,6 +93,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MATERIAL_FLAG_LIQUID         0x00100000
 #define MATERIAL_FLAG_LIQUID_TRANSLUCENT 0x00080000
 #define TRANSLUCENT_LIQUID_ALPHA     0.33 // r_wateralpha's default
+// Hexenlicht (6.14, vk_instance.c): a translucent model around a light (a beam's sheath,
+// one owning a light, at a map light's origin), which the caustic ray passes for the
+// map's and dynamic lights, as shadow rays leave out the light group
+#define MATERIAL_FLAG_CARRIES_LIGHT  0x00040000
 
 #define MATERIAL_LIGHT_STYLE_MASK    0x0003f000
 #define MATERIAL_LIGHT_STYLE_SHIFT   12
