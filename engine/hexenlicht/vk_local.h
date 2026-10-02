@@ -310,7 +310,8 @@ void VK_UploadBuffer (vk_buffer_t *dst, VkDeviceSize offset, const void *data, V
  * VK_ApplyMaterialFiles sets the rest from them and the original
  * texture's material files (5.3, vk_matfiles.c). */
 #define VK_MAT_SKIN		1	/* an alias model's skin (vk_skin.c) */
-#define VK_MAT_CUTOUT		2	/* EF_HOLEY: the mask is the albedo's coverage, else the original's */
+#define VK_MAT_ALPHA		2	/* a skin with alpha (EF_HOLEY's holes, 6.4: EF_TRANSPARENT's and EF_SPECIAL_TRANS's
+					 * opacity): the mask is the albedo's alpha, else the original's */
 #define VK_MAT_TRANSLATED	4	/* a player's translated colors: the albedo isn't replaced */
 #define VK_MAT_LAVA		8	/* emits its albedo (vk_emissive.c, r_lava_light) */
 #define VK_MAT_FLAME		16	/* a light model's flame: the skin's _e or fake emissive texture, with r_emissive_models */
@@ -324,7 +325,8 @@ typedef struct
 	int		base_texture;	/* texture slot */
 	int		normal_texture;	/* 0 = none */
 	int		rm_texture;	/* roughness (G) and metallic (B), 0 = none */
-	int		mask_texture;	/* cutout: texture slot whose alpha < 0.5 are holes, 0 = none */
+	int		mask_texture;	/* VK_MAT_ALPHA: texture slot whose alpha is the coverage (a cutout's < 0.5 are
+				 * holes) or a translucent model's opacity, 0 = none */
 	int		emissive_texture;	/* texture slot of the emitted radiance, 0 = none (vk_emissive.c) */
 	float		emissive_factor;	/* times the emissive texture (1) */
 	float		roughness;	/* without rm the roughness, with it a factor on it (glTF's rule) */
@@ -453,6 +455,7 @@ void VK_ClearSkins (void);			/* on map change, after VK_LoadWorld */
 void VK_AddSkinMaterials (qmodel_t *model);	/* on map load; the caller uploads the materials */
 int VK_SkinTextureMode (int model_flags);	/* the TEX_ mode gl_model.c gives a model's skins */
 qboolean VK_ModelHasCutouts (const qmodel_t *model);
+qboolean VK_SkinHasAlpha (const qmodel_t *model);	/* 6.4: holes or opacity in its skins' alpha */
 enum
 {
 	VK_SKIN_LIT,		/* lit by the world */

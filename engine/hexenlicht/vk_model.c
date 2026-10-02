@@ -661,7 +661,8 @@ static void VK_ModelsCheck (void)
 
 		/* the group its triangles are in against its material: transparent
 		 * ones are Q2RTX's transparent models, masked ones have a cutout
-		 * mask (the skin, or its replaced albedo with alpha: 5.3), the
+		 * mask (the skin, or its replaced albedo with alpha: 5.3),
+		 * transparent ones one where their skin has alpha (6.4), the
 		 * others neither (the weapon looks like
 		 * one of them, and only its triangles have the weapon flag); and
 		 * the material as the GPU's table has it (uploaded on map load or
@@ -685,6 +686,8 @@ static void VK_ModelsCheck (void)
 			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL :
 				     (mat->kind == MATKIND_CHROME) ? MATERIAL_KIND_CHROME_MODEL : MATERIAL_KIND_REGULAR) ||	/* 5.5 */
 			    (look == MODEL_GROUP_MASKED && mat->mask_texture != mat->base_texture && mat->mask_texture != mat->original) ||
+			    (look == MODEL_GROUP_TRANSPARENT && (!mat->mask_texture != !VK_SkinHasAlpha (am->model) ||
+				(mat->mask_texture && mat->mask_texture != mat->base_texture && mat->mask_texture != mat->original))) ||
 			    ((look == MODEL_GROUP_OPAQUE || look == MODEL_GROUP_LIGHT) && mat->mask_texture))
 				group_bad++;
 			if ((int)(gm[0] & 0xffff) != mat->base_texture || (int)(gm[1] >> 16) != mat->mask_texture)
@@ -812,7 +815,7 @@ static void VK_ModelsCheck (void)
 			min_nrm, nrm_bad, min_tan, tan_bad, unsure);
 	Con_Printf ("  motion: max difference %.5f, %d over tolerance; uvs %d, handedness %d, material/cluster/instance/alpha %d differ\n",
 			max_motion, motion_bad, uv_bad, flip_bad, field_bad);
-	Con_Printf ("  %d instances with bad offsets, %d whose material doesn't fit their group (kind, cutout mask), "
+	Con_Printf ("  %d instances with bad offsets, %d whose material doesn't fit their group (kind, mask), "
 		    "%d whose material differs in the GPU's table (texture, mask)\n", bad_instances, group_bad, table_bad);
 	Con_Printf ("  %d triangles face against their vertex normals%s\n", inward, inward ? ", in:" : "");
 	for (i = 0; i < num_alias_models; i++)

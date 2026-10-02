@@ -48,6 +48,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    leaves the liquid it was in: they bound liquid volumes;
  *  - the water keeps its geometric normal while there is no water normal
  *    map, as in primary_rays.rgen;
+ *  - 6.4: a translucent model's opacity is its entity's times its skin's
+ *    (get_hit_alpha); a path going on through a translucent surface
+ *    doesn't show its emission; a further translucent layer of another
+ *    model or brush entity is passed with the probability of its
+ *    transparency (RNG_TRANSLUCENT_LAYER), not shown solid: on average
+ *    GL's blend of the layers;
  *  - no god rays (IMG_PT_GODRAYS_THROUGHPUT_DIST). */
 
 #version 460
@@ -757,6 +763,13 @@ main()
 		}
 	}
 
+	// Hexenlicht (6.4): a translucent model's skin's alpha too
+	triangle.alpha = get_hit_alpha(triangle, tex_coord, tex_coord_x, tex_coord_y);
+
+	// Hexenlicht (6.4): whether a pass follows this one, which a path going
+	// through this surface needs (else it ends here and shows it)
+	bool pass_follows = push_constants.bounce_index < global_ubo.pt_reflect_refract - 1;
+
 	if (triangle.alpha < 1.0)
 	{
 		// Translucent objects.
@@ -776,16 +789,27 @@ main()
 				// This field goes through the surface.
 				material_id = (material_id & ~MATERIAL_KIND_MASK) | transparency_kind;
 				throughput *= 1.0 - triangle.alpha;
+				// Hexenlicht (6.4): without its emission, as primary_rays.rgen
+				if (pass_follows)
+					primary_emissive = vec3(0);
 			}
 		}
 		else
 		{
 			// If the path was split *on the same model* before, continue tracing.
 			// We don't want to show the internal geometry of a translucent model.
+			// Hexenlicht (6.4): the layer of another model or brush entity (or the
+			// world's behind one) is passed with the probability of its transparency,
+			// so that on average it shows at its opacity, as GL blends it; Quake II
+			// RTX's path ended on it, which showed it solid. Passed, it doesn't show
+			// its emission
 			uint primary_instance_index = imageLoad(IMG_PT_VISBUF_PRIM_A, ipos).x;
-			if (primary_instance_index == triangle.instance_index)
+			if (primary_instance_index == triangle.instance_index ||
+			    pass_follows && get_rng(RNG_TRANSLUCENT_LAYER(push_constants.bounce_index)) >= triangle.alpha)
 			{
 				material_id = (material_id & ~MATERIAL_KIND_MASK) | transparency_kind;
+				if (pass_follows)
+					primary_emissive = vec3(0);
 			}
 		}
 	}

@@ -582,7 +582,8 @@ int VK_GlowingInstance (int key)
 
 /* The groups of the instanced buffer, in Quake II RTX's order. GL draws
  * all but the opaque ones in its translucent pass (R_DrawEntitiesOnList);
- * EF_HOLEY skins have alpha 0 or 1, so they are cutouts. Opaque models at
+ * EF_HOLEY skins have alpha 0 or 1, so they are cutouts (a translucent
+ * one is transparent, its holes tested there too, 6.4). Opaque models at
  * a map light's origin are the torches and flames the light entities'
  * game code spawns there, whose mesh surrounds the light: shadow rays
  * don't see their group (vk_maplights.c); nor those of an entity that
@@ -893,8 +894,10 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	mi->render_prim_offset = *next_prim;
 	*next_prim += (uint32_t)am->num_tris;
 
-	/* the entity's alpha; the skin's is in its texture (opacity) */
-	alpha = (e->drawflags & DRF_TRANSLUCENT) ? TRANSLUCENT_ALPHA : 1.0f;
+	/* the entity's alpha; the skin's is in its texture (opacity), which
+	 * alone counts for EF_SPECIAL_TRANS (GL's R_DrawAliasModel ignores
+	 * DRF_TRANSLUCENT there) */
+	alpha = ((e->drawflags & DRF_TRANSLUCENT) && !(e->model->flags & EF_SPECIAL_TRANS)) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha);
 	mi->drawflags = (uint32_t)e->drawflags;
 	/* a half's value: model_geometry.comp packs it into the triangles'
@@ -1144,7 +1147,7 @@ static void VK_Instances_f (void)
 				    e->skinnum, mat->name,
 				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL) ? " transp" :
 				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_CHROME_MODEL) ? " chrome" : "",
-				    mat->mask_texture ? " cutout" : "");
+				    !mat->mask_texture ? "" : VK_ModelHasCutouts (e->model) ? " cutout" : " alpha");
 			if (e->scale && e->scale != 100)
 				q_strlcat (extra, va(" scale %d%%", e->scale), sizeof(extra));
 			if (mi->colorshade)

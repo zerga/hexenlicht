@@ -130,11 +130,12 @@ since 5.5 its triangles' light color follows it: the file's average
 color, times its `emissive` (`vk_lights` prints it).
 
 Left out: `opacity` (holes are the model's, `EF_HOLEY` and sprites, as in
-GL; the world's geometry is opaque, so a world texture with holes needs a
+GL, and so is a skin's opacity, `EF_TRANSPARENT` and `EF_SPECIAL_TRANS`:
+since 6.4 its albedo's alpha; the world's geometry is opaque, so a world texture with holes needs a
 masked world group first), `ior` (Quake II RTX has no index of refraction
 per material), `blend` (translucency is the entity's, `EF_TRANSLUCENT`,
 and the kind's: `*rtex078` and `*lowlight` stay at 0.33; the game's own
-translucency is 6.4's), Quake II RTX's surface-light keys (`is_light`,
+translucency, blended since 6.4), Quake II RTX's surface-light keys (`is_light`,
 `light_styles`, `bsp_radiance`, `default_radiance`, `synth_emissive`,
 `emissive_threshold`: Hexen II's lights are its light entities), texture
 paths (`texture_base` and the like: the names decide), several textures
@@ -164,7 +165,9 @@ in one file (Quake II RTX's `materials/*.mat` sections).
   at least 250, 98 %: since 5.6, as BC7 compressors round an opaque
   image's 255 down to 251–254; a BC7 file: every block's alpha endpoints
   at least that, DECISIONS M31) keeps the original's
-  coverage. A masked skin then takes the original as its mask; a sprite,
+  coverage. A masked skin then takes the original as its mask (since
+  6.4 so does a transparent or special-trans skin, whose alpha is its
+  opacity: an albedo with alpha sets it); a sprite,
   which has no mask, takes the original's alpha as its coverage (5.3:
   read in the shader beside the albedo, not merged into the image at
   load, M15).
@@ -231,8 +234,9 @@ sprite file) it is used in and the paks it is from. Run the game with
 - The colors as the engine shows them; world textures and plain skins
   are RGB; a holey, transparent or special-trans skin or a sprite with
   transparent texels is RGBA, the alpha the engine made (holes 0, a
-  transparent skin's 0.33, a special-trans skin's translucency): keep it
-  in an edited albedo, or drop it to keep the original's holes (above).
+  transparent skin's 0.33, a special-trans skin's opacity): keep it
+  in an edited albedo, or drop it to keep the original's holes and
+  opacity (above).
   The sky (since 5.5) with its front layer's holes as alpha (its left
   half: [below](#special-materials-55)).
 - Names longer than 40 characters (the index of the material files
@@ -267,8 +271,9 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   in` finds them); glass has no opaque parts, so lead cames or a frame are
   a dark tint in the albedo (the originals' paint a scene behind the
   lead, which would tint the view: make the albedo new). A window drawn
-  translucent (village1's clear `rtex199`, `DRF_TRANSLUCENT`) is half the
-  entity's blend, half glass until story 6.4 (DECISIONS M33).
+  translucent (village1's clear `rtex199`, `DRF_TRANSLUCENT`) is glass
+  alone: since 6.4 the glass replaces the entity's blend (5.6 found it half
+  blend, half glass: DECISIONS M33).
 - **A world texture's kind applies at the next map load** (`map`,
   `restart`, a level change): it is in the geometry. `r_reloadmaterials`
   says when one changed. An animated texture's kind is its first

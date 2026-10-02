@@ -25,7 +25,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    TlasInstanceInfo (shaders/global_ubo.h), the effects from their
  *    buffers by device address (vk_effects.c);
  *  - cutouts are alpha tested against the mask texture's alpha (a model
- *    skin is its own mask, vk_skin.c) instead of its red channel;
+ *    skin is its own mask, vk_skin.c) instead of its red channel; 6.4:
+ *    so are translucent models (MATERIAL_KIND_TRANSP_MODEL), whose skin's
+ *    alpha is their opacity: only its clear texels are no hit (the rays
+ *    blend the rest by it, primary_rays.rgen);
  *  - particles and sprites look as GL draws them, unlit: a particle is one
  *    triangle with GL's dot texture and texture coordinates
  *    (r_part.c's ptex_coord), a sprite a quad sampled at the mip level of
@@ -91,6 +94,10 @@ bool pt_logic_masked(int primitiveID, int instanceID, int geometryIndex, uint in
 	perturb_tex_coord(triangle.material_id, global_ubo.time, tex_coord);	
 
 	vec4 mask_value = global_textureLod(minfo.mask_texture, tex_coord, /* mip_level = */ 0);
+
+	// Hexenlicht (6.4): a translucent model's texel is a hit unless it is clear
+	if ((triangle.material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL)
+		return mask_value.a >= TRANSP_MODEL_MIN_ALPHA;
 
 	return mask_value.a >= 0.5;	// Hexenlicht: alpha, Quake II RTX tests .x
 }

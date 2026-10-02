@@ -13,7 +13,7 @@
  * (VK_SKIN_GLOW: its _e, else its albedo, times r_emissive_scale and GL's
  * light level: x16), flagged a light: vk_instance.c puts the opaque ones
  * in the light group (no shadows); translucent ones stay transparent
- * models (6.4 blends them), the gaze a cutout. The chain and the ice
+ * models (6.4: blended, glowing at their opacity), the gaze a cutout. The chain and the ice
  * chunks aren't light: lit by the world.
  *
  * Light: each beam of light is one line light (DYNLIGHT_LINE, a thin
@@ -213,10 +213,11 @@ static void MakePowers (void)
 		b->emissive = m->emissive_texture;
 		if (!b->emissive)
 			continue;
-		/* the texels' alpha where the model shows it: a transparent
-		 * model's texture (the color beam), a cutout's mask (the gaze) */
-		premultiply = (b->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)) || VK_ModelHasCutouts (b->model);
-		alpha_slot = (m->flags & VK_MAT_CUTOUT) ? m->mask_texture : m->base_texture;
+		/* the texels' alpha where the model shows it: its skin's mask
+		 * (a transparent model's opacity: the color beam; a cutout's
+		 * holes: the gaze) */
+		premultiply = (m->flags & VK_MAT_ALPHA) != 0;
+		alpha_slot = m->mask_texture;
 		VK_TriangleAverages (b->emissive, premultiply ? alpha_slot : 0, premultiply, (const float (*)[6]) uvs, n, colors);
 		for (t = 0; t < n; t++)
 		{

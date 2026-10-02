@@ -96,6 +96,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define RNG_BRDF_FRESNEL(bounce)          (4 + 6 + 9 * bounce)
 #define RNG_SUNLIGHT_X(bounce)			  (4 + 7 + 9 * bounce)
 #define RNG_SUNLIGHT_Y(bounce)			  (4 + 8 + 9 * bounce)
+// Hexenlicht (6.4): reflect_refract.rgen's choice at a further translucent layer, per pass
+// (after the indirect lighting's bounces 0-2)
+#define RNG_TRANSLUCENT_LAYER(pass)       (4 + 9 * 3 + pass)
 
 // Hexenlicht: the models around a light (AS_FLAG_LIGHT_MODELS: at a map light's origin, owning a
 // dynamic light) in every mask but the shadow rays': their mesh surrounds the light (vk_instance.c)
@@ -1250,6 +1253,26 @@ get_material(
 		emissive = vec3(0);
 
     emissive += get_emissive_shell(triangle.material_id, triangle.shell) * base_color * (1 - metallic * 0.9);
+}
+
+/* Hexenlicht (6.4): a translucent model's opacity where it was hit, its
+ * entity's (triangle.alpha: 0.33 for DRF_TRANSLUCENT) times its skin's
+ * (the material's mask, vk_skin.c: EF_TRANSPARENT's 0.33 at odd colors,
+ * EF_SPECIAL_TRANS's table, EF_HOLEY's holes), as GL blends them; the
+ * entity's alone for other surfaces. A texel of 250 and up is opaque
+ * (DECISIONS M31: BC7 stores an opaque albedo's texels at 251-254), so
+ * it doesn't split the path */
+float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 tex_coord_y)
+{
+	if ((triangle.material_id & MATERIAL_KIND_MASK) != MATERIAL_KIND_TRANSP_MODEL)
+		return triangle.alpha;
+
+	MaterialInfo minfo = get_material_info(triangle.material_id);
+	if (minfo.mask_texture == 0)
+		return triangle.alpha;
+
+	float a = global_textureGrad(minfo.mask_texture, tex_coord, tex_coord_x, tex_coord_y).a;
+	return (a >= 250.0 / 255.0) ? triangle.alpha : triangle.alpha * a;
 }
 
 bool get_camera_uv(vec2 tex_coord, out vec2 cameraUV)

@@ -46,7 +46,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - vertical water and slime stay water (3.5b): Quake II RTX makes them
  *    glass for its force fields, but Hexen II's vertical turbulent surfaces
  *    are walls (egypt1's skull and rune walls), which reflect_refract.rgen
- *    would make see-through. */
+ *    would make see-through;
+ *  - 6.4: a translucent model's opacity is its entity's times its skin's
+ *    (get_hit_alpha), and the field that goes through a translucent
+ *    surface doesn't show its emission (Quake II RTX's did, so the surface
+ *    glowed at full strength instead of at its opacity). */
 
 #version 460
 #extension GL_GOOGLE_include_directive    : enable
@@ -391,6 +395,9 @@ main()
 		}
 	}
 
+	// Hexenlicht (6.4): a translucent model's skin's alpha too
+	triangle.alpha = get_hit_alpha(triangle, tex_coord, tex_coord_x, tex_coord_y);
+
 	if (triangle.alpha < 1.0)
 	{
 		// Translucent objects: split the path.
@@ -407,6 +414,11 @@ main()
 			// This field goes through the surface.
 			material_id = (material_id & ~MATERIAL_KIND_MASK) | transparency_kind;
 			throughput *= 1.0 - triangle.alpha;
+			// Hexenlicht (6.4): and doesn't show its emission (Quake II RTX's
+			// fields both did: a translucent surface glowed fully); without a
+			// reflection and refraction pass it ends here and shows the surface
+			if (global_ubo.pt_reflect_refract > 0)
+				primary_emissive = vec3(0);
 		}
 	}
 

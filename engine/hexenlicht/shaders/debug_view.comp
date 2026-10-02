@@ -165,7 +165,7 @@ main()
 		if (surface)
 			color = geo_normal * 0.5 + 0.5;
 		break;
-	case DEBUGVIEW_MATERIAL:	/* the weapon's materials cyan, other cutout materials (masked models) yellow */
+	case DEBUGVIEW_MATERIAL:	/* the weapon's materials cyan, other masked ones (cutouts; 6.4: skins with alpha) yellow */
 		if (surface)
 			color = (((material & MATERIAL_FLAG_WEAPON) != 0u) ? vec3(0.2, 0.9, 1.0) :
 				 (get_material_info(material).mask_texture != 0u) ? vec3(1.0, 0.9, 0.2) : kind_color(material)) *
