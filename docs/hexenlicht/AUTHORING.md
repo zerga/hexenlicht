@@ -166,9 +166,13 @@ MATERIALS.md "Special materials" has the rules; what matters for authors:
   glass replaces the game's blend. A
   world texture's kind applies to every face with that name: check the
   manifest's `used in` (castle5 has `rtex199` on world faces too).
-- **Liquids:** every map applies, warped as the original; the water stays
-  opaque (story 6.5 makes it refract), so its smoothness shows only as
-  shading and glints for now.
+- **Liquids:** every map applies, warped as the original. Since 6.5 a
+  pool's surface reflects and is seen through as water, whatever its
+  `roughness`; for `*rtex078` and `*lowlight` your albedo is a layer at
+  a third over what is seen through it, lit as that; the other liquids
+  are opaque under the reflection (their own specular left out). An
+  `_n` replaces the default waves. Vertical liquid faces (egypt's rune walls) stay opaque
+  surfaces.
 - **Lava:** its albedo or `_e` emits and lights the room with its average
   color, times `emissive`.
 - **The sky:** one 2:1 image, the front layer left, the back right, the

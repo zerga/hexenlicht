@@ -563,6 +563,37 @@ afterwards). The views:
   cathedral's spots without a trigger) and the crystal golem (village2,
   behind a trigger: dark, as GL's fixed light level is left out, X4).
 
+## Water (6.5)
+
+`water_run.ps1` shoots the water views from saves, as
+`translucency_run.ps1` does (`-Saves` first: `hl65_<view>` in `data1`,
+saved with `noclip`, so the player neither falls into the water nor
+sinks; then `-Tag` per engine and setting: `-Exe glh2`, `-Extra 'r_water
+0'` for the image before 6.5, `-Extra 'r_debugview 1'` for the albedo the
+fog leaves). Delete `data1\hl65_*` afterwards. The views:
+
+- **Translucent water** (`*lowlight`, `*rtex078`): demo2's deep pool
+  (240 units) from above and below, looking up and level; demo1's
+  `*rtex078` pool and romeric3's from above and below; across romeric3's,
+  romeric1's (outdoors, torches) and village5's at grazing angles.
+- **Opaque water:** castle4's `*rtex153` (8–24 units deep), demo3's
+  orange `*rtex346` from above and below (a dark spot in Hexenlicht before
+  6.5 too), meso8's `*skulls`, the cathedral's shallow `*lowlight`.
+- **Turning:** above romeric3's pool and under demo1's, frames 20, 40, 60.
+- **Lava** (meso8): from above and from just under its surface.
+- **Bubbles:** the Assassin's crossbow fired under demo1's pool: the
+  bolts' bubbles rise (frames 10, 20, 35; the muzzle flash, in
+  `cl.light_level`, brightens the medium for a moment).
+- **Checks:** `r_water 0` must give the build before 6.5's shots exactly
+  (`tga_diff.ps1`: 6.5's 26 were identical); `vk_world` counts a map's
+  liquid surfaces (egypt1 none: its liquids are vertical walls); the
+  cost by alternating `r_water 0` and 1 on the paused saves with
+  `vk_benchmark 1` (6.5 used a scratch script; DECISIONS X24).
+- **Look at:** the texture layer's strength from above against GL's (lit
+  as the floor under it: deep dark pools show less of it), the fog's
+  brightness under water against GL's tint (darker in dark pools), the
+  waves' wobble in reflections and through Snell's window.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

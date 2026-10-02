@@ -285,6 +285,15 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   (up and down). The water stays opaque, as GL draws it, until story 6.5
   (refraction, underwater fog); the translucent `*rtex078` and
   `*lowlight` stay at 0.33. Their kind is their name's (`kind` refused).
+  *6.5: a liquid's horizontal surface against the air is physical water
+  (`r_water 1`): it reflects (Fresnel, as water) and is seen through,
+  its texture a layer at GL's opacity (0.33 for `*rtex078` and
+  `*lowlight`, lit as what is seen through it; the others opaque under
+  the reflection, lit as themselves, their own specular left out: the
+  reflection is the water's); its normal map replaces the default waves (Hexen II's
+  turbulence); the reflection is a mirror whatever its `roughness`; the
+  liquid's medium (its fog's color and density) isn't a material
+  setting. Vertical liquid faces stay as above (DECISIONS X21–X23).*
   *5.6:* so a smooth water (`roughness 0.05`) shows its ripples in the
   shading and glints of what emits, but no mirror image (the reflection
   pass skips water) and no highlight of the map lights (below 0.18,

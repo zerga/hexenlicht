@@ -10,7 +10,10 @@
  * sequences (+0..+9) and alternate sequences (+a..+j). Transparent world
  * triangles connect the PVS of the leaves on their two sides (vk_pvs.c).
  * Lava emits, and its world triangles whose front leaf isn't lava are
- * lights, flagged MATERIAL_FLAG_LIGHT (4.5, vk_emissive.c). A regular
+ * lights, flagged MATERIAL_FLAG_LIGHT (4.5, vk_emissive.c). Water and
+ * slime triangles between the liquid and the air, not vertical, are a
+ * liquid's surface, flagged MATERIAL_FLAG_LIQUID (and _TRANSLUCENT where GL
+ * draws them translucent): physical water with r_water 1 (6.5). A regular
  * texture's material files (5.5) may make it Quake II RTX's chrome (the
  * opaque group) or glass (the transparent group, seen through, the PVS
  * connected across): the kind is its animation's first frame's, taken at
@@ -43,7 +46,7 @@
 #include "shaders/hl_shared.h"
 
 #define ANIM_CYCLE	2	/* gl_model.c: tenths of a second per animation frame */
-#define TRANSLUCENT_ALPHA 0.33f	/* r_wateralpha's default, for *rtex078 and *lowlight */
+#define TRANSLUCENT_ALPHA ((float)TRANSLUCENT_LIQUID_ALPHA)	/* r_wateralpha's default, for *rtex078 and *lowlight */
 
 enum { PASS_OPAQUE, PASS_TRANSPARENT, PASS_SKY, NUM_PASSES };
 
@@ -57,6 +60,9 @@ static struct
 	uint32_t	into_solid;		/* world triangles left out: facing into solid */
 	uint32_t	lava_lights;		/* lava triangles facing out of the lava: lights (4.5) */
 	uint32_t	glass_connected;	/* glass triangles with a leaf past their pane: the PVS connected across (5.5) */
+	uint32_t	liquid_surfaces;	/* water and slime triangles between the liquid and the air, not vertical (6.5) */
+	uint32_t	liquid_translucent;	/* of them translucent in GL (*rtex078, *lowlight) */
+	uint32_t	liquid_others;		/* the other water and slime triangles: vertical, or not against the air */
 	uint32_t	kinds[16];		/* triangles per MATERIAL_KIND */
 	int		num_textures;		/* world textures that became materials */
 	double		build_time;
@@ -285,6 +291,28 @@ static int TriangleLeaf (qmodel_t *world, const VboPrimitive *p, float side)
 	return q_max (leaf, -1);
 }
 
+static qboolean IsLiquidContents (int contents)
+{
+	return contents == CONTENTS_WATER || contents == CONTENTS_SLIME;
+}
+
+/* 6.5: a world water or slime triangle (translucent or not; not lava) is a
+ * liquid's surface when the leaves on its two sides are the liquid and the
+ * air and it isn't vertical (Quake II RTX's |z| < 0.1: Hexen II's vertical
+ * liquid faces are walls, DECISIONS R31): MATERIAL_FLAG_LIQUID, physical
+ * water with r_water 1 (shaders/water.glsl); back is the cluster behind it */
+static qboolean IsLiquidSurface (qmodel_t *world, const VboPrimitive *p, const vec3_t normal, int back)
+{
+	int	front_contents, back_contents;
+
+	if (fabsf (normal[2]) < 0.1f || p->cluster < 0 || back < 0)
+		return false;
+	front_contents = world->leafs[p->cluster + 1].contents;
+	back_contents = world->leafs[back + 1].contents;
+	return (IsLiquidContents (front_contents) && back_contents == CONTENTS_EMPTY) ||
+	       (front_contents == CONTENTS_EMPTY && IsLiquidContents (back_contents));
+}
+
 #define GLASS_MAX_THICKNESS	32.0f	/* 5.5: a pane's brush this thick at most */
 
 /* 5.5: the leaf behind a glass triangle: a pane is a brush, so just behind
@@ -387,7 +415,24 @@ static uint32_t EmitSurface (qmodel_t *m, msurface_t *surf, uint32_t material_id
 			stats.glass_connected += (back >= 0);
 		}
 		else if (world && SurfacePass (material_id) == PASS_TRANSPARENT)
-			VK_ConnectPVSAcross (out->cluster, TriangleLeaf (m, out, -1.0f));
+		{
+			int	back = TriangleLeaf (m, out, -1.0f);
+
+			VK_ConnectPVSAcross (out->cluster, back);
+			/* 6.5: a liquid's surface is physical water (water.glsl) */
+			if ((material_id & MATERIAL_FLAG_WARP) && IsLiquidSurface (m, out, normal, back))
+			{
+				out->material_id |= MATERIAL_FLAG_LIQUID;
+				if ((material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSPARENT)
+				{
+					out->material_id |= MATERIAL_FLAG_LIQUID_TRANSLUCENT;
+					stats.liquid_translucent++;
+				}
+				stats.liquid_surfaces++;
+			}
+			else if (material_id & MATERIAL_FLAG_WARP)
+				stats.liquid_others++;
+		}
 		/* lava facing out of the lava is a light (vk_emissive.c); bounce rays
 		 * that hit it don't add what the direct light samples */
 		if (world && (material_id & MATERIAL_KIND_MASK) == MATERIAL_KIND_LAVA &&
@@ -703,6 +748,9 @@ static void VK_World_f (void)
 	if (stats.kinds[MATERIAL_KIND_GLASS >> 28])
 		Con_Printf ("glass: %u of the world's triangles connect the PVS past their pane (%g units at most; of %u in all)\n",
 			    stats.glass_connected, GLASS_MAX_THICKNESS, stats.kinds[MATERIAL_KIND_GLASS >> 28]);
+	if (stats.liquid_surfaces + stats.liquid_others)	/* 6.5 */
+		Con_Printf ("liquids: %u triangles of liquid surfaces (%u translucent in GL), %u others (vertical, or not against the air)\n",
+			    stats.liquid_surfaces, stats.liquid_translucent, stats.liquid_others);
 
 	/* the animation sequences, each from its first frame */
 	for (i = 0; i < world->numtextures; i++)

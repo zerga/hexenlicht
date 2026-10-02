@@ -295,6 +295,16 @@ is_camera(uint material)
 	return (material & MATERIAL_KIND_MASK) == MATERIAL_KIND_CAMERA;
 }
 
+/* Hexenlicht (6.5): reflect_refract.rgen's launch check: the G-buffer's
+ * surfaces it follows the path on from (mirrors, glass, translucent
+ * surfaces and models, and with r_water 1 a liquid's surface, water.glsl) */
+bool
+reflect_refract_follows(uint material)
+{
+	return is_glass(material) || is_chrome(material) || is_screen(material) || is_camera(material) ||
+	       is_transparent(material) || (is_water(material) || is_slime(material)) && is_physical_liquid(material);
+}
+
 vec3
 correct_emissive(uint material_id, vec3 emissive)
 {

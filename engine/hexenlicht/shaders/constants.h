@@ -87,6 +87,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MATERIAL_FLAG_WARP           0x00800000
 #define MATERIAL_FLAG_FLOWING        0x00400000
 #define MATERIAL_FLAG_DOUBLE_SIDED   0x00200000
+// Hexenlicht (6.5, vk_world.c): a liquid's surface against the air, not vertical:
+// physical water with r_water 1 (water.glsl); TRANSLUCENT also when GL draws it
+// translucent (*rtex078, *lowlight: their texture a layer of this opacity)
+#define MATERIAL_FLAG_LIQUID         0x00100000
+#define MATERIAL_FLAG_LIQUID_TRANSLUCENT 0x00080000
+#define TRANSLUCENT_LIQUID_ALPHA     0.33 // r_wateralpha's default
 
 #define MATERIAL_LIGHT_STYLE_MASK    0x0003f000
 #define MATERIAL_LIGHT_STYLE_SHIFT   12
