@@ -107,7 +107,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   main's `build\windows-release\bin`, for a comparison on the same GL
   shots); `-GlLit <folder>` adds
   `gl\<name>_glc.tga` with HoT's colored light (`<folder>\maps\*.lit`,
-  copied in for the run), `-LitFrames` averages the lit image too. It
+  copied in for the run), `-LitFrames` averages the lit image too,
+  `-Weapon` (4.19) draws the first-person weapon in both engines. It
   backs up and restores `config.cfg` and `hexenlicht.cfg` of the game
   folder and `data1` (no `hexenlicht.cfg` during the runs: Hexenlicht would
   find `data1`'s from `portals` too), moves the folder's own numbered shots
@@ -784,6 +785,29 @@ afterwards. The views:
   'r_darklights 0' -SkipSaves -SkipGl -KeepSaves`; `vk_lights` counts the
   dark lights. The debug views don't show the darkening (only the
   composites apply it).
+- **The torch in the hand (4.19):** `r_dumpscene` marks a player's lights
+  `held` (the view entity's `held (the view's)`) at the hand (8 ahead, 8
+  left, 36 up standing, 17 crouched; a
+  muzzle flash keeps its 18 ahead at that height), `vk_lights` counts
+  them. The light the torch adds against GL's: the same views twice in a
+  bookmarks file under two names (one set with the torch's `-PreSave`
+  above, one without: the saves differ), `calib_shots.ps1` on both, then
+  per engine the torch-lit shot's mean minus the unlit one's (in linear
+  light; leave out GL's left 140 columns if a GPU overlay shows in its
+  shots). 4.11a's four dark views (`bookmarks_blackmarsh.txt`:
+  village2_start, demo1_arch, village1_passage, village4_candle): 0.44–1.00
+  of GL's (0.02–0.20 at the feet). The weapon: `-Weapon` with the torch and
+  `-PlayerClass` 1–4 (5 with a `portals` bookmark; `impulse 43` switches
+  some classes to another weapon), and GL's shots once more without
+  `-Weapon` into another `-Out`: the weapon's pixels are where GL's two
+  differ, Hexenlicht's mean over them against GL's (demo1_arch: 0.49–0.77).
+  By hand: walking into village4's pillar (`vk_setpos 3984 1680 -320 0 0`,
+  `+forward`: a `vk_setpos` into it without noclip puts the player back at
+  the start), `+crouch`, `chase_active 1`, the Paladin's invincibility
+  (`invleft` twice, `invuse`; without the torch: the client keeps one light
+  per entity and the torch's dim light wins), the Necromancer's magic
+  missile flash (`impulse 9`, ~100 waits, `impulse 2`, ~100 waits,
+  `+attack`). `cl.light_level` (`r_dumpscene`) is the same as before.
 
 - **Window:** `resize_test.ps1` (resize, maximize, restore, too small) with a
   script that echoes `==== STEP1..5` and waits ~300 frames after each; also

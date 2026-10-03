@@ -1,8 +1,9 @@
 /* r_scene.h -- the per-frame scene description of the Hexenlicht renderer
  *
  * R_RenderView fills r_scene once per frame from the client state: the
- * camera, every entity to draw, dynamic lights, light style values,
- * particles, the beams (6.3) and the view blend. The 3D renderer reads the scene only, not
+ * camera, every entity to draw, dynamic lights (4.19: a player's lights in
+ * the hand), light style values, particles, the beams (6.3) and the view
+ * blend. The 3D renderer reads the scene only, not
  * the client structures it was built from, so everything the renderer
  * depends on is gathered in one place.
  *
@@ -69,6 +70,8 @@ typedef struct
 	qboolean	dark;		/* subtracts light */
 	int		key;		/* owning entity number, 0 = none */
 	float		die;		/* cl.time when it goes out */
+	qboolean	held;		/* 4.19: a player's, moved to the hand (r_scene.c) */
+	qboolean	in_view_hand;	/* 4.19: and that player is the view entity: it lights the weapon (vk_light.c) */
 } scene_dlight_t;
 
 /* 6.3: a beam the client draws this frame (cl_tent.c's streams: a model
