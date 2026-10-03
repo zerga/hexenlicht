@@ -1,4 +1,5 @@
-/* r_light.c -- the light on the first-person weapon, for the game
+/* r_light.c -- the light on the first-person weapon, for the game, and the
+ * light of the liquid around the camera
  *
  * GL's R_DrawViewModel samples the world's light at the weapon (the light
  * maps with the current light styles, at least 24, plus the dynamic
@@ -8,6 +9,8 @@
  * (MG_AI.hc's get_visibility) and of when the Assassin cloaks in the
  * shadows (specials.hc). R_ViewModelLight does the same every frame; only
  * the level matters here, not the color GL shades the weapon with.
+ * R_MediumLight (6.17) gives the liquid around the camera its light from
+ * the same light level, averaged around the camera and eased.
  *
  * R_LightPointColor is Hammer of Thyrion's, from gl_rlight.c (the GL_RGBA
  * light map path; gl_model.c loads the light maps as RGB for it, as
@@ -172,24 +175,15 @@ THE WEAPON'S LIGHT LEVEL
 =============================================================================
 */
 
-/* R_DrawViewModel's lighting of cl.viewent, into cl.light_level; in
- * R_RenderView, after the light styles are animated */
-void R_ViewModelLight (void)
+/* GL's light level at p with the dynamic lights added to it, in
+ * R_DrawViewModel's order (so cl.light_level stays GL's to the bit) */
+static float AddDynamicLights (const vec3_t p, float level)
 {
-	entity_t	*e = &cl.viewent;
 	dlight_t	*dl;
 	vec3_t		dist;
-	float		ambientlight, add;
+	float		add;
 	int		lnum;
 
-	if (!e->model)
-		return;
-
-	ambientlight = R_LightPointColor (e->origin);
-	if (ambientlight < 24)
-		ambientlight = 24;	// always give some light on gun
-
-// add dynamic lights
 	for (lnum = 0; lnum < MAX_DLIGHTS; lnum++)
 	{
 		dl = &cl_dlights[lnum];
@@ -198,11 +192,161 @@ void R_ViewModelLight (void)
 		if (dl->die < cl.time)
 			continue;
 
-		VectorSubtract (e->origin, dl->origin, dist);
+		VectorSubtract (p, dl->origin, dist);
 		add = dl->radius - VectorLengthFast(dist);
 		if (add > 0)
-			ambientlight += add;
+			level += add;
 	}
 
+	return level;
+}
+
+/* R_DrawViewModel's lighting of cl.viewent, into cl.light_level; in
+ * R_RenderView, after the light styles are animated */
+void R_ViewModelLight (void)
+{
+	entity_t	*e = &cl.viewent;
+	float		ambientlight;
+
+	if (!e->model)
+		return;
+
+	ambientlight = R_LightPointColor (e->origin);
+	if (ambientlight < 24)
+		ambientlight = 24;	// always give some light on gun
+
+	ambientlight = AddDynamicLights (e->origin, ambientlight);
+
 	cl.light_level = (int)ambientlight;
+}
+
+
+/*
+=============================================================================
+
+THE MEDIUM'S LIGHT (6.17)
+
+The light the liquid around the camera scatters towards the eye (6.5's
+medium, water.glsl, DECISIONS X22) is GL's light level of a model, as
+cl.light_level is, but over the liquid around the camera rather than at
+the eye: R_LightPointColor takes the light map of the floor straight
+below a point, so one point jumps between GL's least (24) and a bright
+patch as the player swims over the floor (demo2's moat: 24 to 128). The
+light maps' level (at least 24, as GL's) is averaged over the eye and a
+ring of points around it at eye height that the liquid connects to it,
+eased toward that over MEDIUM_LIGHT_TAU of game time; the dynamic lights
+at the eye are added as they are (a muzzle flash brightens the medium at
+once, as in GL's cl.light_level). In the air the medium's light stays
+cl.light_level (looking into a liquid from above). DECISIONS X31.
+
+=============================================================================
+*/
+
+#define MEDIUM_RING_POINTS	8
+#define MEDIUM_RING_RADIUS	192.0f	/* units, at eye height */
+#define MEDIUM_LIGHT_TAU	0.5	/* seconds of game time */
+
+static int	medium_contents;	/* the liquid eased in, 0 = none (start over) */
+static double	medium_time;		/* cl.time of the last easing */
+static float	medium_level;		/* the eased light maps' level */
+
+/* whether the segment from start to end stays in leaves of these contents
+ * (the BSP's leaves only: brush entities don't count); a point on a plane
+ * is behind it, as in Mod_PointInLeaf, so the segment starts in the eye's
+ * leaf */
+static qboolean SegmentInContents (mnode_t *node, const vec3_t start, const vec3_t end, int contents)
+{
+	float		front, back, frac;
+	vec3_t		mid;
+
+	while (node->contents >= 0)
+	{
+		if (node->plane->type < 3)
+		{
+			front = start[node->plane->type] - node->plane->dist;
+			back = end[node->plane->type] - node->plane->dist;
+		}
+		else
+		{
+			front = DotProduct(start, node->plane->normal) - node->plane->dist;
+			back = DotProduct(end, node->plane->normal) - node->plane->dist;
+		}
+		if ((front > 0) == (back > 0))
+		{
+			node = node->children[front <= 0];
+			continue;
+		}
+
+		frac = front / (front - back);
+		mid[0] = start[0] + (end[0] - start[0]) * frac;
+		mid[1] = start[1] + (end[1] - start[1]) * frac;
+		mid[2] = start[2] + (end[2] - start[2]) * frac;
+		return SegmentInContents (node->children[front <= 0], start, mid, contents)
+			&& SegmentInContents (node->children[front > 0], mid, end, contents);
+	}
+
+	return node->contents == contents;
+}
+
+/* GL's light maps' level for a model at p (at least 24, without the
+ * dynamic lights) */
+static float LightMapLevel (vec3_t p)
+{
+	float	level = R_LightPointColor (p);
+
+	return (level < 24) ? 24 : level;
+}
+
+/* r_scene.water_light and its parts; in R_RenderView, after R_BuildScene */
+void R_MediumLight (void)
+{
+	vec3_t		eye, p;
+	float		sum, a, dt;
+	int		i, contents = r_scene.viewcontents;
+
+	if (contents != CONTENTS_WATER && contents != CONTENTS_SLIME && contents != CONTENTS_LAVA)
+	{
+		medium_contents = 0;
+		r_scene.water_light = (float)cl.light_level / 200.0f;	/* as before 6.17 */
+		r_scene.water_light_now = r_scene.water_light;
+		r_scene.water_light_points = 0;
+		return;
+	}
+
+	VectorCopy (r_scene.vieworg, eye);
+	sum = LightMapLevel (eye);
+	r_scene.water_light_points = 1;
+	for (i = 0; i < MEDIUM_RING_POINTS; i++)
+	{
+		a = i * (2.0f * (float)M_PI / MEDIUM_RING_POINTS);
+		p[0] = eye[0] + MEDIUM_RING_RADIUS * cosf (a);
+		p[1] = eye[1] + MEDIUM_RING_RADIUS * sinf (a);
+		p[2] = eye[2];
+		if (!SegmentInContents (cl.worldmodel->nodes, eye, p, contents))
+			continue;	/* a wall, the air or another pool on the way */
+		sum += LightMapLevel (p);
+		r_scene.water_light_points++;
+	}
+	sum /= r_scene.water_light_points;
+
+	/* the clock steps back a little when a packet is late (CL_LerpPoint,
+	 * network games): the value stands then */
+	dt = q_max (0.0f, (float)(r_scene.time - medium_time));
+	if (contents != medium_contents)
+		medium_level = sum;	/* came into the liquid */
+	else
+		medium_level += (sum - medium_level) * (1.0f - expf (-dt / (float)MEDIUM_LIGHT_TAU));
+	medium_contents = contents;
+	medium_time = r_scene.time;
+
+	r_scene.water_light = AddDynamicLights (eye, medium_level) / 200.0f;
+	r_scene.water_light_now = AddDynamicLights (eye, sum) / 200.0f;
+}
+
+/* a new map: start over */
+void R_ResetMediumLight (void)
+{
+	medium_contents = 0;
+	medium_time = 0;
+	medium_level = 0;
 }

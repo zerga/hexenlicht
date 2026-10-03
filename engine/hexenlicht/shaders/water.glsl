@@ -60,8 +60,9 @@ vec3 water_fog_color(int medium)
 }
 
 // the light the medium scatters towards the eye where it is dense: its color
-// lit as GL lit a model at the camera (R_DrawViewModel: cl.light_level / 200,
-// the light maps with their styles and the dynamic lights there, 8-bit,
+// lit as GL lit a model (R_DrawViewModel's light level / 200: the light maps
+// with their styles, 6.17: averaged over the liquid around the camera and
+// eased, plus the dynamic lights at the eye; in the air cl.light_level, 8-bit,
 // decoded as the textures' colors, 4.17), in the light of a full light map
 // texel (4.10's dark_light_unit); one light for the whole medium
 vec3 water_fog_radiance(int medium)

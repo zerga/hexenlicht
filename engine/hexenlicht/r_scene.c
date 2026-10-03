@@ -315,6 +315,7 @@ void R_RenderView (void)
 	R_SetupFrame ();
 	R_ViewModelLight ();		/* cl.light_level, for the game (r_light.c) */
 	R_BuildScene ();
+	R_MediumLight ();		/* r_scene.water_light: the liquid around the camera (r_light.c) */
 	VK_UpdateInstances ();		/* the brush and alias model entities, for the GPU */
 	VK_UpdateModelGeometry ();	/* the alias models' triangles, in this frame's command buffer */
 	VK_UpdateEffects ();		/* the particles' and sprites' triangles */
@@ -350,6 +351,7 @@ void R_NewMap (void)
 
 	r_viewleaf = NULL;
 	memset (&r_scene, 0, sizeof(r_scene));	/* no scene until the first frame */
+	R_ResetMediumLight ();			/* the old map's medium light */
 	num_client_beams = 0;			/* the old map's, until CL_UpdateTEnts runs */
 
 	R_ClearParticles ();
@@ -500,6 +502,11 @@ static void R_DumpScene_f (void)
 
 	Con_Printf ("particles: %d\n", r_scene.num_particles);
 	Con_Printf ("light level on the weapon (cl.light_level, sent to the server): %d\n", cl.light_level);
+	if (r_scene.water_light_points)	/* 6.17 */
+		Con_Printf ("medium light (the liquid's, / 200): %.3f eased, %.3f this frame over %d points (the eye and the ring's in the liquid)\n",
+				r_scene.water_light, r_scene.water_light_now, r_scene.water_light_points);
+	else
+		Con_Printf ("medium light (/ 200): %.3f, cl.light_level's (not in a liquid)\n", r_scene.water_light);
 	Con_Printf ("view blend: %.2f %.2f %.2f %.2f\n",
 			r_scene.blend[0], r_scene.blend[1], r_scene.blend[2], r_scene.blend[3]);
 }
