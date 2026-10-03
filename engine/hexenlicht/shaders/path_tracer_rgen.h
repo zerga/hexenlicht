@@ -311,6 +311,44 @@ reflect_refract_follows(uint material)
 	       is_transparent(material) || (is_water(material) || is_slime(material)) && is_physical_liquid(material);
 }
 
+/* Hexenlicht (6.15): ice, a glass model (vk_instance.c: a translucent model in
+ * the ice skin, a frozen monster or player, the crystal golem): solid ice,
+ * which reflect_refract.rgen traces into and out of whatever pt_thick_glass,
+ * at ice's index of refraction with the exact Fresnel term, absorbing along
+ * the path inside. Its color is its skin's hue as clear ice: the albedo over
+ * the strongest channel of its texture's mean (the last mip: the mean of the
+ * 8-bit values, as water_caustic's), so that the mean passes that channel
+ * whole and the skin's pattern stays (the ice skin's mean 0.49 0.47 1.0 of
+ * its strongest), as the transmittance of ICE_COLOR_DISTANCE units: thin
+ * parts nearly clear, a torso deep blue (Beer-Lambert). The skin as Quake II
+ * RTX tints glass would pass a sixth of the light */
+#define ICE_INDEX_OF_REFRACTION 1.31
+#define ICE_COLOR_DISTANCE 32.0
+
+bool
+is_ice(uint material)
+{
+	return is_glass(material) && (material & MATERIAL_FLAG_MODEL) != 0;
+}
+
+vec3
+ice_color(uint material_id, vec3 albedo)
+{
+	MaterialInfo minfo = get_material_info(material_id);
+	if(minfo.base_texture == 0)
+		return vec3(1);
+	vec3 mean = color_to_linear(global_textureLod(minfo.base_texture, vec2(0.5), 16.0).rgb, global_ubo.color_srgb) * minfo.base_factor;
+	float strongest = max(max(mean.r, mean.g), mean.b);
+	return (strongest > 0) ? clamp(albedo / strongest, vec3(0), vec3(1)) : vec3(1);
+}
+
+// what d units of ice of that color pass
+vec3
+ice_transmittance(vec3 color, float d)
+{
+	return pow(max(color, vec3(1e-4)), vec3(d / ICE_COLOR_DISTANCE));
+}
+
 vec3
 correct_emissive(uint material_id, vec3 emissive)
 {
@@ -639,7 +677,8 @@ float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 te
  *    layer passes all (the medium dims), as Quake II RTX's;
  *  - glass: its albedo (Quake II RTX's, at the texture's mip 2) times 1 - its
  *    Fresnel term at the light's angle, thin glass's in reflect_refract.rgen
- *    (Quake II RTX: the albedo alone);
+ *    (Quake II RTX: the albedo alone); 6.15: ice its color (ice_color) times
+ *    1 - ice's exact Fresnel term, counted once where the light enters;
  *  - a translucent surface, model or brush entity: 1 - its opacity (6.4's
  *    get_hit_alpha: the entity's times the skin's; Quake II RTX's the
  *    entity's, so the alpha-1 EF_TRANSPARENT models would shadow their
@@ -711,8 +750,18 @@ trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers, float p
 				base_color *= color_to_linear(global_textureLod(minfo.base_texture, tex_coord, 2).rgb, global_ubo.color_srgb);
 			base_color = clamp(base_color, vec3(0), vec3(1));
 
-			float F = 0.05 + 0.95 * pow(max(1.0 - abs(dot(ray.direction, triangle.normals[0])), 0.0), 5.0);
-			throughput *= base_color * (1.0 - F);
+			if(is_ice(material_id))
+			{
+				// 6.15: ice: its color (as ICE_COLOR_DISTANCE units of it) and ice's
+				// exact Fresnel term where the light enters; not bent: no focusing
+				float F = fresnel_dielectric(abs(dot(ray.direction, triangle.normals[0])), ICE_INDEX_OF_REFRACTION);
+				throughput *= ice_color(material_id, base_color) * (1.0 - F);
+			}
+			else
+			{
+				float F = 0.05 + 0.95 * pow(max(1.0 - abs(dot(ray.direction, triangle.normals[0])), 0.0), 5.0);
+				throughput *= base_color * (1.0 - F);
+			}
 		}
 		else if((material_id & MATERIAL_FLAG_WARP) == 0 &&
 		        !(pass_light_carriers && (material_id & MATERIAL_FLAG_CARRIES_LIGHT) != 0))

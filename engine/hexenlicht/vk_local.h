@@ -528,6 +528,7 @@ typedef struct
 	int		glowing;	/* glowing projectiles (6.2): the whole skin emits, not lit by their own light */
 	int		beams;		/* glowing beam segments and ends (6.3, vk_beamlight.c) */
 	int		carriers;	/* translucent ones around a light (6.14: MATERIAL_FLAG_CARRIES_LIGHT) */
+	int		ice;		/* ice (6.15): translucent in the ice skin, a glass model */
 } vk_modelframe_t;
 
 void VK_InitInstances (void);
