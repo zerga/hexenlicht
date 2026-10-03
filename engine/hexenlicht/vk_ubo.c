@@ -289,7 +289,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.water_waves = q_max (0.0f, r_water_waves.value);
 	ubo.water_fog = q_max (0.0f, r_water_fog.value);
 	ubo.water_caustics = q_max (0.0f, r_water_caustics.value);
-	ubo.water_light = (float)cl.light_level / 200.0f;	/* GL's light on a model at the camera (r_light.c) */
+	ubo.water_light = r_scene.water_light;	/* GL's light level around the camera, eased (6.17, r_light.c) */
 
 	ubo_valid = true;
 	memcpy (ubo_buffers[vk.frame_index].mapped, &ubo, sizeof(ubo));

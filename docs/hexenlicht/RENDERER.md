@@ -557,7 +557,7 @@ the starting points for authors and their tools.
   view leaf, `V_CalcBlend`) and fills the global `r_scene`: camera, entities
   (`cl_visedicts`, all static entities, the view model; not culled to the
   view), active dlights, light style values, the active particle list, the
-  beams (6.3) and the view blend. The 3D renderer reads only `r_scene`;
+  beams (6.3), the view blend and the medium's light (6.17). The 3D renderer reads only `r_scene`;
   `r_dumpscene` prints it.
 - **Beams** (6.3): `cl_tent.c`'s `CL_UpdateTEnts` hands over the streams it
   draws each frame (`R_ClearBeams`, then `R_AddBeam` per stream after its
@@ -567,7 +567,7 @@ the starting points for authors and their tools.
   `r_drawentities 0`). The segments themselves are temporary entities as
   before. See [Beams](#beams-vk_beamlightc).
 - The order in `R_RenderView`: `R_SetupFrame` → `R_ViewModelLight` →
-  `R_BuildScene` (fills `r_scene`) → `VK_UpdateInstances` →
+  `R_BuildScene` (fills `r_scene`) → `R_MediumLight` → `VK_UpdateInstances` →
   `VK_UpdateModelGeometry` → `VK_UpdateEffects` → `VK_BuildTLAS` →
   `VK_RenderView3D` → `VK_DrawLightEditor` → `VK_DrawImageFile` (these two
   in the 2D, under the HUD).
@@ -577,6 +577,25 @@ the starting points for authors and their tools.
   server with every move: the gamecode's player `light_level` decides how well
   monsters see the player and when the Assassin cloaks — renderer output the
   game depends on.
+- `R_MediumLight` (`r_light.c`, 6.17; DECISIONS X31): the light of the
+  liquid around the camera (6.5's medium, `water_light`), into
+  `r_scene.water_light`. With the camera in a liquid: the light maps'
+  level (`R_LightPointColor`, at least 24) averaged over the eye and the
+  points of a ring of 8 at 192 units around it at eye height whose
+  segment from the eye stays in BSP leaves of the camera's contents
+  (`SegmentInContents`: not through a wall, the air or into another
+  pool; a point on a plane is behind it, as in `Mod_PointInLeaf`), eased
+  toward that over 0.5 s of game time (`MEDIUM_LIGHT_TAU`; it stands while
+  paused or while a network game's clock steps back for a late packet
+  (`CL_LerpPoint`), starts over when the camera comes into a liquid
+  and at map load, `R_ResetMediumLight` in `R_NewMap`), plus the dynamic
+  lights at the eye, not eased; / 200 as `cl.light_level`. In the air
+  `cl.light_level` / 200, as before 6.17. `r_scene.water_light_now` (not
+  eased) and `water_light_points` (the points averaged, 0 in the air) are
+  for `r_dumpscene`, which prints them. Without it the medium's light was
+  the light map straight below the eye, which jumped between 24 and 128
+  along demo2's moat. CPU only, 9 light point traces and 8 segment walks a
+  frame under water.
 
 ## Buffers and GPU data layouts
 
@@ -1233,7 +1252,7 @@ bindings.
   medium, the Hexenlicht block (6.5: the water's settings, `r_water`,
   `r_water_waves`, `r_water_fog`, 6.16's `r_water_caustics`, registered
   there, and the medium's light,
-  `cl.light_level` / 200) and `UBO_CVAR_LIST`'s cvars (registered with
+  `r_scene.water_light`, 6.17) and `UBO_CVAR_LIST`'s cvars (registered with
   Q2RTX's defaults, inert until their pass). `vk_render_frame` counts 3D
   frames (= `current_frame_idx`, picks the even/odd image set). Three offset
   asserts guard the C struct's layout; after changing the list, compare every
@@ -2738,10 +2757,12 @@ Story 4.10: Hexen II's darkness as GL shows it.
     opacity, 128/255 for water and 150/255 for slime and lava, at
     `r_water_fog` units, 512) and adds the light the medium scatters,
     GL's contents color (`V_SetContentsColor`'s 130 80 50, 0 25 5,
-    255 80 0) lit as GL lit a model at the camera (`water_light`,
-    `cl.light_level` / 200: the light maps with their styles and the
-    dynamic lights, decoded as the textures' colors, in the light of a
-    full texel, `dark_light_unit`), to `PT_TRANSPARENT` times the path's
+    255 80 0) lit as GL lit a model (`water_light`, GL's light level
+    / 200: the light maps with their styles and the dynamic lights,
+    decoded as the textures' colors, in the light of a full texel,
+    `dark_light_unit`; with the camera in a liquid averaged around it and
+    eased, 6.17's `R_MediumLight`, see [Scene](#scene-r_scenec); in the
+    air `cl.light_level`), to `PT_TRANSPARENT` times the path's
     throughput; the effects in it are dimmed by half its extinction.
     Where the next pass follows the path (`reflect_refract_follows`), the
     fog goes with it in `PT_VIEW_DIRECTION2` (free until
@@ -2752,8 +2773,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
     approximation: its reflectance takes the layers' albedo), so a layer
     is lit as what is seen through it. Where a pass's path ends on the
     sky, the sky is seen through the medium and a layer on the way is lit
-    by it (`env × (.a + .rgb)`). The medium's light is GL's `cl.light_level`, which keeps its last
-    value while no weapon model is shown.
+    by it (`env × (.a + .rgb)`). In the air the medium's light is GL's
+    `cl.light_level`, which keeps its last value while no weapon model is
+    shown; in a liquid it doesn't need the weapon.
   - It replaces Quake II RTX's extinction (absorption only: the view
     under water went black-teal) and GL's contents tint (6.6 leaves it
     out of the view blends); with `r_water 0` both water and the medium

@@ -118,6 +118,12 @@ typedef struct
 	int		num_particles;
 
 	float		blend[4];	/* full-screen color shift (v_blend), rgba 0-1 */
+
+	/* 6.17: the light of the liquid the camera is in, as GL's light level
+	 * / 200 (r_light.c's R_MediumLight; in the air cl.light_level's) */
+	float		water_light;		/* eased: the medium's light (global_ubo.water_light) */
+	float		water_light_now;	/* this frame's, not eased */
+	int		water_light_points;	/* the points averaged (the eye and the ring's in the liquid), 0 in the air */
 } scene_t;
 
 extern scene_t	r_scene;
@@ -133,5 +139,9 @@ void R_AddBeam (int type, int skin, const vec3_t source, const vec3_t dest, floa
  * cl.light_level (the server's player light_level: how well monsters see
  * the player, when the Assassin cloaks) */
 void R_ViewModelLight (void);
+/* 6.17: r_scene.water_light, the light of the liquid around the camera
+ * (GL's light level averaged around it and eased); the reset at map load */
+void R_MediumLight (void);
+void R_ResetMediumLight (void);
 
 #endif	/* R_SCENE_H */

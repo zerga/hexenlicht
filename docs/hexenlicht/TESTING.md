@@ -600,6 +600,19 @@ fog leaves). Delete `data1\hl65_*` afterwards. The views:
   as the floor under it: deep dark pools show less of it), the fog's
   brightness under water against GL's tint (darker in dark pools), the
   waves' wobble in reflections and through Snell's window.
+- **The medium's light along a swim** (6.17): `medium_run.ps1` moves the
+  player through demo2's moat (`vk_setpos` every frame at 200 units a
+  second, `noclip`, from the south-west end east, north, over the
+  submerged wall and north along the east moat; no saves needed) and
+  writes `r_dumpscene`'s camera, `cl.light_level` (the light before
+  6.17) and medium light line every `-Every` frames to `medium.csv`, with
+  the largest change of each within `-Window` seconds under water (6.17,
+  0.2 s: `cl.light_level` / 200 0.71, the eased light 0.21, at the
+  submerged wall; elsewhere the CSV shows at most 0.06; DECISIONS X32). `-Shots 200,240,...` shoots those frames instead, with
+  `-Bin` another build's (`main`'s for the look before; frames 240, 490,
+  570, 940 show the old flares and black). In the game: `r_dumpscene`
+  prints the medium light, eased and this frame's, and the points
+  averaged.
 
 ## Light through (6.14)
 
