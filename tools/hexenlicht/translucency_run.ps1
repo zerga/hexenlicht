@@ -51,7 +51,7 @@ function Shot([string]$name) {
 	return @("vk_screenshot $name 8", (Waits 12), "vk_screenshot ${name}_1 1", (Waits 6))
 }
 function Frame([string]$name) { $names.Add($name); if ($gl) { 'screenshot' } else { "vk_screenshot $name 1" } }
-$start = @((Waits 3), 'vid_vsync 0', 'host_framerate 0.02', 'viewsize 130', 'showpause 0', 'crosshair 0', 'con_notifytime 0', 'color 0 0')
+$start = @((Waits 3), 'vid_vsync 0', 'host_framerate 0.02', 'sensitivity 0', 'viewsize 130', 'showpause 0', 'crosshair 0', 'con_notifytime 0', 'color 0 0')
 if ($Extra) { $start += $Extra }
 $end = @('toggleconsole', (Waits 3), 'vid_vsync 1', 'quit')
 

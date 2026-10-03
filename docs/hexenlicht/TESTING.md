@@ -34,6 +34,13 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   waits, `quit`. With the console closed, `quit` opens the quit screen and
   the process hangs; never toggle it closed again after opening it.
 - Start with `wait` × 3 and `vid_vsync 0` (end with `vid_vsync 1`) for speed.
+- Set `sensitivity 0` too (6.16): with the owner's mouse look on
+  (`hexenlicht.cfg`), mouse movement over the test window while someone
+  uses the PC turns the scripted view; twice a view came out from another
+  angle. `water_run.ps1`, `translucency_run.ps1` and `caustics_run.ps1`
+  do; the older shooting scripts (`effects_run.ps1`, `calib_shots.ps1`,
+  `perf_baseline.ps1`, the material and test pack sets) don't yet: run
+  them with nobody at the PC. The configs are restored afterwards.
 - Early-read cvars (`vid_*`, `vid_uiscale`) are locked until `hexen.rc` has
   run: set them after a `wait`.
 
@@ -616,9 +623,12 @@ afterwards. The views:
   load: per-map cvars): the room and the statue behind the panes darker.
 - **A test light above a pool** (demo1's, demo2's and romeric3's, and
   demo1's from below): the floor dims by the medium on the light's path
-  and shows the waves' pattern (subtle at the default focus; the shader's
-  `CAUSTIC_FOCUS_DEPTH` at 64 makes it plain for a check: build
-  `hexenlicht_shaders`, then `vk_reload_shaders`).
+  and shows the water texture's pattern (6.16: `-Extra 'r_water_caustics
+  1'` or `0` for the other strengths; the lit image against `pt_caustics
+  0`: ±29 % at the default 3 in demo1's pool from below, X29). In the
+  game: `load hl65_d1_078_under` (demo1's underwater walls, lights above)
+  or `hl65_r3_above` (romeric3's far wall at the waterline, its lights in
+  the pool), switching `pt_caustics` while the pattern moves.
 - **Effects:** the tomed sunstaff's sheath (its own line light unchanged:
   with the carrier rule off, `trace_caustic_ray(..., false)` in
   `get_direct_illumination`, its beams' light dims), the purifier's smoke

@@ -296,6 +296,9 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   turbulence); the reflection is a mirror whatever its `roughness`; the
   liquid's medium (its fog's color and density) isn't a material
   setting. Vertical liquid faces stay as above (DECISIONS X21–X23).*
+  *6.16: the albedo's brightness pattern is also the caustic in the
+  light through the surface (`r_water_caustics`, DECISIONS X29); a DDS
+  albedo needs its full mip chain for it (its last mip is the mean).*
   *5.6:* so a smooth water (`roughness 0.05`) shows its ripples in the
   shading and glints of what emits, but no mirror image (the reflection
   pass skips water) and no highlight of the map lights (below 0.18,

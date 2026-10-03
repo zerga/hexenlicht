@@ -292,6 +292,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_waves)          /* r_water_waves: the waves' slope */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_fog)            /* r_water_fog: the distance at which the medium is as dense as GL's tint, 0 = clear */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_light)          /* cl.light_level / 200: GL's light on a model at the camera, the medium's light */ \
+	GLOBAL_UBO_VAR_LIST_DO(float,           water_caustics)       /* r_water_caustics: the caustic's strength (6.16, water.glsl), 0 = none */ \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

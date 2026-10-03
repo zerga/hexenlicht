@@ -1177,7 +1177,7 @@ bindings.
   `packRGBE` clamps to what it can store), `water.glsl` (6.5: Quake II
   RTX's waves and extinction for `r_water 0`, and the physical water's
   medium, waves and Fresnel term, see [3D view](#3d-view-vk_viewc),
-  "Water"); adapted:
+  "Water"; 6.16: `water_caustic`, "Light through"); adapted:
   `global_ubo.h` (Q2RTX's `GLOBAL_UBO_VAR_LIST`
   whole, plus a Hexenlicht block before `UBO_CVAR_LIST`: the frame's buffers
   by device address — TLAS, effects TLAS, TLAS info, instances, world and
@@ -1231,7 +1231,8 @@ bindings.
   jitter, TAA mode and FSR constants `vk_upscale.c` decided (3.8, see
   [Upscaling](#upscaling-vk_upscalec)), time,
   medium, the Hexenlicht block (6.5: the water's settings, `r_water`,
-  `r_water_waves`, `r_water_fog`, registered there, and the medium's light,
+  `r_water_waves`, `r_water_fog`, 6.16's `r_water_caustics`, registered
+  there, and the medium's light,
   `cl.light_level` / 200) and `UBO_CVAR_LIST`'s cvars (registered with
   Q2RTX's defaults, inert until their pass). `vk_render_frame` counts 3D
   frames (= `current_frame_idx`, picks the even/odd image set). Three offset
@@ -2775,19 +2776,27 @@ Story 4.10: Hexen II's darkness as GL shows it.
     translucent model's clear texels no hit); traced only to a light the
     shadow ray reached (Q2RTX traces it also when shadowed and without a
     light).
-  - A liquid's surface (with `r_water 1`): the waves' caustic
-    (`water.glsl`'s `water_caustic`, none where a material's normal map
-    replaces the waves) at the distance the light goes past it, and the
-    medium (6.5's gray extinction, `water_fog_density`) along the path in
-    the liquid, which the crossings switch in and out as the reflection
-    pass does; its texture layer passes all the light. The caustic is the
-    waves' own focusing (1 / the determinant of the refracted rays'
-    displacement): 1 − m cos(phase.x) cos(phase.y) for the turbulence's
-    shear, m = (depth / 1026)² at `r_water_waves 1` physically, brought
-    to a focus at 256 units (`CAUSTIC_FOCUS_DEPTH`) and held at 0.9 at most
-    (`CAUSTIC_MAX_FOCUS`), divided by its mean (the AGM's inverse: 1 /
-    agm(1, √(1 − m²))) because it is taken where the straight shadow ray
-    crosses the surface: it moves the light around, adding none (X27).
+  - A liquid's surface (with `r_water 1`): the caustic at the distance
+    the light goes past it, and the medium (6.5's gray extinction,
+    `water_fog_density`) along the path in the liquid, which the
+    crossings switch in and out as the reflection pass does; its texture
+    layer passes all the light. The caustic (6.16, `water.glsl`'s
+    `water_caustic`, X29) is the water texture's pattern: its brightness
+    where the light crossed the surface (warped as the surface shows it,
+    `perturb_tex_coord`) over its mean, in the textures' 8-bit values
+    (the last mip is their mean), stretched around 1 by
+    `r_water_caustics` (3; 1 the texture's own contrast, 0 none; on the
+    weapon at most 1, `caustic_strength`) and clamped to 0–8
+    (`CAUSTIC_MAX`: no original reaches 8 at 3); faded in over the first
+    32 units below the surface (`CAUSTIC_FADE_DEPTH`), blurred a mip level
+    per doubling of the depth past 64 (`CAUSTIC_BLUR_DEPTH`). Its mean is
+    1 until the clamp at 0: `*rtex078`, half dark, gains 14 % at 2 and 40 %
+    at 3 (`luminance`'s Rec. 601 weights). A texture without its full mip
+    chain (a pack's DDS without mips) has no pattern: its last mip isn't
+    its mean. It shows only where a light's direct light crosses a
+    surface: demo1's walls under water (lights above), romeric3's walls
+    above the waterline (its lights in the pool). 6.14's caustic, the
+    focusing of 6.5's sine waves, was invisible (X27).
   - Glass: its albedo at the texture's mip 2 (Q2RTX's) times 1 − its
     Fresnel term at the light's angle (thin glass's Schlick from 5 %, as
     `reflect_refract.rgen`'s split).
@@ -3535,6 +3544,7 @@ overlay, and a measuring mode.
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
+| `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
