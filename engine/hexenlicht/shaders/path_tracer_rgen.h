@@ -44,6 +44,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    face is lit without a ray), the sun's color is the UBO's (no physical
  *    sky to integrate it from), clusters past the sky visibility's bits
  *    trace it;
+ *  - trace_caustic_ray (6.14): every layer of the transparent group, a
+ *    liquid's caustic from 6.5's waves and its medium, glass's Fresnel term,
+ *    6.4's opacity, the models around a light passed (see there); traced
+ *    only to a light the shadow ray reached;
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -614,99 +618,109 @@ trace_sky_distance(vec3 origin, vec3 direction, float t_max)
 #endif
 }
 
+// Hexenlicht (6.14): defined below
+float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 tex_coord_y);
+
+/* Hexenlicht (6.14): what a shadow ray's light keeps through the transparent
+ * group (Quake II RTX's caustic ray: direct_lighting.rgen's specialization
+ * constant, pt_caustics), with these changes: every layer the ray meets, in
+ * order (up to CAUSTIC_MAX_LAYERS; Quake II RTX's the first only), back
+ * faces culled as Quake II RTX's (a pane's far side, a liquid's coincident
+ * face and a model's far side count once), a translucent model's clear
+ * texels no hit (trace_geometry_ray's alpha test); per layer:
+ *  - a liquid's surface (r_water 1, water.glsl): the waves' caustic at the
+ *    distance the light goes past it (water_caustic; none where a material's
+ *    normal map replaces the waves), and the medium along
+ *    the path in the liquid (6.5's gray extinction, water_fog_density; Quake
+ *    II RTX's colored one stays for the view with r_water 0); its texture
+ *    layer passes all (the medium dims), as Quake II RTX's;
+ *  - glass: its albedo (Quake II RTX's, at the texture's mip 2) times 1 - its
+ *    Fresnel term at the light's angle, thin glass's in reflect_refract.rgen
+ *    (Quake II RTX: the albedo alone);
+ *  - a translucent surface, model or brush entity: 1 - its opacity (6.4's
+ *    get_hit_alpha: the entity's times the skin's; Quake II RTX's the
+ *    entity's, so the alpha-1 EF_TRANSPARENT models would shadow their
+ *    whole mesh); a model
+ *    around a light (MATERIAL_FLAG_CARRIES_LIGHT) passes all where
+ *    pass_light_carriers (the map's and dynamic lights, not the sun), as
+ *    shadow rays leave out the light group;
+ *  - the other turbulent surfaces (vertical liquid faces, R31; the liquids
+ *    with r_water 0) pass all, as before (Quake II RTX made vertical water
+ *    glass, for its force fields) */
+#define CAUSTIC_MAX_LAYERS 4
+
 vec3
-trace_caustic_ray(Ray ray, int surface_medium)
+trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers)
 {
-	ray_payload_geometry.barycentric = vec2(0);
-	ray_payload_geometry.primitive_id = ~0u;
-	ray_payload_geometry.buffer_and_instance_idx = 0;
-	ray_payload_geometry.hit_distance = -1;
-
-
-	uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipProceduralPrimitives;
-	uint instance_mask = AS_FLAG_TRANSPARENT;
-	
-#ifdef KHR_RAY_QUERY
-
-	rayQueryEXT rayQuery;
-	rayQueryInitializeEXT(rayQuery, TLAS_GEOMETRY, rayFlags, instance_mask, 
-		ray.origin, ray.t_min, ray.direction, ray.t_max);
-	
-	rayQueryProceedEXT(rayQuery);
-
-	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
-	{
-		pt_logic_rchit(ray_payload_geometry, 
-			rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
-			rayQueryGetIntersectionInstanceIdEXT(rayQuery, true),
-			rayQueryGetIntersectionGeometryIndexEXT(rayQuery, true),
-			rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
-			rayQueryGetIntersectionTEXT(rayQuery, true),
-			rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
-	}
-
-#else
-
-	traceRayEXT(topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask, SBT_RCHIT_GEOMETRY, 0, SBT_RMISS_EMPTY,
-			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
-
-#endif
-
-	float extinction_distance = ray.t_max - ray.t_min;
 	vec3 throughput = vec3(1);
 
-	if(found_intersection(ray_payload_geometry))
+	// the liquid the path is in (the receiver's at first) and where it entered it
+	int medium = (global_ubo.water != 0 && surface_medium != MEDIUM_GLASS) ? surface_medium : MEDIUM_NONE;
+	float medium_start = ray.t_min;
+	float optical_depth = 0;
+
+	Ray layer_ray = ray;
+	for(int layer = 0; layer < CAUSTIC_MAX_LAYERS; layer++)
 	{
+		trace_geometry_ray(layer_ray, true, AS_FLAG_TRANSPARENT);
+		if(!found_intersection(ray_payload_geometry))
+			break;
+
+		float t = ray_payload_geometry.hit_distance;
 		Triangle triangle = get_hit_triangle(ray_payload_geometry);
-		
-		vec3 geo_normal = triangle.normals[0];
-		bool is_vertical = abs(geo_normal.z) < 0.1;
+		uint material_id = triangle.material_id;
 
-		if((is_water(triangle.material_id) || is_slime(triangle.material_id)) && !is_vertical)
+		if(is_physical_liquid(material_id))
 		{
-			vec3 position = ray.origin + ray.direction * ray_payload_geometry.hit_distance;
-			vec3 w = get_water_normal(triangle.material_id, geo_normal, triangle.tangents[0], position, true);
+			// the waves' pattern where it has them (6.5: not with its material's normal map)
+			if(get_material_info(material_id).normals_texture == 0)
+				throughput *= water_caustic(triangle.normals[0], ray.origin + ray.direction * t, t);
 
-			float caustic = clamp((1 - pow(clamp(1 - length(w.xz), 0, 1), 2)) * 100, 0, 8);
-			caustic = mix(1, caustic, clamp(ray_payload_geometry.hit_distance * 0.02, 0, 1));
-			throughput = vec3(caustic);
-
-			if(surface_medium != MEDIUM_NONE)
+			if(medium != MEDIUM_NONE)
 			{
-				extinction_distance = ray_payload_geometry.hit_distance;
+				optical_depth += water_fog_density(medium) * (t - medium_start);
+				medium = MEDIUM_NONE;
 			}
 			else
 			{
-				if(is_water(triangle.material_id))
-					surface_medium = MEDIUM_WATER;
-				else
-					surface_medium = MEDIUM_SLIME;
-
-				extinction_distance = max(0, ray.t_max - ray_payload_geometry.hit_distance);
+				medium = is_slime(material_id) ? MEDIUM_SLIME : MEDIUM_WATER;
+				medium_start = t;
 			}
 		}
-		else if(is_glass(triangle.material_id) || is_water(triangle.material_id) && is_vertical)
+		else if(is_glass(material_id))
 		{
-			vec3 bary = get_hit_barycentric(ray_payload_geometry);
-			vec2 tex_coord = triangle.tex_coords * bary;
+			vec2 tex_coord = triangle.tex_coords * get_hit_barycentric(ray_payload_geometry);
+			MaterialInfo minfo = get_material_info(material_id);
 
-			MaterialInfo minfo = get_material_info(triangle.material_id);
+			vec3 base_color = vec3(minfo.base_factor);
+			if (minfo.base_texture > 0)
+				base_color *= color_to_linear(global_textureLod(minfo.base_texture, tex_coord, 2).rgb, global_ubo.color_srgb);
+			base_color = clamp(base_color, vec3(0), vec3(1));
 
-	    	vec3 base_color = vec3(minfo.base_factor);
-	    	if (minfo.base_texture > 0)
-	    		base_color *= color_to_linear(global_textureLod(minfo.base_texture, tex_coord, 2).rgb, global_ubo.color_srgb);
-	    	base_color = clamp(base_color, vec3(0), vec3(1));
-
-			throughput = base_color;
+			float F = 0.05 + 0.95 * pow(max(1.0 - abs(dot(ray.direction, triangle.normals[0])), 0.0), 5.0);
+			throughput *= base_color * (1.0 - F);
 		}
-		else
+		else if((material_id & MATERIAL_FLAG_WARP) == 0 &&
+		        !(pass_light_carriers && (material_id & MATERIAL_FLAG_CARRIES_LIGHT) != 0))
 		{
-			throughput = vec3(clamp(1.0 - triangle.alpha, 0.0, 1.0));
+			// a translucent model or surface, a translucent brush entity's (its
+			// kind kept, its instance's alpha: vertex_buffer.h)
+			vec2 tex_coord = triangle.tex_coords * get_hit_barycentric(ray_payload_geometry);
+			throughput *= clamp(1.0 - get_hit_alpha(triangle, tex_coord, vec2(0), vec2(0)), 0.0, 1.0);
 		}
+
+		if(all(equal(throughput, vec3(0))))
+			return vec3(0);
+
+		layer_ray.t_min = t + 0.01;
+		if(layer_ray.t_min >= ray.t_max)
+			break;
 	}
 
-	//return vec3(caustic);
-	return extinction(surface_medium, extinction_distance) * throughput;
+	if(medium != MEDIUM_NONE)
+		optical_depth += water_fog_density(medium) * max(ray.t_max - medium_start, 0);
+
+	return throughput * exp(-optical_depth);
 }
 
 /* Hexenlicht (5.3): MATERIALS.md's normal maps, XYZ as RGB x 0.5 + 0.5 (Quake
@@ -892,9 +906,11 @@ get_direct_illumination(
 		}
 	}
 #ifdef ENABLE_SHADOW_CAUSTICS
-	if(enable_caustics)
+	// Hexenlicht (6.14): only to a light the shadow ray reached (Quake II RTX traces it
+	// also when shadowed, and without a light); the models around a light pass it
+	if(enable_caustics && !null_light && vis > 0)
 	{
-		contrib *= trace_caustic_ray(shadow_ray, surface_medium);
+		contrib *= trace_caustic_ray(shadow_ray, surface_medium, true);
 	}
 #endif
 
@@ -1029,9 +1045,10 @@ get_sunlight(
 	vec3 radiance = global_ubo.sun_color;
 
 #ifdef ENABLE_SHADOW_CAUSTICS
+	// Hexenlicht (6.14): the models around a light shadow the sun (see the caller)
 	if(enable_caustics && shadow_traced)
 	{
-    	radiance *= trace_caustic_ray(shadow_ray, surface_medium);
+		radiance *= trace_caustic_ray(shadow_ray, surface_medium, false);
 	}
 #endif
 

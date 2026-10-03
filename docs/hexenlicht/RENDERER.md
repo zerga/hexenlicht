@@ -740,7 +740,11 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `MATERIAL_KIND_TRANSP_MODEL`, alpha = 0.33 for `DRF_TRANSLUCENT` but on
   `EF_SPECIAL_TRANS`, as GL; the rays multiply it by the skin's, 6.4, see
   [3D view](#3d-view-vk_viewc); a translucent cutout is here, its holes
-  tested); masked (`EF_HOLEY` cutouts); light
+  tested; 6.14: one the light group would take if it were opaque, a
+  beam's sheath, a translucent projectile's light, the scarab's wings, is
+  flagged `MATERIAL_FLAG_CARRIES_LIGHT` and passes the caustic ray of the
+  map's and dynamic lights, `vk_models` counts them); masked (`EF_HOLEY`
+  cutouts); light
   (4.1: opaque models at a map light's origin, `VK_MapLightAt`: the
   torches, flames, candles and the like that the light entities' game code
   spawns there, whose mesh surrounds the light; they cast no shadows, see
@@ -1047,7 +1051,8 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
   above 0. `vk_instance.c` puts the opaque ones in the light group (no
   shadows); translucent ones (the sheath, the hit's glow, the lightning's
   last 0.25 s, the color beam) stay transparent models, blended and
-  glowing at their opacity since 6.4;
+  glowing at their opacity since 6.4 (6.14: flagged
+  `MATERIAL_FLAG_CARRIES_LIGHT`, so they don't shade their own light);
   the gaze stays a cutout. All but the gaze are flagged
   `MATERIAL_FLAG_LIGHT`: their line light (and the hit's sphere) is their
   light, which doesn't light what is flagged a light
@@ -1205,7 +1210,8 @@ bindings.
   and `get_direct_illumination`, since 3.4 with the light statistics per
   list entry; 4.6: `get_sunlight`, its shadow ray ending at the first sky
   face (`trace_sky_distance`); 3.6: Q2RTX's `get_is_gradient`, the
-  denoiser's gradient samples),
+  denoiser's gradient samples; 6.14: the caustic ray's every layer, see
+  [3D view](#3d-view-vk_viewc) "Light through"),
   `light_lists.h` (3.3: Q2RTX's polygon and sphere light sampling; 3.4:
   spheres in the light lists, the statistics per list entry; a list's
   current light count instead of Q2RTX's light-count history, which only
@@ -1453,7 +1459,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
 - Per pixel, `get_direct_illumination` picks a list light or a dynamic
   sphere sample by their estimated contributions and traces one shadow ray (opaque
   geometry; cutouts alpha-tested; translucent surfaces and effects don't
-  shadow; no shadow ray without a light). The weapon only shadows itself
+  shadow; no shadow ray without a light; *6.14: with `pt_caustics 1` the
+  caustic ray dims and tints the light through water, glass and
+  translucent surfaces and models, not effects, see [3D
+  view](#3d-view-vk_viewc) "Light through"*). The weapon only shadows itself
   (`direct_lighting.rgen`). Direct specular only where the roughness is
   above `pt_direct_roughness_threshold` (0.18): smoother surfaces get it
   from the reflections (3.5), so mode 16 is black on them.
@@ -2671,7 +2680,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
     needs `pt_reflect_refract` ≥ 1. Both are tinted by the albedo, so the
     originals' dark textures make dark mirrors and glass: a light albedo
     with them (MATERIALS.md). Glass casts no shadow and doesn't tint the
-    light through it (the shadow rays see the opaque group only). Cost
+    light through it (the shadow rays see the opaque group only; *6.14:
+    with `pt_caustics 1` it tints it, "Light through" below*). Cost
     (5.5, demo1's start at 1920x1080, Release, full power: a chrome floor
     and a glass pedestal over much of the view): the pass 0.06 → 0.30 ms,
     the frame 3.53 → 3.65 ms. Screens and security cameras are Quake II's.
@@ -2750,6 +2760,47 @@ Story 4.10: Hexen II's darkness as GL shows it.
     liquid opaque (the path ends on it, as on a translucent surface).
   - Cost (Release, 1920x1080, full power): +0.11–0.30 ms a frame where
     water fills the view, nearly all of it in the reflection pass (X24).
+- **Light through** (6.14, `pt_caustics`; DECISIONS X25–X28): Quake II
+  RTX's caustic ray (`path_tracer_rgen.h`'s `trace_caustic_ray`) on the
+  shadow ray of each pixel's light sample in `direct_lighting.rgen` (the
+  map's and dynamic lights, and the sun's): what the light keeps through
+  the transparent group. `pt_caustics` (1; 0 = the image before 6.14, bit
+  for bit) picks one of two direct lighting pipelines, the shader's
+  specialization constant, as Q2RTX's; not archived, as `r_water`. Bounce
+  light has none, as in Q2RTX (and so the sky dome's light).
+  - Every layer the ray meets, in order (up to 4, `CAUSTIC_MAX_LAYERS`;
+    Q2RTX's the first only), each a closest-hit query past the last
+    (`trace_geometry_ray`: back faces culled, so a pane's far side, a
+    liquid's coincident face and a model's far side count once; a
+    translucent model's clear texels no hit); traced only to a light the
+    shadow ray reached (Q2RTX traces it also when shadowed and without a
+    light).
+  - A liquid's surface (with `r_water 1`): the waves' caustic
+    (`water.glsl`'s `water_caustic`, none where a material's normal map
+    replaces the waves) at the distance the light goes past it, and the
+    medium (6.5's gray extinction, `water_fog_density`) along the path in
+    the liquid, which the crossings switch in and out as the reflection
+    pass does; its texture layer passes all the light. The caustic is the
+    waves' own focusing (1 / the determinant of the refracted rays'
+    displacement): 1 − m cos(phase.x) cos(phase.y) for the turbulence's
+    shear, m = (depth / 1026)² at `r_water_waves 1` physically, brought
+    to a focus at 256 units (`CAUSTIC_FOCUS_DEPTH`) and held at 0.9 at most
+    (`CAUSTIC_MAX_FOCUS`), divided by its mean (the AGM's inverse: 1 /
+    agm(1, √(1 − m²))) because it is taken where the straight shadow ray
+    crosses the surface: it moves the light around, adding none (X27).
+  - Glass: its albedo at the texture's mip 2 (Q2RTX's) times 1 − its
+    Fresnel term at the light's angle (thin glass's Schlick from 5 %, as
+    `reflect_refract.rgen`'s split).
+  - Anything else but a turbulent surface: 1 − its opacity (6.4's
+    `get_hit_alpha`, the entity's times the skin's; a translucent brush
+    entity's triangles keep their kind, their instance's alpha 0.33);
+    a model flagged `MATERIAL_FLAG_CARRIES_LIGHT` passes all for the
+    map's and dynamic lights, not the sun's ([Instances](#instances-vk_instancec)).
+    The other turbulent surfaces (vertical liquid faces, R31; the liquids
+    with `r_water 0`) pass all, as before.
+  - Checked with `caustics_run.ps1` (TESTING.md "Light through (6.14)").
+    Cost (Release, 1920x1080, full power): the direct lighting pass
+    +0.06–0.12 ms, the frame +0.06–0.13 (X28).
 - **The lighting passes** (3.3), after the primary rays:
   `direct_lighting.rgen` (the same fields; one light sample and shadow ray
   per pixel, see [Lights](#lights-vk_lightc); demodulated diffuse into
@@ -2776,8 +2827,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
   one frame after a swapped one.
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
   weapon shadows, the sun's shadow rays (4.6: ending at the first sky face,
-  the models around a light in them), the hit-distance clear and a gradient
-  sample's light style change (4.13, [Denoiser](#denoiser-vk_asvgfc)). Without the
+  the models around a light in them), the hit-distance clear, a gradient
+  sample's light style change (4.13, [Denoiser](#denoiser-vk_asvgfc)) and
+  the caustic ray (6.14, "Light through" above). Without the
   denoiser the lit image is noisy at one sample per pixel. The TAA pass
   (3.8), the bloom and tone mapping (3.7) and FSR (3.8) follow; without
   tone mapping (`tm_enable 0`) the composite clamps.
@@ -3483,6 +3535,7 @@ overlay, and a measuring mode.
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
+| `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
