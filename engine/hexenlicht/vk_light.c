@@ -17,8 +17,13 @@
  * where utils/light had halved static light (rangescale 0.5), so one of
  * radius R is a map light of level R at twice its intensity (the physical
  * shape's, which dynamic lights keep with the map lights' GL shape, 4.15),
- * fading to 0 at R - minlight (GL's surfaces stop there); the radius changes as GL's
- * (explosions shrink, flames flicker). The color is GL's (the client's,
+ * with no reach (4.19: inverse square all the way; 4.4 faded it to 0 at
+ * R - minlight, where GL's surfaces stop); the radius changes as GL's
+ * (explosions shrink, flames flicker). A player's lights are in the hand
+ * (4.19, r_scene.c); the view entity's (DYNLIGHT_HELD) reach the
+ * first-person weapon with at most the light of one some way off and
+ * without a shadow ray (light_lists.h's dynlight_max_solid_angle). The
+ * color is GL's (the client's,
  * with gl_colored_dynamic_lights) converted to linear, as the map lights'.
  * Dark lights (EF_DARKLIGHT, 4.10) go after them in the UBO, where no
  * shader samples them: GL took them from its lightmaps, the composites take
@@ -114,6 +119,7 @@ static struct
 {
 	int		lit;		/* in the UBO */
 	int		owned;		/* of them, keyed by an entity (the player's too) */
+	int		held;		/* of them, in a player's hand (4.19) */
 	int		dark, negative;	/* not lights: dark (4.10), a negative radius or none past minlight */
 	int		darkening;	/* of the dark ones, darkening the world (r_darklights) */
 	int		most;		/* the most lit in a frame since the map loaded */
@@ -696,7 +702,7 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 	 * the slots left; the game's dark ones (4.10) after them, where no shader
 	 * samples them (shaders/darkness.glsl). A glowing projectile's light
 	 * doesn't light its instance (vk_instance.c) */
-	dlight_stats.lit = dlight_stats.owned = dlight_stats.dark = dlight_stats.negative = 0;
+	dlight_stats.lit = dlight_stats.owned = dlight_stats.held = dlight_stats.dark = dlight_stats.negative = 0;
 	for (i = 0; i < r_scene.num_dlights && r_dlights.integer; i++)
 	{
 		const scene_dlight_t	*s = &r_scene.dlights[i];
@@ -718,10 +724,14 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		intensity = 2.0f * VK_LightLevelIntensity (s->radius);
 		for (k = 0; k < 3; k++)
 			color[k] = VK_ColorToLinear (s->color[k]) * intensity;
-		WriteDynamicLight (&ubo->dyn_light_data[n++], s->origin, DYNAMIC_LIGHT_RADIUS, color, s->radius - s->minlight,
+		WriteDynamicLight (&ubo->dyn_light_data[n], s->origin, DYNAMIC_LIGHT_RADIUS, color, 0.0f,
 				   (s->key > 0 && !MuzzleFlash (s)) ? VK_GlowingInstance (s->key) : -1);
+		if (s->in_view_hand)	/* 4.19: in the view entity's hand (r_scene.c), for the weapon's rule */
+			ubo->dyn_light_data[n].type |= DYNLIGHT_HELD;
+		n++;
 		dlight_stats.lit++;
 		dlight_stats.owned += (s->key > 0);
+		dlight_stats.held += s->held;
 		dlight_stats.largest = q_max (dlight_stats.largest, intensity);
 	}
 	dlight_stats.most = q_max (dlight_stats.most, dlight_stats.lit);
@@ -1161,8 +1171,9 @@ static void VK_Lights_f (void)
 		}
 		Con_Printf ("light styles: %d lights in %d styles other than 0, %d off last frame\n", styled, styles, off);
 	}
-	Con_Printf ("dynamic lights last frame%s: %d (%d keyed by an entity), %d dark (4.10: %d darkening the world%s), %d unlit (negative radius, minlight); since the map loaded at most %d in a frame, the brightest %.0f\n",
-		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.dark, dlight_stats.darkening,
+	Con_Printf ("dynamic lights last frame%s: %d (%d keyed by an entity, %d held by a player), %d dark (4.10: %d darkening the world%s), %d unlit (negative radius, minlight); since the map loaded at most %d in a frame, the brightest %.0f\n",
+		    r_dlights.integer ? "" : " (off: r_dlights 0)", dlight_stats.lit, dlight_stats.owned, dlight_stats.held,
+		    dlight_stats.dark, dlight_stats.darkening,
 		    r_darklights.integer ? "" : ", r_darklights 0",
 		    dlight_stats.negative, dlight_stats.most, dlight_stats.largest);
 	VK_PrintEffectLights ();	/* 6.2: the sprites' in the slots left */

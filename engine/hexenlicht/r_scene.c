@@ -3,7 +3,8 @@
  * R_RenderView does the renderer-independent part of the GL renderer's
  * frame setup (light style animation, view vectors, view leaf, contents
  * color shift and view blend) and then gathers the frame's scene into
- * r_scene (see r_scene.h). The r_dumpscene command prints it.
+ * r_scene (see r_scene.h; 4.19: a player's lights in the hand). The
+ * r_dumpscene command prints it.
  *
  * R_AnimateLight is Hammer of Thyrion's, from gl_rlight.c.
  *
@@ -199,6 +200,77 @@ static void R_AddExtraDynamicLights (void)
 	}
 }
 
+/* 4.19: a player's lights in the hand. CL_RelinkEntities places an entity's
+ * lights with Quake's offsets (EF_DIMLIGHT, the torch's, at the origin,
+ * EF_BRIGHTLIGHT 16 up, a muzzle flash 16 up and 18 ahead), but Hexen II's
+ * player origin is at the feet, not mid-body as Quake's: a physical light
+ * there lies on the floor's plane and lights the floor almost not at all.
+ * The scene's copy of each light keyed to a player (the torch, the
+ * Sunstaff's and invincibility's bright light, invisibility's, Portals'
+ * spell book; the view entity's and other players') moves to the off hand:
+ * HELD_AHEAD ahead and HELD_LEFT to the left (the weapons are on the
+ * right), at HELD_HEIGHT of the eye height (cl.viewheight for the view
+ * entity, 50 standing, 24 crouched: the light 36 or 17 up; other players
+ * aren't known to crouch: 36 up, or 17 where that point is in solid, a
+ * crouching player under a low ceiling), turned by the yaw only. The point
+ * is inside the player's box, which the game keeps out of walls (another
+ * player's crouching in the open is 8 above it). A muzzle flash (the only
+ * lights with a minlight) keeps the client's place ahead of the gun and
+ * moves to that height only. Dark lights stay (GL's darkening at GL's
+ * place, 4.10). Only the view entity's own lights reach the first-person
+ * weapon as held ones (in_view_hand, vk_light.c). The client's lights stay
+ * where they are: cl.light_level (the server's) and the medium's light
+ * (r_light.c) read cl_dlights */
+#define HELD_AHEAD		8.0f
+#define HELD_LEFT		8.0f
+#define HELD_HEIGHT		0.72f	/* of the eye height */
+#define PLAYER_EYE_HEIGHT	50.0f	/* the gamecode's view_ofs, standing */
+#define PLAYER_CROUCH_EYE	24.0f	/* and crouched */
+#define MUZZLE_FLASH_UP		16.0f	/* CL_RelinkEntities' EF_MUZZLEFLASH */
+
+static void R_HoldPlayerLights (void)
+{
+	int	i;
+
+	for (i = 0; i < r_scene.num_dlights; i++)
+	{
+		scene_dlight_t	*sdl = &r_scene.dlights[i];
+		const entity_t	*ent;
+		float		yaw, height;
+		vec3_t		p;
+
+		if (sdl->key < 1 || sdl->key > cl.maxclients || sdl->dark)
+			continue;
+		ent = &cl_entities[sdl->key];
+		sdl->in_view_hand = (sdl->key == cl.viewentity);
+		if (sdl->in_view_hand)
+		{
+			yaw = cl.viewangles[YAW];
+			height = HELD_HEIGHT * cl.viewheight;
+		}
+		else
+		{
+			yaw = ent->angles[YAW];
+			height = HELD_HEIGHT * PLAYER_EYE_HEIGHT;
+		}
+		if (sdl->minlight > 0.0f)
+			VectorSet (p, sdl->origin[0], sdl->origin[1], sdl->origin[2] - MUZZLE_FLASH_UP);
+		else
+		{	/* forward (cos, sin), left (-sin, cos) */
+			float	s = sinf (yaw * (float)M_PI / 180.0f), c = cosf (yaw * (float)M_PI / 180.0f);
+
+			VectorSet (p, ent->origin[0] + HELD_AHEAD * c - HELD_LEFT * s, ent->origin[1] + HELD_AHEAD * s + HELD_LEFT * c,
+				   ent->origin[2]);
+		}
+		sdl->origin[0] = p[0];
+		sdl->origin[1] = p[1];
+		sdl->origin[2] = p[2] + height;
+		if (!sdl->in_view_hand && Mod_PointInLeaf (sdl->origin, cl.worldmodel)->contents == CONTENTS_SOLID)
+			sdl->origin[2] = p[2] + HELD_HEIGHT * PLAYER_CROUCH_EYE;
+		sdl->held = true;
+	}
+}
+
 /* 6.3: cl_tent.c's CL_UpdateTEnts, before its streams (an upstream hot
  * spot: docs/hexenlicht/UPSTREAM.md) */
 void R_ClearBeams (void)
@@ -282,8 +354,10 @@ static void R_BuildScene (void)
 		sdl->dark = dl->dark;
 		sdl->key = dl->key;
 		sdl->die = dl->die;
+		sdl->held = sdl->in_view_hand = false;
 	}
 	R_AddExtraDynamicLights ();
+	R_HoldPlayerLights ();
 
 	r_scene.num_beams = r_drawentities.integer ? num_client_beams : 0;
 	memcpy (r_scene.beams, client_beams, r_scene.num_beams * sizeof(client_beams[0]));
@@ -475,10 +549,11 @@ static void R_DumpScene_f (void)
 	Con_Printf ("dlights: %d\n", r_scene.num_dlights);
 	for (i = 0, dl = r_scene.dlights; i < r_scene.num_dlights; i++, dl++)
 	{
-		Con_Printf ("key %4d org %.0f %.0f %.0f radius %.0f minlight %.0f color %.2f %.2f %.2f%s, %.2fs left\n",
+		Con_Printf ("key %4d org %.0f %.0f %.0f radius %.0f minlight %.0f color %.2f %.2f %.2f%s%s, %.2fs left\n",
 				dl->key, dl->origin[0], dl->origin[1], dl->origin[2],
 				dl->radius, dl->minlight, dl->color[0], dl->color[1], dl->color[2],
-				dl->dark ? " dark" : "", dl->die - r_scene.time);
+				dl->dark ? " dark" : "", dl->in_view_hand ? " held (the view's)" : dl->held ? " held" : "",
+				dl->die - r_scene.time);
 	}
 
 	Con_Printf ("beams: %d\n", r_scene.num_beams);	/* 6.3 */

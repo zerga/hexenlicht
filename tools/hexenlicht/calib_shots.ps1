@@ -23,7 +23,8 @@
 # Hexenlicht runs (hl_run.ps1's, e.g. a copy of main's for a comparison).
 # All shots are paused, GL's without its view blends (gl_polyblend 0: the
 # power-up tints and damage flashes, which Hexenlicht doesn't draw until 6.6),
-# without the HUD, the weapon, the crosshair or the
+# without the HUD, the weapon (-Weapon draws it in both engines, 4.19), the
+# crosshair or the
 # notify lines, at -Width x -Height. -Skip... leaves out a step (the saves
 # are kept for later runs with -KeepSaves). config.cfg and hexenlicht.cfg
 # of the game folder and data1 are backed up and restored around the runs
@@ -34,7 +35,7 @@ param([string]$Bookmarks = '', [string[]]$Names = @(), [Parameter(Mandatory)][st
       [string]$HlCvars = '', [int]$Frames = 16, [double]$Scale = 0.25, [switch]$SkipSaves, [switch]$SkipGl,
       [switch]$SkipHl, [switch]$KeepSaves, [int]$Width = 960, [int]$Height = 540, [string]$Data = '',
       [string]$GlLit = '', [int]$LitFrames = 1, [switch]$DebugBuild, [string]$PreSave = '', [int]$PlayerClass = 2,
-      [string]$Bin = '')
+      [string]$Bin = '', [switch]$Weapon)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Bookmarks) { $Bookmarks = Join-Path $PSScriptRoot 'bookmarks.txt' }
@@ -131,8 +132,8 @@ function Invoke-GlShots([string]$game, [string]$cfg, [string[]]$dests) {
 	}
 }
 
-$common = @('wait;wait;wait', 'host_framerate 0.02', 'viewsize 130', 'showpause 0', 'r_drawviewmodel 0', 'crosshair 0',
-	    'con_notifytime 0', 'gamma 1')
+$common = @('wait;wait;wait', 'host_framerate 0.02', 'viewsize 130', 'showpause 0', "r_drawviewmodel $([int][bool]$Weapon)",
+	    'crosshair 0', 'con_notifytime 0', 'gamma 1')
 $quit = @('toggleconsole', (Waits 5), 'quit')
 $gldir = Join-Path $Out 'gl'; $hldir = Join-Path $Out $Label
 New-Item -ItemType Directory -Force $gldir, $hldir | Out-Null

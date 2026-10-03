@@ -192,6 +192,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define DYNLIGHT_LINE           2   // Hexenlicht (6.3): a beam's, a thin cylinder (light_lists.h)
 #define DYNLIGHT_TYPE_MASK      0xff    // Hexenlicht (6.3): the type in DynLightData's type
 #define DYNLIGHT_NOT_ON_LIGHTS  0x100   // Hexenlicht (6.3): a beam's light, which doesn't light surfaces flagged a light
+#define DYNLIGHT_HELD           0x200   // Hexenlicht (4.19): in the view entity's hand (r_scene.c), its light on the weapon (light_lists.h)
 
 //
 // Spotlight styles (emission profiles)

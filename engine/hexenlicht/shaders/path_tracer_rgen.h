@@ -32,7 +32,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *  - get_direct_illumination: the receiving surface's model instance, which
  *    a glowing projectile's light doesn't light (6.2, light_lists.h's
  *    dynlight_weight), and whether it is a light, which beam lights don't
- *    light (6.3); the light statistics per light list entry
+ *    light (6.3), and whether it is the weapon, which a light in the
+ *    view entity's hand reaches without a shadow ray (4.19); the light
+ *    statistics per light list entry
  *    and the light lists' sphere lights (light_lists.h, 3.4), no shadow ray
  *    without a light (Quake II RTX's has t_max < t_min); for gradient
  *    samples the sampled list light's style change (nee_style_change, 4.13);
@@ -854,6 +856,7 @@ get_direct_illumination(
 
 	bool is_polygonal = true;
 	float vis = 1;
+	bool dynamic_unshadowed = false;	// Hexenlicht (4.19): a held light on the weapon
 
 	/* dynamic light illumination */
 	if(enable_dynamic)
@@ -865,8 +868,10 @@ get_direct_illumination(
 			max_solid_angle,
 			receiver,
 			(material_id & MATERIAL_FLAG_LIGHT) != 0,	// Hexenlicht (6.3): a beam isn't lit by beam lights
+			(material_id & MATERIAL_FLAG_WEAPON) != 0,	// Hexenlicht (4.19)
 			pos_on_light_dynamic,
 			contrib_dynamic,
+			dynamic_unshadowed,
 			rng);
 	}
 
@@ -891,8 +896,10 @@ get_direct_illumination(
 	
 	// Hexenlicht: no shadow ray without a light: Quake II RTX traces one with an
 	// empty mask to the surface itself, whose t_max (0.01 * |V| - 0.01, V from the
-	// fp16 PT_VIEW_DIRECTION) can be below t_min, which ray queries don't allow
-	if(!null_light)
+	// fp16 PT_VIEW_DIRECTION) can be below t_min, which ray queries don't allow;
+	// 4.19: nor for a light in the view entity's hand on the weapon (light_lists.h)
+	bool unshadowed = !is_polygonal && dynamic_unshadowed;
+	if(!null_light && !unshadowed)
 		vis *= trace_shadow_ray(shadow_ray, shadow_cull_mask);
 
 	// Hexenlicht (4.13): a gradient sample's exact relative change from its list light's
@@ -919,8 +926,9 @@ get_direct_illumination(
 	}
 #ifdef ENABLE_SHADOW_CAUSTICS
 	// Hexenlicht (6.14): only to a light the shadow ray reached (Quake II RTX traces it
-	// also when shadowed, and without a light); the models around a light pass it
-	if(enable_caustics && !null_light && vis > 0)
+	// also when shadowed, and without a light); the models around a light pass it;
+	// 4.19: none where no shadow ray was traced
+	if(enable_caustics && !null_light && !unshadowed && vis > 0)
 	{
 		contrib *= trace_caustic_ray(shadow_ray, surface_medium, true, caustic_strength(material_id));
 	}

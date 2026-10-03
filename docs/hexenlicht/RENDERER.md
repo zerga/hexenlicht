@@ -559,6 +559,31 @@ the starting points for authors and their tools.
   view), active dlights, light style values, the active particle list, the
   beams (6.3), the view blend and the medium's light (6.17). The 3D renderer reads only `r_scene`;
   `r_dumpscene` prints it.
+- **A player's lights in the hand** (4.19, `R_HoldPlayerLights`; DECISIONS
+  R109): `CL_RelinkEntities` places an entity's lights with Quake's
+  offsets (`EF_DIMLIGHT` at the origin, `EF_BRIGHTLIGHT` 16 up, a muzzle
+  flash 16 up and 18 ahead), but Hexen II's player origin is at the feet
+  (hull 0..56, the eye 50 up), so the torch lay on the floor's plane. The
+  scene's copy of each light keyed to a player (key 1..`cl.maxclients`, not
+  dark: the torch, the Sunstaff's and the Paladin's invincibility's bright
+  light, invisibility's `EF_LIGHT`, Portals' spell book; the view entity's
+  and other players') moves to the off hand: 8 ahead and 8 to the left, at
+  0.72 of the eye height (`cl.viewheight` for the view entity: 36
+  standing, 17 crouched; 36 for other players, whose crouching the client
+  doesn't know, or 17 where that point is in solid: crouching under a low
+  ceiling), turned by the yaw only
+  (`cl.viewangles` for the view entity, else the entity's), from
+  `cl_entities[key].origin`; inside the player's box, which the game keeps
+  out of walls (another player crouching in the open: 8 above it). A
+  muzzle flash keeps the client's place ahead of the gun
+  and only moves to that height. Marked `held`, the view entity's also
+  `in_view_hand` (`r_dumpscene` prints both), which `vk_light.c` flags
+  `DYNLIGHT_HELD` for the weapon's rule ([Lights](#lights-vk_lightc));
+  other players' lights don't get it (they would reach the weapon through
+  walls, without a shadow ray). The client's `cl_dlights` stay where they
+  are: `cl.light_level` and the medium's light read them, so gameplay is
+  unchanged. The light group (`VK_DynamicLightOwner`) sees the moved
+  origin: the chase-cam player with the torch stays in it.
 - **Beams** (6.3): `cl_tent.c`'s `CL_UpdateTEnts` hands over the streams it
   draws each frame (`R_ClearBeams`, then `R_AddBeam` per stream after its
   source follows its entity: type, skin, source, dest, end time, its four
@@ -1438,9 +1463,23 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   baking (`rangescale` 0.5): one of radius R is a sphere of 8 units with
   twice a map light of level R's intensity, 2 × `r_maplight_scale` ×
   (R/300)³ (the physical shape's: dynamic lights keep it with the map
-  lights' GL shape, 4.15), fading to 0 at R − minlight (GL's surfaces stop there; only the
-  muzzle flash has one); the radius changes as GL's (explosions shrink,
-  flames flicker by up to 31 per frame: ±20 % of the intensity). The
+  lights' GL shape, 4.15), with no reach (4.19, R109: inverse square all
+  the way, range 0 in `spot_data`; 4.4 faded it to 0 at R − minlight,
+  where GL's surfaces stop, which only zeroed a far light's share: every
+  pixel traces one shadow ray either way); the radius changes as GL's (explosions shrink,
+  flames flicker by up to 31 per frame: ±20 % of the intensity). A
+  player's lights are in the hand ([Scene](#scene-r_scenec), 4.19), the
+  view entity's flagged `DYNLIGHT_HELD`: on the first-person weapon
+  (`MATERIAL_FLAG_WEAPON`) such a light's solid angle is at most an 8-unit
+  sphere's at `HELD_WEAPON_DISTANCE` (112, `light_lists.h`'s
+  `dynlight_max_solid_angle`, in the weight and the sample alike) and
+  `get_direct_illumination` traces no shadow or caustic ray for it (the
+  hand that holds the light holds the weapon); not physical (the weapon is
+  a view model drawn at the eye at its own scale; the hand's spot is
+  within 0.2–10 units of every weapon model), the distance fitted to GL's
+  torch-lit weapon, which GL clamps at the texture's own color: the five
+  classes' weapons 0.49–0.77 of GL's mean, the Crusader's gold hub 0.1 %
+  clipped (at 24, the first guess, 3× GL's and 5 % clipped). The
   color is the client's (with `gl_colored_dynamic_lights`, 0 since 4.9:
   white), converted to
   linear as the map lights' (`VK_ColorToLinear`, 4.17). Dark lights
@@ -1473,7 +1512,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   Cost (4.4, castle4, two lights from the magic missile, 1920x1080,
   Release, `vk_benchmark 1`): direct lighting 0.52 → 0.72 ms, bounce
   1.21 → 1.30 ms, the frame 7.5 → 7.7 ms. Without dynamic lights the
-  pick returns at once. The denoised image follows a flash on its first
+  pick returns at once. *4.19: without reach a dark room that only the
+  torch lights costs what a lit room does (its pixels had no light and
+  traced no shadow ray): rider2c's 3.95 → 4.35 ms a frame at 1920x1080,
+  elsewhere −0.08 to +0.08 (R109).* The denoised image follows a flash on its first
   frame (the anti-lag: castle4, the magic missile's frames beside
   `flt_enable 0`).
 - Per pixel, `get_direct_illumination` picks a list light or a dynamic
@@ -1483,7 +1525,8 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   caustic ray dims and tints the light through water, glass and
   translucent surfaces and models, not effects, see [3D
   view](#3d-view-vk_viewc) "Light through"*). The weapon only shadows itself
-  (`direct_lighting.rgen`). Direct specular only where the roughness is
+  (`direct_lighting.rgen`); a light in the view entity's hand reaches it without
+  a shadow ray (4.19). Direct specular only where the roughness is
   above `pt_direct_roughness_threshold` (0.18): smoother surfaces get it
   from the reflections (3.5), so mode 16 is black on them.
 - Units are Q2RTX's shaders': inverse-square falloff; a list sphere's
@@ -2582,7 +2625,12 @@ Story 4.10: Hexen II's darkness as GL shows it.
   torch is a dynamic light, which stays physical: DECISIONS R97). 4.11a
   found the other side: at dark views, looking ahead, the torch adds
   0.03–0.22 of GL's light, as it sits at the player's feet, on the
-  floor's plane, where GL's formula lights the floor most (story 4.19).
+  floor's plane, where GL's formula lights the floor most. *4.19 (R109):
+  the torch is in the hand, without reach; at 4.11a's four dark views it
+  adds 0.44–1.00 of GL's light; at one of each of the six maps'
+  dark places (other views than 4.10's) the torch-lit image is 1.2–3×
+  GL's (today's 0.9–2×), rider2c's dark room 8× (today's 4.4×; GL's is
+  black beyond the torch's radius), meso6's lava room unchanged.*
 - **Gameplay** was already GL's: `cl.light_level` (4.12, `r_light.c`) is
   `R_DrawViewModel`'s, dark lights adding to it as in GL.
 - Left out: the hydra's blinding (`df`, GL's full-screen dark flash: the

@@ -49,6 +49,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    thin cylinder sampled by its solid angle (dynlight_line); a beam's
  *    lights (DYNLIGHT_NOT_ON_LIGHTS) don't light surfaces that are
  *    themselves lights (the beams);
+ *  - a light in the view entity's hand (4.19, DYNLIGHT_HELD) gives the
+ *    first-person weapon at most the light of one some way off, unshadowed
+ *    (dynlight_max_solid_angle);
  *  - a gradient sample weighs a list light by the larger of last frame's
  *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
  *    light that comes on can be picked;
@@ -720,6 +723,29 @@ dynlight_line(uint light_idx, vec3 p, float u, out vec3 position_light, out floa
 	return 2 * radius / h * max(sb - sa, 0) / M_PI;
 }
 
+/* Hexenlicht (4.19): a light in the view entity's hand (DYNLIGHT_HELD,
+ * r_scene.c; not other players') gives the first-person weapon
+ * (receiver_weapon: MATERIAL_FLAG_WEAPON) at most the light it would give
+ * from HELD_WEAPON_DISTANCE away: its solid angle at most a sphere's of its
+ * radius there (the amount; its direction stays the light's, so a weapon
+ * point inside its sphere sees half of it); get_direct_illumination traces no shadow
+ * ray for it (the hand that holds the light holds the weapon). Not physical:
+ * the weapon is a view model drawn at the eye at its own scale (why it casts
+ * no shadow on the world), and the hand's spot is within 0.2-10 units of
+ * every weapon model, inside some. The distance is fitted to GL's torch-lit
+ * weapon, whose light GL clamps at the texture's own color: within a stop
+ * of it, without clipping (DECISIONS.md R109) */
+#define HELD_WEAPON_DISTANCE 112.0
+
+float
+dynlight_max_solid_angle(uint light_idx, float max_solid_angle, bool receiver_weapon)
+{
+	if(!receiver_weapon || (global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_HELD) == 0u)
+		return max_solid_angle;
+	float x2 = min(square(global_ubo.dyn_light_data[light_idx].radius / HELD_WEAPON_DISTANCE), 1);
+	return min(max_solid_angle, 2 * x2 / (1 + sqrt(1 - x2)));
+}
+
 /* Hexenlicht (4.4): a dynamic light's weight in the pick, a list sphere's
  * (sphere_light_mass without the specular lobe) times its luminance: its
  * solid angle, faded by its range, 0 entirely below the horizon; a spot's
@@ -728,9 +754,10 @@ dynlight_line(uint light_idx, vec3 p, float u, out vec3 position_light, out floa
  * its instance + 1 in the type's high 16 bits (vk_light.c). 6.3: a line's
  * its solid angle the same way; a beam's light (DYNLIGHT_NOT_ON_LIGHTS: a
  * line, the sunstaff's hit sphere) 0 for a receiver that is a light itself
- * (receiver_glows: the beam, its light inside it) */
+ * (receiver_glows: the beam, its light inside it). 4.19: a held light's on
+ * the weapon capped (dynlight_max_solid_angle) */
 float
-dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver, bool receiver_glows)
+dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver, bool receiver_glows, bool receiver_weapon)
 {
 	float lum = luminance(global_ubo.dyn_light_data[light_idx].color);
 	uint type = global_ubo.dyn_light_data[light_idx].type;
@@ -760,7 +787,7 @@ dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint rece
 		return 0;
 
 	float x2 = min(square(radius / dist), 1);
-	float solid_angle = min(2 * x2 / (1 + sqrt(1 - x2)), max_solid_angle); // / pi, as compute_dynlight_sphere's
+	float solid_angle = min(2 * x2 / (1 + sqrt(1 - x2)), dynlight_max_solid_angle(light_idx, max_solid_angle, receiver_weapon)); // / pi, as compute_dynlight_sphere's
 	return lum * solid_angle * sphere_light_window(dist, dynlight_range(light_idx));
 }
 
@@ -772,12 +799,15 @@ sample_dynamic_lights(
 		float max_solid_angle,
 		uint receiver,	// Hexenlicht (6.2): the surface's model instance, ~0u = the world
 		bool receiver_glows,	// Hexenlicht (6.3): the surface is a light (MATERIAL_FLAG_LIGHT): no beam lights
+		bool receiver_weapon,	// Hexenlicht (4.19): the surface is the weapon's (MATERIAL_FLAG_WEAPON)
 		out vec3 position_light,
 		out vec3 light_color,
+		out bool unshadowed,	// Hexenlicht (4.19): a held light on the weapon, no shadow ray
 		vec3 rng)
 {
 	position_light = vec3(0);
 	light_color = vec3(0);
+	unshadowed = false;
 
 	if(global_ubo.num_dyn_lights == 0)
 		return;
@@ -787,7 +817,7 @@ sample_dynamic_lights(
 	uint num = min(global_ubo.num_dyn_lights, MAX_LIGHT_SOURCES);
 	float total = 0;
 	for(uint i = 0; i < num; i++)
-		total += dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows);
+		total += dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows, receiver_weapon);
 	if(total <= 0)
 		return;
 
@@ -796,7 +826,7 @@ sample_dynamic_lights(
 	float weight = 0;
 	for(uint i = 0; i < num; i++)
 	{
-		float w = dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows);
+		float w = dynlight_weight(i, p, n, max_solid_angle, receiver, receiver_glows, receiver_weapon);
 		if(w <= 0)
 			continue;
 		light_idx = i; // the last with a weight, should rounding pass them all
@@ -817,8 +847,10 @@ sample_dynamic_lights(
 
 	float irradiance;
 	if(light_type == DYNLIGHT_SPHERE) {
-		irradiance = min(compute_dynlight_sphere(light_idx, light_center, p, position_light, rng), max_solid_angle);
+		float max_sphere = dynlight_max_solid_angle(light_idx, max_solid_angle, receiver_weapon);	// Hexenlicht (4.19)
+		irradiance = min(compute_dynlight_sphere(light_idx, light_center, p, position_light, rng), max_sphere);
 		irradiance *= sphere_light_window(length(light_center - p), dynlight_range(light_idx));
+		unshadowed = receiver_weapon && (global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_HELD) != 0u;
 	} else if(light_type == DYNLIGHT_LINE) {	// Hexenlicht (6.3)
 		float dist;
 		irradiance = min(dynlight_line(light_idx, p, rng.y, position_light, dist), max_solid_angle);
