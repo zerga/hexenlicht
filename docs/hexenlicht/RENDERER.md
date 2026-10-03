@@ -787,7 +787,14 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   tested; 6.14: one the light group would take if it were opaque, a
   beam's sheath, a translucent projectile's light, the scarab's wings, is
   flagged `MATERIAL_FLAG_CARRIES_LIGHT` and passes the caustic ray of the
-  map's and dynamic lights, `vk_models` counts them); masked (`EF_HOLEY`
+  map's and dynamic lights, `vk_models` counts them; 6.15: **ice**, a
+  translucent model in the ice skin (skin 101, `gfx/skin101.lmp`: a
+  monster or player the ice mace froze, after the freeze's 1.5 s tint, which
+  stays the blend; the crystal golem and its gibs), not the weapon nor a
+  model with transparent, special-trans or cutout skins, is
+  `MATERIAL_KIND_GLASS` at alpha 1 with `r_ice 1` (not archived; 0 = the
+  0.33 blend, bit for bit): solid ice, [3D view](#3d-view-vk_viewc)'s
+  reflections and refractions, `vk_models` counts it); masked (`EF_HOLEY`
   cutouts); light
   (4.1: opaque models at a map light's origin, `VK_MapLightAt`: the
   torches, flames, candles and the like that the light entities' game code
@@ -2531,6 +2538,18 @@ the scripts are in [TESTING.md](TESTING.md#calibration-against-gl-49)):
   their share of the leaf's floor, the entities, and a point 24 units above
   the first one's origin (a player's origin for `vk_setpos`). A local game
   only. See [Darkness](#darkness-shadersdarknessglsl).
+- **`vk_freeze`** (6.15) freezes a monster for the ice's checks with the
+  gamecode's own freeze, `icemace.hc`'s `SnowJob(loser, forwhom)` (found
+  by `ED_FindFunctioni`, run by `PR_ExecuteProgram` with `self` the
+  player): the monster the eye's ray meets within 1024 units, else the one
+  nearest the view's direction within 20° (seen or not); not one frozen
+  already (`frozen` above 0: a second call would fire its targets again),
+  and a boss or brush model `SnowJob` declines; its `freeze_time` field
+  then 1e9, so that it stays ice (below skill 3 `IceCubeThink` shatters a
+  frozen monster 5 s after the hit; something pushing it, `obj_push`, sets
+  10 s again); a save keeps it, for `glh2` too. The ice mace
+  freezes only a flesh monster it hits at 10 health or less, which is why
+  6.4's scripted attempts froze none. A local game only.
 
 ## Darkness (`shaders/darkness.glsl`)
 
@@ -2753,6 +2772,37 @@ Story 4.10: Hexen II's darkness as GL shows it.
     (5.5, demo1's start at 1920x1080, Release, full power: a chrome floor
     and a glass pedestal over much of the view): the pass 0.06 → 0.30 ms,
     the frame 3.53 → 3.65 ms. Screens and security cameras are Quake II's.
+  - Ice (6.15, `r_ice`; DECISIONS X33–X34): a glass model
+    (`path_tracer_rgen.h`'s `is_ice`: [Instances](#instances-vk_instancec)
+    makes a translucent model in the ice skin one) is solid: whatever
+    `pt_thick_glass`, the ray goes into and out of it at ice's 1.31
+    (`ICE_INDEX_OF_REFRACTION`) by the exact dielectric Fresnel term
+    (`water.glsl`'s `fresnel_dielectric`: 1.8 % head-on, total internal
+    reflection inside past 49.8°; Q2RTX's thick glass: Schlick's from 5 %,
+    its N.V stretched inside), back faces seen; an unsplit path splits
+    (the even field reflects, the odd refracts), a split one follows the
+    likelier, as water's. Inside or outside is the face a ray meets, not
+    Q2RTX's medium toggled at each face (Hexen II's meshes aren't closed:
+    through a one-sided flap a ray would stay "inside" in the air and turn
+    black): one meeting an ice face from behind is inside (`MEDIUM_GLASS`),
+    one that was inside and meets anything else got out, unabsorbed. No
+    motion vectors of a flat mirror or window: ice is a curved model that
+    can move (Q2RTX's chrome models). No tint at the face: a ray
+    inside absorbs by Beer–Lambert (`ice_transmittance`), the ice's color
+    as the transmittance of 32 units (`ICE_COLOR_DISTANCE`): the albedo of
+    the face it left from over the strongest channel of its texture's mean
+    (`ice_color`, the last mip), so the skin's mean passes that channel
+    whole (the ice skin's: 0.49 0.47 1.0) and its pattern stays; the skin
+    as Q2RTX tints glass would pass a sixth of the light. In and out take
+    both default passes: behind a window or under water, and where the way
+    out is total internal reflection, the path ends on an inner face,
+    shaded as a regular surface in the skin (lit, as GL's blend shows it);
+    a ray leaving ice under water goes on in air (the outer medium isn't
+    kept). A model's smooth normals refract smoothly; at a silhouette a
+    refracted ray can miss its face (Q2RTX's too). `vk_models check`
+    accepts the ice's glass in the transparent group (the ice skin at full
+    opacity). Cost: the archer close at 1920x1080 a frame +0.07–0.19 ms,
+    the pass +0.04–0.06; at 960x540 +0.01 at most (X34).
   - Water and slime: a liquid's surface is physical water with `r_water 1`
     (6.5, "Water" below); the other water and slime (vertical, or not
     against the air), and all of it with `r_water 0`, stay opaque and
@@ -2869,7 +2919,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
     focusing of 6.5's sine waves, was invisible (X27).
   - Glass: its albedo at the texture's mip 2 (Q2RTX's) times 1 − its
     Fresnel term at the light's angle (thin glass's Schlick from 5 %, as
-    `reflect_refract.rgen`'s split).
+    `reflect_refract.rgen`'s split). Ice (6.15): its color (`ice_color`,
+    32 units of it) times 1 − ice's exact Fresnel term where the light
+    enters, counted once, not bent (no focusing).
   - Anything else but a turbulent surface: 1 − its opacity (6.4's
     `get_hit_alpha`, the entity's times the skin's; a translucent brush
     entity's triangles keep their kind, their instance's alpha 0.33);
@@ -3616,6 +3668,7 @@ overlay, and a measuring mode.
 | `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
 | `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
+| `r_ice 0/1` | 6.15: a translucent model in the ice skin (frozen monsters, the crystal golem) is solid ice, refracting and absorbing (1), or the 0.33 blend (0, the image before; not archived; see [Instances](#instances-vk_instancec) and [3D view](#3d-view-vk_viewc)) |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
@@ -3623,6 +3676,7 @@ overlay, and a measuring mode.
 | `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines, unsaved edits; read it again and apply it (unsaved edits dropped); per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
 | `r_editlights 0/1`, `r_editlights_distance` | markers at the lights in sight and the selected light's panel (0); how far they reach (1024) (see [Light editor](#light-editor-vk_lighteditc)) |
 | `vk_setpos x y z [pitch yaw]`, `vk_bookmark <name>`, `vk_screenshot <name> [frames]` | the player there (single player; `save` on the same line keeps the pitch); a calibration bookmark into the game folder's `bookmarks.txt`; `shots\<name>.tga`, frames averaged in linear light (see [Calibration](#calibration-vk_calibc)) |
+| `vk_freeze` | 6.15: the monster in front frozen by the gamecode's own freeze, for good (single player; see [Calibration](#calibration-vk_calibc)) |
 | `vk_editlight select [x y z\|none]`, `vk_editlight <changes>`, `add`, `reset`, `save`, `help` | the light at the crosshair or by entity origin; `off`, `on`, `level n\|*f`, `scale f\|*f`, `color r g b`, `style n`, `origin x y z\|eye\|cursor`, `move dx dy dz`; a new light at the eye; the map's own light again; the map file into the game folder |
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 0 as in HoT since 4.9) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `r_darklights 0/1`, `vk_darkplaces [n] [threshold]` | GL's dark lights (the invincible Necromancer) darken the world (1; 4.10, see [Darkness](#darkness-shadersdarknessglsl)); the map's dark places where an item or monster stands, with a point to go to (a local game; see [Calibration](#calibration-vk_calibc)) |
