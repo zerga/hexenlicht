@@ -34,7 +34,7 @@ $views = @(
 if ($Only) { $views = @($views | Where-Object { $_[0] -match $Only }) }
 if (-not $views.Count) { throw "no view matches -Only '$Only'" }
 
-$start = @((Waits 3), 'vid_vsync 0', 'host_framerate 0.02', 'viewsize 130', 'showpause 0', 'crosshair 0', 'con_notifytime 0', 'color 0 0')
+$start = @((Waits 3), 'vid_vsync 0', 'host_framerate 0.02', 'sensitivity 0', 'viewsize 130', 'showpause 0', 'crosshair 0', 'con_notifytime 0', 'color 0 0')
 if ($Extra) { $start += $Extra }
 $end = @('toggleconsole', (Waits 3), 'vid_vsync 1', 'quit')
 

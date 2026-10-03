@@ -31,8 +31,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * water_fog_apply puts it into the final surface's material, so a layer
  * is lit as what is seen through it. Quake II RTX's get_water_normal and
  * extinction stay for r_water 0 (its water normal map is in its media:
- * water_normal_texture is 0). 6.14: water_caustic, the waves' pattern in
- * the light through a liquid's surface (path_tracer_rgen.h's caustic ray) */
+ * water_normal_texture is 0). 6.16: water_caustic, the water texture's
+ * pattern in the light through a liquid's surface (path_tracer_rgen.h's
+ * caustic ray) */
 
 bool is_physical_liquid(uint material_id)
 {
@@ -128,15 +129,6 @@ float fresnel_dielectric(float cos_i, float eta)
 #define WATER_INDEX_OF_REFRACTION 1.33
 #define WATER_WAVE_SLOPE 0.08	// at r_water_waves 1
 
-// the waves' frame and phase at a point of a liquid's surface (see below)
-vec2 turbulence_phase(vec3 geo_normal, vec3 position, out mat3 basis, out float side)
-{
-	side = (geo_normal.z < 0) ? -1.0 : 1.0;
-	basis = construct_ONB_frisvad(geo_normal * side);
-	vec2 p = vec2(dot(position, basis[0]), dot(position, basis[2]));
-	return fract(p / 128.0 + global_ubo.time * 20.0 / 128.0) * 2 * M_PI;
-}
-
 // the waves: the slope of Hexen II's turbulence (utils.glsl's lava_uv_warp,
 // d_scan.c: a 128-unit cycle at 20 units a second, s shifted by a sine of t
 // and t by one of s), so what is seen through and in the water wobbles as the
@@ -145,50 +137,51 @@ vec2 turbulence_phase(vec3 geo_normal, vec3 position, out mat3 basis, out float 
 // the waves, so its two coincident faces (up and down) are one surface
 vec3 get_turbulence_normal(vec3 geo_normal, vec3 position)
 {
-	mat3 basis;
-	float side;
-	vec2 phase = turbulence_phase(geo_normal, position, basis, side);
+	float side = (geo_normal.z < 0) ? -1.0 : 1.0;
+	mat3 basis = construct_ONB_frisvad(geo_normal * side);
+	vec2 p = vec2(dot(position, basis[0]), dot(position, basis[2]));
+	vec2 phase = fract(p / 128.0 + global_ubo.time * 20.0 / 128.0) * 2 * M_PI;
 	float slope = WATER_WAVE_SLOPE * global_ubo.water_waves;
 	vec3 n = normalize(vec3(slope * sin(phase.y), 1, slope * sin(phase.x)));
 
 	return (basis * n) * side;
 }
 
-/* 6.14: the waves' caustic: the light's irradiance behind a liquid's
- * surface, depth units past the point where it crossed it, relative to a
- * flat surface's. A ray refracted by the waves lands displaced by depth
- * times (1 - 1/1.33) times their slope, and the irradiance is 1 / the
- * determinant of that mapping. The turbulence's slopes are a shear (the x
- * tilt varies with y only, the y tilt with x only), so nothing focuses to
- * first order: the determinant is 1 - m cos(phase.x) cos(phase.y), with
- * m = (depth / 1026)^2 at r_water_waves 1, about 6 % at a pool's 256 units.
- * Not physical: the focus is brought to CAUSTIC_FOCUS_DEPTH and m held at
- * CAUSTIC_MAX_FOCUS at most (focal spots up to ~7x). The pattern is taken
- * where the straight shadow ray crosses the surface, so it is divided by
- * its mean there, 1 / agm(1, sqrt(1 - m^2)) (2/pi K(m)): it moves the light
- * around, adding none */
-#define CAUSTIC_FOCUS_DEPTH 256.0
-#define CAUSTIC_MAX_FOCUS 0.9
+/* 6.16: the caustic, the light's irradiance behind a liquid's surface,
+ * depth units past the point where it crossed it, relative to a plain
+ * surface's: the water texture's brightness there (tex_coord: warped as the
+ * surface shows it) over its mean, so its painted veins (Hexen II's liquid
+ * textures are caustic networks) send more light and its dark patches less.
+ * Brightness (luminance's weights) in the textures' 8-bit values: their
+ * last mip is the mean of those (blitted; a texture without its full mip
+ * chain, a pack's DDS without mips, has no pattern), so the pattern's mean
+ * is 1: it moves the light around, adding none. strength (r_water_caustics,
+ * path_tracer_rgen.h's caustic_strength) stretches it around 1 (1: the
+ * texture's contrast, 0: none); past where the dark parts reach 0 it adds
+ * light (*rtex078, half dark: +14 % at 2, +40 % at 3); at most
+ * CAUSTIC_MAX (no original reaches it at 3: a pack's dark albedo with
+ * bright glints would make fireflies). Faded in over CAUSTIC_FADE_DEPTH
+ * below the surface, blurred a mip level per doubling of the depth past
+ * CAUSTIC_BLUR_DEPTH. Not physical: a look tied to the painting (6.14's
+ * focusing of 6.5's sine waves, physically ~6 % at a pool's 256 units,
+ * was invisible even at 16x) */
+#define CAUSTIC_FADE_DEPTH 32.0
+#define CAUSTIC_BLUR_DEPTH 64.0
+#define CAUSTIC_MAX 8.0
 
-float water_caustic(vec3 geo_normal, vec3 position, float depth)
+float water_caustic(uint base_texture, vec2 tex_coord, float depth, float strength)
 {
-	float m = min(square(depth * global_ubo.water_waves / CAUSTIC_FOCUS_DEPTH), CAUSTIC_MAX_FOCUS);
-	if(m <= 0)
+	if(base_texture == 0 || strength <= 0)
 		return 1;
 
-	mat3 basis;
-	float side;
-	vec2 phase = turbulence_phase(geo_normal, position, basis, side);
+	float lod = log2(max(depth / CAUSTIC_BLUR_DEPTH, 1.0));
+	float y = luminance(global_textureLod(base_texture, tex_coord, lod).rgb);
+	float y_mean = luminance(global_textureLod(base_texture, tex_coord, 16.0).rgb);
+	if(y_mean <= 0)
+		return 1;
 
-	float a = 1, b = sqrt(1 - m * m);
-	for(int i = 0; i < 4; i++)
-	{
-		float a_next = 0.5 * (a + b);
-		b = sqrt(a * b);
-		a = a_next;
-	}
-
-	return a / (1 - m * cos(phase.x) * cos(phase.y));
+	float caustic = clamp(1.0 + strength * (y / y_mean - 1.0), 0.0, CAUSTIC_MAX);
+	return mix(1.0, caustic, clamp(depth / CAUSTIC_FADE_DEPTH, 0.0, 1.0));
 }
 
 vec3 get_water_normal(uint material_id, vec3 geo_normal, vec3 tangent, vec3 position, bool local_space)

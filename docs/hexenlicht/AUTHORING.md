@@ -174,7 +174,11 @@ MATERIALS.md "Special materials" has the rules; what matters for authors:
   a third over what is seen through it, lit as that; the other liquids
   are opaque under the reflection (their own specular left out). An
   `_n` replaces the default waves. Vertical liquid faces (egypt's rune walls) stay opaque
-  surfaces.
+  surfaces. Since 6.16 your albedo's brightness pattern is also the
+  caustic in the light through the surface (`r_water_caustics`): bright
+  lines send more light onto the floor, dark areas less, so a liquid with
+  little contrast casts little. Ship a DDS albedo with its full mip chain
+  (`pack_dds.ps1` does): without it there is no pattern.
 - **Lava:** its albedo or `_e` emits and lights the room with its average
   color, times `emissive`.
 - **The sky:** one 2:1 image, the front layer left, the back right, the

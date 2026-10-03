@@ -45,9 +45,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    sky to integrate it from), clusters past the sky visibility's bits
  *    trace it;
  *  - trace_caustic_ray (6.14): every layer of the transparent group, a
- *    liquid's caustic from 6.5's waves and its medium, glass's Fresnel term,
- *    6.4's opacity, the models around a light passed (see there); traced
- *    only to a light the shadow ray reached;
+ *    liquid's caustic (6.16: from its texture) and its medium, glass's
+ *    Fresnel term, 6.4's opacity, the models around a light passed (see
+ *    there); traced only to a light the shadow ray reached;
  *  - get_rng: clamped to the largest float below 1 (Quake II RTX's literal
  *    rounds to 1.0);
  *  - get_material: a model's colorshade tint's hue tints the base color;
@@ -628,9 +628,10 @@ float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 te
  * faces culled as Quake II RTX's (a pane's far side, a liquid's coincident
  * face and a model's far side count once), a translucent model's clear
  * texels no hit (trace_geometry_ray's alpha test); per layer:
- *  - a liquid's surface (r_water 1, water.glsl): the waves' caustic at the
- *    distance the light goes past it (water_caustic; none where a material's
- *    normal map replaces the waves), and the medium along
+ *  - a liquid's surface (r_water 1, water.glsl): the caustic of its texture
+ *    at the distance the light goes past it (6.16: water_caustic, the
+ *    texture's brightness where the light crossed it over its mean; 6.14's
+ *    was 6.5's sine waves' focusing, invisible), and the medium along
  *    the path in the liquid (6.5's gray extinction, water_fog_density; Quake
  *    II RTX's colored one stays for the view with r_water 0); its texture
  *    layer passes all (the medium dims), as Quake II RTX's;
@@ -649,8 +650,17 @@ float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 te
  *    glass, for its force fields) */
 #define CAUSTIC_MAX_LAYERS 4
 
+/* Hexenlicht (6.16): the caustic's strength on a receiver, r_water_caustics
+ * (3; 0 = none); on the weapon at most the texture's own contrast (1):
+ * close to the eye a stronger one swims over it */
+float caustic_strength(uint receiver_material)
+{
+	float s = global_ubo.water_caustics;
+	return ((receiver_material & MATERIAL_FLAG_WEAPON) != 0) ? min(s, 1.0) : s;
+}
+
 vec3
-trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers)
+trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers, float pattern_strength)
 {
 	vec3 throughput = vec3(1);
 
@@ -672,9 +682,11 @@ trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers)
 
 		if(is_physical_liquid(material_id))
 		{
-			// the waves' pattern where it has them (6.5: not with its material's normal map)
-			if(get_material_info(material_id).normals_texture == 0)
-				throughput *= water_caustic(triangle.normals[0], ray.origin + ray.direction * t, t);
+			// 6.16: the water texture's pattern where the light crossed it, warped
+			// as the surface shows it (pt_logic_masked's perturb_tex_coord)
+			vec2 tex_coord = triangle.tex_coords * get_hit_barycentric(ray_payload_geometry);
+			perturb_tex_coord(material_id, global_ubo.time, tex_coord);
+			throughput *= water_caustic(get_material_info(material_id).base_texture, tex_coord, t, pattern_strength);
 
 			if(medium != MEDIUM_NONE)
 			{
@@ -910,7 +922,7 @@ get_direct_illumination(
 	// also when shadowed, and without a light); the models around a light pass it
 	if(enable_caustics && !null_light && vis > 0)
 	{
-		contrib *= trace_caustic_ray(shadow_ray, surface_medium, true);
+		contrib *= trace_caustic_ray(shadow_ray, surface_medium, true, caustic_strength(material_id));
 	}
 #endif
 
@@ -1048,7 +1060,7 @@ get_sunlight(
 	// Hexenlicht (6.14): the models around a light shadow the sun (see the caller)
 	if(enable_caustics && shadow_traced)
 	{
-		radiance *= trace_caustic_ray(shadow_ray, surface_medium, false);
+		radiance *= trace_caustic_ray(shadow_ray, surface_medium, false, caustic_strength(material_id));
 	}
 #endif
 
