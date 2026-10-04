@@ -16,6 +16,8 @@
  *    frames (1) averaged in linear light (vk_swapchain.c): a still frame's
  *    one-sample noise averages out, without the 100 numbered files of
  *    "screenshot";
+ *  - vk_freeze (6.15) freezes the monster the player looks at with the
+ *    gamecode's own SnowJob, for good (the ice's checks);
  *  - vk_darkplaces [n] [threshold] (4.10) lists where GL shows the world's
  *    floors black: the leaves with the most floor whose lightmaps are
  *    below the threshold at the light styles now, with a point to go to.
@@ -111,6 +113,92 @@ static void VK_SetPos_f (void)
 		ent->v.fixangle = 1;
 	}
 	SV_LinkEdict (ent, false);
+}
+
+dfunction_t *ED_FindFunctioni (const char *fn_name);	/* pr_edict.c; host_cmd.c declares it so too */
+
+/* vk_freeze (6.15): the gamecode's own freeze (icemace.hc's SnowJob, the
+ * ice mace's kill) on the monster the player looks at within 1024 units
+ * (else the one nearest the view's direction within 20 degrees, seen or
+ * not), its freeze_time pushed past any map's end, so that it stays ice
+ * (below skill 3 IceCubeThink shatters it 5 s after; something pushing it,
+ * obj_push, sets 10 s again); a save keeps it */
+static void VK_Freeze_f (void)
+{
+	edict_t		*player, *ent;
+	dfunction_t	*f;
+	eval_t		*val, *frozen;
+	vec3_t		start, end, forward, right, up;
+	trace_t		tr;
+
+	if (!LocalGame ("vk_freeze"))
+		return;
+	f = ED_FindFunctioni ("SnowJob");
+	if (!f)
+	{
+		Con_Printf ("vk_freeze: the gamecode has no SnowJob\n");
+		return;
+	}
+	player = EDICT_NUM (1);
+	VectorAdd (player->v.origin, player->v.view_ofs, start);
+	AngleVectors (player->v.v_angle, forward, right, up);
+	VectorMA (start, 1024.0f, forward, end);
+	tr = SV_Move (start, vec3_origin, vec3_origin, end, MOVE_NORMAL, player);
+	ent = tr.ent;
+	if (!ent || ent == sv.edicts || !((int)ent->v.flags & FL_MONSTER))
+	{	/* else the monster nearest the view's direction, within 20 degrees */
+		edict_t	*e;
+		float	best = cosf (20.0f * (float)M_PI / 180.0f);
+		int	i;
+
+		ent = NULL;
+		for (i = 1, e = NEXT_EDICT (sv.edicts); i < sv.num_edicts; i++, e = NEXT_EDICT (e))
+		{
+			vec3_t	d;
+			float	len, c;
+
+			if (e->free || !((int)e->v.flags & FL_MONSTER))
+				continue;
+			VectorAdd (e->v.mins, e->v.maxs, d);
+			VectorMA (e->v.origin, 0.5f, d, d);
+			VectorSubtract (d, start, d);
+			len = VectorLength (d);
+			if (len <= 0.0f || len > 1024.0f)
+				continue;
+			c = DotProduct (d, forward) / len;
+			if (c > best)
+			{
+				best = c;
+				ent = e;
+			}
+		}
+		if (!ent)
+		{
+			Con_Printf ("vk_freeze: no monster in front\n");
+			return;
+		}
+	}
+	frozen = GetEdictFieldValue (ent, "frozen");	/* SnowJob's counter: 50 when frozen */
+	if (frozen && frozen->_float > 0.0f)
+	{
+		Con_Printf ("vk_freeze: %s (entity %d) is frozen already\n", PR_GetString (ent->v.classname), NUM_FOR_EDICT (ent));
+		return;
+	}
+	*sv_globals.time = sv.time;
+	*sv_globals.self = EDICT_TO_PROG (player);
+	G_INT (OFS_PARM0) = EDICT_TO_PROG (ent);
+	G_INT (OFS_PARM1) = EDICT_TO_PROG (player);
+	PR_ExecuteProgram (f - pr_functions);
+	if (!frozen || frozen->_float <= 0.0f)
+	{	/* a boss takes damage instead, a brush model nothing */
+		Con_Printf ("vk_freeze: %s (entity %d) didn't freeze\n", PR_GetString (ent->v.classname), NUM_FOR_EDICT (ent));
+		return;
+	}
+	val = GetEdictFieldValue (ent, "freeze_time");
+	if (val)
+		val->_float = 1.0e9f;
+	Con_Printf ("vk_freeze: %s (entity %d)%s\n", PR_GetString (ent->v.classname), NUM_FOR_EDICT (ent),
+		    val ? "" : ", no freeze_time: it may shatter");
 }
 
 static void VK_Bookmark_f (void)
@@ -333,4 +421,5 @@ void VK_InitCalib (void)
 	Cmd_AddCommand ("vk_bookmark", VK_Bookmark_f);
 	Cmd_AddCommand ("vk_screenshot", VK_Screenshot_f);
 	Cmd_AddCommand ("vk_darkplaces", VK_DarkPlaces_f);
+	Cmd_AddCommand ("vk_freeze", VK_Freeze_f);
 }

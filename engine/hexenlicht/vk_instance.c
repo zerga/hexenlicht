@@ -65,6 +65,11 @@ COMPILE_TIME_ASSERT(ModelInstance, sizeof(ModelInstance) == 224);	/* the shaders
 static cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
 /* glide stepping entities (walking monsters) between their moves; 0 = GL's steps */
 static cvar_t	r_lerpmove = {"r_lerpmove", "1", CVAR_ARCHIVE};
+/* 6.15: the ice (a translucent model in the ice skin) is a glass model,
+ * refracting and absorbing (reflect_refract.rgen); 0 = 6.4's blend */
+static cvar_t	r_ice = {"r_ice", "1", CVAR_NONE};
+
+#define SKIN_ICE	101	/* the gamecode's GLOBAL_SKIN_ICE: gfx/skin101.lmp */
 
 /* this frame's instances */
 static int			num_instances;
@@ -612,6 +617,19 @@ static int AliasGroup (const scene_entity_t *e)
 	return MODEL_GROUP_OPAQUE;
 }
 
+/* 6.15: ice, a translucent model in the ice skin: a monster or player the
+ * ice mace froze (icemace.hc's SnowJob: translucent at once, the ice skin
+ * after its 1.5 s tint, which stays 6.4's blend), the crystal golem. A
+ * glass model in the transparent group, at full opacity: reflect_refract.rgen
+ * traces it as solid ice, the caustic ray tints the light through it. Not
+ * a model whose skin has its own see-through or cutout texels, nor the
+ * weapon */
+static qboolean IsIce (const scene_entity_t *e)
+{
+	return r_ice.integer && e->skinnum == SKIN_ICE && (e->drawflags & DRF_TRANSLUCENT) && e->kind != SCENE_ENT_VIEWMODEL &&
+	       !(e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS | EF_HOLEY));
+}
+
 /* R_DrawAliasModel's fixed light levels (255 = 1), in its order: spinning
  * items pulse, MLS_ABSLIGHT, the other MLS_* modes (fullbright, power
  * mode, torch, total darkness) from light styles 25-30; -1 = lit by the
@@ -777,7 +795,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
 	scene_entity_t		shown;		/* e where r_lerpmove shows it */
-	qboolean		continues, jumped, bad_skin, emissive, glow, beam;
+	qboolean		continues, jumped, bad_skin, emissive, glow, beam, ice;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
@@ -868,8 +886,11 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : (glow || beam) ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	/* 5.5: a skin's files' chrome, Quake II RTX's chrome model (a mirror
-	 * below roughness 0.02); a translucent entity stays translucent */
-	mi->material = ((group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL :
+	 * below roughness 0.02); a translucent entity stays translucent; 6.15:
+	 * the ice is glass */
+	ice = group == MODEL_GROUP_TRANSPARENT && IsIce (e);
+	model_frame.ice += ice;
+	mi->material = (ice ? MATERIAL_KIND_GLASS : (group == MODEL_GROUP_TRANSPARENT) ? MATERIAL_KIND_TRANSP_MODEL :
 			(VK_GetMaterial (material)->kind == MATKIND_CHROME) ? MATERIAL_KIND_CHROME_MODEL : MATERIAL_KIND_REGULAR) |
 		       MATERIAL_FLAG_MODEL | (uint32_t)material;	/* 4.10: dark lights leave models lit (shaders/darkness.glsl) */
 	if (e->kind == SCENE_ENT_VIEWMODEL)
@@ -910,8 +931,8 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 
 	/* the entity's alpha; the skin's is in its texture (opacity), which
 	 * alone counts for EF_SPECIAL_TRANS (GL's R_DrawAliasModel ignores
-	 * DRF_TRANSLUCENT there) */
-	alpha = ((e->drawflags & DRF_TRANSLUCENT) && !(e->model->flags & EF_SPECIAL_TRANS)) ? TRANSLUCENT_ALPHA : 1.0f;
+	 * DRF_TRANSLUCENT there); the ice is solid (6.15) */
+	alpha = ((e->drawflags & DRF_TRANSLUCENT) && !(e->model->flags & EF_SPECIAL_TRANS) && !ice) ? TRANSLUCENT_ALPHA : 1.0f;
 	mi->alpha_and_frame = VK_FloatToHalf (alpha);
 	mi->drawflags = (uint32_t)e->drawflags;
 	/* a half's value: model_geometry.comp packs it into the triangles'
@@ -1160,7 +1181,8 @@ static void VK_Instances_f (void)
 				    mi->prim_offset_prev_pose_curr_frame / am->num_pose_verts, mi->pose_lerp_curr_frame,
 				    e->skinnum, mat->name,
 				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_TRANSP_MODEL) ? " transp" :
-				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_CHROME_MODEL) ? " chrome" : "",
+				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_CHROME_MODEL) ? " chrome" :
+				    ((mi->material & MATERIAL_KIND_MASK) == MATERIAL_KIND_GLASS) ? " ice" : "",
 				    !mat->mask_texture ? "" : VK_ModelHasCutouts (e->model) ? " cutout" : " alpha");
 			if (e->scale && e->scale != 100)
 				q_strlcat (extra, va(" scale %d%%", e->scale), sizeof(extra));
@@ -1206,6 +1228,7 @@ void VK_InitInstances (void)
 	}
 	Cvar_RegisterVariable (&r_lerpmodels);
 	Cvar_RegisterVariable (&r_lerpmove);
+	Cvar_RegisterVariable (&r_ice);
 	Cmd_AddCommand ("vk_instances", VK_Instances_f);
 }
 

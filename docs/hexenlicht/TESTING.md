@@ -37,8 +37,8 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
 - Set `sensitivity 0` too (6.16): with the owner's mouse look on
   (`hexenlicht.cfg`), mouse movement over the test window while someone
   uses the PC turns the scripted view; twice a view came out from another
-  angle. `water_run.ps1`, `translucency_run.ps1` and `caustics_run.ps1`
-  do; the older shooting scripts (`effects_run.ps1`, `calib_shots.ps1`,
+  angle. `water_run.ps1`, `translucency_run.ps1`, `caustics_run.ps1` and
+  `ice_run.ps1` do; the older shooting scripts (`effects_run.ps1`, `calib_shots.ps1`,
   `perf_baseline.ps1`, the material and test pack sets) don't yet: run
   them with nobody at the PC. The configs are restored afterwards.
 - Early-read cvars (`vid_*`, `vid_uiscale`) are locked until `hexen.rc` has
@@ -564,12 +564,12 @@ afterwards). The views:
 - **Noise:** per-pixel RMS of a single frame against the 8-frame average
   in a region (6.4's measure, a small C# helper over the TGAs, not kept):
   through both panes 1.0–1.1 levels (`main` 0.8), elsewhere 0.8–0.9.
-- **Not scripted:** frozen and stoned monsters (the ice mace must kill a
-  flesh monster, a medusa stone one; two attempts at meso1's scorpions
-  didn't freeze one), special-trans models (the Riders' and the Eidolon's
-  effects, the soul spheres), the fallen angel lords (not drawn at the
-  cathedral's spots without a trigger) and the crystal golem (village2,
-  behind a trigger: dark, as GL's fixed light level is left out, X4).
+- **Not scripted:** stoned monsters (a medusa stone one), special-trans
+  models (the Riders' and the Eidolon's effects, the soul spheres) and the
+  fallen angel lords (not drawn at the cathedral's spots without a
+  trigger). Frozen monsters and the crystal golem: "Ice (6.15)" (the ice
+  mace freezes only a flesh monster it hits at 10 health or less, so two
+  attempts at meso1's scorpions froze none; `vk_freeze` does it).
 
 ## Water (6.5)
 
@@ -656,6 +656,36 @@ afterwards. The views:
   (a scratch script, as 6.5's; DECISIONS X28).
 - `vk_setpos` needs ~10 waits before a `pause`: paused, the server sends
   no new origin, and the shot is taken from the old one.
+
+## Ice (6.15)
+
+`ice_run.ps1` makes each view from its map: `vk_freeze` on a monster in
+front (the gamecode's own freeze, kept frozen: `IceCubeThink` would shatter
+it after 5 s below skill 3), or `create monster_archer` first where none
+stands (the cheat spawns it 80 units ahead of the last frame's view, so it
+waits after `vk_setpos`; a monster the map has, as the cheat skips the
+precache), waits out the freeze's 1.5 s tint, goes to the camera, pauses
+and shoots twice, `r_ice` 0 and 1 (`<view>_i0`, `_i1`, 8 frames
+averaged). The views: demo1's archer close from the front and from the
+side, an archer behind village1's bay window seen from the street, one sunk
+in demo1's pool seen from above, village2's crystal golem in its dark alcove
+(ice from the start). The log's `vk_models` counts the ice (1 a view)
+and `vk_models check` must agree in each (the script prints both).
+- **GL:** `-Saves` saves each view (`hlcal_ice_<view>`, on `vk_setpos`'s
+  line: the pitch kept) and writes `ice_bookmarks.txt` into `-Out`;
+  `calib_shots.ps1 -Bookmarks <it> -SkipSaves -SkipHl -KeepSaves -Out
+  <folder>` then shoots `glh2` from them (the 0.33 blend). Delete the
+  saves afterwards.
+- **Cost:** `-Cost -Release -Width 1920 -Height 1080`: each view
+  profiled paused with `vk_benchmark 1`, the averages of 120 frames,
+  `r_ice` 0 and 1 alternating twice (the script prints the frame and the
+  reflect/refract pass).
+- **Checks:** `r_ice 0` is the image before 6.15 (the blend); Debug
+  validation 0/0; where the passes run out (behind the window, under
+  water, past total internal reflection) the ice shows its skin, lit.
+- The views are the script's (no bookmarks file); a monster the map
+  places may wake and move before `vk_freeze` if the player isn't
+  `notarget` (the script sets it).
 
 ## Pixel regression (renderer refactors)
 

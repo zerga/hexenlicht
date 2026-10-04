@@ -159,6 +159,8 @@ main()
 	int correct_motion_vector = 0; // 1 -> flat reflection, 2 -> flat refraction
 	bool include_player_model = !primary_is_weapon;
 	bool backface_culling = true;
+	bool ice_absorbs = false;	// Hexenlicht (6.15): the ray runs inside ice of ice_tint
+	vec3 ice_tint = vec3(1);
 	
 	// Process reflection or refraction.
 	// Each pixel follows either the reflected or the refracted path, depending on 
@@ -346,7 +348,67 @@ main()
 		float n_dot_v = dot(direction, -normal);
 		vec3 reflected_direction = reflect(direction, normal);
 
-		if(global_ubo.pt_thick_glass == 2 || global_ubo.pt_thick_glass == 1 && global_ubo.flt_enable == 0)
+		if(is_ice(material_id))
+		{
+			// Hexenlicht (6.15): ice (path_tracer_rgen.h's is_ice), solid whatever
+			// pt_thick_glass: into and out of it at ice's index by the exact dielectric
+			// Fresnel term (water's, 6.5; Quake II RTX's thick glass: Schlick's from 5 %,
+			// its N.V stretched inside), the medium toggled at each face and back faces
+			// seen; an unsplit path splits, one field reflecting and the other
+			// refracting, a split one follows the likelier (as water). No tint at the
+			// face: the ice absorbs along the path inside (below)
+			bool from_inside = primary_medium == MEDIUM_GLASS;
+			float eta = from_inside ? 1.0 / ICE_INDEX_OF_REFRACTION : ICE_INDEX_OF_REFRACTION;	// n2 / n1
+			vec3 incident = direction;
+
+			float F = fresnel_dielectric(clamp(n_dot_v, 0, 1), eta);
+			vec3 refracted_direction = refract(direction, normal, 1.0 / eta);
+			if(dot(refracted_direction, refracted_direction) == 0.0)
+				F = 1.0;
+
+			bool do_split = bitCount(checkerboard_flags) == 1 && F < 1.0;
+			bool do_refraction = do_split ? is_odd_checkerboard : (F < 0.5);
+			float correction_factor = do_refraction ? 1.0 - F : F;
+
+			if(do_split)
+			{
+				correction_factor *= 2;
+				checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION | CHECKERBOARD_FLAG_REFRACTION;
+			}
+			else if(checkerboard_flags == CHECKERBOARD_FLAG_PRIMARY)
+			{
+				checkerboard_flags = CHECKERBOARD_FLAG_REFLECTION;	// total internal reflection
+			}
+
+			throughput *= correction_factor;
+
+			// no motion vectors of a flat mirror or window: the ice is a curved model,
+			// which can move (as Quake II RTX's chrome models)
+			if(do_refraction)
+			{
+				direction = refracted_direction;
+				primary_medium = from_inside ? MEDIUM_NONE : MEDIUM_GLASS;
+			}
+			else
+			{
+				direction = reflected_direction;
+				// a smooth normal can't send the reflection through the face
+				if(dot(direction, geo_normal) < 0.01)
+					direction = reflect(incident, geo_normal);
+			}
+
+			// the ray now runs inside the ice: it absorbs by the color of the face it left
+			// (at the face it meets inside, below)
+			if(primary_medium == MEDIUM_GLASS)
+			{
+				ice_absorbs = true;
+				ice_tint = ice_color(material_id, primary_base_color);
+			}
+
+			include_player_model = false;
+			backface_culling = false;
+		}
+		else if(global_ubo.pt_thick_glass == 2 || global_ubo.pt_thick_glass == 1 && global_ubo.flt_enable == 0)
 		{
 			float rand = get_rng(RNG_BRDF_FRESNEL(push_constants.bounce_index));
 					
@@ -600,10 +662,31 @@ main()
 		triangle.positions[2] - triangle.positions[1]));
 	
 	float flat_normal_sign = (global_ubo.weapon_left_handed != 0 && (triangle.material_id & MATERIAL_FLAG_WEAPON) != 0) ? -1.0 : 1.0;
-	
-	if (dot(new_flat_normal, direction) * flat_normal_sign > 0)
+
+	bool hit_back_face = dot(new_flat_normal, direction) * flat_normal_sign > 0;	// Hexenlicht (6.15)
+	if (hit_back_face)
 		new_geo_normal = -new_geo_normal;
-	
+
+	// Hexenlicht (6.15): inside or outside the ice by the face the ray meets, not by
+	// toggling the medium at each face, as Quake II RTX's thick glass does (Hexen II's
+	// meshes aren't closed: through a one-sided flap a ray would stay "inside" in the
+	// air and turn black): one meeting ice from behind is inside it, and absorbs along
+	// the way if it went in here; one that was inside and met anything else got out
+	// (not absorbed: where it left is unknown)
+	if(is_ice(triangle.material_id))
+	{
+		if(hit_back_face)
+		{
+			if(ice_absorbs)
+				throughput *= ice_transmittance(ice_tint, ray_payload_geometry.hit_distance);
+			primary_medium = MEDIUM_GLASS;
+		}
+		else if(primary_medium == MEDIUM_GLASS)
+			primary_medium = MEDIUM_NONE;
+	}
+	else if(ice_absorbs)
+		primary_medium = MEDIUM_NONE;
+
 	// Compute the LOD for the texture on the reflected/refracted surface.
 	// We don't have texture gradients here, so just estimate the LOD
 	// based on the ray "cone size" and distance. The "cone size" is computed
