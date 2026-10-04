@@ -851,6 +851,11 @@ void Draw_Crosshair (void)
 	int		x, y;
 	const byte	*c;
 
+	/* 6.7: none while a gamecode camera (camera_remote) shows the view,
+	 * whose entity isn't a player's (GL draws it there) */
+	if (cl.viewentity < 1 || cl.viewentity > cl.maxclients)
+		return;
+
 	x = scr_vrect.x + scr_vrect.width/2 + cl_crossx.value;
 	y = scr_vrect.y + scr_vrect.height/2 + cl_crossy.value;
 

@@ -545,6 +545,9 @@ the starting points for authors and their tools.
 - Quads are alpha-tested (GL_GREATER 0.632, no blend) or blended per quad;
   the shader works in the 8-bit colors (the UNORM textures as they are,
   times the vertex color) and applies the `gamma` cvar.
+- No crosshair while a gamecode camera (`camera_remote`) shows the view:
+  `Draw_Crosshair` returns while the view entity isn't a player's (6.7,
+  DECISIONS X41; GL draws it there).
 - **`SCR_UpdateScreen` re-enters via `Con_Printf`** — only the outermost level
   records a frame (`draw_depth`). Never print to the console between
   `VK_BeginFrame` and the end of `VK_EndFrame`'s state update; count problems
@@ -3693,6 +3696,19 @@ overlay, and a measuring mode.
   is redirected in `cmd.c`), reading `config.cfg` until that file exists.
   Early-read cvars (`vid_*`, `vid_uiscale`) are locked until `hexen.rc` has
   run.
+- **Demo playback's view angles** (`cl_demoangles.c`, 6.7, DECISIONS X42):
+  `CL_DemoAngles`, called from `cl_main.c`'s `CL_RelinkEntities` in demo
+  playback instead of its lerp between the last two messages read, moves
+  the view to each change of the demo's angles over the time since the
+  previous change (at most 0.1 s), from where the last move is at the
+  previous message's time; a playback's start (`cls.signon` below
+  `SIGNONS`), a change over 45°, another view entity or time running over a
+  second back is a cut, timedemo shows the latest angles. Praevus's intro
+  (`t9.dem`, `intro_playing`) turns its cameras by
+  `svc_setangle_interpolate` (an eighth of the way per message, from
+  `cl.viewangles`): `CL_DemoAnglesBeforeParse` (in `CL_ReadFromServer`,
+  before the messages) puts the intro's own angles back into
+  `cl.viewangles`, so the shown ones don't feed back into its path.
 - **Upstream files Hexenlicht modifies** (all `#if defined(HEXENLICHT)`) are
   listed in [UPSTREAM.md](UPSTREAM.md#conflict-hot-spots); add to that list
   when a change touches another one.
