@@ -551,14 +551,17 @@ GL's view blends (`V_CalcBlend` over `cl.cshifts`, drawn by `R_PolyBlend` over t
   - Now: not drawn, the owner's choice (2026-10-04, DECISIONS X38): the look under water is 6.5's medium and refraction, closer to physically based.
 
 ## 6.7 Screens
-- [ ] **Intermission** (`svc_intermission`: the end-of-episode screens).
-  - Now: not looked at.
-- [ ] **Finale and cutscene** (`svc_finale`, `svc_cutscene`: text screens).
-  - Now: not looked at.
-- [ ] **Plaques** (`svc_plaque`, 2D).
-  - Now: not looked at.
-- [ ] **Demo playback** (`playdemo`, `timedemo`).
-  - Now: not looked at.
+GL's own screen code (`gl_screen.c`) over `vk_draw.c`'s port of `gl_draw.c`, and upstream's demo code (DECISIONS X40). 6.7's look (2026-10-04): the owner, from saves made right before each (TESTING.md "Screens (6.7)").
+- [x] **Intermissions** (`svc_intermission`, `cl_inlude.c`: a 320x200 picture stretched over the screen, text typed out; no 3D view meanwhile).
+  - Where: 1–4 after the riders (meso, egypt, roman, castle); the finale 6 → 7 → 8 after the Eidolon (end-1–3, white text after a delay); Praevus: 10 after Praevus (mpend), 11 into the Tibet hub (mpmid, keep5), 12 its opening from the menu (end-3, no server); 5 and 9 only in the demo and OEM versions.
+  - Now: drawn (6.7): 11 into tibet1 and 12 into keep1 looked at by the owner, as GL's code draws them. The bosses' screens (1–4, 6–8, 10) not looked at: a boss kill each, the same code with other pictures and text flags (7.1).
+- [x] **Cutscenes** (`camera_remote`: `svc_setview` to the camera for its `wait`, `svc_setangle` or `svc_setangle_interpolate`, the weapon hidden by the gamecode, the "bf" flash). `svc_finale` and `svc_cutscene` are Quake's, commented out in Hexen II's `cl_parse.c`; the finale is intermissions 6–8.
+  - Where: 17 in Hexen II (castle4, romeric1–4), 48 in Praevus (keep1–5, tibet1–10, thomas).
+  - Now: drawn (6.7): castle4's and keep1's looked at by the owner (the player's body in view, 6.11). The crosshair hidden while a camera shows the view (GL shows it; X41).
+- [x] **Plaques** (`svc_plaque`, 2D).
+  - Now: drawn (6.7): demo1's looked at by the owner.
+- [x] **Demo playback** (`playdemo`, `timedemo`, `record`). Hexen II ships no demos (`startdemos` is commented out in `hexen.rc`); Praevus's intro is `t9.dem` (thomas).
+  - Now: drawn (6.7): `t9.dem` and a recorded Hexen II demo play through (validation 0/0), looked at by the owner. The view's angles are interpolated over the demo's changes (X42): t9's cameras turned in 0.1 s steps (in GL too).
 
 ## 6.8 Portal of Praevus
 What only the mission pack draws (its gamecode in `gamecode/hc/portals`). The shared effects above apply to it too.

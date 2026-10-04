@@ -456,6 +456,11 @@ void CL_DecayLights (void)
 }
 
 
+#if defined(HEXENLICHT)
+void CL_DemoAnglesBeforeParse (void);	/* engine/hexenlicht/cl_demoangles.c */
+void CL_DemoAngles (void);
+#endif
+
 /*
 ===============
 CL_LerpPoint
@@ -533,6 +538,11 @@ static void CL_RelinkEntities (void)
 	for (i = 0; i < 3; i++)
 		cl.velocity[i] = cl.mvelocity[1][i] + frac * (cl.mvelocity[0][i] - cl.mvelocity[1][i]);
 
+#if defined(HEXENLICHT)
+	/* the angles interpolated over the demo's changes, the intro's too */
+	if (cls.demoplayback)
+		CL_DemoAngles ();
+#else
 	if (cls.demoplayback && !intro_playing)
 	{
 	// interpolate the angles
@@ -546,6 +556,7 @@ static void CL_RelinkEntities (void)
 			cl.viewangles[j] = cl.mviewangles[1][j] + frac*d;
 		}
 	}
+#endif
 
 // start on the entity after the world
 	for (i = 1, ent = cl_entities+1; i < cl.num_entities; i++, ent++)
@@ -876,6 +887,9 @@ int CL_ReadFromServer (void)
 	cl.oldtime = cl.time;
 	cl.time += host_frametime;
 
+#if defined(HEXENLICHT)
+	CL_DemoAnglesBeforeParse ();
+#endif
 	do
 	{
 		ret = CL_GetMessage ();

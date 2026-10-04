@@ -778,6 +778,43 @@ them) from `map demo1`, the same view in both, about 4 minutes in Debug:
   1`, `profiler_samples 120`, a tint on a paused frame, `gl_polyblend` 0
   and 1 alternating twice; the profiler's "composite and 2D" line.
 
+## Screens (6.7)
+
+The owner looked at the screens by hand from saves made right before each
+(DECISIONS X40); a step forward from the save starts it:
+
+| Save | Map | `vk_setpos` | Shows |
+|---|---|---|---|
+| `h67_plaque` | demo1 | `-408 2000 24 0 90` | the plaque on the wall ahead |
+| `h67_camera_castle4` | castle4 | `832 636 -686 0 90` | the camera at 800 40 for 3 s |
+| `h67_camera_keep1` (`-portals`) | keep1 | `680 192 290 0 0`, 60 waits, then `2112 -1616 232 0 90` | the camera at −1144 440 for 9 s (the slab's trigger wants the Sphere of Order, `orb2`, which the first spot picks up) |
+| `h67_hub_keep5` (`-portals`) | keep5 | `552 1300 -566 0 270` | intermission 11 (mpmid), then tibet1 |
+
+- Make each save on the `vk_setpos` line (`vk_setpos ...; save <name>`), after
+  `map` and 300 waits (400 for Praevus's first map). Check them: load,
+  `+forward` for a few frames, and `r_dumpscene` — a camera's view moves the
+  "camera:" line to the camera, an intermission stops the "Scene of frame"
+  count (no 3D view is drawn).
+- Pitfalls found: a spot in solid is moved back to the player's last free
+  spot on load (keep5's map start: the trigger sits in a narrow pocket); a
+  spot within a unit of a trigger fires it in the first frame; castle4's
+  trigger is on a ledge 33 units above the floor next to it; keep1's needs a
+  puzzle piece (`puzzle_piece_1`, its `no_puzzle_msg` centerprinted). Find the
+  triggers with `pak_entities.ps1 -Pattern 'trigger_once|camera_remote'`, their
+  bounds with `bsp_models.ps1`, free spots by `vk_setpos` and `viewpos` (a
+  spot in solid prints the last free one).
+- Intermission 12: with `-portals`, the menu's Single Player, New Mission,
+  a class and a difficulty; a key starts keep1.
+- Demos: `playdemo t9` with `-portals` is Praevus's intro (`intro_playing`:
+  its cameras turn by `svc_setangle_interpolate`), `timedemo t9`; a Hexen II
+  demo: `host_framerate 0.05` (20 messages a second, like t9's), `record
+  <name> demo1`, `+right`, `stop`.
+- **The view's angles in playback** (X42): `host_framerate 0.01` before
+  `playdemo`, then `wait` and `r_dumpscene` each frame; the "camera:" line's
+  yaw from frame to frame. Fast-forward with `host_framerate 0.1`. t9 has
+  a panning camera at demo time 152 s ("Scene of frame" prints the time;
+  about 950 frames at 0.1 from the start: the demo jumps 55 s on the way).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

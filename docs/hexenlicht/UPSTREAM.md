@@ -122,6 +122,13 @@ changes one, with a line on what we changed:
   for each drawn stream after its attached source is updated (type,
   skin, source, dest, end time, its models). `engine/hexen2` only:
   HexenWorld's client has its own `cl_tent.c`.
+- `engine/hexen2/cl_main.c` — demo playback's view angles (story 6.7):
+  under `#if defined(HEXENLICHT)`, the prototypes of `CL_DemoAnglesBeforeParse`
+  and `CL_DemoAngles` (`engine/hexenlicht/cl_demoangles.c`) above
+  `CL_LerpPoint`; in `CL_RelinkEntities`, `if (cls.demoplayback)
+  CL_DemoAngles ();` replaces the angle lerp (`#else` keeps upstream's);
+  in `CL_ReadFromServer`, `CL_DemoAnglesBeforeParse ()` before the message
+  loop. `engine/hexen2` only: HexenWorld's client has its own `cl_main.c`.
 - `engine/hexen2/cl_parse.c` — in `CL_ParseUpdate`, after the `U_NOLERP`
   check, `#if defined(HEXENLICHT)` sets `ent->movestep` from `U_NOLERP`
   (story 2.9): `CL_RelinkEntities` clears `forcelink` before the renderer

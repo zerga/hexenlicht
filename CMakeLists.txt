@@ -311,6 +311,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_view.c
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c
+	${HEXENLICHT_DIR}/cl_demoangles.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
