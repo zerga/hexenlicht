@@ -48,6 +48,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    the ray through a translucent weapon starts at the eye, from GL's near
  *    plane as primary_rays.rgen traces the world (the weapon can reach
  *    into a wall);
+ *  - 6.11: the view entity's own model (Quake II RTX's first-person model)
+ *    is in every reflection and refraction ray but the weapon's and those
+ *    inside ice (which see back faces); Quake II RTX hides it from water's
+ *    reflections and refractions and from refractions through glass;
  *  - the translucent group is in the last pass's rays too: it also holds
  *    Hexen II's water and slime and alpha-1 models, which would vanish;
  *  - a ray through a translucent turbulent surface (*rtex078, *lowlight)
@@ -242,8 +246,6 @@ main()
 				direction = reflect(incident, geo_normal);
 			correct_motion_vector = 1;
 		}
-
-		include_player_model = false; // hide the player model from reflections or refractions
 	}
 	else if(primary_is_screen)
 	{
@@ -321,7 +323,6 @@ main()
 				// If this refraction path is possible, follow it.
 				// Otherwise, just go through the glass unaffected.
 				direction = refracted2;
-				include_player_model = false; // hide the player model from refractions
 			}
 		}
 
@@ -405,7 +406,7 @@ main()
 				ice_tint = ice_color(material_id, primary_base_color);
 			}
 
-			include_player_model = false;
+			include_player_model = false;	// 6.11: back faces seen: not its inside
 			backface_culling = false;
 		}
 		else if(global_ubo.pt_thick_glass == 2 || global_ubo.pt_thick_glass == 1 && global_ubo.flt_enable == 0)
@@ -519,7 +520,6 @@ main()
 					// If this refraction path is possible, follow it.
 					// Otherwise, just go through the glass unaffected.
 					direction = refracted2;
-					include_player_model = false; // hide the player model from refractions
 				}
 
 				correction_factor = (1 - F);
@@ -548,8 +548,12 @@ main()
 	}
 
 	// Hexenlicht: never the weapon (see the top); Quake II RTX: the viewer models
-	// with its first-person model, else the weapon unless the ray goes through it
+	// with its first-person model, else the weapon unless the ray goes through it;
+	// 6.11: the view entity's own model unless the ray is the weapon's (through it
+	// from the eye) or inside ice (path_tracer_rgen.h)
 	int reflection_cull_mask = REFLECTION_RAY_CULL_MASK;
+	if(include_player_model)
+		reflection_cull_mask |= viewer_cull_mask(primary_is_weapon, true);
 
 	// Hexenlicht: the translucent group in every pass, the last too: it also holds
 	// Hexen II's water and slime and alpha-1 models (EF_TRANSPARENT, EF_SPECIAL_TRANS),

@@ -687,6 +687,63 @@ and `vk_models check` must agree in each (the script prints both).
   places may wake and move before `vk_freeze` if the player isn't
   `notarget` (the script sets it).
 
+## Own model (6.11)
+
+`viewer_run.ps1` loads each view's map with its class, puts the player at
+the view (`vk_setpos` with `noclip`: a fall levels the view, so the views'
+z is a standing origin), runs the view's commands, pauses and shoots twice,
+`r_viewer_model` 0 and 1 (`<view>_v0`, `_v1`, 8 frames averaged); the log
+gets `vk_models` (the viewer triangles: 433–494 for the five classes) and
+its check, and `r_dumpscene`'s `cl.light_level` with both settings (the
+script prints them). `-Explore` shoots its places looking down in four
+directions instead, to find where the own model shows; `-Cost` profiles
+each view (Release, `r_viewer_model` 0 and 1 alternating twice); `-Off`
+keeps `r_viewer_model 0` throughout, for the comparison with an older
+build (`-Bin`: the denoiser's and the exposure's history would keep the
+model's shadow for the `_v0` shots otherwise). The views (`noclip`, so the
+pools' views float):
+
+- **Shadows:** egypt1's start with the sun (`r_sky_light 1`, `r_sun 1`;
+  looking down along the shadow, yaw 225) for the Crusader, the Paladin,
+  the Necromancer (the clearest: its scythe) and the Assassin; the
+  cathedral's start (a large soft shadow from the lights behind) and the
+  same with `chase_active 1` (the model as before: `_v0` and `_v1` alike);
+  village1's start (a long soft shadow down the floor ahead); demo1's arch
+  with the Crusader, with the torch lit (`impulse 43`, `impulse 100`: no
+  shadow from it, the other lights' shadows washed out), with the Assassin
+  and cloaked (`impulse 40` nine times, level 10: she cloaks after 2 s
+  standing still where `cl.light_level` ≤ 100; translucent, no shadow).
+- **Pools:** demo1's, demo2's and romeric3's from above looking down,
+  demo1's and demo2's from below looking up; the Crusader's stone skin
+  (`impulse 114`). The model doesn't show: water reflects 2 % straight
+  down against a lit or dark pool (physical); the stone skin and the
+  model show in the mirrors.
+- **`-Mirror`:** the cathedral's and demo1's start floors mirrors (chrome,
+  roughness 0.01, a light grey albedo), looking down: the model from below
+  (the Crusader, with the torch in its hand, in the stone skin, the
+  Paladin, the Assassin with invincibility's colormap 140), and the
+  Assassin plain and cloaked (blended) on demo1's grass. A face pointing
+  down shows black on the chrome floor where it would be lit by bounces
+  off a diffuse floor (the hammer head's underside).
+
+- **Checks:** `-Off` against `main`'s build (`-Bin`), twice on `main`
+  (`tga_diff.ps1 -Noise`): identical where `main` repeats itself; not
+  repeatable in `main` either: the torch's flicker (`rand`), the chase
+  camera, demo2's pool (two runs of `main` differ there as much as the
+  branch, which matches one of them within a few pixels).
+  `vk_models check` agrees in every view but egypt1's Paladin, where the
+  GPU and the CPU disagree on one triangle's tangent handedness bit
+  (triangle 43; its positions agree within 0.00006 units; presumably float
+  precision on a small triangle, as the renderer computes it as before:
+  not investigated further);
+  `cl.light_level` the same with both settings but in the torch views
+  (its flicker changes between the two `r_dumpscene` frames, paused too);
+  Debug validation 0/0; `tga_diff.ps1 -DiffDir` between `_v0` and `_v1`
+  shows where the own model changed the image.
+- **Moving:** `v1_turn` turns 40° (`+right`) before its shot: the shadow
+  turns with the view. Walking, crouching and the motion in play aren't
+  scripted.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

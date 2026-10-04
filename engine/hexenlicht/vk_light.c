@@ -22,7 +22,9 @@
  * (explosions shrink, flames flicker). A player's lights are in the hand
  * (4.19, r_scene.c); the view entity's (DYNLIGHT_HELD) reach the
  * first-person weapon with at most the light of one some way off and
- * without a shadow ray (light_lists.h's dynlight_max_solid_angle). The
+ * without a shadow ray (light_lists.h's dynlight_max_solid_angle); 6.11:
+ * so they reach the view entity's own model, which they name and which
+ * doesn't shadow them (the shadow rays leave its mask out). The
  * color is GL's (the client's,
  * with gl_colored_dynamic_lights) converted to linear, as the map lights'.
  * Dark lights (EF_DARKLIGHT, 4.10) go after them in the UBO, where no
@@ -674,8 +676,10 @@ int VK_GlowLight (int entnum, const vec3_t origin, float radius, float chain)
 
 /* a dynamic sphere in the UBO (range 0 = unlimited, in spot_data's bits:
  * light_lists.h's dynlight_range); owner: the model instance it doesn't
- * light (6.2: a glowing projectile's, the light inside it), -1 = none, in
- * the type's high 16 bits plus 1 (a sphere has no style) */
+ * light (6.2: a glowing projectile's, the light inside it; 6.11: with
+ * DYNLIGHT_HELD the view entity's own model, which holds it and which it
+ * lights as the weapon), -1 = none, in the type's high 16 bits plus 1 (a
+ * sphere has no style) */
 static void WriteDynamicLight (DynLightData *d, const vec3_t origin, float radius, const vec3_t color, float range, int owner)
 {
 	memset (d, 0, sizeof(*d));
@@ -724,10 +728,20 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 		intensity = 2.0f * VK_LightLevelIntensity (s->radius);
 		for (k = 0; k < 3; k++)
 			color[k] = VK_ColorToLinear (s->color[k]) * intensity;
-		WriteDynamicLight (&ubo->dyn_light_data[n], s->origin, DYNAMIC_LIGHT_RADIUS, color, 0.0f,
-				   (s->key > 0 && !MuzzleFlash (s)) ? VK_GlowingInstance (s->key) : -1);
-		if (s->in_view_hand)	/* 4.19: in the view entity's hand (r_scene.c), for the weapon's rule */
+		/* 4.19: in the view entity's hand (r_scene.c), for the weapon's
+		 * rule; 6.11: naming the view entity's own model, which it
+		 * doesn't shadow and lights as the weapon (light_lists.h) */
+		if (s->in_view_hand)
+		{
+			WriteDynamicLight (&ubo->dyn_light_data[n], s->origin, DYNAMIC_LIGHT_RADIUS, color, 0.0f,
+					   VK_ModelFrame ()->viewer_instance);
 			ubo->dyn_light_data[n].type |= DYNLIGHT_HELD;
+		}
+		else
+		{
+			WriteDynamicLight (&ubo->dyn_light_data[n], s->origin, DYNAMIC_LIGHT_RADIUS, color, 0.0f,
+					   (s->key > 0 && !MuzzleFlash (s)) ? VK_GlowingInstance (s->key) : -1);
+		}
 		n++;
 		dlight_stats.lit++;
 		dlight_stats.owned += (s->key > 0);
