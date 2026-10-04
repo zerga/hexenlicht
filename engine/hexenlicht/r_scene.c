@@ -3,7 +3,8 @@
  * R_RenderView does the renderer-independent part of the GL renderer's
  * frame setup (light style animation, view vectors, view leaf, contents
  * color shift and view blend) and then gathers the frame's scene into
- * r_scene (see r_scene.h; 4.19: a player's lights in the hand). The
+ * r_scene (see r_scene.h; 4.19: a player's lights in the hand; 6.11: the
+ * view entity's own model). The
  * r_dumpscene command prints it.
  *
  * R_AnimateLight is Hammer of Thyrion's, from gl_rlight.c.
@@ -41,6 +42,8 @@ int		d_lightstylevalue[256];	/* 8.8 fraction of base light value */
 /* same cvars as the GL renderer */
 cvar_t		r_drawentities = {"r_drawentities", "1", CVAR_NONE};
 cvar_t		r_drawviewmodel = {"r_drawviewmodel", "1", CVAR_NONE};
+/* 6.11: the view entity's own model in shadows and reflections */
+static cvar_t	r_viewer_model = {"r_viewer_model", "1", CVAR_ARCHIVE};
 
 extern particle_t	*active_particles;	/* r_part.c */
 
@@ -131,10 +134,43 @@ static void R_AddSceneEntity (entity_t *e, scene_entkind_t kind, int num)
 	s->colorshade = e->colorshade;
 	s->effects = e->effects;
 	s->movestep = (kind == SCENE_ENT_DYNAMIC) && e->movestep;
+	s->viewer = false;
 
 	/* chase-cam pitch adj. by FrikaC, as in the GL renderer */
 	if (kind == SCENE_ENT_DYNAMIC && num == cl.viewentity)
 		s->angles[0] *= 0.3f;
+}
+
+/* 6.11: the view entity's own model without the chase camera (Quake II
+ * RTX's first-person player model), which CL_RelinkEntities leaves out of
+ * cl_visedicts: in the scene where the player stands, for the shadow,
+ * bounce, reflection and refraction rays only (vk_instance.c's viewer
+ * group). Only a player's (a gamecode camera's view entity isn't: the
+ * player is drawn then), as the server sends it but for the angles: the
+ * view's yaw (cl.viewangles, as R_HoldPlayerLights' hand: no lag behind
+ * the camera while turning), upright (pitch 0, as Quake II RTX: the
+ * server's third of the view's pitch would tilt the head, where the eye
+ * is, about the feet), the server's roll (the lean while strafing); dead,
+ * the server's angles (the corpse doesn't turn with the view). Not with
+ * EF_NODRAW (invisibility), as CL_RelinkEntities */
+static void R_AddViewerEntity (void)
+{
+	entity_t	*e;
+	scene_entity_t	*s;
+
+	if (!r_viewer_model.integer || chase_active.integer || cl.viewentity < 1 || cl.viewentity > cl.maxclients)
+		return;
+	e = &cl_entities[cl.viewentity];
+	if (!e->model || e->model->type != mod_alias || (e->effects & EF_NODRAW) || r_scene.num_entities >= MAX_SCENE_ENTITIES)
+		return;
+	R_AddSceneEntity (e, SCENE_ENT_DYNAMIC, cl.viewentity);
+	s = &r_scene.entities[r_scene.num_entities - 1];
+	s->viewer = true;
+	if (cl.v.health > 0)
+	{
+		s->angles[PITCH] = 0.0f;
+		s->angles[YAW] = cl.viewangles[YAW];
+	}
 }
 
 /* the client's model flags before each of the three in CL_RelinkEntities'
@@ -320,7 +356,8 @@ static void R_BuildScene (void)
 	r_scene.worldmodel = cl.worldmodel;
 
 	/* entities: what the client linked this frame (the server culled
-	 * them to the player's PVS), all static entities, the view model */
+	 * them to the player's PVS), all static entities, the view model,
+	 * the view entity's own model (6.11) */
 	r_scene.num_entities = 0;
 	if (r_drawentities.integer)
 	{
@@ -339,6 +376,8 @@ static void R_BuildScene (void)
 		/* the same conditions as gl_rmain.c's R_DrawViewModel */
 		if (cl.v.health > 0 && !chase_active.integer && r_drawviewmodel.integer)
 			R_AddSceneEntity (&cl.viewent, SCENE_ENT_VIEWMODEL, -1);
+
+		R_AddViewerEntity ();
 	}
 
 	r_scene.num_dlights = 0;
@@ -509,6 +548,8 @@ static void DumpEntity (const scene_entity_t *s)
 		q_strlcat (extra, va(" colorshade %d", s->colorshade), sizeof(extra));
 	if (s->movestep)
 		q_strlcat (extra, " step", sizeof(extra));
+	if (s->viewer)
+		q_strlcat (extra, " viewer (own model)", sizeof(extra));
 
 	Con_Printf ("%-6s %4d %-24s frame %3d skin %3d org %.0f %.0f %.0f ang %.0f %.0f %.0f%s\n",
 			kind_names[s->kind], s->num, s->model->name, s->frame, s->skinnum,
@@ -591,6 +632,7 @@ void R_InitScene (void)
 {
 	Cvar_RegisterVariable (&r_drawentities);
 	Cvar_RegisterVariable (&r_drawviewmodel);
+	Cvar_RegisterVariable (&r_viewer_model);
 
 	Cmd_AddCommand ("r_dumpscene", R_DumpScene_f);
 }

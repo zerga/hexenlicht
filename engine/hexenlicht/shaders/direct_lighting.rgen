@@ -32,7 +32,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    up to 8x8 workgroups);
  *  - the weapon only shadows itself: Hexen II's first-person player has no
  *    model, and GL draws no weapon shadow on the world (Quake II RTX's
- *    weapon shadows the world when it has no first-person model);
+ *    weapon shadows the world when it has no first-person model); 6.11:
+ *    the view entity's own model (Quake II RTX's first-person model) shadows
+ *    all but the weapon, by global_ubo.first_person_model, and not the
+ *    lights in its hand (get_direct_illumination);
  *  - the sun (4.6, get_sunlight): the models around a light (at a map
  *    light's origin, owning a dynamic light) cast its shadows; they are
  *    only out of the shadow rays of the lights inside them;
@@ -95,9 +98,11 @@ direct_lighting(ivec2 ipos, bool is_odd_checkerboard, out vec3 high_freq, out ve
 	int shadow_cull_mask = SHADOW_RAY_CULL_MASK;
 
 	// Hexenlicht: the weapon only shadows itself (see the top); Quake II RTX:
-	// the viewer models with its first-person model, else the weapon
+	// the viewer models with its first-person model, else the weapon; 6.11: the
+	// view entity's own model shadows the rest (path_tracer_rgen.h)
 	if(primary_is_weapon)
 		shadow_cull_mask |= AS_FLAG_VIEWER_WEAPON;
+	shadow_cull_mask |= viewer_cull_mask(primary_is_weapon, false);
 
 	float direct_specular_weight = smoothstep(
 		global_ubo.pt_direct_roughness_threshold - 0.02, 

@@ -19,9 +19,12 @@
  * carries the material of the skin (vk_skin.c), the fixed light level and
  * the colorshade tint GL uses (6.2: a glowing projectile's skin emits
  * whole, and its light doesn't light it; 6.3: so does a glowing beam's,
- * vk_beamlight.c, the opaque ones in the light group). The first-person weapon (cl.viewent) comes
+ * vk_beamlight.c, the opaque ones in the light group). 6.11: the view
+ * entity's own model without the chase camera (r_scene.c) follows in a
+ * group of its own as Quake II RTX's viewer models, which only the
+ * secondary rays see. The first-person weapon (cl.viewent) comes
  * last, in a group of its own as Quake II RTX's viewer weapon, with GL's
- * fov compensation; it looks like the group it would be in otherwise.
+ * fov compensation; both look like the group they would be in otherwise.
  *
  * The transforms, the pose choice and the draw state are the GL
  * renderer's: R_DrawBrushModel and R_RotateForEntity in gl_rsurf.c and
@@ -606,13 +609,16 @@ static qboolean AroundLight (const scene_entity_t *e)
 	return e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e));
 }
 
+/* 6.11: never the light group for the view entity's own model, which
+ * holds the torch: the shadow rays leave it out to its own lights only
+ * (DYNLIGHT_HELD, light_lists.h) */
 static int AliasGroup (const scene_entity_t *e)
 {
 	if ((e->drawflags & DRF_TRANSLUCENT) || (e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS)))
 		return MODEL_GROUP_TRANSPARENT;
 	if (e->model->flags & EF_HOLEY)
 		return MODEL_GROUP_MASKED;
-	if (AroundLight (e))
+	if (!e->viewer && AroundLight (e))
 		return MODEL_GROUP_LIGHT;
 	return MODEL_GROUP_OPAQUE;
 }
@@ -623,11 +629,12 @@ static int AliasGroup (const scene_entity_t *e)
  * glass model in the transparent group, at full opacity: reflect_refract.rgen
  * traces it as solid ice, the caustic ray tints the light through it. Not
  * a model whose skin has its own see-through or cutout texels, nor the
- * weapon */
+ * weapon; 6.11: nor the view entity's own model (the camera would be
+ * inside the glass): 6.4's blend */
 static qboolean IsIce (const scene_entity_t *e)
 {
 	return r_ice.integer && e->skinnum == SKIN_ICE && (e->drawflags & DRF_TRANSLUCENT) && e->kind != SCENE_ENT_VIEWMODEL &&
-	       !(e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS | EF_HOLEY));
+	       !e->viewer && !(e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS | EF_HOLEY));
 }
 
 /* R_DrawAliasModel's fixed light levels (255 = 1), in its order: spinning
@@ -788,7 +795,7 @@ static qboolean MoveBlend (entity_history_t *h, qboolean continues, const scene_
 	return jumped;
 }
 
-static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_prim)
+static int AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_prim)
 {
 	ModelInstance		*mi;
 	const vk_aliasmodel_t	*am;
@@ -803,13 +810,13 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	uint32_t		reserve = (e->kind == SCENE_ENT_VIEWMODEL) ? 0 : weapon_reserve;
 
 	if (index < 0)
-		return;		/* nothing to draw */
+		return -1;	/* nothing to draw */
 	am = VK_GetAliasModel (index);
 	if (num_instances >= MAX_MODEL_INSTANCES ||
 	    *next_prim + (uint32_t)am->num_tris + reserve > (uint32_t)MAX_INSTANCED_PRIMITIVES)
 	{
 		model_frame.dropped++;
-		return;
+		return -1;
 	}
 	hdr = (const aliashdr_t *) Mod_Extradata (e->model);
 
@@ -915,7 +922,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	}
 	/* 6.14: a translucent model around a light (see AliasGroup) doesn't
 	 * shadow the map's and dynamic lights in the caustic ray */
-	if (group == MODEL_GROUP_TRANSPARENT && AroundLight (e))
+	if (group == MODEL_GROUP_TRANSPARENT && !e->viewer && AroundLight (e))
 	{
 		mi->material |= MATERIAL_FLAG_CARRIES_LIGHT;
 		model_frame.carriers++;
@@ -950,6 +957,7 @@ static void AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next
 	{
 		mi->tint[0] = mi->tint[1] = mi->tint[2] = 1.0f;
 	}
+	return instance;
 }
 
 
@@ -966,6 +974,7 @@ void VK_UpdateInstances (void)
 	num_instances = 0;
 	num_glowing = 0;
 	memset (&model_frame, 0, sizeof(model_frame));
+	model_frame.viewer_instance = -1;
 	model_frame.dropped_total = dropped_total;
 	memset (prev_to_current, 0xff, sizeof(prev_to_current));
 	if (!vk_world.worldmodel || vk_world.worldmodel != r_scene.worldmodel)
@@ -984,7 +993,8 @@ void VK_UpdateInstances (void)
 
 	/* the alias models, group by group; the weapon in its own group, which
 	 * looks like the group it would be in otherwise, with room kept for it
-	 * when the others fill the instanced buffer */
+	 * when the others fill the instanced buffer; 6.11: so does the view
+	 * entity's own model, in its group before it (no room kept) */
 	weapon_reserve = 0;
 	for (i = 0; i < r_scene.num_entities; i++)
 	{
@@ -1013,7 +1023,13 @@ void VK_UpdateInstances (void)
 				model_frame.weapon_look = AliasGroup (e);
 				AddAliasInstance (e, model_frame.weapon_look, &next_prim);
 			}
-			else if (group != MODEL_GROUP_WEAPON && e->kind != SCENE_ENT_VIEWMODEL && AliasGroup (e) == group)
+			else if (group == MODEL_GROUP_VIEWER && e->viewer)
+			{
+				model_frame.viewer_look = AliasGroup (e);
+				model_frame.viewer_instance = AddAliasInstance (e, model_frame.viewer_look, &next_prim);
+			}
+			else if (group != MODEL_GROUP_WEAPON && group != MODEL_GROUP_VIEWER && e->kind != SCENE_ENT_VIEWMODEL &&
+				 !e->viewer && AliasGroup (e) == group)
 			{
 				AddAliasInstance (e, group, &next_prim);
 			}
@@ -1074,6 +1090,7 @@ void VK_ClearInstances (void)
 	num_instances = 0;
 	num_glowing = 0;
 	memset (&model_frame, 0, sizeof(model_frame));
+	model_frame.viewer_instance = -1;
 	memset (history_dynamic, 0, sizeof(history_dynamic));
 	memset (history_static, 0, sizeof(history_static));
 	memset (&history_viewmodel, 0, sizeof(history_viewmodel));
@@ -1188,6 +1205,8 @@ static void VK_Instances_f (void)
 				q_strlcat (extra, va(" scale %d%%", e->scale), sizeof(extra));
 			if (mi->colorshade)
 				q_strlcat (extra, va(" tint %u (%.2f %.2f %.2f)", mi->colorshade, mi->tint[0], mi->tint[1], mi->tint[2]), sizeof(extra));
+			if (e->viewer)
+				q_strlcat (extra, " viewer", sizeof(extra));	/* 6.11 */
 		}
 		else
 		{
@@ -1226,6 +1245,7 @@ void VK_InitInstances (void)
 				 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 				 VK_MEMORY_UPLOAD);
 	}
+	model_frame.viewer_instance = -1;
 	Cvar_RegisterVariable (&r_lerpmodels);
 	Cvar_RegisterVariable (&r_lerpmove);
 	Cvar_RegisterVariable (&r_ice);

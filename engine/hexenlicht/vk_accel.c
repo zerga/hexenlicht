@@ -8,7 +8,8 @@
  * buffer, already in world space: one each for the opaque, transparent and
  * masked (cutout) models, the models around a light (at a map light's
  * origin or owning a dynamic light; mask AS_FLAG_LIGHT_MODELS, which shadow
- * rays leave out) and the first-person
+ * rays leave out), the view entity's own model (6.11: Quake II RTX's
+ * AS_FLAG_VIEWER_MODELS, which primary rays leave out) and the first-person
  * weapon, whose mask is Quake II RTX's AS_FLAG_VIEWER_WEAPON) and then the
  * top level (TLAS), in the frame's command
  * buffer: the world's BLASes, one instance of a submodel's BLASes per
@@ -78,7 +79,9 @@ static VkDeviceSize	blas_scratch_size;
  * instance flags: the masked models' hits are candidates, alpha tested
  * against their cutout mask; so are the weapon's when it has cutouts;
  * 6.4: so are the transparent models' (and the weapon's when it looks
- * transparent), against their skin's opacity: only clear texels are no
+ * transparent; 6.11: the view entity's own model, mask
+ * AS_FLAG_VIEWER_MODELS, looks like its group as the weapon does),
+ * against their skin's opacity: only clear texels are no
  * hit (path_tracer_hit_shaders.h), the rays blend the rest; their
  * instance stays culled (as GL culls all but EF_SPECIAL_TRANS): a
  * reflection or refraction ray through a translucent model then meets
@@ -86,31 +89,45 @@ static VkDeviceSize	blas_scratch_size;
  * every effect hit is a candidate. The effects' masks are the effects
  * TLAS's own. */
 enum { DYN_PARTICLES = NUM_MODEL_GROUPS, DYN_SPRITES, NUM_DYN };
-static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "light", "weapon", "particles", "sprites" };
+static const char *const dyn_names[NUM_DYN] = { "opaque", "transparent", "masked", "light", "viewer", "weapon", "particles", "sprites" };
 static const uint32_t dyn_masks[NUM_DYN] =
 {
-	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_LIGHT_MODELS, AS_FLAG_VIEWER_WEAPON,
+	AS_FLAG_OPAQUE, AS_FLAG_TRANSPARENT, AS_FLAG_OPAQUE, AS_FLAG_LIGHT_MODELS, AS_FLAG_VIEWER_MODELS, AS_FLAG_VIEWER_WEAPON,
 	AS_FLAG_EFFECTS, AS_FLAG_EFFECTS
 };
 static const uint32_t dyn_max[NUM_DYN] =	/* triangles */
 {
 	MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES,
-	MAX_INSTANCED_PRIMITIVES, MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES * 2
+	MAX_INSTANCED_PRIMITIVES, MAX_INSTANCED_PRIMITIVES, MAX_EFFECT_PARTICLES, MAX_EFFECT_SPRITES * 2
 };
 
 #define NO_OPAQUE_INSTANCE	(VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
 
+/* the group a dynamic BLAS looks like: the weapon's and (6.11) the view
+ * entity's own model's look (vk_instance.c), whose geometry is always
+ * non-opaque (a dynamic BLAS's geometry flags must not change) */
+static int DynLook (int d)
+{
+	if (d == MODEL_GROUP_WEAPON)
+		return VK_ModelFrame ()->weapon_look;
+	if (d == MODEL_GROUP_VIEWER)
+		return VK_ModelFrame ()->viewer_look;
+	return d;
+}
+
+static qboolean DynNeverOpaque (int d)
+{
+	return d == MODEL_GROUP_WEAPON || d == MODEL_GROUP_VIEWER;
+}
+
 /* are a dynamic BLAS's hits candidates (cutouts, 6.4: transparent models,
- * effects)? Constant for each group but the weapon, whose geometry is
- * always non-opaque (a dynamic BLAS's geometry flags must not change) */
+ * effects)? Constant for each group but the weapon and the view entity's
+ * own model, by their look */
 static qboolean DynCandidates (int d)
 {
-	int	look;
+	int	look = DynLook (d);
 
-	if (d == MODEL_GROUP_MASKED || d == MODEL_GROUP_TRANSPARENT || d >= DYN_PARTICLES)
-		return true;
-	look = VK_ModelFrame ()->weapon_look;
-	return d == MODEL_GROUP_WEAPON && (look == MODEL_GROUP_MASKED || look == MODEL_GROUP_TRANSPARENT);
+	return look == MODEL_GROUP_MASKED || look == MODEL_GROUP_TRANSPARENT || d >= DYN_PARTICLES;
 }
 
 static VkGeometryInstanceFlagsKHR DynInstanceFlags (int d)
@@ -118,7 +135,7 @@ static VkGeometryInstanceFlagsKHR DynInstanceFlags (int d)
 	if (!DynCandidates (d))
 		return VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 	/* 6.4: transparent models alpha tested but culled (see above) */
-	if (d == MODEL_GROUP_TRANSPARENT || (d == MODEL_GROUP_WEAPON && VK_ModelFrame ()->weapon_look == MODEL_GROUP_TRANSPARENT))
+	if (DynLook (d) == MODEL_GROUP_TRANSPARENT)
 		return VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
 	return NO_OPAQUE_INSTANCE;
 }
@@ -488,13 +505,13 @@ static void BuildDynamicBLASes (vk_tlas_t *t, VkCommandBuffer cmd)
 		memset (&geoms[n], 0, sizeof(geoms[n]));
 		geoms[n].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
 		geoms[n].geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-		/* each effect triangle once: they are blended; the weapon's
-		 * geometry is never opaque, so its build sizes don't change with
-		 * the weapon: its instance flags make it opaque or not */
+		/* each effect triangle once: they are blended; the weapon's (6.11: and the
+		 * view entity's own model's) geometry is never opaque, so its build sizes
+		 * don't change with its look: its instance flags make it opaque or not */
 		if (d >= DYN_PARTICLES)
 			geoms[n].flags = VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
 		else
-			geoms[n].flags = (d == MODEL_GROUP_WEAPON || DynCandidates (d)) ? 0 : VK_GEOMETRY_OPAQUE_BIT_KHR;
+			geoms[n].flags = (DynNeverOpaque (d) || DynCandidates (d)) ? 0 : VK_GEOMETRY_OPAQUE_BIT_KHR;
 		tri = &geoms[n].geometry.triangles;
 		tri->sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		tri->vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;

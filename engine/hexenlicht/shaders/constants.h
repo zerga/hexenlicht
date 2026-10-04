@@ -152,6 +152,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // Hexenlicht: the models at a map light's origin (torches, flames), which shadow rays don't see
 #define AS_FLAG_LIGHT_MODELS    (1 << 6)
 
+// Hexenlicht (6.11): global_ubo.first_person_model, the view entity's own model (AS_FLAG_VIEWER_MODELS)
+#define VIEWER_MODEL_NONE        0
+#define VIEWER_MODEL_OPAQUE      1   // in the shadow, bounce, reflection and refraction rays (opaque or cutout)
+#define VIEWER_MODEL_TRANSLUCENT 2   // in the reflection and refraction rays only, as the translucent models
+
 // Effects TLAS flags
 #define AS_FLAG_EFFECTS         (1 << 0)
 

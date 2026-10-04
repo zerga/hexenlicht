@@ -663,8 +663,9 @@ static void VK_ModelsCheck (void)
 		 * ones are Q2RTX's transparent models, masked ones have a cutout
 		 * mask (the skin, or its replaced albedo with alpha: 5.3),
 		 * transparent ones one where their skin has alpha (6.4), the
-		 * others neither (the weapon looks like
-		 * one of them, and only its triangles have the weapon flag); and
+		 * others neither (the weapon and, 6.11, the view entity's own
+		 * model look like one of them, and only the weapon's triangles
+		 * have the weapon flag); and
 		 * the material as the GPU's table has it (uploaded on map load or
 		 * mid-frame) */
 		{
@@ -685,7 +686,7 @@ static void VK_ModelsCheck (void)
 				    mi->render_prim_offset + mi->prim_count <= mf->groups[g].first + mf->groups[g].count)
 					break;
 			}
-			look = (g == MODEL_GROUP_WEAPON) ? mf->weapon_look : g;
+			look = (g == MODEL_GROUP_WEAPON) ? mf->weapon_look : (g == MODEL_GROUP_VIEWER) ? mf->viewer_look : g;
 			if (g == NUM_MODEL_GROUPS || weapon != (g == MODEL_GROUP_WEAPON) ||
 			    kind != ((look == MODEL_GROUP_TRANSPARENT) ? transparent :
 				     (mat->kind == MATKIND_CHROME) ? MATERIAL_KIND_CHROME_MODEL : MATERIAL_KIND_REGULAR) ||	/* 5.5 */
@@ -869,10 +870,11 @@ static void VK_Models_f (void)
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
 	VK_ProfilerTime (PROF_MODELS, &geometry_ms, &geometry_avg);
-	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u at lights + %u weapon triangles, "
-		    "geometry pass %.3f ms on the GPU (average %.3f)\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
+	Con_Printf ("last frame: %d alias instances, %u opaque + %u transparent + %u masked + %u at lights + %u viewer + %u weapon "
+		    "triangles, geometry pass %.3f ms on the GPU (average %.3f)\n", mf->num_instances, mf->groups[MODEL_GROUP_OPAQUE].count,
 			mf->groups[MODEL_GROUP_TRANSPARENT].count, mf->groups[MODEL_GROUP_MASKED].count,
-			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_WEAPON].count, geometry_ms, geometry_avg);
+			mf->groups[MODEL_GROUP_LIGHT].count, mf->groups[MODEL_GROUP_VIEWER].count, mf->groups[MODEL_GROUP_WEAPON].count,
+			geometry_ms, geometry_avg);
 	Con_Printf ("left out: %d instances this frame, %d since the map loaded (no room); bad frame numbers: %d, bad skin numbers: %d this frame\n",
 			mf->dropped, mf->dropped_total, mf->bad_frames, mf->bad_skins);
 	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2), "

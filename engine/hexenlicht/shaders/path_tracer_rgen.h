@@ -107,11 +107,29 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define RNG_TRANSLUCENT_LAYER(pass)       (4 + 9 * 3 + pass)
 
 // Hexenlicht: the models around a light (AS_FLAG_LIGHT_MODELS: at a map light's origin, owning a
-// dynamic light) in every mask but the shadow rays': their mesh surrounds the light (vk_instance.c)
+// dynamic light) in every mask but the shadow rays': their mesh surrounds the light (vk_instance.c).
+// 6.11: the passes add the view entity's own model (AS_FLAG_VIEWER_MODELS) by
+// global_ubo.first_person_model, never to the primary rays nor to the weapon's (viewer_cull_mask)
 #define PRIMARY_RAY_CULL_MASK        (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_TRANSPARENT | AS_FLAG_VIEWER_WEAPON | AS_FLAG_SKY)
 #define REFLECTION_RAY_CULL_MASK     (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_SKY)
 #define BOUNCE_RAY_CULL_MASK         (AS_FLAG_OPAQUE | AS_FLAG_LIGHT_MODELS | AS_FLAG_SKY | AS_FLAG_CUSTOM_SKY)
 #define SHADOW_RAY_CULL_MASK         (AS_FLAG_OPAQUE)
+
+/* Hexenlicht (6.11): the view entity's own model in a secondary ray's mask
+ * (Quake II RTX's first-person player model): in the shadow and bounce rays
+ * while it is opaque or a cutout, in the reflection and refraction rays
+ * (reflection) also while it is translucent, as the translucent models; never
+ * in the rays from the weapon (Quake II RTX's rule: the weapon is drawn at the
+ * eye at its own scale, inside the model) */
+int
+viewer_cull_mask(bool from_weapon, bool reflection)
+{
+	if(from_weapon || global_ubo.first_person_model == VIEWER_MODEL_NONE)
+		return 0;
+	if(!reflection && global_ubo.first_person_model != VIEWER_MODEL_OPAQUE)
+		return 0;
+	return AS_FLAG_VIEWER_MODELS;
+}
 
 /* no BRDF sampling in last bounce */
 #define NUM_RNG_PER_FRAME (RNG_NEE_STATIC_DYNAMIC(1) + 1)
@@ -905,7 +923,8 @@ get_direct_illumination(
 
 	bool is_polygonal = true;
 	float vis = 1;
-	bool dynamic_unshadowed = false;	// Hexenlicht (4.19): a held light on the weapon
+	bool dynamic_unshadowed = false;	// Hexenlicht (4.19): a held light on the weapon (6.11: or the view entity's own model)
+	bool dynamic_held = false;		// Hexenlicht (6.11): a light in the view entity's hand
 
 	/* dynamic light illumination */
 	if(enable_dynamic)
@@ -921,6 +940,7 @@ get_direct_illumination(
 			pos_on_light_dynamic,
 			contrib_dynamic,
 			dynamic_unshadowed,
+			dynamic_held,
 			rng);
 	}
 
@@ -946,10 +966,11 @@ get_direct_illumination(
 	// Hexenlicht: no shadow ray without a light: Quake II RTX traces one with an
 	// empty mask to the surface itself, whose t_max (0.01 * |V| - 0.01, V from the
 	// fp16 PT_VIEW_DIRECTION) can be below t_min, which ray queries don't allow;
-	// 4.19: nor for a light in the view entity's hand on the weapon (light_lists.h)
+	// 4.19: nor for a light in the view entity's hand on the weapon (light_lists.h);
+	// 6.11: nor on the view entity's own model, which the ray to such a light leaves out
 	bool unshadowed = !is_polygonal && dynamic_unshadowed;
 	if(!null_light && !unshadowed)
-		vis *= trace_shadow_ray(shadow_ray, shadow_cull_mask);
+		vis *= trace_shadow_ray(shadow_ray, (!is_polygonal && dynamic_held) ? (shadow_cull_mask & ~AS_FLAG_VIEWER_MODELS) : shadow_cull_mask);
 
 	// Hexenlicht (4.13): a gradient sample's exact relative change from its list light's
 	// style, when that light is the one sampled and it is unshadowed

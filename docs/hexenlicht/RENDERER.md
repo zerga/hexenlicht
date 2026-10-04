@@ -584,6 +584,26 @@ the starting points for authors and their tools.
   are: `cl.light_level` and the medium's light read them, so gameplay is
   unchanged. The light group (`VK_DynamicLightOwner`) sees the moved
   origin: the chase-cam player with the torch stays in it.
+- **The view entity's own model** (6.11, `R_AddViewerEntity`; DECISIONS
+  X35): `CL_RelinkEntities` leaves the view entity out of `cl_visedicts`
+  without the chase camera; with `r_viewer_model 1` (archived; 0 = none,
+  the image before 6.11) the scene adds it, marked `viewer`, as Quake II
+  RTX adds its first-person player model: only when the view entity is a
+  player (1..`cl.maxclients`: a gamecode camera's view entity is the
+  camera, and the player is drawn then anyway), has an alias model and
+  isn't `EF_NODRAW` (invisibility), any game type, dead too (the body
+  lies around the camera, at the server's angles: it doesn't turn with
+  the view). Frames, skin, colormap, scale, drawflags and
+  translucency are the server's (the Crusader's stone skin, a sheep), the
+  angles not: the view's yaw (`cl.viewangles`, as the held lights: no lag
+  while turning), pitch 0 (the server's third of the view's pitch, ×0.3
+  as GL's chase camera, would tilt the head, where the eye is, about the
+  feet; Quake II RTX zeroes it too), the server's roll (the lean while
+  strafing). The eye (50 up) is inside the model's head or shoulders:
+  the five classes' standing frames have vertices 4–11 units ahead of and
+  behind it at 44–56 units. Only the secondary rays see it
+  ([Instances](#instances-vk_instancec), [3D view](#3d-view-vk_viewc)).
+  `r_dumpscene` marks it `viewer`.
 - **Beams** (6.3): `cl_tent.c`'s `CL_UpdateTEnts` hands over the streams it
   draws each frame (`R_ClearBeams`, then `R_AddBeam` per stream after its
   source follows its entity: type, skin, source, dest, end time, its four
@@ -779,7 +799,8 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   `DRF_TRANSLUCENT`; entity frame (alternate animations). romeric2 has
   rotating brushes and egypt5 a lift, when walking forward from the start.
 - **Alias models** follow in four groups, Q2RTX's order and one of ours
-  (`MODEL_GROUP_*`, `VK_ModelFrame` has their ranges): opaque; transparent
+  (`MODEL_GROUP_*`, `VK_ModelFrame` has their ranges; then 6.11's view
+  entity's own model and the weapon, below): opaque; transparent
   (`DRF_TRANSLUCENT`, `EF_TRANSPARENT`, `EF_SPECIAL_TRANS`; kind
   `MATERIAL_KIND_TRANSP_MODEL`, alpha = 0.33 for `DRF_TRANSLUCENT` but on
   `EF_SPECIAL_TRANS`, as GL; the rays multiply it by the skin's, 6.4, see
@@ -804,6 +825,19 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   [Emissive surfaces](#emissive-surfaces-vk_emissivec); 4.4 and 6.2:
   the owners of a dynamic light and the glowing projectiles; 6.3: the
   opaque glowing beam parts, [Beams](#beams-vk_beamlightc)).
+- **The view entity's own model** (6.11, the scene's `viewer`,
+  [Scene](#scene-r_scenec)) comes next, in `MODEL_GROUP_VIEWER` (Q2RTX's
+  viewer models, mask `AS_FLAG_VIEWER_MODELS`), which looks like the group
+  it would otherwise be in (`viewer_look`, as the weapon's: opaque, a
+  cutout or translucent), never the light group (it holds the torch: its
+  own lights' shadow rays leave its mask out instead, [Lights](#lights-vk_lightc)),
+  and never ice (6.15's `IsIce`: a frozen player stays 6.4's blend, the
+  camera would be inside the glass). `vk_modelframe_t.viewer_instance`
+  is its instance (-1 = none this frame), which the view entity's held
+  lights name and the UBO's `first_person_model` reports
+  (`VIEWER_MODEL_NONE`, `_OPAQUE`, `_TRANSLUCENT`). Its history is the
+  dynamic entity's (by number); no triangles are kept free for it.
+  `vk_instances` marks it `viewer`.
 - **The first-person weapon** (`cl.viewent`, `SCENE_ENT_VIEWMODEL`) comes
   last, in `MODEL_GROUP_WEAPON` (Q2RTX's viewer weapon, triangles flagged
   `MATERIAL_FLAG_WEAPON`). It looks like the group it would otherwise be in
@@ -1178,9 +1212,12 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
     far side, which would take a pass)
     (**a dynamic BLAS's geometry flags must not change between size query and
     builds**, hence the weapon's geometry is always non-opaque and its
-    instance flags decide); the weapon's mask is `AS_FLAG_VIEWER_WEAPON`,
+    instance flags decide; 6.11: the view entity's own model's too, by its
+    look, `DynLook`); the weapon's mask is `AS_FLAG_VIEWER_WEAPON`,
     the light group's ours, `AS_FLAG_LIGHT_MODELS` (bit 6: in the primary,
-    reflection and bounce rays' masks, not the shadow rays');
+    reflection and bounce rays' masks, not the shadow rays'), the view
+    entity's own model's Q2RTX's `AS_FLAG_VIEWER_MODELS` (6.11: in no
+    primary ray's mask; the passes add it, see [3D view](#3d-view-vk_viewc));
   - BLASes over the effects (particles non-indexed, sprites indexed;
     `NO_DUPLICATE_ANY_HIT` so each is blended once);
   - in one call, the TLAS (world BLASes + a submodel's BLASes per brush
@@ -1486,7 +1523,13 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   within 0.2–10 units of every weapon model), the distance fitted to GL's
   torch-lit weapon, which GL clamps at the texture's own color: the five
   classes' weapons 0.49–0.77 of GL's mean, the Crusader's gold hub 0.1 %
-  clipped (at 24, the first guess, 3× GL's and 5 % clipped). The
+  clipped (at 24, the first guess, 3× GL's and 5 % clipped). 6.11: such a
+  light names the view entity's own model ([Instances](#instances-vk_instancec),
+  its instance + 1 in the type's high 16 bits, where a glowing
+  projectile's light names the instance it doesn't light), which it
+  lights the same way (`dynlight_held_by`), and whose mask its shadow
+  rays leave out (`sample_dynamic_lights`' `held`): the model doesn't
+  shadow its own torch, muzzle flash or bright light. The
   color is the client's (with `gl_colored_dynamic_lights`, 0 since 4.9:
   white), converted to
   linear as the map lights' (`VK_ColorToLinear`, 4.17). Dark lights
@@ -1533,7 +1576,10 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   translucent surfaces and models, not effects, see [3D
   view](#3d-view-vk_viewc) "Light through"*). The weapon only shadows itself
   (`direct_lighting.rgen`); a light in the view entity's hand reaches it without
-  a shadow ray (4.19). Direct specular only where the roughness is
+  a shadow ray (4.19). 6.11: the view entity's own model shadows everything
+  but the weapon (`path_tracer_rgen.h`'s `viewer_cull_mask`, by
+  `global_ubo.first_person_model`), from every light but its own held
+  ones. Direct specular only where the roughness is
   above `pt_direct_roughness_threshold` (0.18): smoother surfaces get it
   from the reflections (3.5), so mode 16 is black on them.
 - Units are Q2RTX's shaders': inverse-square falloff; a list sphere's
@@ -2815,7 +2861,11 @@ Story 4.10: Hexen II's darkness as GL shows it.
   slime skipped but for a liquid's surface (6.5), no
   vertical water as glass; the weapon is in no reflection or refraction
   ray (as R20, R27), and the ray through a translucent weapon starts at the
-  eye from GL's near plane (the weapon can reach into a wall); the
+  eye from GL's near plane (the weapon can reach into a wall); 6.11: the
+  view entity's own model is in every reflection and refraction ray, also
+  while translucent, but the weapon's and those inside ice (which see back
+  faces; Q2RTX hides its first-person model from water's reflections and
+  refractions and from refractions through glass); the
   translucent group is in every pass's rays, the last too (it also holds
   water, slime and alpha-1 models; Q2RTX leaves it out of the last); the
   liquid is left through translucent turbulent surfaces; the water normal
@@ -2957,7 +3007,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
   check reads last frame's in that layout, so it is misaligned for the
   one frame after a swapped one.
   Unchanged from Q2RTX apart from `direct_lighting.rgen`'s launch check,
-  weapon shadows, the sun's shadow rays (4.6: ending at the first sky face,
+  weapon shadows, the view entity's own model's (6.11: in the shadow rays
+  of all but the weapon's surfaces while it is opaque or a cutout, not to
+  its own held lights), the sun's shadow rays (4.6: ending at the first sky face,
   the models around a light in them), the hit-distance clear, a gradient
   sample's light style change (4.13, [Denoiser](#denoiser-vk_asvgfc)) and
   the caustic ray (6.14, "Light through" above). Without the
@@ -2990,7 +3042,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
 
   Hexenlicht's changes: the launch check; the weapon is only in its own
   surfaces' bounce and shadow rays (as R20; Q2RTX's is in every ray without
-  a first-person model); a model hit by a bounce ray has its `colorshade`
+  a first-person model), the view entity's own model (6.11) in those of
+  all the others while it is opaque or a cutout; a model hit by a bounce ray has its `colorshade`
   hue (as `get_material`); the first bounce stores the specular ray's hit
   distance in `PT_SPECULAR_HIT_DIST` (r16f; 0 without a specular ray: a
   diffuse bounce, no surface, lava, the rows 0.5 skips, no bounces); at 0.5
@@ -3669,6 +3722,7 @@ overlay, and a measuring mode.
 | `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
 | `r_ice 0/1` | 6.15: a translucent model in the ice skin (frozen monsters, the crystal golem) is solid ice, refracting and absorbing (1), or the 0.33 blend (0, the image before; not archived; see [Instances](#instances-vk_instancec) and [3D view](#3d-view-vk_viewc)) |
+| `r_viewer_model 0/1` | 6.11: without the chase camera the player's own model stands where the player is, seen by the shadow, bounce, reflection and refraction rays, not in the view (1, archived), or none (0, the image before; see [Scene](#scene-r_scenec) and [Instances](#instances-vk_instancec)) |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
 | `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |

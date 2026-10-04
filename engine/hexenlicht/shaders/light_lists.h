@@ -50,8 +50,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    lights (DYNLIGHT_NOT_ON_LIGHTS) don't light surfaces that are
  *    themselves lights (the beams);
  *  - a light in the view entity's hand (4.19, DYNLIGHT_HELD) gives the
- *    first-person weapon at most the light of one some way off, unshadowed
- *    (dynlight_max_solid_angle);
+ *    first-person weapon (6.11: and the view entity's own model, which the
+ *    light names) at most the light of one some way off, unshadowed
+ *    (dynlight_max_solid_angle), and the view entity's own model doesn't
+ *    shadow it (sample_dynamic_lights' held);
  *  - a gradient sample weighs a list light by the larger of last frame's
  *    and this frame's style (4.13; Quake II RTX's by last frame's), so a
  *    light that comes on can be picked;
@@ -734,13 +736,29 @@ dynlight_line(uint light_idx, vec3 p, float u, out vec3 position_light, out floa
  * no shadow on the world), and the hand's spot is within 0.2-10 units of
  * every weapon model, inside some. The distance is fitted to GL's torch-lit
  * weapon, whose light GL clamps at the texture's own color: within a stop
- * of it, without clipping (DECISIONS.md R109) */
+ * of it, without clipping (DECISIONS.md R109). 6.11: so it lights the view
+ * entity's own model, which it names in its type's high 16 bits (its
+ * instance + 1, vk_light.c): the light's place in the hand is fixed
+ * whatever the model's arms do, in some frames inside the arm or torso;
+ * the shadow rays to it leave that model out (get_direct_illumination) */
 #define HELD_WEAPON_DISTANCE 112.0
 
-float
-dynlight_max_solid_angle(uint light_idx, float max_solid_angle, bool receiver_weapon)
+/* Hexenlicht (6.11): is the light one in the view entity's hand and the
+ * receiver what holds it: the weapon (receiver_weapon) or the view entity's
+ * own model (the instance the light names) */
+bool
+dynlight_held_by(uint light_idx, uint receiver, bool receiver_weapon)
 {
-	if(!receiver_weapon || (global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_HELD) == 0u)
+	uint type = global_ubo.dyn_light_data[light_idx].type;
+	if((type & DYNLIGHT_HELD) == 0u)
+		return false;
+	return receiver_weapon || ((type >> 16) != 0u && (type >> 16) - 1u == receiver);
+}
+
+float
+dynlight_max_solid_angle(uint light_idx, float max_solid_angle, bool held_by_receiver)
+{
+	if(!held_by_receiver)
 		return max_solid_angle;
 	float x2 = min(square(global_ubo.dyn_light_data[light_idx].radius / HELD_WEAPON_DISTANCE), 1);
 	return min(max_solid_angle, 2 * x2 / (1 + sqrt(1 - x2)));
@@ -755,7 +773,8 @@ dynlight_max_solid_angle(uint light_idx, float max_solid_angle, bool receiver_we
  * its solid angle the same way; a beam's light (DYNLIGHT_NOT_ON_LIGHTS: a
  * line, the sunstaff's hit sphere) 0 for a receiver that is a light itself
  * (receiver_glows: the beam, its light inside it). 4.19: a held light's on
- * the weapon capped (dynlight_max_solid_angle) */
+ * the weapon capped (dynlight_max_solid_angle); 6.11: the instance a held
+ * light names is the view entity's own model, which it lights so too */
 float
 dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint receiver, bool receiver_glows, bool receiver_weapon)
 {
@@ -777,7 +796,7 @@ dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint rece
 	}
 	if((type & DYNLIGHT_TYPE_MASK) != DYNLIGHT_SPHERE)
 		return lum;
-	if((type >> 16) != 0u && (type >> 16) - 1u == receiver)
+	if((type & DYNLIGHT_HELD) == 0u && (type >> 16) != 0u && (type >> 16) - 1u == receiver)
 		return 0;
 
 	vec3 c = global_ubo.dyn_light_data[light_idx].center - p;
@@ -787,7 +806,8 @@ dynlight_weight(uint light_idx, vec3 p, vec3 n, float max_solid_angle, uint rece
 		return 0;
 
 	float x2 = min(square(radius / dist), 1);
-	float solid_angle = min(2 * x2 / (1 + sqrt(1 - x2)), dynlight_max_solid_angle(light_idx, max_solid_angle, receiver_weapon)); // / pi, as compute_dynlight_sphere's
+	float solid_angle = min(2 * x2 / (1 + sqrt(1 - x2)), dynlight_max_solid_angle(light_idx, max_solid_angle,
+		dynlight_held_by(light_idx, receiver, receiver_weapon))); // / pi, as compute_dynlight_sphere's
 	return lum * solid_angle * sphere_light_window(dist, dynlight_range(light_idx));
 }
 
@@ -802,12 +822,14 @@ sample_dynamic_lights(
 		bool receiver_weapon,	// Hexenlicht (4.19): the surface is the weapon's (MATERIAL_FLAG_WEAPON)
 		out vec3 position_light,
 		out vec3 light_color,
-		out bool unshadowed,	// Hexenlicht (4.19): a held light on the weapon, no shadow ray
+		out bool unshadowed,	// Hexenlicht (4.19): a held light on the weapon (6.11: or on the view entity's own model), no shadow ray
+		out bool held,		// Hexenlicht (6.11): a light in the view entity's hand, which its own model doesn't shadow
 		vec3 rng)
 {
 	position_light = vec3(0);
 	light_color = vec3(0);
 	unshadowed = false;
+	held = false;
 
 	if(global_ubo.num_dyn_lights == 0)
 		return;
@@ -847,10 +869,12 @@ sample_dynamic_lights(
 
 	float irradiance;
 	if(light_type == DYNLIGHT_SPHERE) {
-		float max_sphere = dynlight_max_solid_angle(light_idx, max_solid_angle, receiver_weapon);	// Hexenlicht (4.19)
+		bool held_by_receiver = dynlight_held_by(light_idx, receiver, receiver_weapon);	// Hexenlicht (4.19, 6.11)
+		float max_sphere = dynlight_max_solid_angle(light_idx, max_solid_angle, held_by_receiver);
 		irradiance = min(compute_dynlight_sphere(light_idx, light_center, p, position_light, rng), max_sphere);
 		irradiance *= sphere_light_window(length(light_center - p), dynlight_range(light_idx));
-		unshadowed = receiver_weapon && (global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_HELD) != 0u;
+		unshadowed = held_by_receiver;
+		held = (global_ubo.dyn_light_data[light_idx].type & DYNLIGHT_HELD) != 0u;
 	} else if(light_type == DYNLIGHT_LINE) {	// Hexenlicht (6.3)
 		float dist;
 		irradiance = min(dynlight_line(light_idx, p, rng.y, position_light, dist), max_solid_angle);

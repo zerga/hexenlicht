@@ -161,6 +161,7 @@ static void KeepAsPrevious (void)
 void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 {
 	const vk_effectsframe_t	*ef = VK_EffectsFrame ();
+	const vk_modelframe_t	*mf = VK_ModelFrame ();
 
 	if (ubo_valid)
 		KeepAsPrevious ();
@@ -290,6 +291,10 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.water_fog = q_max (0.0f, r_water_fog.value);
 	ubo.water_caustics = q_max (0.0f, r_water_caustics.value);
 	ubo.water_light = r_scene.water_light;	/* GL's light level around the camera, eased (6.17, r_light.c) */
+	/* 6.11: the view entity's own model (vk_instance.c's viewer group), in
+	 * the rays as its look (Quake II RTX's field) */
+	ubo.first_person_model = (mf->viewer_instance < 0) ? VIEWER_MODEL_NONE :
+				 (mf->viewer_look == MODEL_GROUP_TRANSPARENT) ? VIEWER_MODEL_TRANSLUCENT : VIEWER_MODEL_OPAQUE;
 
 	ubo_valid = true;
 	memcpy (ubo_buffers[vk.frame_index].mapped, &ubo, sizeof(ubo));

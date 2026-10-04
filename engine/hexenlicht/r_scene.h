@@ -1,7 +1,8 @@
 /* r_scene.h -- the per-frame scene description of the Hexenlicht renderer
  *
  * R_RenderView fills r_scene once per frame from the client state: the
- * camera, every entity to draw, dynamic lights (4.19: a player's lights in
+ * camera, every entity to draw (6.11: the view entity's own model too,
+ * for shadows and reflections), dynamic lights (4.19: a player's lights in
  * the hand), light style values, particles, the beams (6.3) and the view
  * blend. The 3D renderer reads the scene only, not
  * the client structures it was built from, so everything the renderer
@@ -30,8 +31,9 @@
 #ifndef R_SCENE_H
 #define R_SCENE_H
 
-/* visible entities, static entities and the view model */
-#define MAX_SCENE_ENTITIES	(MAX_VISEDICTS + MAX_STATIC_ENTITIES + 1)
+/* visible entities, static entities, the view model and the view entity's
+ * own model (6.11) */
+#define MAX_SCENE_ENTITIES	(MAX_VISEDICTS + MAX_STATIC_ENTITIES + 2)
 
 typedef enum
 {
@@ -59,6 +61,7 @@ typedef struct scene_entity_s
 	int		colorshade;	/* tint (the entity's colormap field), 0 = none */
 	int		effects;	/* EF_* */
 	qboolean	movestep;	/* dynamic entity that moves in steps (MOVETYPE_STEP): r_lerpmove */
+	qboolean	viewer;		/* 6.11: the view entity's own model without the chase camera (dynamic), which only secondary rays see */
 } scene_entity_t;
 
 typedef struct

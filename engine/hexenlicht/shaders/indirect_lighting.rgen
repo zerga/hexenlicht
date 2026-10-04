@@ -35,7 +35,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    height is traced too (Quake II RTX: height / 2);
  *  - the weapon is only in the bounce and shadow rays of its own surfaces,
  *    as in direct_lighting.rgen (Quake II RTX's weapon is in every ray
- *    when it has no first-person model);
+ *    when it has no first-person model); 6.11: the view entity's own model
+ *    (Quake II RTX's first-person model) in those of all the others while
+ *    it is opaque or a cutout;
  *  - a model hit by a bounce ray has its colorshade tint's hue, as in
  *    get_material (Quake II RTX reads the texture as it is); the texture's
  *    color becomes linear light here (UNORM textures, 4.17);
@@ -250,6 +252,9 @@ indirect_lighting(
 		bounce_cull_mask |= AS_FLAG_VIEWER_WEAPON;
 		shadow_cull_mask |= AS_FLAG_VIEWER_WEAPON;
 	}
+	// 6.11: the view entity's own model in the rest (path_tracer_rgen.h)
+	bounce_cull_mask |= viewer_cull_mask(primary_is_weapon, false);
+	shadow_cull_mask |= viewer_cull_mask(primary_is_weapon, false);
 
 	trace_geometry_ray(bounce_ray, true, bounce_cull_mask);
 
