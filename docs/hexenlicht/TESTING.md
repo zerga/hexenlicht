@@ -459,7 +459,7 @@ judged by eye; the log's lines are checked.
 
 ## Effects (6.1)
 
-E6's checklist (the body of epic #7, DECISIONS X1) names each effect's
+E6's checklist ([EFFECTS.md](EFFECTS.md), DECISIONS X1) names each effect's
 engine path, where the game shows it and its state. `effects_run.ps1`
 triggers what a player can trigger alone: every class's weapons, normal
 and with the tome, and the artifacts. It runs in glh2 and Hexenlicht
@@ -743,6 +743,40 @@ pools' views float):
 - **Moving:** `v1_turn` turns 40° (`+right`) before its shot: the shadow
   turns with the view. Walking, crouching and the motion in play aren't
   scripted.
+
+## View blends (6.6)
+
+`blend_run.ps1 -Out <folder>` runs glh2 and Hexenlicht (`-Exe` one of
+them) from `map demo1`, the same view in both, about 4 minutes in Debug:
+- **Pairs on a paused frame:** each of GL's blends as `v_cshift`'s tint
+  (the damage flash's three colors, the bonus flash, the power-up tints,
+  the dark and white flashes half faded, none), shot with `gl_polyblend` 0
+  and 1 (`<step>_0`, `_1`). The summary checks each pair against GL's
+  blend function on the 8-bit values, `c (1 − a) + 255 k a` with `gamma
+  1`: the mean, largest and signed difference and the share over 2 levels
+  (none: the noise between two frames alone), and the same blend in linear
+  light for contrast. `hud_1`: the status bar stays untinted.
+- **In play** (`host_framerate 0.02`: a flash fades 2 of 255 a frame):
+  `bf`, `df`, `wf` a frame and later after the command, the Icon of the
+  Defender and invisibility (`impulse 114`, `107` after `impulse 43`),
+  then an archer created in front without god, a shot every 5 frames
+  (`dmg_NN`: which ones catch a hit differs between runs and engines).
+  glh2's `screenshot` reads its back buffer, a frame or more older than
+  Hexenlicht's next frame: its `_01` shots show no flash yet.
+- **Under water** (Hexenlicht only): demo1's pool from below, the bonus
+  flash without the water's brown; `r_dumpscene`'s "view blend" line in the
+  log (0 without a flash).
+- **Checks:** the pairs within the noise (6.6: Hexenlicht's mean 0.33–0.70
+  against an untinted pair's 0.81, glh2's 0.04–0.10; linear light 6–47);
+  with `-Bin` of `main`'s build the unblended shots (`*_0`, `none_1`,
+  `water_none`) identical to the branch's (a run of `main` may differ from
+  another in a pixel by 1 level); Debug validation 0/0. `calib_grid.ps1
+  -Out <folder>\<tag> -Names bf_01,df_60,... -Png <grid.png> -Columns
+  'GL|glh2\{0}.tga|1','Hexenlicht|hexenlicht\{0}.tga|1'` puts them side
+  by side.
+- **Cost:** a scratch script (6.6's): Release, 1920x1080, `vk_benchmark
+  1`, `profiler_samples 120`, a tint on a paused frame, `gl_polyblend` 0
+  and 1 alternating twice; the profiler's "composite and 2D" line.
 
 ## Pixel regression (renderer refactors)
 

@@ -559,6 +559,12 @@ the starting points for authors and their tools.
   view), active dlights, light style values, the active particle list, the
   beams (6.3), the view blend and the medium's light (6.17). The 3D renderer reads only `r_scene`;
   `r_dumpscene` prints it.
+- **The view blend** (6.6, `R_ViewBlend`; DECISIONS X37): GL's
+  `V_CalcBlend` over `cl.cshifts` (the damage and bonus flashes, `df` and
+  `wf`, the power-up tints, `v_cshift`'s tint) into `r_scene.blend`,
+  without the contents shift where the camera is in water, slime or lava:
+  their medium replaces GL's tint there (6.5, X22). The composite draws it
+  ([3D view](#3d-view-vk_viewc)).
 - **A player's lights in the hand** (4.19, `R_HoldPlayerLights`; DECISIONS
   R109): `CL_RelinkEntities` places an entity's lights with Quake's
   offsets (`EF_DIMLIGHT` at the origin, `EF_BRIGHTLIGHT` 16 up, a muzzle
@@ -2699,7 +2705,7 @@ Story 4.10: Hexen II's darkness as GL shows it.
 - **Gameplay** was already GL's: `cl.light_level` (4.12, `r_light.c`) is
   `R_DrawViewModel`'s, dark lights adding to it as in GL.
 - Left out: the hydra's blinding (`df`, GL's full-screen dark flash: the
-  view blends of 6.6), `EF_DARKFIELD` (the haste boots' particles, 6.2),
+  view blends, drawn since 6.6), `EF_DARKFIELD` (the haste boots' particles, 6.2),
   dynamic lights of a negative radius (GL lights nothing with them), GL's
   brightening of models by a dark light.
 
@@ -2716,6 +2722,17 @@ Story 4.10: Hexen II's darkness as GL shows it.
   blit: scales the upscaler's output over the view, see Upscaling; the
   colors' encode, 4.17, + `gamma` like the 2D) into the 3D rectangle, then restores the
   full viewport for the 2D.
+- **The view blend** (6.6; DECISIONS X37–X39): the composite draws
+  `r_scene.blend` over the lit view as GL's `R_PolyBlend` draws its quad:
+  `mix (c, blend.rgb, blend.a)` on the 8-bit color values after the encode
+  and before `gamma` (GL blends in its frame buffer, under its gamma
+  ramps), so the weapon is tinted and the 2D isn't; after the denoiser and
+  the upscalers, so a fading flash leaves nothing in their history. The
+  push constant `blend` (`composite_push_t`), captured in
+  `VK_RenderView3D`: 0 with `gl_polyblend 0` (GL's cvar, 1, not
+  archived) and in the debug views, which give the image before 6.6 bit
+  for bit. No underwater warp (X38). Cost: none measurable (the composite
+  and 2D 0.02 ms either way, 1920x1080).
 - **`primary_rays.rgen`** (3.2): Q2RTX's primary rays, dispatched as its
   are (width / 2 × height × 2 checkerboard fields: the left half of each
   image holds the pixels where x and y have the same parity, the right half
@@ -3308,7 +3325,8 @@ one small interface, which DLSS SR and RR (3.10, see
   views nearest. Q2RTX's "nearest" at half size samples its linear
   sampler, which blends neighbours; ours is a texel fetch. The lit image
   without tone mapping gets its storage scale taken out there (push
-  constant `scale`).
+  constant `scale`); GL's view blend goes over it (6.6, push constant
+  `blend`, [3D view](#3d-view-vk_viewc)).
 - **The look:** TAA and TAAU soften the image and blur it during fast
   turns, sharpening within a few frames after (no lasting ghosting
   seen: demo1 turning and walking, village3's sheep); `r_upscaler 0` at
@@ -3510,8 +3528,8 @@ archived (a menu option with 6.10).
   visible with the test lights). Both images are rgba16f, sampled
   linearly. `bloom_enable`, `bloom_debug 1-3` (the stages stretched over
   the view). Left out: Q2RTX's stronger, wider bloom under water (Hexen
-  II's underwater look is the liquid's medium since 6.5 and GL's warp,
-  6.6) and its blur behind menus.
+  II's underwater look is the liquid's medium since 6.5; no warp, 6.6's
+  X38) and its blur behind menus.
 - **Tone mapping** (`vk_tonemap.c`, Q2RTX's `tone_mapping.c`, Eilertsen,
   Mantiuk and Unger's noise-aware tone mapping with Q2RTX's changes; its
   shaders explain it): `tone_mapping_histogram.comp` bins the image's log
@@ -3539,8 +3557,9 @@ archived (a menu option with 6.10).
   3D frame wasn't tone mapped (`vk_render_frame` not the next one: a debug
   view, `tm_enable 0`). Left out: the HDR output variant (7.3); the full
   screen blend and colorize (`fs_blend_color`, `fs_colorize`: Q2RTX's
-  blend is strongest at the screen's edges; GL's view blend `v_blend`,
-  not drawn yet, comes with 6.6); Q2RTX's on-screen adapted luminance
+  blend is strongest at the screen's edges, at most 0.2 opaque; GL's view
+  blend is drawn as GL's by the composite since 6.6, [3D
+  view](#3d-view-vk_viewc)); Q2RTX's on-screen adapted luminance
   line (`vk_exposure` prints it).
 - **Readback** (Q2RTX's `ReadbackBuffer`, only `adapted_luminance`
   written): the curve pass writes the adapted luminance into this frame's
@@ -3718,6 +3737,7 @@ overlay, and a measuring mode.
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
+| `gl_polyblend 0/1` | 6.6: GL's view blend (the damage and bonus flashes, the power-up tints) over the lit view (1, GL's cvar, not archived; 0 none). `v_cshift r g b percent` (GL's command) sets the tint in the air; `bf`, `df`, `wf` flash the view (see [3D view](#3d-view-vk_viewc)) |
 | `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
 | `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |

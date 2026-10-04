@@ -24,8 +24,8 @@
  * selected by r_debugview (the G-buffer's before the bounces: with two,
  * the first stores its hit into the shading position). GL_EndRendering
  * then calls VK_DrawView3D, which scales the image into the swapchain's
- * 3D view rectangle (view_composite.frag, Quake II RTX's final blit)
- * before the 2D is drawn on top.
+ * 3D view rectangle (view_composite.frag, Quake II RTX's final blit; 6.6:
+ * with GL's view blend over it) before the 2D is drawn on top.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -64,6 +64,8 @@ static cvar_t	r_debugview_scale = {"r_debugview_scale", "1", CVAR_NONE};	/* the 
 /* 6.14: light through water, glass and translucent things (direct_lighting.rgen's
  * caustic ray, its specialization constant; Quake II RTX's cvar), 0 = none */
 static cvar_t	pt_caustics = {"pt_caustics", "1", CVAR_NONE};
+/* 6.6: GL's view blend over the lit view (the GL renderer's cvar, glquake.h) */
+cvar_t		gl_polyblend = {"gl_polyblend", "1", CVAR_NONE};
 
 static VkPipeline		primary_pipeline;	/* VK_PathTracerLayout () */
 static VkPipeline		reflect_pipelines[2];	/* the first reflection or refraction pass, the others */
@@ -85,11 +87,13 @@ typedef struct
 	float	scale;		/* 1 / STORAGE_SCALE_HDR for the lit image without tone mapping, else 1 */
 	int	filter_lanczos;	/* else nearest */
 	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
+	float	blend[4];	/* 6.6: GL's view blend (r_scene.blend), a 0 for none */
 } composite_push_t;
 
 static qboolean			view_drawn;		/* this frame has a 3D view to composite */
 static VkRect2D			view_rect;		/* in the swapchain */
 static float			view_scale;		/* composite_push_t's scale for this frame */
+static float			view_blend[4];		/* composite_push_t's blend for this frame */
 
 /* the images the composite may show (vk_upscale.c's display_source) */
 static const int		display_images[3] = { VKPT_IMG_TAA_OUTPUT, VKPT_IMG_FSR_EASU_OUTPUT, VKPT_IMG_FSR_RCAS_OUTPUT };
@@ -466,6 +470,11 @@ void VK_RenderView3D (void)
 	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
 	if (mode != DEBUGVIEW_LIT)
 		view_scale *= q_max (r_debugview_scale.value, 0.0f);	/* 4.9: lighting above 1 unclipped */
+	/* 6.6: GL's view blend over the lit view; the debug views stay as they are */
+	if (mode == DEBUGVIEW_LIT && gl_polyblend.integer)
+		memcpy (view_blend, r_scene.blend, sizeof(view_blend));
+	else
+		memset (view_blend, 0, sizeof(view_blend));
 	VK_ProfilerStop (cmd, PROF_VIEW);
 	VK_EndDenoiserFrame (denoise);
 	VK_EndUpscaleFrame ();
@@ -496,6 +505,7 @@ void VK_DrawView3D (void)
 	push.scale = view_scale;
 	push.filter_lanczos = up->display_lanczos ? 1 : 0;
 	push.source = up->display_source;
+	memcpy (push.blend, view_blend, sizeof(push.blend));
 
 	if (composite_pipeline && composite_format != vk.surface_format.format)
 	{
@@ -539,6 +549,7 @@ void VK_InitView (void)
 	Cvar_RegisterVariable (&r_debugview);
 	Cvar_RegisterVariable (&r_debugview_scale);
 	Cvar_RegisterVariable (&pt_caustics);
+	Cvar_RegisterVariable (&gl_polyblend);
 	composite_layout = VK_CreatePassLayout (VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(composite_push_t));
 }
 
