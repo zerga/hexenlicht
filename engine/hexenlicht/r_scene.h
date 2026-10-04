@@ -123,7 +123,7 @@ typedef struct
 	particle_t	*particles;
 	int		num_particles;
 
-	float		blend[4];	/* full-screen color shift (v_blend), rgba 0-1 */
+	float		blend[4];	/* full-screen color shift, rgba 0-1: GL's v_blend, without the contents shift in a liquid (6.6) */
 
 	/* 6.17: the light of the liquid the camera is in, as GL's light level
 	 * / 200 (r_light.c's R_MediumLight; in the air cl.light_level's) */

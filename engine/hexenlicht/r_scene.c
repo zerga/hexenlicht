@@ -4,8 +4,8 @@
  * frame setup (light style animation, view vectors, view leaf, contents
  * color shift and view blend) and then gathers the frame's scene into
  * r_scene (see r_scene.h; 4.19: a player's lights in the hand; 6.11: the
- * view entity's own model). The
- * r_dumpscene command prints it.
+ * view entity's own model; 6.6: GL's view blend without a liquid's
+ * tint). The r_dumpscene command prints it.
  *
  * R_AnimateLight is Hammer of Thyrion's, from gl_rlight.c.
  *
@@ -331,6 +331,38 @@ void R_AddBeam (int type, int skin, const vec3_t source, const vec3_t dest, floa
 	memcpy (b->models, models, sizeof(b->models));
 }
 
+/* 6.6: GL's view blend (view.c's V_CalcBlend over cl.cshifts: the damage
+ * and bonus flashes, the power-up tints, v_cshift's), without the contents
+ * shift where the camera is in a liquid, whose medium replaces GL's tint
+ * (DECISIONS X22); vk_view.c's composite draws it as GL's R_PolyBlend */
+static void R_ViewBlend (void)
+{
+	int	j, contents = r_scene.viewcontents;
+	float	r, g, b, a, a2;
+
+	r = g = b = a = 0;
+	for (j = 0; j < NUM_CSHIFTS; j++)
+	{
+		if (j == CSHIFT_CONTENTS &&
+		    (contents == CONTENTS_WATER || contents == CONTENTS_SLIME || contents == CONTENTS_LAVA))
+			continue;
+		/* above 10000: stoned, which V_CalcBlend (R_SetupFrame) set to 80 */
+		a2 = (cl.cshifts[j].percent > 10000 ? 80 : cl.cshifts[j].percent) / 255.0f;
+		if (!a2)
+			continue;
+		a = a + a2 * (1 - a);
+		a2 = a2 / a;
+		r = r * (1 - a2) + cl.cshifts[j].destcolor[0] * a2;
+		g = g * (1 - a2) + cl.cshifts[j].destcolor[1] * a2;
+		b = b * (1 - a2) + cl.cshifts[j].destcolor[2] * a2;
+	}
+	/* clamped as GL's glColor4fv clamps them (v_cshift takes any numbers) */
+	r_scene.blend[0] = q_min (q_max (r / 255.0f, 0.0f), 1.0f);
+	r_scene.blend[1] = q_min (q_max (g / 255.0f, 0.0f), 1.0f);
+	r_scene.blend[2] = q_min (q_max (b / 255.0f, 0.0f), 1.0f);
+	r_scene.blend[3] = q_min (q_max (a, 0.0f), 1.0f);
+}
+
 static void R_BuildScene (void)
 {
 	int		i;
@@ -409,7 +441,7 @@ static void R_BuildScene (void)
 	for (p = active_particles; p; p = p->next)
 		r_scene.num_particles++;
 
-	memcpy (r_scene.blend, v_blend, sizeof(r_scene.blend));
+	R_ViewBlend ();
 }
 
 
@@ -623,7 +655,7 @@ static void R_DumpScene_f (void)
 				r_scene.water_light, r_scene.water_light_now, r_scene.water_light_points);
 	else
 		Con_Printf ("medium light (/ 200): %.3f, cl.light_level's (not in a liquid)\n", r_scene.water_light);
-	Con_Printf ("view blend: %.2f %.2f %.2f %.2f\n",
+	Con_Printf ("view blend (GL's without a liquid's tint): %.2f %.2f %.2f %.2f\n",
 			r_scene.blend[0], r_scene.blend[1], r_scene.blend[2], r_scene.blend[3]);
 }
 

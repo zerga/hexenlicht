@@ -6,7 +6,10 @@
  * the view's size, else scaled: nearest at exactly half the view's size
  * and for the debug views, with Quake II RTX's Lanczos filter otherwise.
  * Then encoded as an 8-bit color (transfer.glsl: a 2.2 power, the sRGB
- * curve with r_srgb 1; 4.17) with the gamma cvar, like draw2d.frag. The lit
+ * curve with r_srgb 1; 4.17) with the gamma cvar, like draw2d.frag; 6.6:
+ * GL's view blend (the damage and bonus flashes, the power-up tints) over
+ * the 8-bit color before the gamma, as GL's R_PolyBlend draws it into the
+ * frame buffer under its gamma ramps. The lit
  * image without tone mapping is still in Quake II RTX's storage scale
  * (STORAGE_SCALE_HDR), which push.scale takes out; the debug views are
  * scaled by r_debugview_scale (4.9).
@@ -49,6 +52,7 @@ layout(push_constant) uniform Push
 	float	scale;		/* 1 / STORAGE_SCALE_HDR for the lit image without tone mapping, 1 tone mapped, the debug views r_debugview_scale (4.9) */
 	int	filter_lanczos;	/* 0 nearest, 1 Lanczos (TAA_OUTPUT) */
 	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
+	vec4	blend;		/* 6.6: GL's view blend (r_scene.blend), a 0 for none */
 } push;
 
 // semi-vector form of the ternary operator: (f == val) ? eq : neq
@@ -141,6 +145,7 @@ void main()
 			c = texelFetch(TEX_TAA_OUTPUT, p, 0).rgb;
 	}
 	c = linear_to_color(c * push.scale, global_ubo.color_srgb);	/* clamped to [0, 1] */
+	c = mix(c, push.blend.rgb, push.blend.a);	/* 6.6: GL's blend function, SRC_ALPHA, ONE_MINUS_SRC_ALPHA */
 
 	out_color = vec4(pow(c, vec3(push.gamma)), 1.0);
 }
