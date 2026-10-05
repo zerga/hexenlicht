@@ -416,6 +416,41 @@ void VK_FreePVS (void);
 const byte *VK_ClusterPVS (int cluster);	/* NULL for -1: everything visible */
 int VK_PointCluster (qmodel_t *worldmodel, const vec3_t point);
 
+/* vk_medium.c (6.18): the liquids' light grid, GL's light level of a model
+ * baked by light style on a lattice around the liquid leaves at map load,
+ * which the medium's fog takes where it is (shaders/medium.glsl; the
+ * layout in shaders/hl_shared.h). data is the uploaded buffer's copy, for
+ * the CPU's lookups. */
+typedef struct
+{
+	vk_buffer_t	buffer;
+	uint32_t	*data;
+	size_t		words;		/* uint32s */
+	int		num_leaves;	/* liquid leaves */
+	int		num_boxes;
+	int		num_points;
+	float		cell;		/* units */
+	double		build_time;	/* seconds */
+	int		sampled;	/* points sampled (near a liquid leaf) */
+	int		samples;	/* the samples taken */
+	int		traces;		/* R_LightPointStyles calls */
+	int		liquid;		/* points with a sample in a liquid */
+	int		filled;		/* points filled from their neighbours */
+	int		folded;		/* points in a liquid with more than 4 light styles (folded into the brightest) */
+} vk_medium_t;
+
+extern vk_medium_t	vk_medium;
+
+void VK_InitMedium (void);
+void VK_BuildMedium (qmodel_t *worldmodel);	/* in VK_LoadWorld */
+void VK_FreeMedium (void);
+struct QVKUniformBuffer_s;
+void VK_PrepareMedium (struct QVKUniformBuffer_s *ubo);	/* VK_PrepareUBO: the light styles and dynamic lights */
+/* GL's light level at p as water.glsl takes it: the grid's (MEDIUM_MIN_LEVEL
+ * outside it: returns false) and the scene's dynamic lights' (where they
+ * light the world: a player's held light in the hand, 4.19) */
+qboolean VK_MediumLevel (const vec3_t p, float *grid, float *lights);
+
 /* vk_model.c: alias models on the GPU. Each model's triangles and poses
  * (AliasModel in shaders/hl_shared.h) are built from gl_model.c's data on
  * map load or when the model is first drawn; every frame,

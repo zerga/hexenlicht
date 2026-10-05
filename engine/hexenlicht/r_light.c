@@ -1,5 +1,5 @@
 /* r_light.c -- the light on the first-person weapon, for the game, and the
- * light of the liquid around the camera
+ * light maps by style for the liquids' light grid
  *
  * GL's R_DrawViewModel samples the world's light at the weapon (the light
  * maps with the current light styles, at least 24, plus the dynamic
@@ -9,8 +9,8 @@
  * (MG_AI.hc's get_visibility) and of when the Assassin cloaks in the
  * shadows (specials.hc). R_ViewModelLight does the same every frame; only
  * the level matters here, not the color GL shades the weapon with.
- * R_MediumLight (6.17) gives the liquid around the camera its light from
- * the same light level, averaged around the camera and eased.
+ * R_LightPointStyles (6.18) finds the same light maps by light style, for
+ * vk_medium.c's light grid of the liquids' medium.
  *
  * R_LightPointColor is Hammer of Thyrion's, from gl_rlight.c (the GL_RGBA
  * light map path; gl_model.c loads the light maps as RGB for it, as
@@ -224,41 +224,32 @@ void R_ViewModelLight (void)
 /*
 =============================================================================
 
-THE MEDIUM'S LIGHT (6.17)
+THE LIGHT MAPS BY STYLE (6.18)
 
-The light the liquid around the camera scatters towards the eye (6.5's
-medium, water.glsl, DECISIONS X22) is GL's light level of a model, as
-cl.light_level is, but over the liquid around the camera rather than at
-the eye: R_LightPointColor takes the light map of the floor straight
-below a point, so one point jumps between GL's least (24) and a bright
-patch as the player swims over the floor (demo2's moat: 24 to 128). The
-light maps' level (at least 24, as GL's) is averaged over the eye and a
-ring of points around it at eye height that the liquid connects to it,
-eased toward that over MEDIUM_LIGHT_TAU of game time; the dynamic lights
-at the eye are added as they are (a muzzle flash brightens the medium at
-once, as in GL's cl.light_level). In the air the medium's light stays
-cl.light_level (looking into a liquid from above). DECISIONS X31.
+The medium's light grid (vk_medium.c) bakes GL's light level of a model at
+points in the liquids once, at map load, so it can't take the light styles'
+values of that moment: R_LightPointStyles finds the surface
+R_LightPointColor would (straight below the point) and gives the level of
+each of its light maps at style value 1, the RGB average interpolated
+between the texels as R_LightPointColor does (in floats; GL's integer steps
+are left out).
 
 =============================================================================
 */
 
-#define MEDIUM_RING_POINTS	8
-#define MEDIUM_RING_RADIUS	192.0f	/* units, at eye height */
-#define MEDIUM_LIGHT_TAU	0.5	/* seconds of game time */
-
-static int	medium_contents;	/* the liquid eased in, 0 = none (start over) */
-static double	medium_time;		/* cl.time of the last easing */
-static float	medium_level;		/* the eased light maps' level */
-
-/* whether the segment from start to end stays in leaves of these contents
- * (the BSP's leaves only: brush entities don't count); a point on a plane
- * is behind it, as in Mod_PointInLeaf, so the segment starts in the eye's
- * leaf */
-static qboolean SegmentInContents (mnode_t *node, const vec3_t start, const vec3_t end, int contents)
+/* -1: nothing below; else the number of light maps (0 on a lit surface
+ * without samples) */
+static int RecursiveLightPointStyles (qmodel_t *model, mnode_t *node, const vec3_t p, const vec3_t end,
+				      int *styles, float *levels)
 {
 	float		front, back, frac;
-	vec3_t		mid;
+	vec3_t		start, mid;
+	int		i, n, ds, dt, maps, line3, size;
+	msurface_t	*surf;
+	const byte	*lightmap;
+	float		fs, ft, top, bottom;
 
+	VectorCopy (p, start);
 	while (node->contents >= 0)
 	{
 		if (node->plane->type < 3)
@@ -271,9 +262,9 @@ static qboolean SegmentInContents (mnode_t *node, const vec3_t start, const vec3
 			front = DotProduct(start, node->plane->normal) - node->plane->dist;
 			back = DotProduct(end, node->plane->normal) - node->plane->dist;
 		}
-		if ((front > 0) == (back > 0))
+		if ((back < 0) == (front < 0))
 		{
-			node = node->children[front <= 0];
+			node = node->children[front < 0];
 			continue;
 		}
 
@@ -281,72 +272,75 @@ static qboolean SegmentInContents (mnode_t *node, const vec3_t start, const vec3
 		mid[0] = start[0] + (end[0] - start[0]) * frac;
 		mid[1] = start[1] + (end[1] - start[1]) * frac;
 		mid[2] = start[2] + (end[2] - start[2]) * frac;
-		return SegmentInContents (node->children[front <= 0], start, mid, contents)
-			&& SegmentInContents (node->children[front > 0], mid, end, contents);
+
+		/* the front side first, then this node's surfaces, then the back */
+		n = RecursiveLightPointStyles (model, node->children[front < 0], start, mid, styles, levels);
+		if (n >= 0)
+			return n;
+
+		surf = model->surfaces + node->firstsurface;
+		for (i = 0; i < node->numsurfaces; i++, surf++)
+		{
+			if (surf->flags & SURF_DRAWTILED)
+				continue;	/* no lightmaps */
+			ds = (int) ((float) DotProduct(mid, surf->texinfo->vecs[0]) + surf->texinfo->vecs[0][3]);
+			dt = (int) ((float) DotProduct(mid, surf->texinfo->vecs[1]) + surf->texinfo->vecs[1][3]);
+			if (ds < surf->texturemins[0] || dt < surf->texturemins[1])
+				continue;
+			ds -= surf->texturemins[0];
+			dt -= surf->texturemins[1];
+			if (ds > surf->extents[0] || dt > surf->extents[1])
+				continue;
+
+			n = 0;
+			if (surf->samples)
+			{
+				line3 = ((surf->extents[0] >> 4) + 1) * 3;
+				size = line3 * ((surf->extents[1] >> 4) + 1);
+				lightmap = surf->samples + (dt >> 4) * line3 + (ds >> 4) * 3;
+				fs = (ds & 15) / 16.0f;
+				ft = (dt & 15) / 16.0f;
+				for (maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++, lightmap += size)
+				{
+					top = (lightmap[0] + lightmap[1] + lightmap[2]) +
+					      ((lightmap[3] + lightmap[4] + lightmap[5]) - (lightmap[0] + lightmap[1] + lightmap[2])) * fs;
+					bottom = (lightmap[line3 + 0] + lightmap[line3 + 1] + lightmap[line3 + 2]) +
+						 ((lightmap[line3 + 3] + lightmap[line3 + 4] + lightmap[line3 + 5]) -
+						  (lightmap[line3 + 0] + lightmap[line3 + 1] + lightmap[line3 + 2])) * fs;
+					styles[n] = surf->styles[maps];
+					levels[n] = (top + (bottom - top) * ft) / 3.0f;
+					n++;
+				}
+			}
+			return n;
+		}
+
+		VectorCopy (mid, start);	/* the back side */
+		node = node->children[front >= 0];
 	}
 
-	return node->contents == contents;
+	return -1;	/* didn't hit anything */
 }
 
-/* GL's light maps' level for a model at p (at least 24, without the
- * dynamic lights) */
-static float LightMapLevel (vec3_t p)
+/* GL's light maps' level at p by style (R_LightPointColor's surface): up
+ * to MAXLIGHTMAPS styles and their levels at style value 1; returns how
+ * many (0: nothing lit below). Without light data, as R_LightPointColor,
+ * full light (255 in style 0). */
+int R_LightPointStyles (qmodel_t *model, const vec3_t p, int *styles, float *levels)
 {
-	float	level = R_LightPointColor (p);
+	vec3_t		end;
+	int		n;
 
-	return (level < 24) ? 24 : level;
-}
-
-/* r_scene.water_light and its parts; in R_RenderView, after R_BuildScene */
-void R_MediumLight (void)
-{
-	vec3_t		eye, p;
-	float		sum, a, dt;
-	int		i, contents = r_scene.viewcontents;
-
-	if (contents != CONTENTS_WATER && contents != CONTENTS_SLIME && contents != CONTENTS_LAVA)
+	if (!model->lightdata)
 	{
-		medium_contents = 0;
-		r_scene.water_light = (float)cl.light_level / 200.0f;	/* as before 6.17 */
-		r_scene.water_light_now = r_scene.water_light;
-		r_scene.water_light_points = 0;
-		return;
+		styles[0] = 0;
+		levels[0] = 255.0f;
+		return 1;
 	}
 
-	VectorCopy (r_scene.vieworg, eye);
-	sum = LightMapLevel (eye);
-	r_scene.water_light_points = 1;
-	for (i = 0; i < MEDIUM_RING_POINTS; i++)
-	{
-		a = i * (2.0f * (float)M_PI / MEDIUM_RING_POINTS);
-		p[0] = eye[0] + MEDIUM_RING_RADIUS * cosf (a);
-		p[1] = eye[1] + MEDIUM_RING_RADIUS * sinf (a);
-		p[2] = eye[2];
-		if (!SegmentInContents (cl.worldmodel->nodes, eye, p, contents))
-			continue;	/* a wall, the air or another pool on the way */
-		sum += LightMapLevel (p);
-		r_scene.water_light_points++;
-	}
-	sum /= r_scene.water_light_points;
-
-	/* the clock steps back a little when a packet is late (CL_LerpPoint,
-	 * network games): the value stands then */
-	dt = q_max (0.0f, (float)(r_scene.time - medium_time));
-	if (contents != medium_contents)
-		medium_level = sum;	/* came into the liquid */
-	else
-		medium_level += (sum - medium_level) * (1.0f - expf (-dt / (float)MEDIUM_LIGHT_TAU));
-	medium_contents = contents;
-	medium_time = r_scene.time;
-
-	r_scene.water_light = AddDynamicLights (eye, medium_level) / 200.0f;
-	r_scene.water_light_now = AddDynamicLights (eye, sum) / 200.0f;
-}
-
-/* a new map: start over */
-void R_ResetMediumLight (void)
-{
-	medium_contents = 0;
-	medium_time = 0;
-	medium_level = 0;
+	end[0] = p[0];
+	end[1] = p[1];
+	end[2] = p[2] - 2048;
+	n = RecursiveLightPointStyles (model, model->nodes, p, end, styles, levels);
+	return (n < 0) ? 0 : n;
 }

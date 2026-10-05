@@ -504,6 +504,7 @@ static void VK_FreeWorld (void)
 		VK_DestroyBuffer (&vk_world.buffer);
 	VK_FreeWorldAccel ();
 	VK_FreePVS ();
+	VK_FreeMedium ();
 	free (vk_world.models);
 	free (texture_materials);
 	texture_materials = NULL;
@@ -604,6 +605,7 @@ void VK_LoadWorld (qmodel_t *worldmodel)
 	VK_UploadMaterials ();
 	VK_BuildWorldAccel ();
 	stats.build_time = Sys_DoubleTime () - start;
+	VK_BuildMedium (worldmodel);	/* the liquids' light grid (6.18), timed on its own */
 }
 
 
@@ -797,6 +799,7 @@ void VK_InitWorld (void)
 {
 	Cmd_AddCommand ("vk_world", VK_World_f);
 	VK_InitPVS ();
+	VK_InitMedium ();
 }
 
 void VK_ShutdownWorld (void)

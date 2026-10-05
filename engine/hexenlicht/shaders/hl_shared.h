@@ -1,8 +1,8 @@
 /* hl_shared.h -- definitions shared by the Hexenlicht renderer (C) and its
  * shaders (GLSL): Quake II RTX's headers (constants.h, the primitive
  * record in vertex_buffer.h, ModelInstance and the global UBO in
- * global_ubo.h), and Hexenlicht's own GPU data: the PVS buffer, alias
- * models, effects and the checks' records.
+ * global_ubo.h), and Hexenlicht's own GPU data: the PVS buffer, the
+ * liquids' light grid, alias models, effects and the checks' records.
  *
  * Shaders are compiled with -DVKPT_SHADER. A shader that uses the global
  * UBO, the render-target images or vertex_buffer.h's functions defines
@@ -42,6 +42,42 @@
  * ========================================================================== */
 
 #define PVS_HEADER_UINTS		4
+
+
+/* ==========================================================================
+ * The liquids' light grid (6.18, vk_medium.c; read by medium.glsl): GL's
+ * light level of a model at the points of a lattice (point (i, j, k) at
+ * (i, j, k) * the cell size, world units) in boxes around the liquid
+ * leaves, by light style. In uvec2s: the header, [0] the number of boxes
+ * and the cell size (a float's bits), [1] the number of points and 0; then
+ * MEDIUM_BOX_UVEC2S per box: (lo.x, lo.y), (lo.z, the index of its first
+ * point's uvec2), (size.x, size.y), (size.z, 0), lo the lattice index of its
+ * first point (ints), size its points along each axis (x fastest, then y,
+ * then z); then the points: .x four light styles, a byte each
+ * (MEDIUM_NO_STYLE: none), .y their levels at style value 1, a byte each
+ * in the same order (GL's light map units: unpackUnorm4x8 * 255).
+ * ========================================================================== */
+
+#define MEDIUM_GRID_HEADER_UVEC2S	2
+#define MEDIUM_BOX_UVEC2S		4
+#define MEDIUM_NO_STYLE			255
+#define MEDIUM_MIN_LEVEL		24.0	/* GL's least light on a model (R_DrawViewModel) */
+
+/* medium_check.comp (vk_medium check): the grid's level at points,
+ * MEDIUM_CHECK_CHAIN in a row by one invocation, carrying the box hint */
+#define MEDIUM_CHECK_CHAIN		4
+BEGIN_SHADER_STRUCT( MediumCheckPush )
+{
+	DeviceAddress grid;
+	DeviceAddress styles;	/* float[MEDIUM_LIGHT_STYLES]: the light styles' values */
+	DeviceAddress points;	/* vec4[]: the points (xyz) */
+	DeviceAddress results;	/* float[]: medium_grid_level there, < 0 outside the grid */
+	uint num_points;
+	uint pad0;
+	uint pad1;
+	uint pad2;
+}
+END_SHADER_STRUCT( MediumCheckPush )
 
 
 /* ==========================================================================

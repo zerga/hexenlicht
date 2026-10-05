@@ -191,6 +191,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/draw2d.vert
 	${HEXENLICHT_SHADER_DIR}/draw2d.frag
 	${HEXENLICHT_SHADER_DIR}/pvs_check.comp
+	${HEXENLICHT_SHADER_DIR}/medium_check.comp
 	${HEXENLICHT_SHADER_DIR}/rt_check.comp
 	${HEXENLICHT_SHADER_DIR}/effects_check.comp
 	${HEXENLICHT_SHADER_DIR}/ray_probe.comp
@@ -281,6 +282,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_matfiles.c
 	${HEXENLICHT_DIR}/vk_world.c
 	${HEXENLICHT_DIR}/vk_pvs.c
+	${HEXENLICHT_DIR}/vk_medium.c
 	${HEXENLICHT_DIR}/vk_model.c
 	${HEXENLICHT_DIR}/vk_skin.c
 	${HEXENLICHT_DIR}/vk_instance.c

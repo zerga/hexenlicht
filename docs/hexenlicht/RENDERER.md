@@ -11,7 +11,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Textures](#textures-vk_texturec) · [Image files](#image-files-vk_imagefilec) ·
 [Material files](#material-files-vk_matfilesc) · [Texture export](#texture-export-vk_exportc) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
 [Buffers and layouts](#buffers-and-gpu-data-layouts) · [Materials](#materials-vk_materialc) ·
-[World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Instances](#instances-vk_instancec) ·
+[World](#world-vk_worldc) · [PVS](#pvs-vk_pvsc) · [Medium light grid](#medium-light-grid-vk_mediumc) · [Instances](#instances-vk_instancec) ·
 [Alias models](#alias-models-vk_modelc) · [Skins](#skins-vk_skinc) ·
 [Effects](#effects-vk_effectsc) · [Effect lights](#effect-lights-vk_effectlightc) · [Beams](#beams-vk_beamlightc) · [Acceleration structures](#acceleration-structures-vk_accelc) ·
 [Path tracer framework](#path-tracer-framework) · [Lights](#lights-vk_lightc) ·
@@ -560,8 +560,9 @@ the starting points for authors and their tools.
   view leaf, `V_CalcBlend`) and fills the global `r_scene`: camera, entities
   (`cl_visedicts`, all static entities, the view model; not culled to the
   view), active dlights, light style values, the active particle list, the
-  beams (6.3), the view blend and the medium's light (6.17). The 3D renderer reads only `r_scene`;
-  `r_dumpscene` prints it.
+  beams (6.3) and the view blend. The 3D renderer reads only `r_scene`;
+  `r_dumpscene` prints it, and the medium's light at the eye (6.18: the
+  liquids' light grid's, `VK_MediumLevel`).
 - **The view blend** (6.6, `R_ViewBlend`; DECISIONS X37): GL's
   `V_CalcBlend` over `cl.cshifts` (the damage and bonus flashes, `df` and
   `wf`, the power-up tints, `v_cshift`'s tint) into `r_scene.blend`,
@@ -590,8 +591,9 @@ the starting points for authors and their tools.
   `DYNLIGHT_HELD` for the weapon's rule ([Lights](#lights-vk_lightc));
   other players' lights don't get it (they would reach the weapon through
   walls, without a shadow ray). The client's `cl_dlights` stay where they
-  are: `cl.light_level` and the medium's light read them, so gameplay is
-  unchanged. The light group (`VK_DynamicLightOwner`) sees the moved
+  are: `cl.light_level` reads them, so gameplay is unchanged; the medium's
+  light (6.18, [Medium light grid](#medium-light-grid-vk_mediumc)) takes
+  the scene's, where they light the world. The light group (`VK_DynamicLightOwner`) sees the moved
   origin: the chase-cam player with the torch stays in it.
 - **The view entity's own model** (6.11, `R_AddViewerEntity`; DECISIONS
   X35): `CL_RelinkEntities` leaves the view entity out of `cl_visedicts`
@@ -621,7 +623,7 @@ the starting points for authors and their tools.
   `r_drawentities 0`). The segments themselves are temporary entities as
   before. See [Beams](#beams-vk_beamlightc).
 - The order in `R_RenderView`: `R_SetupFrame` → `R_ViewModelLight` →
-  `R_BuildScene` (fills `r_scene`) → `R_MediumLight` → `VK_UpdateInstances` →
+  `R_BuildScene` (fills `r_scene`) → `VK_UpdateInstances` →
   `VK_UpdateModelGeometry` → `VK_UpdateEffects` → `VK_BuildTLAS` →
   `VK_RenderView3D` → `VK_DrawLightEditor` → `VK_DrawImageFile` (these two
   in the 2D, under the HUD).
@@ -631,25 +633,15 @@ the starting points for authors and their tools.
   server with every move: the gamecode's player `light_level` decides how well
   monsters see the player and when the Assassin cloaks — renderer output the
   game depends on.
-- `R_MediumLight` (`r_light.c`, 6.17; DECISIONS X31): the light of the
-  liquid around the camera (6.5's medium, `water_light`), into
-  `r_scene.water_light`. With the camera in a liquid: the light maps'
-  level (`R_LightPointColor`, at least 24) averaged over the eye and the
-  points of a ring of 8 at 192 units around it at eye height whose
-  segment from the eye stays in BSP leaves of the camera's contents
-  (`SegmentInContents`: not through a wall, the air or into another
-  pool; a point on a plane is behind it, as in `Mod_PointInLeaf`), eased
-  toward that over 0.5 s of game time (`MEDIUM_LIGHT_TAU`; it stands while
-  paused or while a network game's clock steps back for a late packet
-  (`CL_LerpPoint`), starts over when the camera comes into a liquid
-  and at map load, `R_ResetMediumLight` in `R_NewMap`), plus the dynamic
-  lights at the eye, not eased; / 200 as `cl.light_level`. In the air
-  `cl.light_level` / 200, as before 6.17. `r_scene.water_light_now` (not
-  eased) and `water_light_points` (the points averaged, 0 in the air) are
-  for `r_dumpscene`, which prints them. Without it the medium's light was
-  the light map straight below the eye, which jumped between 24 and 128
-  along demo2's moat. CPU only, 9 light point traces and 8 segment walks a
-  frame under water.
+- `R_LightPointStyles` (`r_light.c`, 6.18): the surface `R_LightPointColor`
+  finds (straight below a point) and the level of each of its light maps
+  at style value 1, interpolated between the texels as it does (in
+  floats), for the liquids' light grid (see
+  [Medium light grid](#medium-light-grid-vk_mediumc)). 6.17's
+  `R_MediumLight` (GL's light level averaged on a ring around the camera
+  under water and eased; in the air `cl.light_level`) is gone: one light
+  for the whole medium, taken at the camera, relit every pool in view as
+  the camera moved over light map patches (DECISIONS X43).
 
 ## Buffers and GPU data layouts
 
@@ -659,8 +651,8 @@ the starting points for authors and their tools.
   `VK_UploadBuffer`).
 - Layouts shared by C and GLSL are found through `shaders/hl_shared.h`, which
   includes Quake II RTX's `shader_structs.h`, `constants.h`, `global_ubo.h`
-  and `vertex_buffer.h` and adds Hexen II's own (PVS header, alias models,
-  effects, check records, `DEBUGVIEW_*`). C gets typedefs; `DeviceAddress` is
+  and `vertex_buffer.h` and adds Hexen II's own (PVS header, the medium
+  light grid, alias models, effects, check records, `DEBUGVIEW_*`). C gets typedefs; `DeviceAddress` is
   `uint64_t` in C and `uvec2` in GLSL (`GL_EXT_buffer_reference_uvec2`).
 - Q2RTX's 128-byte `VboPrimitive` per triangle (`vertex_buffer.h`); material
   IDs = kind | flags | light style | 12-bit index (`constants.h`); primitive
@@ -791,6 +783,64 @@ the starting points for authors and their tools.
   and checks the shader query against the CPU (`pvs_check.comp`, a compute
   pipeline using buffer device addresses in push constants — the pattern of
   all check shaders).
+
+## Medium light grid (`vk_medium.c`)
+
+Story 6.18 (DECISIONS X43–X44): the light the liquids' medium scatters
+(`water.glsl`, see [3D view](#3d-view-vk_viewc), "Water") is GL's light
+level of a model where the medium is, not at the camera.
+
+- **The bake** (`VK_BuildMedium`, at the end of `VK_LoadWorld`, timed on
+  its own; freed with the world): the world's liquid leaves (water, slime,
+  lava) are grouped while their bounds come within `MEDIUM_BOX_GAP` (4)
+  cells of each other, each group's bounds a box (merged again while two
+  do). Each box has a lattice of `MEDIUM_CELL` (32) units, one cell
+  past the bounds below and two above (a point and the next on each
+  axis), point (i, j, k) at (i, j, k) × the cell: at most 2 cells past
+  the bounds, so no two boxes' lattices overlap and a point in a liquid
+  takes its own box's points (the review of 6.18: two pools behind a
+  33–64-unit wall would otherwise read each other's). A lattice point whose
+  cell (centered on it) may reach into a liquid leaf (the cube against
+  the leaf's ancestors' planes; the leaves' bounds are loose: demo2's
+  431k points, 14.6k sampled) is the mean of GL's light level at the
+  `MEDIUM_SUB_XY` × `MEDIUM_SUB_XY` × `MEDIUM_SUB_Z` (4 × 4 × 2) samples
+  of its cell that are in a liquid, by light style (`r_light.c`'s
+  `R_LightPointStyles`; two samples of a column in one leaf share a trace:
+  a leaf has no surface inside). A point without a liquid sample takes
+  the mean of its 26 neighbours that have one (`MEDIUM_FILL_PASSES`, 2),
+  so the interpolation next to a wall, the floor or the surface doesn't
+  pull in darkness. A point keeps 4 light styles, as a light map (more
+  are folded into its brightest; counted), light styles past 63 count as
+  style 0. Past `MEDIUM_MAX_POINTS` (2^21, 16 MB) the cell doubles.
+  The 53 maps of both games (Release): Portals' tibet2 the largest (1 box,
+  1.25M points, 9.5 MB, 140 ms; at 2^20 points, the first cap, its cell
+  had doubled to 64), demo2
+  the slowest (1 box, 430680 points, 3.3 MB, 276 ms), most under 50 ms.
+- **The buffer** (layout in `hl_shared.h`, uvec2s): a header (the number
+  of boxes, the cell size), per box its lattice's first index, its first
+  point's uvec2 and its size, then the points: four light styles a byte
+  each (`MEDIUM_NO_STYLE` = none) and their levels at style value 1 a
+  byte each, GL's light map units. `vk_medium.data` keeps the CPU's copy.
+- **The lookup** (`shaders/medium.glsl`'s `medium_grid_level`, the CPU's
+  `GridLevel`): the box whose lattice holds the point (the last one found
+  tried first), the eight lattice points around it, each the sum of its
+  styles' levels times the styles' values this frame, at least 24
+  (`MEDIUM_MIN_LEVEL`), interpolated trilinearly; < 0 outside every box.
+  `water.glsl`'s `water_fog_light` adds the dynamic lights at the point by
+  GL's rule (radius − distance) and divides by 200; outside the grid 24.
+- **Each frame** (`VK_PrepareMedium`, from `VK_PrepareUBO`): the grid's
+  address (`medium_grid`), the light styles' values (`medium_styles`, four
+  a vec4) and the scene's dynamic lights (`medium_dlights`: origin and
+  GL's radius; `num_medium_dlights`, at most 32): where they light the
+  world, so a player's light is in the hand (4.19) and the renderer's own
+  missile lights (`R_AddExtraDynamicLights`) count; dark lights add too, as
+  in GL's rule for a model.
+- `VK_MediumLevel` is the light at a point on the CPU (the grid's and the
+  dynamic lights'), which `r_dumpscene` prints for the eye. **`vk_medium`**
+  prints the grid's statistics and the light at the eye, and checks the
+  shader's lookup against the CPU's at 4096 random points of the boxes,
+  in chains of `MEDIUM_CHECK_CHAIN` (4) steps of up to 3 cells carrying
+  the box hint as `water_fog_segment` does (`medium_check.comp`).
 
 ## Instances (`vk_instance.c`)
 
@@ -1284,7 +1334,10 @@ bindings.
   texture slot, `anim_frame`, `debug_view`, `view_cluster`, and the sky's
   fields (4.6: its textures, scroll, `r_skyalpha`, the dome; the sun uses
   Q2RTX's `sun_*` fields), `maplight_gamma` (4.15, `r_maplight_gamma`),
-  the water's (6.5: `water`, `water_waves`, `water_fog`, `water_light`); our
+  the water's (6.5: `water`, `water_waves`, `water_fog`, `water_caustics`;
+  6.18: the liquids' light grid `medium_grid`, the light styles'
+  `medium_styles` and the dynamic lights `medium_dlights`, padded to their
+  alignment); our
   `ModelInstance`; `TlasInstanceInfo` instead of Q2RTX's `InstanceBuffer`;
   `instance_buffer.model_instances[]` and `tlas_instance_info[]` are
   buffer-reference macros), `global_textures.h` (render-target lists; set 1:
@@ -1329,10 +1382,10 @@ bindings.
   [Upscaling](#upscaling-vk_upscalec)), time,
   medium, the Hexenlicht block (6.5: the water's settings, `r_water`,
   `r_water_waves`, `r_water_fog`, 6.16's `r_water_caustics`, registered
-  there, and the medium's light,
-  `r_scene.water_light`, 6.17) and `UBO_CVAR_LIST`'s cvars (registered with
+  there, and 6.18's `VK_PrepareMedium`: the liquids' light grid, the light
+  styles and the dynamic lights for it) and `UBO_CVAR_LIST`'s cvars (registered with
   Q2RTX's defaults, inert until their pass). `vk_render_frame` counts 3D
-  frames (= `current_frame_idx`, picks the even/odd image set). Three offset
+  frames (= `current_frame_idx`, picks the even/odd image set). Offset
   asserts guard the C struct's layout; after changing the list, compare every
   member (`tools/hexenlicht/ubo_layout_check.ps1`).
 - `vk_images.c`: `VK_CreateImages` makes the render targets at the swapchain's size,
@@ -2925,13 +2978,17 @@ Story 4.10: Hexen II's darkness as GL shows it.
     opacity, 128/255 for water and 150/255 for slime and lava, at
     `r_water_fog` units, 512) and adds the light the medium scatters,
     GL's contents color (`V_SetContentsColor`'s 130 80 50, 0 25 5,
-    255 80 0) lit as GL lit a model (`water_light`, GL's light level
-    / 200: the light maps with their styles and the dynamic lights,
-    decoded as the textures' colors, in the light of a full texel,
-    `dark_light_unit`; with the camera in a liquid averaged around it and
-    eased, 6.17's `R_MediumLight`, see [Scene](#scene-r_scenec); in the
-    air `cl.light_level`), to `PT_TRANSPARENT` times the path's
-    throughput; the effects in it are dimmed by half its extinction.
+    255 80 0) lit as GL lit a model where it is (6.18,
+    `water_fog_light`: GL's light level / 200, the liquids' light grid's
+    light maps with their styles plus the dynamic lights by GL's rule,
+    see [Medium light grid](#medium-light-grid-vk_mediumc); decoded as the
+    textures' colors, in the light of a full texel, `dark_light_unit`),
+    to `PT_TRANSPARENT` times the path's throughput: the segment's light
+    is taken at the middles of `WATER_FOG_SAMPLES` (4) parts that scatter
+    equal shares of it (1 − T each a quarter; nearer the segment's start,
+    where more of it reaches the eye), so the fog of a lit stretch glows
+    and a dark one stays dark, in the air as under water; the effects in
+    it are dimmed by half its extinction.
     Where the next pass follows the path (`reflect_refract_follows`), the
     fog goes with it in `PT_VIEW_DIRECTION2` (free until
     `indirect_lighting.rgen`'s second bounce writes it) and the surface's
@@ -2941,16 +2998,19 @@ Story 4.10: Hexen II's darkness as GL shows it.
     approximation: its reflectance takes the layers' albedo), so a layer
     is lit as what is seen through it. Where a pass's path ends on the
     sky, the sky is seen through the medium and a layer on the way is lit
-    by it (`env × (.a + .rgb)`). In the air the medium's light is GL's
-    `cl.light_level`, which keeps its last value while no weapon model is
-    shown; in a liquid it doesn't need the weapon.
+    by it (`env × (.a + .rgb)`). Before 6.18 the whole medium had one
+    light, taken at the camera (in the air `cl.light_level`; 6.17: under
+    water averaged around the eye and eased), which relit every pool in
+    view as the camera moved (X43).
   - It replaces Quake II RTX's extinction (absorption only: the view
     under water went black-teal) and GL's contents tint (6.6 leaves it
     out of the view blends); with `r_water 0` both water and the medium
     are as before 6.5, bit for bit. `pt_reflect_refract 0` leaves a
     liquid opaque (the path ends on it, as on a translucent surface).
   - Cost (Release, 1920x1080, full power): +0.11–0.30 ms a frame where
-    water fills the view, nearly all of it in the reflection pass (X24).
+    water fills the view, nearly all of it in the reflection pass (X24);
+    6.18's light grid under water +0.13–0.16 ms in the primary rays,
+    above water +0.01–0.06 in the reflection pass (X44).
 - **Light through** (6.14, `pt_caustics`; DECISIONS X25–X28): Quake II
   RTX's caustic ray (`path_tracer_rgen.h`'s `trace_caustic_ray`) on the
   shadow ray of each pixel's light sample in `direct_lighting.rgen` (the
@@ -3739,6 +3799,7 @@ overlay, and a measuring mode.
 | `r_exporttextures [folder]` | 5.4: every original texture of the search path's maps, models, sprites and stone and ice pictures as a PNG under its material file name, exactly as uploaded, and `textures.csv`, into `<game folder>/export` (or folder; run with `-portals` for both games; see [Texture export](#texture-export-vk_exportc)) |
 | `vk_world [materials]` | world buffer statistics, animation check |
 | `vk_pvs` | PVS statistics, shader check |
+| `vk_medium` | the liquids' light grid: statistics, the light at the eye, shader check (6.18; see [Medium light grid](#medium-light-grid-vk_mediumc)) |
 | `vk_instances [step\|box]` | model instances, gliding monsters, pose bounds |
 | `vk_models [list\|check]` | alias models, GPU-vs-CPU triangle check |
 | `vk_effects [check]` | particles/sprites, effects TLAS ray check |

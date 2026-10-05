@@ -612,8 +612,22 @@ fog leaves). Delete `data1\hl65_*` afterwards. The views:
   submerged wall; elsewhere the CSV shows at most 0.06; DECISIONS X32). `-Shots 200,240,...` shoots those frames instead, with
   `-Bin` another build's (`main`'s for the look before; frames 240, 490,
   570, 940 show the old flares and black). In the game: `r_dumpscene`
-  prints the medium light, eased and this frame's, and the points
-  averaged.
+  prints the medium light at the eye (6.18: the liquids' light grid's,
+  without and with the dynamic lights; 6.17's eased one and its points
+  with an older `-Bin`, which the CSV reads too).
+- **Looking into the moat from above** (6.18): `medium_run.ps1 -Lift 230
+  -Pitch 40` flies the same path 230 units higher looking down 40°: the
+  moat is open (the eye 100–160 units above the water) at frames 0–243,
+  398–641 and 1158 on; elsewhere the camera is in the ground (the CSV's
+  leaf `solid`). The CSV's `cl.light_level` / 200 is `main`'s light of the
+  whole medium in the air (by up to 0.71 within 0.2 s, 0.51 between two
+  dumps; DECISIONS X44). With `-Shots` (e.g. every frame 480–600, both
+  builds) the view centre's luminance between consecutive frames
+  (`tga_luminance.ps1 -Rect 380,280,200,200` on the 960x540
+  `swim_<f>.tga`) shows the popping:
+  `main` up to 65 % (583→584 flips the moat from a bright brown haze to
+  dark), 6.18 at most 9 %. `vk_medium` prints the grid and checks the
+  shader's lookup against the CPU's (`largest difference 0.0000`).
 
 ## Light through (6.14)
 
