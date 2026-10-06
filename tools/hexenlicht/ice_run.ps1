@@ -5,7 +5,8 @@
 # twice, with r_ice 0 (6.4's blend) and 1 (vk_screenshot <view>_i0 and _i1, 8 frames
 # averaged): demo1's archer from the front and from the side, one created in village1's bay
 # window seen from the street through the panes, one created at demo1's pool, village2's
-# crystal golem (ice from the start). -Saves also saves each view (hlcal_ice_<view>, for
+# crystal golem (ice from the start), meso2's were-panther where the map places it (6.19: a
+# cutout model, EF_HOLEY). -Saves also saves each view (hlcal_ice_<view>, for
 # calib_shots.ps1 -SkipSaves -SkipHl -KeepSaves with the bookmarks file it writes into -Out:
 # glh2's shots of the same scenes; GL draws the 0.33 blend); -Cost measures each view with
 # vk_benchmark 1, the profiler's averages of 120 paused frames, r_ice 0 and 1 alternating twice
@@ -29,7 +30,8 @@ $views = @(
 	@('d1_archer_side', 'demo1', (@('vk_setpos -1640 -690 -136 0 90') + $freeze), '-1730 -530 -136 0 -20'),
 	@('v1_bay', 'village1', (@('vk_setpos 511 2345 10 0 90') + $create), '511 2224 50 10 90'),
 	@('d1_pool', 'demo1', (@('vk_setpos -1060 2300 -522 0 0') + $create), '-1080 2300 -522 50 0'),
-	@('v2_golem', 'village2', @(), '-1116 -640 -600 0 90')
+	@('v2_golem', 'village2', @(), '-1116 -640 -600 0 90'),
+	@('m2_panther', 'meso2', (@('vk_setpos -190 2500 32 0 90') + $freeze), '-190 2530 32 10 90')
 )
 if ($Only) { $views = @($views | Where-Object { $_[0] -match $Only }) }
 if (-not $views.Count) { throw "no view matches -Only '$Only'" }

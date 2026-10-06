@@ -942,8 +942,11 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   map's and dynamic lights, `vk_models` counts them; 6.15: **ice**, a
   translucent model in the ice skin (skin 101, `gfx/skin101.lmp`: a
   monster or player the ice mace froze, after the freeze's 1.5 s tint, which
-  stays the blend; the crystal golem and its gibs), not the weapon nor a
-  model with transparent, special-trans or cutout skins, is
+  stays the blend; the crystal golem and its gibs), not the weapon nor an
+  `EF_SPECIAL_TRANS` model (6.19: a cutout one is, the imp, the
+  were-jaguar and were-panther: the ice picture replaces its skins, and GL
+  blends it as any translucent model; its ice material keeps the picture as
+  its mask, which has no clear texels), is
   `MATERIAL_KIND_GLASS` at alpha 1 with `r_ice 1` (not archived; 0 = the
   0.33 blend, bit for bit): solid ice, [3D view](#3d-view-vk_viewc)'s
   reflections and refractions, `vk_models` counts it); masked (`EF_HOLEY`

@@ -628,13 +628,18 @@ static int AliasGroup (const scene_entity_t *e)
  * after its 1.5 s tint, which stays 6.4's blend), the crystal golem. A
  * glass model in the transparent group, at full opacity: reflect_refract.rgen
  * traces it as solid ice, the caustic ray tints the light through it. Not
- * a model whose skin has its own see-through or cutout texels, nor the
- * weapon; 6.11: nor the view entity's own model (the camera would be
- * inside the glass): 6.4's blend */
+ * the weapon; 6.11: nor the view entity's own model (the camera would be
+ * inside the glass): 6.4's blend. 6.19: one with see-through or cutout
+ * skins is ice too (the imp, the were-jaguar and were-panther: EF_HOLEY),
+ * as GL's R_DrawAliasModel blends it as any translucent model (its
+ * DRF_TRANSLUCENT branch comes first) and the ice picture replaces those
+ * skins: its alpha material's mask is the picture, which has no clear
+ * texels; not EF_SPECIAL_TRANS, whose branch GL takes before (the skin's
+ * own blend) */
 static qboolean IsIce (const scene_entity_t *e)
 {
 	return r_ice.integer && e->skinnum == SKIN_ICE && (e->drawflags & DRF_TRANSLUCENT) && e->kind != SCENE_ENT_VIEWMODEL &&
-	       !e->viewer && !(e->model->flags & (EF_TRANSPARENT | EF_SPECIAL_TRANS | EF_HOLEY));
+	       !e->viewer && !(e->model->flags & EF_SPECIAL_TRANS);
 }
 
 /* R_DrawAliasModel's fixed light levels (255 = 1), in its order: spinning
