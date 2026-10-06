@@ -683,8 +683,11 @@ and shoots twice, `r_ice` 0 and 1 (`<view>_i0`, `_i1`, 8 frames
 averaged). The views: demo1's archer close from the front and from the
 side, an archer behind village1's bay window seen from the street, one sunk
 in demo1's pool seen from above, village2's crystal golem in its dark alcove
-(ice from the start). The log's `vk_models` counts the ice (1 a view)
-and `vk_models check` must agree in each (the script prints both).
+(ice from the start), meso2's were-panther where the map places it (6.19:
+a cutout model, `EF_HOLEY`, as the imp; a frozen imp in the air shatters
+when it lands, so the imp is looked at by hand). The log's `vk_models`
+counts the ice (1 a view) and `vk_models check` must agree in each (the
+script prints both).
 - **GL:** `-Saves` saves each view (`hlcal_ice_<view>`, on `vk_setpos`'s
   line: the pitch kept) and writes `ice_bookmarks.txt` into `-Out`;
   `calib_shots.ps1 -Bookmarks <it> -SkipSaves -SkipHl -KeepSaves -Out
