@@ -174,7 +174,7 @@ float fresnel_dielectric(float cos_i, float eta)
 }
 
 #define WATER_INDEX_OF_REFRACTION 1.33
-#define WATER_WAVE_SLOPE 0.08	// at r_water_waves 1
+#define WATER_WAVE_SLOPE 0.08	// at r_water_waves 1 (6.5's; 6.21's default 0.25: 0.02)
 
 // the waves: the slope of Hexen II's turbulence (utils.glsl's lava_uv_warp,
 // d_scan.c: a 128-unit cycle at 20 units a second, s shifted by a sine of t
