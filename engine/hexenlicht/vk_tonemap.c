@@ -74,7 +74,7 @@ typedef struct
 } apply_push_t;				/* tone_mapping_apply.comp's */
 
 /* 0 a fixed exposure in GL's units (4.9), 1 Quake II RTX's auto exposure */
-static cvar_t	tm_auto_exposure = {"tm_auto_exposure", "0", CVAR_NONE};
+static cvar_t	tm_auto_exposure = {"tm_auto_exposure", "0", CVAR_NONE};	/* saved when changed (vk_menu.c) */
 
 COMPILE_TIME_ASSERT(tm_push_size, sizeof(apply_push_t) <= sizeof(curve_push_t));	/* one layout for both */
 

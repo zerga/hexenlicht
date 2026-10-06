@@ -100,7 +100,8 @@ int		gl_coloredstatic;
 /* same cvars as the GL renderer, so config files keep their settings; the
  * client gives dynamic lights their colors and makes the extra ones
  * (projectiles) by gl_colored_dynamic_lights and gl_extra_dynamic_lights
- * (the OpenGL options menu), which Hexenlicht's lights use (4.4, vk_light.c).
+ * (GL's OpenGL Features page; in Hexenlicht the colors are on the Renderer
+ * Settings page, 6.10, vk_menu.c), which Hexenlicht's lights use (4.4, vk_light.c).
  * Colors off by default, as in HoT and the map lights' (4.9: the
  * original's white light; 4.4 had them on); extra lights off as
  * in HoT: the client's count in cl.light_level (r_light.c, GL's rule),
@@ -127,6 +128,7 @@ void R_Init (void)
 	R_InitParticles ();	/* particle pool used by the client effects */
 	R_InitScene ();
 	R_InitSkins ();		/* gl_nocolors, gfx/player.lmp */
+	VK_InitMenu ();		/* 6.10: after every setting it shows is registered (gl_colored_dynamic_lights above) */
 }
 
 /* R_InitSky moved to vk_sky.c (story 4.6). */

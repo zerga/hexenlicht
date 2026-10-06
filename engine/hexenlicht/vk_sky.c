@@ -51,6 +51,10 @@
  *    RTX's sky visibility: the PVS rows of the clusters holding one, in
  *    the light buffer). There is no visible sun disc: the painted skies
  *    have none.
+ * The player's choice (6.10, the Renderer Settings page, saved when
+ * changed: vk_menu.c) is r_sky_mode: 0 the map's r_sky_light (its map
+ * file's; without one faithful), 1 faithful, 2 sky light (with the map
+ * file's sun where it has one) on every map.
  * The sky's material file (5.5, MATERIALS.md: textures/sky001~<crc>, else
  * textures/sky001; vk_matfiles.c's VK_SkyImageFile) is the whole sky in
  * the original's layout, 2:1, any size: the left half the front layer,
@@ -92,6 +96,7 @@
 cvar_t		r_skyalpha = {"r_skyalpha", "0.67", CVAR_ARCHIVE};	/* GL's (glquake.h) */
 static cvar_t	r_sky_light = {"r_sky_light", "0", CVAR_NONE};
 static cvar_t	r_sky_light_scale = {"r_sky_light_scale", "1", CVAR_NONE};
+static cvar_t	r_sky_mode = {"r_sky_mode", "0", CVAR_NONE};	/* 6.10: 0 the map's r_sky_light, 1 faithful, 2 sky light; saved when changed (vk_menu.c) */
 static cvar_t	r_sun = {"r_sun", "0", CVAR_NONE};
 static cvar_t	r_sun_intensity = {"r_sun_intensity", "1", CVAR_NONE};
 static cvar_t	r_sun_color = {"r_sun_color", "1 1 1", CVAR_NONE};
@@ -475,9 +480,20 @@ static float SkyAlpha (void)
 	return q_max (0.0f, q_min (1.0f, r_skyalpha.value));
 }
 
+/* the mode: r_sky_mode's choice, else the map's r_sky_light */
+static qboolean SkyLightMode (void)
+{
+	switch (r_sky_mode.integer)
+	{
+	case 1:		return false;
+	case 2:		return true;
+	default:	return r_sky_light.integer != 0;
+	}
+}
+
 static qboolean SkyLights (void)
 {
-	return sky.front_texture && r_sky_light.integer;
+	return sky.front_texture && SkyLightMode ();
 }
 
 static qboolean SunShines (void)
@@ -577,9 +593,12 @@ static void VK_Sky_f (void)
 		    vk_pvs.num_clusters);
 	if (!SkyLights ())
 	{
-		Con_Printf ("faithful: the sky lights nothing%s\n", r_sky_light.integer ? " (no sky)" : " (r_sky_light 0)");
+		Con_Printf ("faithful: the sky lights nothing%s\n", SkyLightMode () ? " (no sky)" :
+			    (r_sky_mode.integer == 1) ? " (r_sky_mode 1)" : " (r_sky_light 0)");
 		return;
 	}
+	if (r_sky_mode.integer == 2)
+		Con_Printf ("r_sky_mode 2: sky light on every map\n");
 	Con_Printf ("sky light: dome %.4f %.4f %.4f (r_sky_light_scale %g)\n", sky.average[0] * r_sky_light_scale.value,
 		    sky.average[1] * r_sky_light_scale.value, sky.average[2] * r_sky_light_scale.value, r_sky_light_scale.value);
 	if (!SunShines ())
@@ -605,6 +624,7 @@ void VK_InitSky (void)
 	Cvar_RegisterVariable (&r_skyalpha);
 	Cvar_RegisterVariable (&r_sky_light);
 	Cvar_RegisterVariable (&r_sky_light_scale);
+	Cvar_RegisterVariable (&r_sky_mode);
 	Cvar_RegisterVariable (&r_sun);
 	Cvar_RegisterVariable (&r_sun_intensity);
 	Cvar_RegisterVariable (&r_sun_color);

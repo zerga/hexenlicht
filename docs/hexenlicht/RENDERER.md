@@ -7,6 +7,7 @@ RTX import rules in [Q2RTX.md](Q2RTX.md), testing in [TESTING.md](TESTING.md).
 Keep this file current: a PR that changes a module updates its section.
 
 Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
+[Settings menu](#settings-menu-vk_menuc) ·
 [Vulkan core](#vulkan-core-and-swapchain) · [Shaders](#shaders) ·
 [Textures](#textures-vk_texturec) · [Image files](#image-files-vk_imagefilec) ·
 [Material files](#material-files-vk_matfilesc) · [Texture export](#texture-export-vk_exportc) · [2D](#2d-vk_drawc) · [Scene](#scene-r_scenec) ·
@@ -84,6 +85,77 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
   `VID_GetUIScale()`).
 - `VID_InitPalette` builds `d_8to24table`, `d_8to24TranslucentTable` and
   GL's colorshade tints `RTint/GTint/BTint`.
+- The Video Modes page: Fullscreen and Resolution, applied with Apply;
+  since 6.10 a Vsync row (`vid_vsync`), applied at once.
+
+## Settings menu (`vk_menu.c`)
+
+Story 6.10 (DECISIONS X45–X48). The Options menu's **Renderer Settings**
+page, in place of Hammer of Thyrion's "OpenGL Features" (its glows,
+lightmap format, static colored light and texture filtering are GL's and
+do nothing in Hexenlicht; texture filtering and anisotropy set cvars
+Hexenlicht doesn't register). `menu.c` (upstream,
+[UPSTREAM.md](UPSTREAM.md)) shows the label and calls
+`VK_RendererMenuDraw` and `VK_RendererMenuKey` for `m_opengl` under
+`#if defined(HEXENLICHT)`; `menu_renderer` opens the page.
+
+- **Rows**, each applied at once over the live view. Left and right step
+  a value and stop at the ends (a row of two values toggles; a value set
+  in the console beyond the steps stays), Enter steps forward and wraps
+  around; Quality steps from Custom to the nearest preset by render
+  scale. `r_resetsettings` is the Reset row from the console (`hl_run.ps1`
+  runs it before every test script). The lines under the rows say what
+  the selected one does, and for a DLSS upscaler that can't run why
+  (`VK_DLSSCantRun`):
+
+  | Row | Values | Cvar |
+  |---|---|---|
+  | Quality | Low, Medium, High, Custom | sets the next two |
+  | Render scale | 25, 33, 50, 58, 67, 77, 100 % (DLSS's and FSR 1's modes among them) | `r_scale` |
+  | Bounce light | half, full, two | `pt_num_bounce_rays` 0.5, 1, 2 |
+  | Upscaler | TAA, TAAU, FSR 1, DLSS SR, DLSS RR | `r_upscaler` |
+  | Lighting | Original, Physically based | `r_maplight_shape` 2, 0 (R103; 1 shows as "shape 1") |
+  | Exposure | fixed, auto | `tm_auto_exposure` |
+  | Sky light | per map, off, on | `r_sky_mode` ([Sky](#sky-vk_skyc)) |
+  | Colored map lights | off, on | `r_maplight_colors` |
+  | Colored dyn. lights | off, on | `gl_colored_dynamic_lights` (Hammer of Thyrion's) |
+  | Glow | ×8, ×16, ×32, ×64 | `r_emissive_scale` (lava, flames, effects) |
+  | Reset to defaults | | the rows above |
+
+- **Presets:** Low is 50 % with half-resolution bounce light (every other
+  row, `pt_num_bounce_rays 0.5`), Medium 67 % with full bounce light,
+  High 100 % with full bounce light (the defaults). The upscaler isn't in
+  them (DLSS needs the player's DLLs), nor two bounces (the second gathers
+  only emission and the sky, R26). Measured with `perf_baseline.ps1
+  -Presets` (Release, TAAU, RTX 4070 Ti at 285 W, demo1 and the
+  cathedral, ms per frame): 2560x1440 Low 2.34–2.44, Medium 3.65–3.85,
+  High 7.00–7.40; 1920x1080 1.59–1.63, 2.37–2.50, 4.12–4.20.
+- **Saved when changed:** the page's Hexenlicht cvars (all but
+  `gl_colored_dynamic_lights`, which stays archived always, as in Hammer
+  of Thyrion) carry `CVAR_ARCHIVE` only while their value differs from
+  their default, the value when `VK_InitMenu` runs (from `R_Init`, before
+  the config): `SettingChanged`, a callback in front of the owner's, sets
+  or clears the flag on every change, from the page or the console. So
+  `hexenlicht.cfg` holds only the choices a player made, and a default a
+  later version changes reaches every config that didn't (an
+  always-archived cvar keeps the default of the day it was first saved,
+  R94). `r_scale`, `r_upscaler` and `r_maplight_colors` were archived
+  always before 6.10: a config's line with the default value is dropped at
+  the next quit, which changes nothing.
+- **Layout** (the menu's 320-wide coordinates): the heading at line 60,
+  the rows from 72, the labels right-aligned to 168, the cursor at 176,
+  the values from 192 (16 characters: "Physically based" fits), the status
+  in up to three lines of 38 characters from 172 (the Options page's rows
+  end at 196). Drawn inside the frame: nothing in `VK_RendererMenuDraw`
+  prints or sets a cvar.
+- Tested with `menu_run.ps1` (keys posted to the game's window, TESTING.md
+  "Settings menu (6.10)").
+- Left out: Quake II RTX's other options (reflection depth, the denoiser
+  switch, texture filtering, projection), HDR (7.3), dynamic resolution
+  (7.2), `r_dlss_preset` and FSR's sharpness, the comparison switches
+  (`r_effect_lights`, `r_water`, `pt_caustics`, `r_ice`, `gl_polyblend`,
+  `r_viewer_model`), the GL page's texture purge and extra dynamic lights
+  (the console).
 
 ## Vulkan core and swapchain
 
@@ -1751,7 +1823,8 @@ from `VK_LoadWorld` before the light lists):
   (`r_lava_light 1`): 405 on 13 maps, see
   [Emissive surfaces](#emissive-surfaces-vk_emissivec). `vk_lights` counts
   them.
-- **Color** (4.3, `r_maplight_colors 1`, archived; **0 by default since
+- **Color** (4.3, `r_maplight_colors 1`, saved when changed since 6.10,
+  [Settings menu](#settings-menu-vk_menuc); **0 by default since
   4.9**: white, the original's and HoT's default look, the owner's choice;
   color then comes only from bounces off the textures, lava and the
   flames): Hammer of Thyrion's
@@ -1866,7 +1939,8 @@ from `VK_LoadWorld` before the light lists):
   beside a torch gets about a fifth of its head-on light instead of almost
   none; its shadows (ray traced from the sphere) and all light after the
   first hit (bounces, reflections, materials) are path traced, and bounce
-  rays see the same shape. Shape 0 stays a setting (6.10's menu; the
+  rays see the same shape. Shape 0 stays a setting (the Renderer Settings
+  page's "Physically based", 6.10; the
   default in 4.21, R107, R108). Cost:
   none measurable (1920x1080, Release, egypt4 and meso2: direct lighting
   +0.02 ms, the frame within the runs' scatter). Left out: decoding GL's
@@ -2161,7 +2235,8 @@ radiance of a texture color of 1):
   list entries meso2's 80,233 (mean 94, longest 212; 524,288 fit), built
   in at most 7 ms (Debug).
 - **The scale** (32 stays: the owner's choice in 4.9, "it really feels
-  molten hot", against GL's darker pools; a menu option with 6.10): in linear light (`tm_enable 0`)
+  molten hot", against GL's darker pools; since 6.10 the Renderer Settings
+  page's Glow row): in linear light (`tm_enable 0`)
   meso9's walls lit by the map's lights are about as bright as GL's
   lightmapped ones (0.024, 0.026, 0.015 against GL's 0.023, 0.020, 0.021
   in three blocks), so 1 is GL's fullbright. But lava at 1 lights its rooms
@@ -2310,6 +2385,12 @@ sun). Q2RTX's physical sky is not imported (its data has no license, see
 - **Up close:** flying up (`noclip`) under meso9's sky face (z 704), the
   sky matches `glh2`'s from 328 to 98 units below; 17 units below `glh2`
   draws black, Hexenlicht the sky.
+- **The player's choice** (6.10, the Renderer Settings page's Sky light
+  row, [Settings menu](#settings-menu-vk_menuc)): `r_sky_mode` 0 the map's
+  `r_sky_light` below (its map file's; faithful without one), 1 faithful,
+  2 sky light (with the map file's sun where it has one) on every map;
+  saved when changed; `vk_sky` names it. Looked at with 2 at egypt1's
+  start (no map file): the courtyard takes a little of the sky's blue.
 - **Modes:** `r_sky_light 0` (faithful, the default until calibration
   picks per map; the sky and sun cvars are per-map settings of the
   [map file](#map-file-vk_mapfilec), reset at every map load): the sky lights nothing, as
@@ -2576,7 +2657,8 @@ Story 4.8: the map's lights edited in the game, saved into the
   what 4.7's vocabulary has no key for (a spotlight's direction or cone,
   the 8-unit sphere, range without intensity: `level` sets both, `scale`
   compensates; changes by classname), lights the compiler dropped, lava,
-  dynamic, test lights and emissive surfaces, a menu (6.10).
+  dynamic, test lights and emissive surfaces, a menu (6.10's page has none
+  for it).
 - Tested (4.8, Debug and Release, temporary files in the data folder):
   egypt1 with a hand-written file (comments, two cvar lines, two lines for
   one light, a bad line, an `off` line, an addlight): select by origin,
@@ -3320,7 +3402,7 @@ one small interface, which DLSS SR and RR (3.10, see
   `VK_PrepareUBO` puts them into the UBO (`width`/`height`, `unscaled_*`,
   `taa_output_*`, `sub_pixel_jitter`, `flt_taa`, `easu_const*`,
   `rcas_const0`). `vk_upscale` prints the last frame's.
-- **`r_upscaler`** (archived, default 1):
+- **`r_upscaler`** (saved when changed, 6.10; default 1):
 
   | | TAA pass (`asvgf_taau.comp`) | after tone mapping | composite |
   |---|---|---|---|
@@ -3461,7 +3543,9 @@ player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
 - **Selection** (`VK_DLSSChoose`, from `VK_UpscaleEvaluate`): `r_upscaler`
   3 or 4 for the lit image when the feature can run, else TAAU
   (`VK_DLSSUnavailable`: no DLL, a bad signature, `slInit` failed, not
-  supported, it failed, its images not created yet). DLSS's mode follows
+  supported, it failed, its images not created yet; the Renderer Settings
+  page asks `VK_DLSSCantRun`, the same without the images, which the next
+  frames create). DLSS's mode follows
   `r_scale`: 100 % DLAA, from 66 % Quality, from 58 % Balanced, from 50 %
   Performance, below that Ultra Performance. The render size is clamped to
   the mode's range from its optimal settings (at 1278x612: DLAA 1265–1278
@@ -3548,7 +3632,8 @@ player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
   pass is gone.
 - Left out: frame generation, Reflex, dynamic resolution, DLSS's
   sharpening, RR's transparency layer (particles showed no smearing in
-  motion), HDR output (7.3), the menu (6.10).
+  motion), HDR output (7.3); the menu is 6.10's Upscaler row ([Settings
+  menu](#settings-menu-vk_menuc)).
 
 ## Bloom and tone mapping (`vk_bloom.c`, `vk_tonemap.c`)
 
@@ -3579,8 +3664,9 @@ whole, so it lifted them to 1.2–17× GL's brightness (castle4 17×,
 measured against `glh2` with HoT's colors) and flattened the contrast.
 `tm_auto_exposure 1` still gives it (with `tm_exposure_bias` and
 `r_map_exposure`; it starts over when turned on); `tm_enable 0` is
-Q2RTX's untone-mapped image (clamped by the composite, no FSR). Neither is
-archived (a menu option with 6.10).
+Q2RTX's untone-mapped image (clamped by the composite, no FSR). `tm_enable`
+isn't archived; `tm_auto_exposure` is the Renderer Settings page's Exposure
+row, saved when changed (6.10).
 
 - **Bloom** (`vk_bloom.c`, Q2RTX's `bloom.c`): `bloom_downscale.comp`
   averages the image into `BLOOM_VBLUR` at a quarter of its size,
@@ -3703,49 +3789,50 @@ overlay, and a measuring mode.
   cap, about 1 GHz). For measuring only: Hexen II's physics isn't meant for
   more than 72 frames a second.
 - **Baseline:** `tools/hexenlicht/perf_baseline.ps1` runs demo1's and the
-  cathedral's starts with the maps' lights (since 4.1; the tables below
-  had test lights at the light entities, whose cost 4.1 measured to be the
-  same within the scatter, see [Map lights](#map-lights-vk_maplightsc)), paused, `vk_benchmark 1`,
+  cathedral's starts with the maps' lights, paused, `vk_benchmark 1`,
   `viewsize 100`, `fov 90`, at each window size, and prints the averages
-  as markdown (TESTING.md's "GPU cost"). Runs agree within 5–10 %.
-  Recorded 2026-09-26 (after the throttle fix of the review), Release,
-  RTX 4070 Ti (driver 616.92) at a 100 W power limit (about 1 GHz; an
-  unlimited card runs roughly 2.5 times as fast), 120-frame averages, ms:
+  as markdown (TESTING.md's "GPU cost"); `-Presets` measures the Renderer
+  Settings page's presets instead ([Settings menu](#settings-menu-vk_menuc)).
+  Runs agree within 5–10 %. Recorded 2026-10-04 (6.10), Release, RTX 4070
+  Ti (driver 617.14) at its full 285 W, 120-frame averages, ms (3.11's
+  tables of 2026-09-26, at a 100 W power limit and with test lights at
+  the light entities, were 1.5–2.3 times these):
 
   | 2560x1440 | demo1 TAAU 100 % | demo1 TAAU 67 % | demo1 DLSS RR 67 % | cath TAAU 100 % | cath TAAU 67 % | cath DLSS RR 67 % |
   |---|---|---|---|---|---|---|
-  | frame | 15.67 | 7.14 | 12.37 | 13.67 | 6.49 | 12.31 |
-  | model geometry | 0.05 | 0.05 | 0.04 | 0.03 | 0.03 | 0.03 |
-  | dynamic BLASes | 0.98 | 0.83 | 0.87 | 0.82 | 0.68 | 0.87 |
-  | TLAS | 0.13 | 0.11 | 0.11 | 0.09 | 0.11 | 0.09 |
-  | 3D view | 14.43 | 6.08 | 11.28 | 12.66 | 5.61 | 11.25 |
-  | – primary rays | 2.08 | 0.94 | 0.97 | 1.67 | 0.80 | 0.96 |
-  | – reflect/refract | 0.27 | 0.09 | 0.10 | 0.27 | 0.08 | 0.09 |
-  | – gradient reproject | 0.52 | 0.25 | | 0.52 | 0.24 | |
-  | – direct lighting | 1.33 | 0.49 | 0.58 | 1.26 | 0.55 | 0.58 |
-  | – bounce 1 | 3.06 | 1.13 | 1.28 | 2.47 | 0.97 | 1.20 |
-  | – compositing | | | 0.08 | | | 0.10 |
-  | – denoiser | 5.89 | 2.24 | | 5.29 | 2.09 | |
-  | – – gradients | 0.39 | 0.17 | | 0.41 | 0.18 | |
-  | – – temporal | 1.57 | 0.59 | | 1.36 | 0.54 | |
-  | – – a-trous | 3.94 | 1.48 | | 3.53 | 1.37 | |
-  | – interleave | 0.14 | 0.05 | 0.21 | 0.12 | 0.04 | 0.19 |
-  | – TAAU / DLSS RR | 0.46 | 0.33 | 7.47 | 0.49 | 0.36 | 7.54 |
-  | – bloom | 0.37 | 0.31 | 0.32 | 0.31 | 0.26 | 0.32 |
-  | – tone mapping | 0.29 | 0.25 | 0.26 | 0.25 | 0.21 | 0.26 |
-  | composite and 2D | 0.09 | 0.07 | 0.08 | 0.08 | 0.06 | 0.08 |
+  | frame | 6.99 | 3.65 | 5.33 | 7.37 | 3.79 | 5.45 |
+  | model geometry | 0.02 | 0.02 | 0.02 | 0.02 | 0.02 | 0.02 |
+  | dynamic BLASes | 0.18 | 0.25 | 0.34 | 0.25 | 0.28 | 0.29 |
+  | TLAS | 0.17 | 0.05 | 0.08 | 0.06 | 0.05 | 0.05 |
+  | 3D view | 6.59 | 3.28 | 4.85 | 7.00 | 3.41 | 5.05 |
+  | – primary rays | 0.91 | 0.47 | 0.31 | 0.97 | 0.44 | 0.44 |
+  | – reflect/refract | 0.25 | 0.07 | 0.05 | 0.26 | 0.08 | 0.07 |
+  | – gradient reproject | 0.46 | 0.35 | | 0.49 | 0.36 | |
+  | – direct lighting | 0.78 | 0.38 | 0.51 | 1.09 | 0.51 | 0.61 |
+  | – bounce 1 | 1.14 | 0.53 | 0.52 | 1.05 | 0.48 | 0.47 |
+  | – compositing | | | 0.07 | | | 0.07 |
+  | – denoiser | 2.46 | 1.06 | | 2.62 | 1.13 | |
+  | – – gradients | 0.26 | 0.12 | | 0.29 | 0.13 | |
+  | – – temporal | 0.75 | 0.34 | | 0.78 | 0.35 | |
+  | – – a-trous | 1.44 | 0.61 | | 1.55 | 0.66 | |
+  | – interleave | 0.14 | 0.05 | 0.18 | 0.12 | 0.04 | 0.17 |
+  | – TAAU / DLSS RR | 0.23 | 0.19 | 3.03 | 0.21 | 0.18 | 3.02 |
+  | – bloom | 0.15 | 0.14 | 0.14 | 0.14 | 0.14 | 0.14 |
+  | – tone mapping | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 | 0.05 |
+  | composite and 2D | 0.03 | 0.03 | 0.03 | 0.03 | 0.04 | 0.04 |
 
   | 1920x1080 | demo1 TAAU 100 % | demo1 TAAU 67 % | demo1 DLSS RR 67 % | cath TAAU 100 % | cath TAAU 67 % | cath DLSS RR 67 % |
   |---|---|---|---|---|---|---|
-  | frame | 8.12 | 3.72 | 6.94 | 7.61 | 3.56 | 6.71 |
-  | 3D view | 7.23 | 2.96 | 6.15 | 6.80 | 2.91 | 6.00 |
-  | – bounce 1 | 1.45 | 0.73 | 0.81 | 1.17 | 0.56 | 0.64 |
-  | – denoiser | 2.83 | 1.03 | | 2.79 | 1.07 | |
-  | – TAAU / DLSS RR | 0.22 | 0.15 | 4.06 | 0.25 | 0.15 | 4.03 |
+  | frame | 4.35 | 2.43 | 3.48 | 4.26 | 2.43 | 3.55 |
+  | 3D view | 3.97 | 2.11 | 3.11 | 3.88 | 2.09 | 3.16 |
+  | – bounce 1 | 0.66 | 0.41 | 0.39 | 0.63 | 0.30 | 0.30 |
+  | – denoiser | 1.35 | 0.60 | | 1.32 | 0.59 | |
+  | – TAAU / DLSS RR | 0.12 | 0.11 | 1.90 | 0.12 | 0.11 | 1.89 |
 
   The dynamic BLASes (the models' and the effects' triangles, rebuilt every
-  frame) take about 1 ms at any size; the denoiser's à-trous filter is the
-  largest single pass.
+  frame) take 0.2–0.35 ms at any size; the denoiser's à-trous filter is the
+  largest single pass but DLSS RR. Every view stays well under Hexen II's
+  72 fps cap (13.9 ms) on this card.
 - Left out: dynamic resolution (7.2), CPU timings (upstream's `showfps`),
   graphs.
 
@@ -3755,7 +3842,8 @@ overlay, and a measuring mode.
   `config.cfg` (`CONFIG_NAME` in `host.c`; `exec config.cfg` from `hexen.rc`
   is redirected in `cmd.c`), reading `config.cfg` until that file exists.
   Early-read cvars (`vid_*`, `vid_uiscale`) are locked until `hexen.rc` has
-  run.
+  run. Since 6.10 the Renderer Settings page's cvars are saved only
+  while they differ from their defaults ([Settings menu](#settings-menu-vk_menuc)).
 - **Demo playback's view angles** (`cl_demoangles.c`, 6.7, DECISIONS X42):
   `CL_DemoAngles`, called from `cl_main.c`'s `CL_RelinkEntities` in demo
   playback instead of its lerp between the last two messages read, moves
@@ -3786,6 +3874,7 @@ overlay, and a measuring mode.
 | `vk_exposure` | the adapted luminance read back (two frames old) |
 | `profiler 0/1`, `profiler_samples`, `vk_profiler`, `vk_benchmark 0/1` | the GPU timers over the screen, the frames they average (60); printed; full load for measuring (no 72 fps cap, no sleep when unfocused) (see [Profiler](#profiler-vk_profilerc)) |
 | `r_scale 25-100`, `r_upscaler 0-4`, `vk_upscale` | the render size in percent of the view's; 0 TAA, 1 TAAU, 2 FSR 1 (`flt_fsr_easu`, `flt_fsr_rcas`, `flt_fsr_sharpness`), 3 DLSS SR, 4 DLSS RR; the last frame's sizes, jitter and passes (see [Upscaling](#upscaling-vk_upscalec)) |
+| `menu_renderer`, `r_resetsettings` | 6.10: opens the Options menu's Renderer Settings page. Its settings (`r_scale`, `pt_num_bounce_rays`, `r_upscaler`, `r_maplight_shape`, `tm_auto_exposure`, `r_sky_mode`, `r_maplight_colors`, `r_emissive_scale`) are saved to `hexenlicht.cfg` only while they differ from their defaults; `r_resetsettings` puts them and `gl_colored_dynamic_lights` at their defaults, as the page's Reset row (`hl_run.ps1` runs it before every test script; see [Settings menu](#settings-menu-vk_menuc)) |
 | `vk_dlss`, `r_dlss_preset` | Streamline's state (DLL, signature, support, versions, driver, evaluations, its log's warnings and errors), DLSS's images, mode and render sizes; DLSS's model: 0 its default, or a preset letter (see [DLSS](#dlss-vk_dlssc-vk_streamlinecpp)) |
 | `pt_particle_brightness` | the effects' brightness under the exposure (15) |
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
@@ -3809,7 +3898,7 @@ overlay, and a measuring mode.
 | `vk_rayprobe x y z` | hits of one ray towards a point |
 | `vk_images` | render targets and the blue noise |
 | `vk_testlight sphere, dlight, line, quad, list, clear` | test lights, added to the map's (see [Lights](#lights-vk_lightc)) |
-| `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (630 since 4.17; 740 in 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; archived; see [Map lights](#map-lights-vk_maplightsc)) |
+| `r_maplights 0/1`, `r_maplight_scale`, `r_maplight_power`, `r_maplight_range`, `r_maplight_colors 0/1` | the map's lights off/on (1), the intensity of a level 300 one (630 since 4.17; 740 in 4.9), intensity as (level / 300) to this power (3), the range as the level times this (1) (these three: the physical shapes; the scale and power also dynamic lights), white (0 since 4.9) or HoT's colors (1; saved when changed; see [Map lights](#map-lights-vk_maplightsc)) |
 | `r_maplight_shape 0/1/2`, `r_maplight_gl_scale`, `r_maplight_gamma`, `r_maplight_radius` | the map lights' light shape (4.15): 0 physical (inverse square, the cosine: the "physically based" mode, R103; the default in 4.21, R107), 1 physical with utils/light's angle term, 2 utils/light's lightmap value of each light (the default, "original"; again since 4.22, R108); shape 2's factor for a light the fit has none for, and every light's with `r_maplight_fit 0` (2; 1 = a lone light, the texture's own color at a full texel); the power that takes GL's lightmap values into linear light (2.2); the spheres' radius (8: the shadows' softness) |
 | `r_maplight_fit 0/1`, `r_maplight_fit_scale` | 4.16: shape 2's factors per light list entry fitted to the map's lightmaps (1), or `r_maplight_gl_scale` for all (0); the fitted factors times this (1, 4.17: GL's look; 1.1 before, with the sRGB curve) |
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
@@ -3822,7 +3911,7 @@ overlay, and a measuring mode.
 | `r_viewer_model 0/1` | 6.11: without the chase camera the player's own model stands where the player is, seen by the shadow, bounce, reflection and refraction rays, not in the view (1, archived), or none (0, the image before; see [Scene](#scene-r_scenec) and [Instances](#instances-vk_instancec)) |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |
-| `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
+| `r_skyalpha`, `r_sky_light 0/1`, `r_sky_light_scale`, `r_sky_mode 0-2`, `vk_sky` | the sky's front layer opacity (GL's cvar, 0.67); the sky lights nothing (0, faithful) or diffuse bounces gather a dome of its average color (1) times the scale (1); 6.10: the player's choice over the map's (0 the map's `r_sky_light`, 1 faithful, 2 sky light on every map; saved when changed); the sky, the mode, the dome and the sun (see [Sky](#sky-vk_skyc)) |
 | `r_sun 0/1`, `r_sun_intensity`, `r_sun_color`, `r_sun_elevation`, `r_sun_azimuth`, `r_sun_angle` | a sun in the sky light mode (0): 1 lights a white surface facing it as GL's fullbright; an 8-bit color (1 1 1); direction in degrees (45, 45: the azimuth from +x towards +y); the disc's width (1°). These and the sky light cvars are per map: reset at every map load, set by the map file |
 | `vk_mapfile [reload]`, `r_map_light_scale`, `r_map_exposure` | the map file used, its settings and light lines, unsaved edits; read it again and apply it (unsaved edits dropped); per-map: every map light's intensity times this (1), EV added to `tm_exposure_bias` (0) (see [Map file](#map-file-vk_mapfilec)) |
 | `r_editlights 0/1`, `r_editlights_distance` | markers at the lights in sight and the selected light's panel (0); how far they reach (1024) (see [Light editor](#light-editor-vk_lighteditc)) |

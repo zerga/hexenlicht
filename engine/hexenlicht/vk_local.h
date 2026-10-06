@@ -274,6 +274,12 @@ void VK_InitCalib (void);
  * material file names (5.4) */
 void VK_InitExport (void);
 
+/* vk_menu.c: the Options menu's Renderer Settings page (6.10, in place of
+ * menu.c's OpenGL Features), its settings saved when changed, menu_renderer */
+void VK_InitMenu (void);		/* from R_Init: after the settings are registered */
+void VK_RendererMenuDraw (void);	/* inside the frame */
+void VK_RendererMenuKey (int key);
+
 /* vk_shader.c: loads <exe folder>\shaders\<name>.spv, e.g. "fullscreen.vert";
  * VK_ExePath gives <exe folder>\<file> */
 VkShaderModule VK_LoadShader (const char *name);
@@ -728,6 +734,7 @@ void VK_InitDLSS (void);
 void VK_ShutdownDLSS (void);
 int VK_DLSSImagesWanted (void);		/* vk_dlss_images for the chosen feature */
 const char *VK_DLSSUnavailable (int feature);	/* why it can't run, or NULL */
+const char *VK_DLSSCantRun (int feature);	/* the same but its images, which the next frames create (6.10's menu) */
 qboolean VK_DLSSChoose (int feature, qboolean lit, int percent, vk_upscale_t *up);
 qboolean VK_DLSSRun (VkCommandBuffer cmd, const vk_upscale_t *up);	/* false: it failed */
 void VK_EndDLSSFrame (qboolean ran);

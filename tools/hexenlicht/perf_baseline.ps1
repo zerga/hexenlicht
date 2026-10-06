@@ -7,7 +7,9 @@
 # fov 90, and for each setting prints vk_profiler's averages over -Samples
 # frames. The settings: TAAU at 100 % and 67 %, and DLSS RR at 67 % when
 # sl.interposer.dll is next to the exe (a column whose upscaler row isn't
-# "DLSS RR" is marked: DLSS didn't run). Prints markdown tables of the
+# "DLSS RR" is marked: DLSS didn't run); with -Presets instead the Renderer
+# Settings page's quality presets (6.10: Low, Medium, High, with TAAU).
+# Prints markdown tables of the
 # averages (ms per pass), with the GPU, the driver and its power limit
 # (nvidia-smi), and writes them to -Out when given. The Release build unless
 # -DebugBuild. Backs up data1\config.cfg and data1\hexenlicht.cfg and puts
@@ -15,7 +17,7 @@
 # scripts it wrote. The window sizes must fit the desktop. See
 # docs/hexenlicht/TESTING.md ("GPU cost").
 param([string[]]$Sizes = @('1920x1080', '2560x1440'), [switch]$DebugBuild, [ValidateRange(10, 600)][int]$Samples = 120,
-      [string]$Data = '', [string]$Bin = '', [string]$Out = '', [switch]$NoBenchmark, [int]$Timeout = 600)
+      [string]$Data = '', [string]$Bin = '', [string]$Out = '', [switch]$NoBenchmark, [switch]$Presets, [int]$Timeout = 600)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Data) { $Data = if ($env:HEXENLICHT_DATA) { $env:HEXENLICHT_DATA } else { Join-Path (Split-Path $repo) 'Hexenlicht-data' } }
@@ -29,6 +31,11 @@ $log = Join-Path $Data 'debug_h2.log'
 $scenes = @('demo1', 'cath')
 $settings = [ordered]@{ 'TAAU 100 %' = 'r_upscaler 1; r_scale 100'; 'TAAU 67 %' = 'r_upscaler 1; r_scale 67' }
 if (Test-Path (Join-Path $Bin 'sl.interposer.dll')) { $settings['DLSS RR 67 %'] = 'r_upscaler 4; r_scale 67' }
+if ($Presets) {		# vk_menu.c's presets
+	$settings = [ordered]@{ 'Low' = 'r_upscaler 1; r_scale 50; pt_num_bounce_rays 0.5'
+				'Medium' = 'r_upscaler 1; r_scale 67; pt_num_bounce_rays 1'
+				'High' = 'r_upscaler 1; r_scale 100; pt_num_bounce_rays 1' }
+}
 
 function Waits([int]$n) { (1..$n | ForEach-Object { 'wait' }) -join "`r`n" }
 

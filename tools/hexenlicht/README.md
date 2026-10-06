@@ -13,7 +13,7 @@ or `Hexenlicht-data` next to the repository.
 |---|---|
 | `hl_run.ps1` | runs `hexenlicht.exe` or `glh2.exe` with a test script from the data folder, with a timeout |
 | `resize_test.ps1` | resizes, maximizes and restores the window from outside while a test script runs |
-| `perf_baseline.ps1` | measures the GPU timers (`vk_profiler`, `vk_benchmark 1`) at demo1's and the cathedral's starts for each window size and prints markdown tables |
+| `perf_baseline.ps1` | measures the GPU timers (`vk_profiler`, `vk_benchmark 1`) at demo1's and the cathedral's starts for each window size and prints markdown tables; `-Presets` the Renderer Settings page's quality presets (6.10) |
 | `calib_shots.ps1`, `bookmarks.txt` | matched screenshots of `glh2` and Hexenlicht at the calibration bookmarks: both load the same savegame (4.9) |
 | `calib_compare.ps1` | compares them: Hexenlicht's direct light against GL's lightmaps, the lit image against GL's, and pictures with ratio maps; per map (`-ByMap`) and the views within a range |
 | `bookmarks_blackmarsh.txt` | 4.11a's views of the Blackmarsh hub (entrances and main areas) for `calib_shots.ps1 -Bookmarks` |
@@ -48,4 +48,5 @@ or `Hexenlicht-data` next to the repository.
 | `viewer_run.ps1` | the player's own model (6.11): each view paused and shot with `r_viewer_model` 0 and 1 (shadows from the sun and map lights, four classes, the chase camera, the torch, the Assassin's cloak, pools from above and below), `vk_models check` and `cl.light_level` with both; `-Mirror` makes the cathedral's and demo1's start floors mirrors (material files, removed after) and looks down at the model; `-Explore` looks for places, `-Cost` profiles them ([TESTING.md](../../docs/hexenlicht/TESTING.md) "Own model (6.11)") |
 | `ice_run.ps1` | frozen monsters as ice (6.15): `vk_freeze` on a monster (created where none stands), each view paused and shot with `r_ice` 0 and 1: demo1's archer from the front and the side, one behind village1's bay window, one in demo1's pool, village2's crystal golem; `-Saves` for `glh2`'s shots, `-Cost` profiles them ([TESTING.md](../../docs/hexenlicht/TESTING.md) "Ice (6.15)") |
 | `blend_run.ps1` | GL's view blends in `glh2` and Hexenlicht from demo1's start (6.6): each blend's numbers through `v_cshift` on a paused frame with `gl_polyblend` 0 and 1, checked against GL's blend function; the flashes, two power-ups and an archer's hits in play; the bonus flash under water ([TESTING.md](../../docs/hexenlicht/TESTING.md) "View blends (6.6)") |
+| `menu_run.ps1` | the Renderer Settings page (6.10): steps through every row with keys posted to the game's window, a screenshot per step, and checks which settings `hexenlicht.cfg` saved ([TESTING.md](../../docs/hexenlicht/TESTING.md) "Settings menu (6.10)") |
 | `spr_stats.ps1` | sprites: orientation type, frames, sizes |
