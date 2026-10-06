@@ -10,8 +10,8 @@
  * defaults; each does something once the pass that reads it is imported)
  * and the Hexenlicht block: the frame's buffers, the debug view's values
  * and the water's settings (6.5: r_water, r_water_waves, r_water_fog; 6.16:
- * r_water_caustics; registered here); vk_sky.c fills the sky's fields and
- * the sun's (4.6).
+ * r_water_caustics; registered here), the window panes' (6.20: r_windows);
+ * vk_sky.c fills the sky's fields and the sun's (4.6).
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -70,6 +70,16 @@ static cvar_t	r_water_fog = {"r_water_fog", "512", CVAR_NONE};	/* the distance (
  * contrast; the weapon's at most 1), 0 = none; 3 (the owner's choice,
  * DECISIONS X29): at 1 it doesn't show */
 static cvar_t	r_water_caustics = {"r_water_caustics", "3", CVAR_NONE};
+/* 6.20: the window panes (vk_material.c's rtex199) where drawn translucent:
+ * 1 glass reflecting the game's 0.33 head-on (the default), 2 Quake II
+ * RTX's thin glass (5 %), both seen through untinted; 0 = 6.4's blend, as
+ * before (path_tracer_rgen.h's thin_glass_fresnel) */
+static cvar_t	r_windows = {"r_windows", "1", CVAR_NONE};
+
+int VK_WindowPanes (void)
+{
+	return q_min (q_max (r_windows.integer, 0), 2);
+}
 
 uint32_t		vk_render_frame;	/* 3D frames rendered: the UBO's current_frame_idx */
 
@@ -293,6 +303,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.water_waves = q_max (0.0f, r_water_waves.value);
 	ubo.water_fog = q_max (0.0f, r_water_fog.value);
 	ubo.water_caustics = q_max (0.0f, r_water_caustics.value);
+	ubo.windows = VK_WindowPanes ();
 	VK_PrepareMedium (&ubo);	/* the liquids' light grid, the light styles and dynamic lights for it (6.18, vk_medium.c) */
 	/* 6.11: the view entity's own model (vk_instance.c's viewer group), in
 	 * the rays as its look (Quake II RTX's field) */
@@ -323,6 +334,7 @@ void VK_InitUBO (void)
 	Cvar_RegisterVariable (&r_water_waves);
 	Cvar_RegisterVariable (&r_water_fog);
 	Cvar_RegisterVariable (&r_water_caustics);
+	Cvar_RegisterVariable (&r_windows);
 
 	memset (&binding, 0, sizeof(binding));
 	binding.binding = GLOBAL_UBO_BINDING_IDX;

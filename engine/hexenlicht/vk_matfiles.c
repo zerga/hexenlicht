@@ -803,7 +803,10 @@ static void ParseMat (texset_t *s, int f)
 				AddProblem (&s->problems, "%s line %d: kind %s: an animated texture's kind is its first frame's "
 					    "(+0..., +a...: a surface's triangles keep it); left out", file, lineno, value);
 			else
+			{
 				m->kind = k;	/* the world's at map load (vk_world.c), a skin's live */
+				m->kind_set = true;	/* 6.20: any kind replaces rtex199's window pane */
+			}
 			continue;
 		}
 		if (!q_strcasecmp (key, "roughness"))
@@ -1402,6 +1405,9 @@ static void MaterialHere (void)
 		return;
 	}
 	Con_Printf ("  files: %s~%04x (this texture's pixels only) or %s (every texture of the name)\n", s->name, s->crc, s->name);
+	if (m->window_pane)	/* 6.20 */
+		Con_Printf ("  a window pane: glass with r_windows %d where its brush entity is drawn translucent "
+			    "(0 the game's blend); a kind in its .mat replaces it\n", VK_WindowPanes ());
 	if (!r_materials.integer)
 		Con_Printf ("  r_materials 0: the original texture only\n");
 	else if (!s->resolved)	/* read-only: resolving here would read files the material doesn't show */

@@ -33,7 +33,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    show the alternate animation; Quake II RTX animates the world buffer
  *    with animate_materials.comp and steps instances by their frame;
  *  - a brush entity's alpha (DRF_TRANSLUCENT) leaves its glass triangles
- *    opaque (6.4: a material file's glass replaces the game's blend);
+ *    opaque (6.4: a material file's glass replaces the game's blend); 6.20:
+ *    with r_windows a translucent brush entity's window pane (rtex199,
+ *    MATERIAL_WINDOW_PANE) is glass;
  *  - the light buffer (vk_light.c) has only the lights and the light lists
  *    (3.3); a light is a polygon or, for Hexen II's point lights, a sphere
  *    (3.4); Quake II RTX's also holds the material table (ours is
@@ -61,7 +63,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *   [4] number of animation frames | next frame's material << 16
  *   [5] half2 (specular factor, base factor)
  *   [6] Hexen II: material of the alternate animation (+a..+j), 0 = none
- *   [7] Hexenlicht (5.3): roughness and metallic texture (G, B) | MATERIAL_NORMALS_* flags << 16
+ *   [7] Hexenlicht (5.3): roughness and metallic texture (G, B) | MATERIAL_NORMALS_BC5, MATERIAL_WINDOW_PANE flags << 16
  * [0]-[5] are Quake II RTX's layout, but for [2].y and [3].x (5.3,
  * MATERIALS.md): glTF's roughness and metallic, the value without the
  * roughness and metallic texture and a factor on it with one (Quake II
@@ -69,6 +71,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * normal map's alpha). */
 #define MATERIAL_UINTS          8
 #define MATERIAL_NORMALS_BC5    1u	/* [7] >> 16: the normal map is BC5 (X, Y), Z rebuilt */
+#define MATERIAL_WINDOW_PANE    2u	/* [7] >> 16 (6.20): the game's clear window pane, rtex199 without a kind from its files */
 
 // should match the same constant declared in material.h
 #define MAX_PBR_MATERIALS      4096	// Hexenlicht: MATERIAL_INDEX_MASK + 1; index 0 is unused
@@ -200,7 +203,7 @@ struct MaterialInfo
 	uint emissive_texture;
 	uint mask_texture;
 	uint rm_texture;	/* Hexenlicht (5.3): roughness (G) and metallic (B), 0 = none */
-	uint normals_flags;	/* Hexenlicht (5.3): MATERIAL_NORMALS_* */
+	uint flags;		/* Hexenlicht (5.3): MATERIAL_NORMALS_BC5; 6.20: MATERIAL_WINDOW_PANE */
 	float bump_scale;
 	float roughness;	/* Hexenlicht (5.3): glTF's, the value or a factor on rm_texture (Quake II RTX's roughness_override) */
 	float metalness_factor;	/* the same for metallic */
@@ -268,6 +271,15 @@ get_primitive(uint buffer_idx, uint prim_id)
 }
 
 uint animate_material(uint material, int frame, bool alternate);
+
+/* Hexenlicht (6.20): the material is the game's clear window pane
+ * (MATERIAL_WINDOW_PANE: vk_material.c's rtex199 without a kind from its files) */
+bool
+material_is_window_pane(uint material_id)
+{
+	uint flags = MaterialTableRef(global_ubo.materials).material_table[(material_id & MATERIAL_INDEX_MASK) * MATERIAL_UINTS + 7] >> 16;
+	return (flags & MATERIAL_WINDOW_PANE) != 0;
+}
 
 struct Triangle
 {
@@ -360,10 +372,18 @@ load_and_transform_triangle(int instance_idx, uint buffer_idx, uint prim_id)
 		t.material_id = animate_material(t.material_id, global_ubo.anim_frame, frame != 0);
 		t.cluster = mi.cluster;
 		t.emissive_factor = 1.0;
+		// Hexenlicht (6.20): with r_windows a translucent brush entity's window pane
+		// (the game's clear breakable glass) is glass: path_tracer_rgen.h's
+		// thin_glass_fresnel; Quake II RTX makes its window textures glass where
+		// the surface is translucent. Its triangles keep their group (a translucent
+		// instance is in the transparent mask whatever its ranges, vk_accel.c)
+		float entity_alpha = unpackHalf2x16(mi.alpha_and_frame).x;
+		if (global_ubo.windows != 0 && entity_alpha < 1.0 && material_is_window_pane(t.material_id))
+			t.material_id = (t.material_id & ~MATERIAL_KIND_MASK) | MATERIAL_KIND_GLASS;
 		// Hexenlicht (6.4): a material file's glass replaces a translucent brush
 		// entity's blend (the game's windows): it is seen through by refraction
 		if ((t.material_id & MATERIAL_KIND_MASK) != MATERIAL_KIND_GLASS)
-			t.alpha *= unpackHalf2x16(mi.alpha_and_frame).x;
+			t.alpha *= entity_alpha;
 
 		// Store the index of that instance and the prim offset relative to the instance.
 		t.instance_index = uint(instance_idx);
@@ -407,7 +427,7 @@ get_material_info(uint material_id)
 	minfo.emissive_texture = data[1] & 0xffff;
 	minfo.mask_texture = data[1] >> 16;
 	minfo.rm_texture = data[7] & 0xffff;
-	minfo.normals_flags = data[7] >> 16;
+	minfo.flags = data[7] >> 16;
 	minfo.bump_scale = unpackHalf2x16(data[2]).x;
 	minfo.roughness = unpackHalf2x16(data[2]).y;
 	minfo.metalness_factor = unpackHalf2x16(data[3]).x;

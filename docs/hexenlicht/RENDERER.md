@@ -506,6 +506,8 @@ materials ([Materials](#materials-vk_materialc)).
   candidate is confirmed, so the nearest wins: a masked skin's hole
   counts, glass and water too; the effects (sprites) aren't in that TLAS.
   The albedo's mean is over every texel, a skin's holes' colors too.
+  6.20: a window pane says so (glass with `r_windows` where drawn
+  translucent; a kind in its `.mat` replaces it).
 - **Measured** (5.3, `material_set.ps1`, `material_check.ps1`, TESTING.md
   "Materials"): 26 checks at demo1's start, the Paladin's gauntlet and the
   player, the Crusader's ice mace, its hits (sprites) and a file held open
@@ -736,10 +738,19 @@ the starting points for authors and their tools.
 - Rebuilt per map, uploaded with `VK_UploadMaterials`. Layout
   (`MATERIAL_UINTS` 8, `vertex_buffer.h`): Q2RTX's 6 uints, Hexen II's
   alternate animation (`+a..+j`) in `[6]` and (5.3) the roughness and
-  metallic texture with the `MATERIAL_NORMALS_BC5` flag in `[7]`; `[2].y`
+  metallic texture with the `MATERIAL_NORMALS_BC5` flag in `[7]` (6.20:
+  and `MATERIAL_WINDOW_PANE`); `[2].y`
   and `[3].x` are glTF's roughness and metallic (the value without that
   texture, a factor on it; Q2RTX's `roughness_override` was a floor over
   the albedo's alpha).
+- **Window panes** (6.20, DECISIONS X50): `rtex199`, the game's clear
+  breakable pane, is a window pane (`window_pane`,
+  `MATERIAL_WINDOW_PANE` in the table) unless its `.mat` gives a kind
+  (`vk_matset_t.kind_set`: any kind replaces it). `vertex_buffer.h`'s
+  triangle fetch makes a pane glass where its brush entity is drawn
+  translucent and `r_windows` isn't 0 (live: a translucent instance is in
+  the transparent mask whatever its triangles' ranges, so the geometry
+  stays as built); [3D view](#3d-view-vk_viewc) shades it.
 - A material is what it shows (5.3): its original texture slot
   (`texture`, whose [material files](#material-files-vk_matfilesc) apply),
   the slot it shows without files (`original`: the texture, or a player's
@@ -828,7 +839,9 @@ the starting points for authors and their tools.
   triangles between groups (the BLAS), as Quake II RTX builds the map's
   geometry again for a kind change; `r_reloadmaterials` reports a
   changed one (`VK_WorldKindsChanged`, the kinds the geometry was built
-  with, `texture_kinds`). Brush entities keep their triangles' kind.
+  with, `texture_kinds`). Brush entities keep their triangles' kind
+  (6.20: but a window pane, `rtex199`, which the shaders make glass where
+  its entity is drawn translucent: [Materials](#materials-vk_materialc)).
   *5.6: Hexen II's windows are brush entities (breakable panes of
   `rtex018`, `rtex083`, `rtex199`, `ttex210`...; only castle5 has glass on
   world faces), whose triangles don't connect the PVS (the pane is no
@@ -839,7 +852,9 @@ the starting points for authors and their tools.
   frame the animation shows now (`r_scene.time` x 5, `vertex_buffer.h`'s
   `anim_frame`; a brush entity's frame choosing the alternate).
 - `vk_world [materials]` prints statistics (with the lava lights; the
-  kinds, chrome and glass too; the liquids' surfaces) and checks the animation table against
+  kinds, chrome and glass too; the liquids' surfaces; 6.20: the window
+  panes' triangles on brush entities, by their materials now: village1
+  156, village2 92) and checks the animation table against
   `R_TextureAnimation`; `materials` lists each material with its
   emissive texture and factor, and a kind other than regular.
 
@@ -2960,6 +2975,23 @@ Story 4.10: Hexen II's darkness as GL shows it.
     the texture's colors); 6.4: a material file's glass on one replaces
     the entity's blend (`vertex_buffer.h`: its triangles keep alpha 1),
     so it is glass alone.
+  - Window panes (6.20, `r_windows`; DECISIONS X50–X51): the clear
+    breakable panes (`rtex199`, [Materials](#materials-vk_materialc)) drawn
+    translucent are glass, thin whatever `pt_thick_glass`, reflecting
+    `WINDOW_PANE_REFLECTANCE` 0.33 head-on (the game's opacity; Schlick's
+    from it, `path_tracer_rgen.h`'s `thin_glass_fresnel`) with
+    `r_windows 1`, Q2RTX's 5 % with 2, and seen through untinted (the
+    painted streaks go: the traced reflection replaces them); 0 is 6.4's
+    blend. As other glass, the even field reflects (F × 2) and the odd one
+    refracts ((1 − F) × 2); on a split path (a window behind a window) a
+    pane reflects with the probability of F and is passed otherwise
+    (`RNG_WINDOW_PANE`, not the indirect bounce's `RNG_BRDF_FRESNEL`;
+    Q2RTX's thin glass follows the reflection from
+    F 0.1, which would make a pane behind a pane a mirror). Not physical in
+    the reflectance (clean glass 5 %): at 5 % the panes were empty frames
+    in village1's evenly lit rooms and streets. Cost (Release, 1920x1080,
+    full power): the bay window over most of the view the frame +0.11 ms,
+    the pass 0.21 → 0.31.
   - Mirrors and glass (Q2RTX's `chrome` and `glass` kinds) come from a
     texture's `.mat` since 5.5 ([World](#world-vk_worldc),
     [Skins](#skins-vk_skinc)): chrome (and a chrome model) reflects about
@@ -3134,7 +3166,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
     focusing of 6.5's sine waves, was invisible (X27).
   - Glass: its albedo at the texture's mip 2 (Q2RTX's) times 1 − its
     Fresnel term at the light's angle (thin glass's Schlick from 5 %, as
-    `reflect_refract.rgen`'s split). Ice (6.15): its color (`ice_color`,
+    `reflect_refract.rgen`'s split; 6.20: a window pane untinted, from its
+    own reflectance, `thin_glass_fresnel`: 0.67 head-on with `r_windows 1`,
+    as the blend's 1 − α). Ice (6.15): its color (`ice_color`,
     32 units of it) times 1 − ice's exact Fresnel term where the light
     enters, counted once, not bent (no focusing).
   - Anything else but a turbulent surface: 1 − its opacity (6.4's
@@ -3911,6 +3945,7 @@ overlay, and a measuring mode.
 | `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
 | `r_ice 0/1` | 6.15: a translucent model in the ice skin (frozen monsters, the crystal golem) is solid ice, refracting and absorbing (1), or the 0.33 blend (0, the image before; not archived; see [Instances](#instances-vk_instancec) and [3D view](#3d-view-vk_viewc)) |
+| `r_windows 0/1/2` | 6.20: the clear breakable panes (`rtex199`) drawn translucent are glass reflecting the game's 0.33 head-on (1), Q2RTX's thin glass from 5 % (2, physical), both seen through untinted, or the 0.33 blend (0, the image before); live, not archived (see [Materials](#materials-vk_materialc) and [3D view](#3d-view-vk_viewc)) |
 | `r_viewer_model 0/1` | 6.11: without the chase camera the player's own model stands where the player is, seen by the shadow, bounce, reflection and refraction rays, not in the view (1, archived), or none (0, the image before; see [Scene](#scene-r_scenec) and [Instances](#instances-vk_instancec)) |
 | `r_effect_lights 0/1` | 6.2: the fire, explosion, flash and spark sprites light the scene and glowing projectiles glow instead of being lit by their light (1), or GL's look (0; not archived); `vk_effects` and `vk_lights` print them (see [Effect lights](#effect-lights-vk_effectlightc)) |
 | `r_srgb 0/1` | 4.17: the 8-bit colors (textures, the sky, light colors, the image) are the 2.2 power of linear light (0, GL's product with the lightmap) or the sRGB curve's (1; archived; the flames' emissive textures follow with the next map; see [Textures](#textures-vk_texturec)) |

@@ -704,6 +704,39 @@ script prints both).
   places may wake and move before `vk_freeze` if the player isn't
   `notarget` (the script sets it).
 
+## Windows (6.20)
+
+`windows_run.ps1` goes to each view with `vk_setpos` (no saves: `god`,
+`notarget`), pauses and shoots for each `r_windows` value in `-Windows`
+(0, 1, 2: live, one run), `<view>_w<n>` of 8 frames averaged and
+`<view>_w<n>_1` of one. The views: village1's panes from inside lit rooms
+(`v1_in_*`: the room and the player's own model reflected), from the
+street (`v1_out_*`), along a facade (`v1_angle_37`), the bay window from
+the front and at an angle, along it through both diagonal panes
+(`v1_side_l`, `_r`: a window behind a window), village2's `*14` from the
+courtyard and at an angle. The log's `vk_world` prints the panes'
+triangles (village1 156, village2 92, as the BSP has them).
+- **Before:** `-Bin <main's build> -Windows 0` (a build before 6.20 doesn't
+  know `r_windows`) against this build's run with `-Windows 0` too (the
+  same sequence: in a run that shoots 1 first, the next view's `_w0` is a
+  level off over the whole image, the exposure adapting over frames);
+  `tga_diff.ps1` of the two folders, with a second run of `main` for the
+  run-to-run noise (most views repeat exactly; the two-pane views and
+  village2's, with an archer, don't).
+- **Noise:** a single frame (`_1`) against the 8-frame average of the same
+  run, per-pixel RMS in the pane's rectangle (6.4's measure, a small C#
+  helper, not kept).
+- **Cost:** `-Cost -Release -Width 1920 -Height 1080` (instead of the
+  shots): each view profiled paused with `vk_benchmark 1`, the averages of
+  120 frames, `r_windows` 0 and 1 alternating twice.
+- **Motion:** turning in front of the bay window (`cl_yawspeed 20`,
+  `+right`, a frame shot every 15) shows whether the reflection smears; 6.20
+  used a scratch script.
+- **Checks:** Debug validation 0/0; `r_windows 0` the image before
+  (not bit for bit: sparse differences where paths are random, DECISIONS
+  X51); with 1 the reflection over the clear view, no
+  streaks; with 2 the panes nearly invisible head-on.
+
 ## Own model (6.11)
 
 `viewer_run.ps1` loads each view's map with its class, puts the player at

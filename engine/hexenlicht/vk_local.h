@@ -177,6 +177,7 @@ typedef struct
 	qboolean	roughness_map, metallic_map;	/* rm holds them (G, B; 255 where one is missing) */
 	float		roughness, metallic, bump, specular, emission;	/* the .mat's, -1 = not set */
 	int		kind;			/* MATKIND_* (the world's at map load, a skin's live) */
+	qboolean	kind_set;		/* the .mat gives a kind (6.20: else rtex199 is a window pane) */
 } vk_matset_t;
 void VK_InitMaterialFiles (void);
 void VK_ShutdownMaterialFiles (void);
@@ -345,6 +346,8 @@ typedef struct
 	int		alternate;	/* first material of the alternate animation, 0 = none */
 	int		kind;		/* MATKIND_*, the files' (5.5): a skin's instance takes it every frame, the world's
 					   primitives at map load (vk_world.c) */
+	qboolean	window_pane;	/* 6.20: the game's clear window pane (rtex199) without a kind from its files:
+					   glass with r_windows where its brush entity is translucent (vertex_buffer.h) */
 } vk_material_t;
 
 extern vk_buffer_t	vk_material_table;
@@ -756,6 +759,7 @@ void VK_CheckDenoiserCvars (void);	/* before VK_UpscaleEvaluate: a change drops 
 void VK_PrepareUBO (const vk_upscale_t *up, int debug_view);
 void VK_ResetUBOHistory (void);	/* the next frame's _prev values are its own */
 const struct QVKUniformBuffer_s *VK_CurrentUBO (void);	/* this frame's, after VK_PrepareUBO */
+int VK_WindowPanes (void);	/* 6.20: r_windows, 0-2 */
 qboolean VK_ToneMappingEnabled (void);	/* tm_enable */
 qboolean VK_AutoExposure (void);	/* vk_tonemap.c: tm_auto_exposure (0: the fixed exposure, 4.9) */
 VkDescriptorSet VK_UBOSet (void);	/* the current frame's */
