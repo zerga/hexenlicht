@@ -336,7 +336,7 @@ main()
 	vec3 fog_light = vec3(0);
 	if(global_ubo.water != 0)
 	{
-		fog_light = water_fog_segment(fog, global_ubo.medium, length(position - ray.origin));
+		fog_light = water_fog_segment(fog, global_ubo.medium, ray.origin, position);
 		effects.rgb *= sqrt(fog.a);
 	}
     // Extinction in the primary ray

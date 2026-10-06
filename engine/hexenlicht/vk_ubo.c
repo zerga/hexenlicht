@@ -46,7 +46,9 @@ COMPILE_TIME_ASSERT(ubo_maplight_gamma, offsetof(QVKUniformBuffer_t, maplight_ga
 COMPILE_TIME_ASSERT(ubo_num_dark_lights, offsetof(QVKUniformBuffer_t, num_dark_lights) == 3820);
 COMPILE_TIME_ASSERT(ubo_color_srgb, offsetof(QVKUniformBuffer_t, color_srgb) == 3828);
 COMPILE_TIME_ASSERT(ubo_water, offsetof(QVKUniformBuffer_t, water) == 3832);
-COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 3852);
+COMPILE_TIME_ASSERT(ubo_medium_grid, offsetof(QVKUniformBuffer_t, medium_grid) == 3856);
+COMPILE_TIME_ASSERT(ubo_medium_styles, offsetof(QVKUniformBuffer_t, medium_styles) == 3872);
+COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 4640);
 
 #define UBO_SIZE	((sizeof(QVKUniformBuffer_t) + 15) & ~(size_t)15)	/* the std140 block's size */
 
@@ -290,7 +292,7 @@ void VK_PrepareUBO (const vk_upscale_t *up, int debug_view)
 	ubo.water_waves = q_max (0.0f, r_water_waves.value);
 	ubo.water_fog = q_max (0.0f, r_water_fog.value);
 	ubo.water_caustics = q_max (0.0f, r_water_caustics.value);
-	ubo.water_light = r_scene.water_light;	/* GL's light level around the camera, eased (6.17, r_light.c) */
+	VK_PrepareMedium (&ubo);	/* the liquids' light grid, the light styles and dynamic lights for it (6.18, vk_medium.c) */
 	/* 6.11: the view entity's own model (vk_instance.c's viewer group), in
 	 * the rays as its look (Quake II RTX's field) */
 	ubo.first_person_model = (mf->viewer_instance < 0) ? VIEWER_MODEL_NONE :

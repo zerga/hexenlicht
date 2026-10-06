@@ -1,0 +1,55 @@
+/* medium_check.comp -- the vk_medium command's check of the liquids' light
+ * grid lookup (6.18): medium.glsl's medium_grid_level at each point, which
+ * vk_medium.c compares with its own (GridLevel)
+ *
+ * Copyright (C) 2026  Hexenlicht contributors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU General Public License for more details.
+ */
+
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+
+#include "hl_shared.h"
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer MediumGridBuffer { uvec2 data[]; };
+layout(buffer_reference, std430) readonly buffer FloatBuffer { float data[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer PointBuffer { vec4 data[]; };
+layout(buffer_reference, std430) writeonly buffer ResultBuffer { float data[]; };
+
+/* MediumCheckPush */
+layout(push_constant) uniform Push
+{
+	MediumGridBuffer grid;
+	FloatBuffer styles;
+	PointBuffer points;
+	ResultBuffer results;
+	uint num_points;
+} push;
+
+#define medium_table push.grid.data
+#define medium_style(s) push.styles.data[s]
+#include "medium.glsl"
+
+/* MEDIUM_CHECK_CHAIN points in a row, the box hint carried from one to the
+ * next as water_fog_segment's samples carry it */
+void main()
+{
+	uint first = gl_GlobalInvocationID.x * MEDIUM_CHECK_CHAIN;
+	int box = -1;
+
+	for (uint i = first; i < first + MEDIUM_CHECK_CHAIN && i < push.num_points; i++)
+		push.results.data[i] = medium_grid_level(push.points.data[i].xyz, box);
+}

@@ -599,7 +599,8 @@ main()
 	vec4 fog_before = fog;
 	vec3 fog_light = vec3(0);
 	if(global_ubo.water != 0)
-		fog_light = water_fog_segment(fog, primary_medium, reflection_ray.t_max - reflection_ray.t_min);
+		fog_light = water_fog_segment(fog, primary_medium, reflection_ray.origin + direction * reflection_ray.t_min,
+		                              reflection_ray.origin + direction * reflection_ray.t_max);
 
 	vec4 effects = trace_effects_ray(reflection_ray, /* skip_procedural = */ false);
 	if(global_ubo.water != 0)

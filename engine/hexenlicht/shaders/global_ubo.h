@@ -44,6 +44,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define GLOBAL_UBO_BINDING_IDX               0
 
+/* Hexenlicht (6.18): the light styles and the dynamic lights of the liquids'
+ * light grid (medium_styles, medium_dlights; Hexen II's MAX_LIGHTSTYLES and
+ * MAX_DLIGHTS) */
+#define MEDIUM_LIGHT_STYLES                  64
+#define MEDIUM_MAX_DLIGHTS                   32
+
 
 #define UBO_CVAR_DO(name, default_value) GLOBAL_UBO_VAR_LIST_DO(float, name)
 
@@ -291,8 +297,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(int,             water)                /* r_water: the liquids' physical surfaces and medium (6.5, water.glsl), 0 = as before */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_waves)          /* r_water_waves: the waves' slope */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_fog)            /* r_water_fog: the distance at which the medium is as dense as GL's tint, 0 = clear */ \
-	GLOBAL_UBO_VAR_LIST_DO(float,           water_light)          /* the medium's light, GL's light level / 200: averaged around the camera in its liquid and eased (6.17), in the air cl.light_level's */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             num_medium_dlights)   /* the dynamic lights in medium_dlights (6.18) */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_caustics)       /* r_water_caustics: the caustic's strength (6.16, water.glsl), 0 = none */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad0)          /* medium_grid at a multiple of 8 bytes */ \
+	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   medium_grid)          /* the liquids' light grid (6.18, vk_medium.c, medium.glsl), 0 = none */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad1)          /* medium_styles at a multiple of 16 bytes */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad2) \
+	GLOBAL_UBO_VAR_LIST_DO(vec4,            medium_styles[MEDIUM_LIGHT_STYLES / 4]) /* the light styles' values (1 = 256), four a vec4, for the grid (6.18) */ \
+	GLOBAL_UBO_VAR_LIST_DO(vec4,            medium_dlights[MEDIUM_MAX_DLIGHTS])     /* the dynamic lights: origin, GL's radius (6.18) */ \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 

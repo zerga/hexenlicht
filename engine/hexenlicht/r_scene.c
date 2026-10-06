@@ -255,8 +255,9 @@ static void R_AddExtraDynamicLights (void)
  * moves to that height only. Dark lights stay (GL's darkening at GL's
  * place, 4.10). Only the view entity's own lights reach the first-person
  * weapon as held ones (in_view_hand, vk_light.c). The client's lights stay
- * where they are: cl.light_level (the server's) and the medium's light
- * (r_light.c) read cl_dlights */
+ * where they are: cl.light_level (the server's, r_light.c) reads
+ * cl_dlights; the medium's light (6.18, vk_medium.c) takes the scene's,
+ * where they light the world */
 #define HELD_AHEAD		8.0f
 #define HELD_LEFT		8.0f
 #define HELD_HEIGHT		0.72f	/* of the eye height */
@@ -460,7 +461,6 @@ void R_RenderView (void)
 	R_SetupFrame ();
 	R_ViewModelLight ();		/* cl.light_level, for the game (r_light.c) */
 	R_BuildScene ();
-	R_MediumLight ();		/* r_scene.water_light: the liquid around the camera (r_light.c) */
 	VK_UpdateInstances ();		/* the brush and alias model entities, for the GPU */
 	VK_UpdateModelGeometry ();	/* the alias models' triangles, in this frame's command buffer */
 	VK_UpdateEffects ();		/* the particles' and sprites' triangles */
@@ -496,7 +496,6 @@ void R_NewMap (void)
 
 	r_viewleaf = NULL;
 	memset (&r_scene, 0, sizeof(r_scene));	/* no scene until the first frame */
-	R_ResetMediumLight ();			/* the old map's medium light */
 	num_client_beams = 0;			/* the old map's, until CL_UpdateTEnts runs */
 
 	R_ClearParticles ();
@@ -593,6 +592,7 @@ static void R_DumpScene_f (void)
 {
 	int		i, counts[4] = { 0, 0, 0, 0 };
 	const scene_dlight_t	*dl;
+	float		grid, lights;
 
 	if (cls.signon != SIGNONS || !r_scene.worldmodel)
 	{
@@ -650,11 +650,11 @@ static void R_DumpScene_f (void)
 
 	Con_Printf ("particles: %d\n", r_scene.num_particles);
 	Con_Printf ("light level on the weapon (cl.light_level, sent to the server): %d\n", cl.light_level);
-	if (r_scene.water_light_points)	/* 6.17 */
-		Con_Printf ("medium light (the liquid's, / 200): %.3f eased, %.3f this frame over %d points (the eye and the ring's in the liquid)\n",
-				r_scene.water_light, r_scene.water_light_now, r_scene.water_light_points);
+	if (VK_MediumLevel (r_scene.vieworg, &grid, &lights))	/* 6.18 */
+		Con_Printf ("medium light at the eye (the liquids' light grid, / 200): %.3f, with the dynamic lights %.3f\n",
+				grid / 200.0f, (grid + lights) / 200.0f);
 	else
-		Con_Printf ("medium light (/ 200): %.3f, cl.light_level's (not in a liquid)\n", r_scene.water_light);
+		Con_Printf ("medium light at the eye: outside the liquids' light grid\n");
 	Con_Printf ("view blend (GL's without a liquid's tint): %.2f %.2f %.2f %.2f\n",
 			r_scene.blend[0], r_scene.blend[1], r_scene.blend[2], r_scene.blend[3]);
 }

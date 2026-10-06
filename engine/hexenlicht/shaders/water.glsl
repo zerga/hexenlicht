@@ -24,8 +24,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * translucent *rtex078 and *lowlight, else 1) over what is seen through it,
  * waves from Hexen II's turbulence (get_turbulence_normal), and the liquid
  * a medium (water_fog_*): extinction, and in-scattering of GL's contents
- * color lit as a model at the camera, added to PT_TRANSPARENT segment by
- * segment. A path's medium so far is a vec4: what its final surface's
+ * color lit as a model where it is (6.18: the liquids' light grid,
+ * medium.glsl), added to PT_TRANSPARENT segment by segment. A path's
+ * medium so far is a vec4: what its final surface's
  * albedo is multiplied by (.a: the medium's and the texture layers'
  * transmittance) and the texture layers' albedo added to it (.rgb);
  * water_fog_apply puts it into the final surface's material, so a layer
@@ -59,15 +60,39 @@ vec3 water_fog_color(int medium)
 	return vec3(0);
 }
 
-// the light the medium scatters towards the eye where it is dense: its color
-// lit as GL lit a model (R_DrawViewModel's light level / 200: the light maps
-// with their styles, 6.17: averaged over the liquid around the camera and
-// eased, plus the dynamic lights at the eye; in the air cl.light_level, 8-bit,
-// decoded as the textures' colors, 4.17), in the light of a full light map
-// texel (4.10's dark_light_unit); one light for the whole medium
-vec3 water_fog_radiance(int medium)
+// 6.18: the liquids' light grid (vk_medium.c; 0 = none)
+#include "hl_shared.h"
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer MediumGridRef { uvec2 d[]; };
+#define medium_table MediumGridRef(global_ubo.medium_grid).d
+#define medium_style(s) global_ubo.medium_styles[(s) >> 2][(s) & 3]
+#include "medium.glsl"
+
+// the medium's light at p (6.18): GL's light level of a model there / 200,
+// the liquids' light grid (the light maps with their styles, at least 24;
+// outside it GL's least, 24) plus the dynamic lights by GL's rule (radius -
+// distance, R_DrawViewModel's; the dark ones too); box: medium_grid_level's
+float water_fog_light(vec3 p, inout int box)
 {
-	vec3 c = min(water_fog_color(medium) * global_ubo.water_light, vec3(1));
+	float level = -1;
+	if(global_ubo.medium_grid != uvec2(0u))
+		level = medium_grid_level(p, box);
+	if(level < 0)
+		level = MEDIUM_MIN_LEVEL;
+	for(int i = 0; i < global_ubo.num_medium_dlights; i++)
+	{
+		vec4 dl = global_ubo.medium_dlights[i];
+		level += max(dl.w - length(p - dl.xyz), 0.0);
+	}
+	return level / 200.0;
+}
+
+// the light the medium scatters towards the eye where it is dense: its color
+// lit as GL lit a model (light: water_fog_light's, 8-bit, decoded as the
+// textures' colors, 4.17), in the light of a full light map texel (4.10's
+// dark_light_unit)
+vec3 water_fog_radiance(int medium, float light)
+{
+	vec3 c = min(water_fog_color(medium) * light, vec3(1));
 	return color_to_linear(c, global_ubo.color_srgb) * global_ubo.dark_light_unit;
 }
 
@@ -83,16 +108,37 @@ float water_fog_density(int medium)
 
 const vec4 WATER_FOG_NONE = vec4(0, 0, 0, 1);
 
-// a path segment of length d through the medium: dims what is behind it
-// (fog.a) and returns the light it scatters towards the eye (times the
-// path's throughput, for PT_TRANSPARENT)
-vec3 water_fog_segment(inout vec4 fog, int medium, float d)
+#define WATER_FOG_SAMPLES 4
+
+// a path segment from a (its end nearer the eye) to b through the medium:
+// dims what is behind it (fog.a) and returns the light it scatters towards
+// the eye (times the path's throughput, for PT_TRANSPARENT). 6.18: lit where
+// it is: the light scattered along it, the integral of density *
+// transmittance * the light, is 1 - T times the mean of the light over
+// WATER_FOG_SAMPLES parts that each scatter an equal share, taken at their
+// middles (nearer a, where more of it reaches the eye)
+vec3 water_fog_segment(inout vec4 fog, int medium, vec3 a, vec3 b)
 {
 	float density = water_fog_density(medium);
 	if(density <= 0)
 		return vec3(0);
+	float d = length(b - a);
 	float T = exp(-density * d);
-	vec3 scattered = fog.a * (1.0 - T) * water_fog_radiance(medium);
+	float drop = 1.0 - T;
+	vec3 radiance = vec3(0);
+	if(drop > 0)
+	{
+		vec3 dir = (b - a) / d;
+		int box = -1;
+		for(int k = 0; k < WATER_FOG_SAMPLES; k++)
+		{
+			float u = (float(k) + 0.5) / float(WATER_FOG_SAMPLES);
+			float t = -log(1.0 - u * drop) / density;
+			radiance += water_fog_radiance(medium, water_fog_light(a + dir * t, box));
+		}
+		radiance /= float(WATER_FOG_SAMPLES);
+	}
+	vec3 scattered = fog.a * drop * radiance;
 	fog.a *= T;
 	return scattered;
 }
