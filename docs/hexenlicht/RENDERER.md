@@ -3073,7 +3073,9 @@ Story 4.10: Hexen II's darkness as GL shows it.
     `lava_uv_warp`'s 128-unit cycle at 20 units a second, x tilted by a
     sine of y and y by one of x, 0.08 × `r_water_waves`, framed by the
     surface's upward normal so that its two coincident faces are one
-    surface), unless its material has a normal map.
+    surface), unless its material has a normal map. 6.21: `r_water_waves`
+    is 0.25 by default (a slope of 0.02, a tilt of at most 1.1° per axis;
+    6.5's 1 was a lake's swell, DECISIONS X52).
   - `reflect_refract.rgen` follows it: the exact dielectric Fresnel term
     at 1.33 (`fresnel_dielectric`; total internal reflection from below
     past 48.8°), an unsplit path split (the even field reflects, × 2F;
@@ -3941,7 +3943,7 @@ overlay, and a measuring mode.
 | `vk_lights`, `vk_lights stats`, `vk_lights cull 0/1`, `vk_lights colors`, `vk_lights fit` | light lists, light statistics read back, range culling off/on, each map light's color, the light fit scored on the texels it didn't use (4.16; with `r_maplight_shape 2`, the fit's mode) |
 | `r_lava_light 0/1`, `r_emissive_scale`, `r_emissive_models 0/1` | lava emits and lights, without the mappers' fake lava lights (1), or GL's look (0); the emission of a texture color of 1 (32; also the effect lights' and the glowing projectiles'); the light models' flames glow (1) (see [Emissive surfaces](#emissive-surfaces-vk_emissivec)) |
 | `gl_polyblend 0/1` | 6.6: GL's view blend (the damage and bonus flashes, the power-up tints) over the lit view (1, GL's cvar, not archived; 0 none). `v_cshift r g b percent` (GL's command) sets the tint in the air; `bf`, `df`, `wf` flash the view (see [3D view](#3d-view-vk_viewc)) |
-| `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (1: 0.08, 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
+| `r_water 0/1`, `r_water_waves`, `r_water_fog` | 6.5: a liquid's surface is physical water and the liquids a medium (1), or as before 6.5 (0: GL's surfaces, Quake II RTX's extinction under water); the waves' slope (0.25 since 6.21: 0.02; 1: 6.5's 0.08; 0 flat); the distance at which the medium is as dense as GL's contents tint (512 units, 0 clear water); not archived (see [3D view](#3d-view-vk_viewc), "Water") |
 | `r_water_caustics` | 6.16: the caustic's strength in the light through a liquid's surface, the water texture's pattern stretched around 1 (3; 1 its own contrast, 0 none; the weapon's at most 1); needs `pt_caustics 1` and `r_water 1`; not archived (see [3D view](#3d-view-vk_viewc), "Light through") |
 | `pt_caustics 0/1` | 6.14: the light through water, glass and translucent things (1), or none (0, the image before; not archived; see [3D view](#3d-view-vk_viewc), "Light through") |
 | `r_ice 0/1` | 6.15: a translucent model in the ice skin (frozen monsters, the crystal golem) is solid ice, refracting and absorbing (1), or the 0.33 blend (0, the image before; not archived; see [Instances](#instances-vk_instancec) and [3D view](#3d-view-vk_viewc)) |

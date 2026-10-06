@@ -10,7 +10,8 @@
  * defaults; each does something once the pass that reads it is imported)
  * and the Hexenlicht block: the frame's buffers, the debug view's values
  * and the water's settings (6.5: r_water, r_water_waves, r_water_fog; 6.16:
- * r_water_caustics; registered here), the window panes' (6.20: r_windows);
+ * r_water_caustics; 6.21: the waves a quarter of 6.5's by default;
+ * registered here), the window panes' (6.20: r_windows);
  * vk_sky.c fills the sky's fields and the sun's (4.6).
  *
  * Copyright (C) 2018 Christoph Schied
@@ -63,7 +64,9 @@ UBO_CVAR_LIST
 
 /* 6.5: the liquids (shaders/water.glsl) */
 static cvar_t	r_water = {"r_water", "1", CVAR_NONE};		/* physical water; 0 = as before 6.5 */
-static cvar_t	r_water_waves = {"r_water_waves", "1", CVAR_NONE};	/* the waves' slope, 0 = flat */
+/* the waves' slope, × water.glsl's 0.08 (6.5's at 1), 0 = flat; 0.25 (6.21,
+ * the owner's choice, DECISIONS X52): 6.5's were a lake's swell */
+static cvar_t	r_water_waves = {"r_water_waves", "0.25", CVAR_NONE};
 static cvar_t	r_water_fog = {"r_water_fog", "512", CVAR_NONE};	/* the distance (units) at which the medium is as dense as GL's tint, 0 = clear */
 /* 6.16: the strength of the caustic in the light through a liquid's surface
  * (water.glsl's water_caustic: the water texture's pattern, 1 = its own
