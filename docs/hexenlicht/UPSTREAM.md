@@ -133,6 +133,14 @@ changes one, with a line on what we changed:
   check, `#if defined(HEXENLICHT)` sets `ent->movestep` from `U_NOLERP`
   (story 2.9): `CL_RelinkEntities` clears `forcelink` before the renderer
   runs, and Hexenlicht's `r_lerpmove` needs to know which entities step.
+- `engine/hexen2/menu.c` — the Options menu's Renderer Settings page in
+  place of "OpenGL Features" (story 6.10): under `#if defined(HEXENLICHT)`
+  the prototypes of `VK_RendererMenuDraw` and `VK_RendererMenuKey`
+  (`engine/hexenlicht/vk_menu.c`) after the OpenGL menu's; in
+  `M_Options_Draw` the `OPT_OPENGL` row's label "Renderer Settings"; in
+  `M_Draw` and `M_Keydown` the `m_opengl` case calls them instead of
+  `M_OpenGL_Draw` and `M_OpenGL_Key` (`#else` keeps upstream's).
+  `engine/hexen2` only: HexenWorld's client has its own `menu.c`.
 
 - `engine/h2shared/quakefs.c` — after `FS_FileInGamedir`, an
   `#if defined(HEXENLICHT)` function `FS_ListSearchPath` (story 5.3): walks

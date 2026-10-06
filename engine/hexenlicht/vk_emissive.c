@@ -82,7 +82,7 @@
 static void LavaChanged (cvar_t *var);
 
 static cvar_t	r_lava_light = {"r_lava_light", "1", CVAR_NONE};
-static cvar_t	r_emissive_scale = {"r_emissive_scale", "32", CVAR_NONE};	/* the radiance of a texture color of 1 (see the top) */
+static cvar_t	r_emissive_scale = {"r_emissive_scale", "32", CVAR_NONE};	/* the radiance of a texture color of 1 (see the top); saved when changed (vk_menu.c) */
 static cvar_t	r_emissive_models = {"r_emissive_models", "1", CVAR_NONE};
 
 /* the lava's materials and its light triangles, from the last VK_LoadWorld */

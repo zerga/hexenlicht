@@ -117,11 +117,11 @@ static cvar_t	r_maplights = {"r_maplights", "1", CVAR_NONE};
 static cvar_t	r_maplight_scale = {"r_maplight_scale", "630", CVAR_NONE};	/* pi x radiance of a level 300 light (4.9: GL's brightness; 4.17: 740 -> 630): the physical shapes, dynamic lights */
 static cvar_t	r_maplight_power = {"r_maplight_power", "3", CVAR_NONE};	/* intensity as (level / 300)^this (4.9) */
 static cvar_t	r_maplight_range = {"r_maplight_range", "1", CVAR_NONE};	/* range: the level times this (4.9) */
-static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical ("Physically based"), 1 GL's angle term, 2 GL's lightmap value (4.15, "Original", the default; 0 in 4.21) */
+static cvar_t	r_maplight_shape = {"r_maplight_shape", "2", CVAR_NONE};	/* SPHERE_SHAPE_*: 0 physical ("Physically based"), 1 GL's angle term, 2 GL's lightmap value (4.15, "Original", the default; 0 in 4.21); saved when changed (vk_menu.c) */
 static cvar_t	r_maplight_gamma = {"r_maplight_gamma", "2.2", CVAR_NONE};	/* GL's lightmap value into linear light: its power (4.15) */
 static cvar_t	r_maplight_gl_scale = {"r_maplight_gl_scale", "2", CVAR_NONE};	/* shape 2: a full GL texel's light where 4.16's fit has none, or with r_maplight_fit 0 (4.15: 2 for GL's overlapping lights; 1 = the texture's own color) */
 static cvar_t	r_maplight_radius = {"r_maplight_radius", "8", CVAR_NONE};	/* the spheres' (4.15) */
-static cvar_t	r_maplight_colors = {"r_maplight_colors", "0", CVAR_ARCHIVE};	/* 0 white (the original's, 4.9), 1 HoT's colors */
+static cvar_t	r_maplight_colors = {"r_maplight_colors", "0", CVAR_NONE};	/* 0 white (the original's, 4.9), 1 HoT's colors; saved when changed (vk_menu.c) */
 
 /* an entity as utils/light parses it */
 enum { KEY_CLASSNAME = 1, KEY_TARGET = 2, KEY_TARGETNAME = 4, KEY_ORIGIN = 8, KEY_LEVEL = 16, KEY_STYLE = 32,

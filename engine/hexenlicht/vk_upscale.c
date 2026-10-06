@@ -78,9 +78,9 @@
 enum { UPSCALER_TAA, UPSCALER_TAAU, UPSCALER_FSR, UPSCALER_DLSS_SR, UPSCALER_DLSS_RR };
 
 /* the render size in percent of the view's: 25-100 */
-static cvar_t	r_scale = {"r_scale", "100", CVAR_ARCHIVE};
+static cvar_t	r_scale = {"r_scale", "100", CVAR_NONE};	/* saved when changed (vk_menu.c) */
 /* 0 TAA, 1 TAAU, 2 FSR 1, 3 DLSS SR, 4 DLSS RR */
-static cvar_t	r_upscaler = {"r_upscaler", "1", CVAR_ARCHIVE};
+static cvar_t	r_upscaler = {"r_upscaler", "1", CVAR_NONE};	/* saved when changed (vk_menu.c) */
 /* Quake II RTX's FSR cvars (fsr.c): its steps, and RCAS's sharpness, 0-2
  * (0 the sharpest; AMD's recommended 0.2) */
 static cvar_t	flt_fsr_easu = {"flt_fsr_easu", "1", CVAR_ARCHIVE};

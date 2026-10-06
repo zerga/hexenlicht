@@ -302,6 +302,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_lightedit.c
 	${HEXENLICHT_DIR}/vk_calib.c
 	${HEXENLICHT_DIR}/vk_export.c
+	${HEXENLICHT_DIR}/vk_menu.c
 	${HEXENLICHT_DIR}/vk_images.c
 	${HEXENLICHT_DIR}/vk_pathtracer.c
 	${HEXENLICHT_DIR}/vk_asvgf.c

@@ -5,7 +5,8 @@
  * r_upscaler 3 (DLSS SR, on the denoiser's image) and 4 (DLSS RR, on the
  * noisy image instead of the denoiser) run when Streamline is loaded and
  * the GPU supports the feature; otherwise vk_upscale.c runs TAAU and
- * vk_upscale and vk_dlss say why. A-SVGF + TAAU stays the default.
+ * vk_upscale, vk_dlss and the Renderer Settings page (6.10, vk_menu.c)
+ * say why. A-SVGF + TAAU stays the default.
  *  - VK_DLSSChoose (from VK_UpscaleEvaluate) picks DLSS's mode from r_scale
  *    (100 % DLAA, from 66 % Quality, from 58 % Balanced, from 50 %
  *    Performance, below that Ultra Performance) and clamps the render size
@@ -154,8 +155,9 @@ int VK_DLSSImagesWanted (void)
 	return VK_SLSupported (feature) ? feature : 0;
 }
 
-/* why the feature can't run, or NULL */
-const char *VK_DLSSUnavailable (int feature)
+/* why the feature can't run, or NULL; images: also while its images
+ * aren't created yet */
+static const char *Unavailable (int feature, qboolean images)
 {
 	if (!VK_SLActive ())
 		return VK_SLInactiveReason ();
@@ -163,9 +165,20 @@ const char *VK_DLSSUnavailable (int feature)
 		return "not supported by this GPU or driver";
 	if (failed[feature])
 		return "it failed";
-	if (vk_dlss_images < feature)
+	if (images && vk_dlss_images < feature)
 		return "its images are not created yet";
 	return NULL;
+}
+
+const char *VK_DLSSUnavailable (int feature)
+{
+	return Unavailable (feature, true);
+}
+
+/* 6.10's menu: not while the next frames create its images */
+const char *VK_DLSSCantRun (int feature)
+{
+	return Unavailable (feature, false);
 }
 
 /* VK_UpscaleEvaluate: whether DLSS runs this frame; if so the mode and the

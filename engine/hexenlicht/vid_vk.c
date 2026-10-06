@@ -15,6 +15,9 @@
  * - The process is per-monitor DPI aware (hexenlicht.manifest), so all
  *   sizes here are physical pixels.
  * - No hardware gamma ramps; gamma will be applied by the renderer.
+ * - The Video Modes page has a Vsync row (vid_vsync, 6.10), which applies
+ *   at once; the renderer's settings are the Options menu's Renderer
+ *   Settings page (vk_menu.c).
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
  * Copyright (C) 1997-1998  Raven Software Corp.
@@ -1129,6 +1132,7 @@ static qboolean	vid_menu_firsttime = true;
 enum {
 	VID_FULLSCREEN,
 	VID_RESOLUTION,
+	VID_VSYNC,	// 6.10: applies at once
 	VID_BLANKLINE,	// spacer line
 	VID_RESET,
 	VID_APPLY,
@@ -1178,6 +1182,9 @@ static void VID_MenuDraw (void)
 	else
 		M_Print (76+12*8, 92 + 8*VID_RESOLUTION, vid_menulist[vid_menunum].modedesc);
 
+	M_Print (76, 92 + 8*VID_VSYNC, "Vsync: ");
+	M_DrawYesNo (76+12*8, 92 + 8*VID_VSYNC, Cvar_VariableValue ("vid_vsync") != 0, true);
+
 	if (need_apply)
 	{
 		M_Print (76, 92 + 8*VID_RESET, "RESET CHANGES");
@@ -1224,6 +1231,13 @@ static int match_windowed_fullscr_modes (void)
 		}
 	}
 	return (RES_640X480 < num_wmodes) ? RES_640X480 : num_wmodes - 1;
+}
+
+/* 6.10: vid_vsync (vk_swapchain.c) applies at once, outside Apply */
+static void VID_ToggleVsync (void)
+{
+	S_LocalSound ("raven/menu3.wav");
+	Cvar_SetValue ("vid_vsync", Cvar_VariableValue ("vid_vsync") ? 0 : 1);
 }
 
 static void VID_MenuKey (int key)
@@ -1284,6 +1298,9 @@ static void VID_MenuKey (int key)
 			}
 			vid_cursor = 0;
 			break;
+		case VID_VSYNC:
+			VID_ToggleVsync ();
+			break;
 		}
 		return;
 
@@ -1309,6 +1326,9 @@ static void VID_MenuKey (int key)
 				if (vid_menunum < *tmpnum - 1)
 					vid_menunum++;
 			}
+			break;
+		case VID_VSYNC:
+			VID_ToggleVsync ();
 			break;
 		}
 		return;

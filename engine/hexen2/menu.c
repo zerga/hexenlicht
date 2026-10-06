@@ -1849,6 +1849,11 @@ enum
 static void M_Menu_OpenGL_f (void);
 static void M_OpenGL_Draw (void);
 static void M_OpenGL_Key (int k);
+#if defined(HEXENLICHT)
+/* Hexenlicht's Renderer Settings page in its place (engine/hexenlicht/vk_menu.c) */
+void VK_RendererMenuDraw (void);
+void VK_RendererMenuKey (int key);
+#endif
 #endif
 
 static int	options_cursor;
@@ -2087,7 +2092,11 @@ static void M_Options_Draw (void)
 	M_DrawCheckbox (220, 60 + 8*OPT_CROSSHAIR, crosshair.integer);
 
 #ifdef GLQUAKE
+#if defined(HEXENLICHT)
+	M_Print (16 + (5 * 8), 60 + 8*OPT_OPENGL,	"Renderer Settings");
+#else
 	M_Print (16 + (7 * 8), 60 + 8*OPT_OPENGL,	"OpenGL Features");
+#endif
 #endif
 
 	M_Print (16 + (12 * 8), 60 + 8*OPT_CHASE_ACTIVE,	"Chase Mode");
@@ -5078,7 +5087,11 @@ void M_Draw (void)
 
 #ifdef GLQUAKE
 	case m_opengl:
+#if defined(HEXENLICHT)
+		VK_RendererMenuDraw ();
+#else
 		M_OpenGL_Draw ();
+#endif
 		break;
 #endif
 
@@ -5208,7 +5221,11 @@ void M_Keydown (int key)
 
 #ifdef GLQUAKE
 	case m_opengl:
+#if defined(HEXENLICHT)
+		VK_RendererMenuKey (key);
+#else
 		M_OpenGL_Key (key);
+#endif
 		break;
 #endif
 

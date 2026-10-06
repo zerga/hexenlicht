@@ -829,6 +829,41 @@ The owner looked at the screens by hand from saves made right before each
   a panning camera at demo time 152 s ("Scene of frame" prints the time;
   about 950 frames at 0.1 from the start: the demo jumps 55 s on the way).
 
+## Settings menu (6.10)
+
+`tools/hexenlicht/menu_run.ps1 -Out <folder> [-Tag <name>] [-Release]`
+(Debug by default, 1280x720, `vid_uiscale 3`) loads demo1, sets the
+Renderer Settings page's settings to their defaults, opens the page
+(`menu_renderer`) and steps through it with keys posted to the game's
+window: `PostMessage` of `WM_KEYDOWN` and `WM_KEYUP` with the scan code in
+`lParam`, so the window needn't be in front and nobody needs to be at the
+PC. Each step's keys go in when the previous screenshot appears; the
+script shoots every 300 frames. Its header lists the 30 steps and what
+each shot shows: every row's values, the cursor skipping the blank line
+and wrapping around, a value staying at the end of its steps, Quality
+from Custom to the nearest preset, Reset, the Options menu's "Renderer
+Settings" row, Video Modes' Vsync row. It ends with `r_maplight_shape 0`
+in the console and prints the page's lines the game saved (`r_emissive_scale "64"`,
+`r_maplight_shape "0"`, and `gl_colored_dynamic_lights "0"`, which is
+always saved), the validation line and the shot count; it backs up and
+restores the configs. About 5 minutes in Debug.
+
+- Checked in 6.10: Debug (the DLSS rows say "DLSS can't run: no
+  sl.interposer.dll next to the exe. TAAU instead") and Release with the
+  DLLs (their descriptions), validation 0/0; a second run without the
+  page kept the saved values; `hl_run.ps1` with the owner's
+  `r_upscaler "3"` saved: the test saw 1; `r_sky_mode 2` on egypt1 (no
+  map file): `vk_sky` says "sky light on every map" and prints the dome.
+- Reading the shots: `tga2png.ps1` (`crop_strip.ps1` reads PNGs), then crop
+  the values column (`crop_strip.ps1 -X 730 -Y 210 -W 390 -H 300`) and the
+  status lines (`-X 160 -Y 510 -W 960 -H 80`).
+  The cursor blinks: some shots catch it off.
+- Post the arrows with the extended bit (bit 24 of `lParam`): without it
+  `MapKey` makes them the keypad's, digits with NumLock on.
+- Hexen II's menus want a 2D screen at least about 200 lines high: at
+  1280x720 with `vid_uiscale 3` (240 lines) the status lines touch the
+  status bar.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`
@@ -895,6 +930,14 @@ The owner looked at the screens by hand from saves made right before each
   backups only after the restore is confirmed (a separate command).
 - Delete `hexenlicht.cfg` before each run: archived cvars a test sets
   (`r_lerpmodels`, `playerclass`, `color`) leak into the next run.
+- Since 6.10 the Renderer Settings page's cvars are saved when they differ
+  from their defaults (`menu_renderer`, RENDERER.md's Settings menu): a
+  test that sets one writes it into `hexenlicht.cfg` at quit, and a
+  player's saved choice (e.g. `r_upscaler 3`) would apply to a run that
+  keeps that file: `hl_run.ps1` runs `r_resetsettings` (the page's Reset
+  row) before the test script, so the page's settings start at their
+  defaults; the game then drops the player's choices from the file at
+  quit, so restore it.
 - glh2 runs rewrite `data1\config.cfg` and drop Hexenlicht-only cvars
   (`vid_uiscale`, `vid_vsync`): restore it before each engine run when
   comparing framing.
@@ -1330,10 +1373,14 @@ The owner looked at the screens by hand from saves made right before each
   after a change, then `vk_profiler` prints the averages.
   `tools/hexenlicht/perf_baseline.ps1` does this for demo1's and the
   cathedral's starts at 1920x1080 and 2560x1440 (`-Sizes`), TAAU at 100 %
-  and 67 % and DLSS RR at 67 % when the DLLs are in the build folder, and
-  prints markdown tables (`-Out` writes them); it backs up and restores the
-  configs. Compare with a baseline measured the same day: this machine's GPU
-  runs at a ~100 W power limit (about 1 GHz at full load; watch with
+  and 67 % and DLSS RR at 67 % when the DLLs are in the build folder
+  (`-Presets`: the Renderer Settings page's Low, Medium and High instead,
+  6.10), and prints markdown tables (`-Out` writes them); it backs up
+  and restores the
+  configs. Compare with a baseline measured the same day, and check the
+  GPU's power limit first (`nvidia-smi -q -d POWER`: this machine's card at
+  its full 285 W since 2026-09-28; until then a tool held it at ~100 W,
+  about 1 GHz at full load, and the times were about twice as long; watch
   `nvidia-smi --query-gpu=clocks.gr,power.draw,clocks_throttle_reasons.active
   --format=csv -lms 250`: 0x4 the power cap, 0x1 idle).
 - **`screenshot` captures the next frame:** a command in the same frame

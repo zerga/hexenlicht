@@ -55,7 +55,8 @@ COMPILE_TIME_ASSERT(ubo_cvars, offsetof(QVKUniformBuffer_t, flt_antilag_hf) == 4
 #define Z_NEAR		4.0f	/* GL's (gl_rmain.c's MYgluPerspective) */
 #define Z_FAR		4096.0f
 
-/* Quake II RTX's UBO_CVAR_LIST, registered with its defaults */
+/* Quake II RTX's UBO_CVAR_LIST, registered with its defaults (6.10:
+ * pt_num_bounce_rays saved when changed, vk_menu.c) */
 #define UBO_CVAR_DO(name, default_value) static cvar_t cvar_##name = { #name, #default_value, CVAR_NONE };
 UBO_CVAR_LIST
 #undef UBO_CVAR_DO

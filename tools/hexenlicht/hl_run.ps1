@@ -3,6 +3,9 @@
 # The build is this repository's build\<preset>\bin, or -Bin (e.g. an older
 # build in another worktree). The game data folder is -Data, else
 # $env:HEXENLICHT_DATA, else Hexenlicht-data next to the repository.
+# Hexenlicht runs r_resetsettings before the script (6.10): the Renderer
+# Settings page's settings at their defaults, whatever the player saved
+# (a build before 6.10 says it doesn't know the command).
 # See docs/hexenlicht/TESTING.md.
 param([string]$Exe = 'hexenlicht', [string]$Cfg = 'hl_test.cfg', [switch]$Portals, [switch]$Release,
       [int]$Timeout = 150, [int]$Width = 960, [int]$Height = 540, [string]$Data = '', [string]$Bin = '')
@@ -13,6 +16,7 @@ if (-not $Bin) { $Bin = Join-Path $repo "build\$preset\bin" }
 $name = if ($Exe -eq 'glh2') { 'glh2.exe' } else { 'hexenlicht.exe' }
 $argList = "-window -width $Width -height $Height -condebug"
 if ($Portals) { $argList += " -portals" }
+if ($Exe -ne 'glh2') { $argList += " +r_resetsettings" }
 $argList += " +exec $Cfg"
 $p = Start-Process (Join-Path $Bin $name) -ArgumentList $argList -WorkingDirectory $Data -PassThru
 if (-not $p.WaitForExit($Timeout * 1000)) { "TIMEOUT"; $p.Kill() } else { "exit $($p.ExitCode)" }
