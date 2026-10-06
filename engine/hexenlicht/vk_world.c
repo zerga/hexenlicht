@@ -753,6 +753,18 @@ static void VK_World_f (void)
 	if (stats.liquid_surfaces + stats.liquid_others)	/* 6.5 */
 		Con_Printf ("liquids: %u triangles of liquid surfaces (%u translucent in GL), %u others (vertical, or not against the air)\n",
 			    stats.liquid_surfaces, stats.liquid_translucent, stats.liquid_others);
+	/* 6.20: the window panes' triangles on brush entities, by their
+	 * materials now (the submodels' follow the world's) */
+	if (prim_materials && vk_world.num_models > 1)
+	{
+		uint32_t	p, panes = 0;
+
+		for (p = vk_world.models[1].opaque.first; p < vk_world.num_primitives; p++)
+			panes += (prim_materials[p] && VK_GetMaterial (prim_materials[p])->window_pane);
+		if (panes)
+			Con_Printf ("window panes: %u triangles of brush entities, glass with r_windows %d where drawn translucent\n",
+				    panes, VK_WindowPanes ());
+	}
 
 	/* the animation sequences, each from its first frame */
 	for (i = 0; i < world->numtextures; i++)

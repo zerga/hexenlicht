@@ -276,6 +276,11 @@ What the kinds and the special textures take (DECISIONS M22–M27).
   translucent (village1's clear `rtex199`, `DRF_TRANSLUCENT`) is glass
   alone: since 6.4 the glass replaces the entity's blend (5.6 found it half
   blend, half glass: DECISIONS M33).
+  *6.20:* without a `.mat` kind, `rtex199` is the renderer's window pane:
+  glass where the game draws it translucent, reflecting 0.33 head-on and
+  seen through clear, its albedo unused (`r_windows`, DECISIONS X50). Any
+  `kind` in its `.mat` replaces that: `glass` is the glass above, in the
+  file's albedo (5 % head-on), `regular` the game's blend of the albedo.
 - **A world texture's kind applies at the next map load** (`map`,
   `restart`, a level change): it is in the geometry. `r_reloadmaterials`
   says when one changed. An animated texture's kind is its first

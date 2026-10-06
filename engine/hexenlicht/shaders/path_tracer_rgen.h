@@ -105,6 +105,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // Hexenlicht (6.4): reflect_refract.rgen's choice at a further translucent layer, per pass
 // (after the indirect lighting's bounces 0-2)
 #define RNG_TRANSLUCENT_LAYER(pass)       (4 + 9 * 3 + pass)
+// Hexenlicht (6.20): reflect_refract.rgen's choice at a window pane on a split path, per pass
+// (after the translucent layers' 10: RNG_BRDF_FRESNEL is the indirect lighting's bounce choice,
+// which the same pixel's path would take with a correlated number)
+#define RNG_WINDOW_PANE(pass)             (4 + 9 * 3 + 10 + pass)
 
 // Hexenlicht: the models around a light (AS_FLAG_LIGHT_MODELS: at a map light's origin, owning a
 // dynamic light) in every mask but the shadow rays': their mesh surrounds the light (vk_instance.c).
@@ -365,6 +369,32 @@ vec3
 ice_transmittance(vec3 color, float d)
 {
 	return pow(max(color, vec3(1e-4)), vec3(d / ICE_COLOR_DISTANCE));
+}
+
+/* Hexenlicht (6.20): a window pane, the game's clear breakable glass drawn
+ * translucent (vertex_buffer.h makes it glass with r_windows): always thin,
+ * seen through untinted (its painted streaks are a reflection, not a tint);
+ * it reflects WINDOW_PANE_REFLECTANCE head-on with r_windows 1, the game's
+ * opacity of a translucent brush entity (GL's 0.33): not physical (clean
+ * glass 5 %, a pane's two faces about 8 %), but at 5 % the reflection
+ * doesn't show in Hexen II's evenly lit rooms and streets; Quake II RTX's
+ * thin glass's 5 % with r_windows 2 */
+#define WINDOW_PANE_REFLECTANCE 0.33
+
+bool
+is_window_pane(uint material)
+{
+	// r_windows too: a pack's glass on rtex199, built at map load, is a pane after a reload drops its kind
+	return global_ubo.windows != 0 && is_glass(material) && !is_ice(material) && material_is_window_pane(material);
+}
+
+// glass's reflectance at n.v (Schlick's): Quake II RTX's thin glass from 5 %,
+// a window pane's from its own
+float
+thin_glass_fresnel(uint material, float n_dot_v)
+{
+	float f0 = (is_window_pane(material) && global_ubo.windows == 1) ? WINDOW_PANE_REFLECTANCE : 0.05;
+	return f0 + (1.0 - f0) * pow(max(1.0 - abs(n_dot_v), 0.0), 5.0);
 }
 
 vec3
@@ -697,6 +727,8 @@ float get_hit_alpha(Triangle triangle, vec2 tex_coord, vec2 tex_coord_x, vec2 te
  *    Fresnel term at the light's angle, thin glass's in reflect_refract.rgen
  *    (Quake II RTX: the albedo alone); 6.15: ice its color (ice_color) times
  *    1 - ice's exact Fresnel term, counted once where the light enters;
+ *    6.20: a window pane untinted, 1 - its own Fresnel term
+ *    (thin_glass_fresnel: 0.67 head-on with r_windows 1, as the blend's 1 - alpha);
  *  - a translucent surface, model or brush entity: 1 - its opacity (6.4's
  *    get_hit_alpha: the entity's times the skin's; Quake II RTX's the
  *    entity's, so the alpha-1 EF_TRANSPARENT models would shadow their
@@ -777,8 +809,9 @@ trace_caustic_ray(Ray ray, int surface_medium, bool pass_light_carriers, float p
 			}
 			else
 			{
-				float F = 0.05 + 0.95 * pow(max(1.0 - abs(dot(ray.direction, triangle.normals[0])), 0.0), 5.0);
-				throughput *= base_color * (1.0 - F);
+				// 6.20: a window pane at its own reflectance, untinted
+				float F = thin_glass_fresnel(material_id, dot(ray.direction, triangle.normals[0]));
+				throughput *= (is_window_pane(material_id) ? vec3(1) : base_color) * (1.0 - F);
 			}
 		}
 		else if((material_id & MATERIAL_FLAG_WARP) == 0 &&
@@ -1309,7 +1342,7 @@ get_material(
 	        image2 = global_textureGrad(minfo.normals_texture, tex_coord, tex_coord_x, tex_coord_y);
 
 		float normalMapLen;
-		vec3 local_normal = rgbToNormal(image2.rgb, (minfo.normals_flags & MATERIAL_NORMALS_BC5) != 0, normalMapLen);
+		vec3 local_normal = rgbToNormal(image2.rgb, (minfo.flags & MATERIAL_NORMALS_BC5) != 0, normalMapLen);
 		// Hexenlicht (5.3): OpenGL's convention, green up the image; the
 		// bitangent runs down it (+v: vk_world.c, model_geometry.comp),
 		// which is DirectX's, as Quake II RTX's maps are

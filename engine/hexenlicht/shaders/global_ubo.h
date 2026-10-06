@@ -24,7 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    address, which Quake II RTX binds as descriptors (the instance buffer,
  *    the TLASes, shaders/vertex_buffer.h's buffers), debug view values and
  *    the sky's (4.6, vk_sky.c; the sun is Quake II RTX's sun_* fields),
- *    the water's settings (6.5);
+ *    the water's settings (6.5), the window panes' (6.20);
  *  - ModelInstance has Hexen II's fields at the end; Quake II RTX's
  *    InstanceBuffer is our instance buffer (instance_buffer.model_instances,
  *    .model_prev_to_current) and the TLAS's TlasInstanceInfo (its
@@ -299,7 +299,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_fog)            /* r_water_fog: the distance at which the medium is as dense as GL's tint, 0 = clear */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             num_medium_dlights)   /* the dynamic lights in medium_dlights (6.18) */ \
 	GLOBAL_UBO_VAR_LIST_DO(float,           water_caustics)       /* r_water_caustics: the caustic's strength (6.16, water.glsl), 0 = none */ \
-	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad0)          /* medium_grid at a multiple of 8 bytes */ \
+	GLOBAL_UBO_VAR_LIST_DO(int,             windows)              /* r_windows: the window panes (6.20, path_tracer_rgen.h), 0 = as before; medium_grid at a multiple of 8 bytes */ \
 	GLOBAL_UBO_VAR_LIST_DO(DeviceAddress,   medium_grid)          /* the liquids' light grid (6.18, vk_medium.c, medium.glsl), 0 = none */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad1)          /* medium_styles at a multiple of 16 bytes */ \
 	GLOBAL_UBO_VAR_LIST_DO(int,             medium_pad2) \

@@ -165,7 +165,9 @@ MATERIALS.md "Special materials" has the rules; what matters for authors:
   `ttex210`); the originals paint a scene behind the lead, which would
   tint the view: draw a new albedo. Windows the game draws translucent
   (village1's clear glass) are glass alone with `kind glass` (6.4): the
-  glass replaces the game's blend. A
+  glass replaces the game's blend. Since 6.20 the clear `rtex199` is
+  reflective glass without any file (0.33 head-on, clear, `r_windows`):
+  an albedo alone for it doesn't show; give it a `kind` to use one. A
   world texture's kind applies to every face with that name: check the
   manifest's `used in` (castle5 has `rtex199` on world faces too).
 - **Liquids:** every map applies, warped as the original. Since 6.5 a

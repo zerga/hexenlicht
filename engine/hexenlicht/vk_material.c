@@ -20,6 +20,10 @@
  * key on any lit texture; times r_emissive_scale and the key. The .mat's
  * kind (5.5) is kept with the material: a skin's instance takes it every
  * frame (vk_instance.c), the world's primitives at map load (vk_world.c).
+ * 6.20: rtex199, the game's clear breakable window pane, is a window pane
+ * (MATERIAL_WINDOW_PANE in the table) unless its .mat gives a kind: glass
+ * with r_windows where its brush entity is drawn translucent
+ * (vertex_buffer.h, reflect_refract.rgen).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -48,6 +52,11 @@ static void SpecularChanged (cvar_t *var);
 
 /* the materials' specular factor: 0 matte, as GL (4.9); Quake II RTX's 1 */
 static cvar_t	r_specular = {"r_specular", "0", CVAR_NONE};
+
+/* 6.20: the game's clear breakable window pane (village1-3, castle5,
+ * rider1a, Portals' keep1 and keep2), a window pane without a kind from its
+ * files; Quake II RTX's baseq2.mat names Quake II's window textures glass */
+#define WINDOW_PANE_TEXTURE	"rtex199"
 
 
 /* IEEE 754 half precision, rounding to nearest */
@@ -156,6 +165,7 @@ void VK_ApplyMaterialFiles (int index)
 	m->specular = (s && s->specular >= 0.0f) ? s->specular :
 		      ((s && (s->roughness_map || s->roughness >= 0.0f)) ? 1.0f : -1.0f);
 	m->kind = s ? s->kind : MATKIND_REGULAR;	/* a skin's instance takes it (5.5); the world's primitives at map load */
+	m->window_pane = !(m->flags & VK_MAT_SKIN) && !q_strcasecmp (m->name, WINDOW_PANE_TEXTURE) && !(s && s->kind_set);	/* 6.20 */
 
 	if (m->flags & VK_MAT_LAVA)
 		m->emissive_texture = VK_LavaEmits () ? (own ? own : m->base_texture) : 0;
@@ -224,7 +234,8 @@ void VK_UploadMaterialRange (int first, int count)
 		d[5] = VK_FloatToHalf ((m->specular >= 0.0f) ? m->specular : q_max (r_specular.value, 0.0f)) |
 		       ((uint32_t)VK_FloatToHalf (1.0f) << 16);	/* specular, base factor */
 		d[6] = (uint32_t)m->alternate;
-		d[7] = ((uint32_t)m->rm_texture & 0xffff) | ((m->normal_bc5 ? MATERIAL_NORMALS_BC5 : 0u) << 16);
+		d[7] = ((uint32_t)m->rm_texture & 0xffff) |
+		       (((m->normal_bc5 ? MATERIAL_NORMALS_BC5 : 0u) | (m->window_pane ? MATERIAL_WINDOW_PANE : 0u)) << 16);
 	}
 	VK_UploadBuffer (&vk_material_table, (VkDeviceSize)first * MATERIAL_UINTS * sizeof(uint32_t), table,
 			 (VkDeviceSize)count * MATERIAL_UINTS * sizeof(uint32_t));

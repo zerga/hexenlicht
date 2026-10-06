@@ -65,6 +65,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  *    model or brush entity is passed with the probability of its
  *    transparency (RNG_TRANSLUCENT_LAYER), not shown solid: on average
  *    GL's blend of the layers;
+ *  - 6.20: a window pane (path_tracer_rgen.h's is_window_pane, the game's
+ *    clear breakable glass with r_windows) is thin glass whatever
+ *    pt_thick_glass, at its own Fresnel term (thin_glass_fresnel: from
+ *    0.33 head-on with r_windows 1), seen through untinted; on a split
+ *    path it reflects with the probability of its Fresnel term and is
+ *    passed otherwise (RNG_WINDOW_PANE; a window behind a window shows
+ *    both on average): Quake II RTX's thin glass follows the reflection
+ *    from F 0.1, made for its 5 %, which would make a pane behind a pane
+ *    a mirror;
  *  - no god rays (IMG_PT_GODRAYS_THROUGHPUT_DIST). */
 
 #version 460
@@ -348,6 +357,7 @@ main()
 
 		float n_dot_v = dot(direction, -normal);
 		vec3 reflected_direction = reflect(direction, normal);
+		bool pane = is_window_pane(material_id);	// 6.20: always thin, untinted
 
 		if(is_ice(material_id))
 		{
@@ -409,7 +419,7 @@ main()
 			include_player_model = false;	// 6.11: back faces seen: not its inside
 			backface_culling = false;
 		}
-		else if(global_ubo.pt_thick_glass == 2 || global_ubo.pt_thick_glass == 1 && global_ubo.flt_enable == 0)
+		else if(!pane && (global_ubo.pt_thick_glass == 2 || global_ubo.pt_thick_glass == 1 && global_ubo.flt_enable == 0))
 		{
 			float rand = get_rng(RNG_BRDF_FRESNEL(push_constants.bounce_index));
 					
@@ -488,7 +498,8 @@ main()
 		else
 		{
 
-			float F = 0.05 + 0.95 * pow(1.0 - abs(n_dot_v), 5.0);
+			// Hexenlicht (6.20): a window pane from its own reflectance
+			float F = thin_glass_fresnel(material_id, n_dot_v);
 
 			if(dot(reflected_direction, geo_normal) < 0.01)
 				F = 0;
@@ -497,6 +508,7 @@ main()
 
 			bool do_split;
 			bool do_refraction;
+			bool by_chance = false;
 			if(spec_bounce_index == 0)
 			{
 				do_split = F > 0;
@@ -505,7 +517,14 @@ main()
 			else
 			{
 				do_split = bitCount(checkerboard_flags) == 1 && F > 0;
-				do_refraction = do_split ? is_odd_checkerboard  : (F < 0.1);
+				// Hexenlicht (6.20): a window pane on a split path reflects with the
+				// probability of F and is passed otherwise (Quake II RTX's rule, from
+				// F 0.1, would make a pane behind a pane a mirror)
+				by_chance = pane && !do_split;
+				if(by_chance)
+					do_refraction = get_rng(RNG_WINDOW_PANE(push_constants.bounce_index)) >= F;
+				else
+					do_refraction = do_split ? is_odd_checkerboard  : (F < 0.1);
 			}
 
 			if(do_refraction)
@@ -523,7 +542,8 @@ main()
 				}
 
 				correction_factor = (1 - F);
-			 	throughput *= primary_base_color;
+				if(!pane)
+				 	throughput *= primary_base_color;
 			 	correct_motion_vector = 2;
 			}
 			else
@@ -533,6 +553,8 @@ main()
 			 	correction_factor = F;
 			 	correct_motion_vector = 1;
 			}
+			if(by_chance)
+				correction_factor = 1;	// chosen with the probability of its weight
 
 			if(abs(dot(normal, geo_normal)) < 0.99999)
 				correct_motion_vector = 0;
