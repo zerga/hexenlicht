@@ -60,7 +60,19 @@ layout(push_constant, std430) uniform PushConstants {
     float knee_a;
     float knee_b;
     float fixed_exposure;   /* Hexenlicht (4.9): > 0 a fixed exposure, no curve or knee (vk_tonemap.c) */
+    float headroom;         /* Hexenlicht (7.3): > 1 HDR output, the display's peak over the paper white (vk_hdr.c) */
 } push;
+
+/* Hexenlicht (7.3): HDR output keeps the image up to 1 (the paper white,
+ * SDR's white) and rolls each channel off above it towards the headroom:
+ * 1 + (h - 1) (1 - e^(-(x - 1) / (h - 1))), meeting the identity at 1 with
+ * slope 1; per channel as SDR's clip, so a hot color keeps SDR's hue */
+vec3 hdr_shoulder(vec3 x, float h)
+{
+    float s = h - 1;
+    vec3 above = 1 + s * (1 - exp(-(x - 1) / s));
+    return mix(x, above, greaterThan(x, vec3(1)));
+}
 
 // When tm_debug is enabled, this displays debugging information for the
 // histogram in one of two modes on the bottom-left side of the screen. This
@@ -112,10 +124,11 @@ vec4 show_bar_chart(ivec2 pos, bool is_curve)
 // Applies blue-noise-based dithering for linear -> sRGB conversion.
 // This prevents onscreen banding artifacts in areas with subtle gradients.
 // Hexenlicht (4.17): a step of the 8-bit color the composite writes
-// (transfer.glsl: a 2.2 power, the sRGB curve with r_srgb 1)
+// (transfer.glsl: a 2.2 power, the sRGB curve with r_srgb 1); 7.3: above
+// 1 too, for HDR output
 vec3 srgb_dither(vec3 color, ivec2 ipos)
 {
-    vec3 srgb = linear_to_color(color, global_ubo.color_srgb);
+    vec3 srgb = linear_to_color_ext(color, global_ubo.color_srgb);
     vec3 diff = color_to_linear(srgb + vec3(1.0/256.0), global_ubo.color_srgb) - color;
 
     int texnum = global_ubo.current_frame_idx & (NUM_BLUE_NOISE_TEX - 1);
@@ -190,7 +203,7 @@ void main()
 
     mapped_color = input_color * out_luminance / lum;
 
-    if(spec_tone_mapping_hdr == 0)
+    if(spec_tone_mapping_hdr == 0 && push.headroom <= 1)    // Hexenlicht (7.3): not for HDR output
     {
         // Finally, since our mapped color has luminance in [0,1], but could have
         // components greater than 1, we apply a customizable knee to bring all values
@@ -214,7 +227,15 @@ void main()
     mapped_color = mix(mapped_color, ae_mapped_color, global_ubo.tm_reinhard);
     }
 
-    if(spec_tone_mapping_hdr == 0)
+    if (push.headroom > 1)
+    {
+        /* Hexenlicht (7.3): HDR output: SDR's image up to 1, the shoulder
+         * above, dithered as SDR (vk_hdr.c encodes it); Quake II RTX's HDR
+         * mapping below (its spec constant, not set) isn't used */
+        mapped_color = hdr_shoulder(max(mapped_color, vec3(0)), push.headroom);
+        mapped_color = srgb_dither(mapped_color, ipos);
+    }
+    else if(spec_tone_mapping_hdr == 0)
     {
         // Clip to [0,1]:
         mapped_color = clamp(mapped_color, vec3(0), vec3(1));

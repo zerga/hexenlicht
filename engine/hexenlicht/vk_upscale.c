@@ -92,8 +92,8 @@ static vk_upscale_t	up;		/* this frame's */
 static qboolean		taa_history;	/* the last 3D frame ran the TAA pass: ASVGF_TAA_B holds its output */
 
 static VkPipeline	taa_pipeline;		/* VK_PathTracerLayout () */
-static VkPipeline	easu_pipeline;
-static VkPipeline	rcas_pipelines[2];	/* after EASU, after TAAU */
+static VkPipeline	easu_pipelines[3];	/* SDR; 7.3's HDR output: into RCAS, shown */
+static VkPipeline	rcas_pipelines[4];	/* after EASU, after TAAU; the same for HDR output (7.3) */
 
 const vk_upscale_t *VK_Upscale (void)
 {
@@ -239,27 +239,40 @@ const vk_upscale_t *VK_UpscaleEvaluate (uint32_t view_width, uint32_t view_heigh
 
 static void CreatePipelines (void)
 {
-	/* the FSR shaders' specialization constants: spec_hdr (0: SDR, the
-	 * only output until 7.3), then EASU's spec_output_display (its
-	 * transform is HDR's only) or RCAS's spec_input_tex */
-	uint32_t	spec[2];
-
 	if (!taa_pipeline)
 		taa_pipeline = VK_CreateComputePipeline ("asvgf_taau.comp", VK_PathTracerLayout ());
-	if (!easu_pipeline)
+}
+
+/* the FSR shaders' specialization constants: spec_hdr (7.3: HDR output,
+ * Quake II RTX's reversible tone map around the passes, as the image goes
+ * above 1), then EASU's spec_output_display (the transform back, for HDR
+ * only) or RCAS's spec_input_tex; made when first used */
+static VkPipeline EasuPipeline (qboolean hdr, qboolean shown)
+{
+	int		i = hdr ? (shown ? 2 : 1) : 0;
+	uint32_t	spec[2];
+
+	if (!easu_pipelines[i])
 	{
-		spec[0] = 0;
-		spec[1] = 0;
-		easu_pipeline = VK_CreateComputePipelineSpecs ("fsr_easu_fp32.comp", VK_PathTracerLayout (), spec, 2);
+		spec[0] = hdr ? 1 : 0;
+		spec[1] = (hdr && shown) ? 1 : 0;
+		easu_pipelines[i] = VK_CreateComputePipelineSpecs ("fsr_easu_fp32.comp", VK_PathTracerLayout (), spec, 2);
 	}
-	if (!rcas_pipelines[0])
+	return easu_pipelines[i];
+}
+
+static VkPipeline RcasPipeline (qboolean hdr, qboolean after_taau)
+{
+	int		i = (hdr ? 2 : 0) + (after_taau ? 1 : 0);
+	uint32_t	spec[2];
+
+	if (!rcas_pipelines[i])
 	{
-		spec[0] = 0;
-		spec[1] = 0;
-		rcas_pipelines[0] = VK_CreateComputePipelineSpecs ("fsr_rcas_fp32.comp", VK_PathTracerLayout (), spec, 2);
-		spec[1] = 1;
-		rcas_pipelines[1] = VK_CreateComputePipelineSpecs ("fsr_rcas_fp32.comp", VK_PathTracerLayout (), spec, 2);
+		spec[0] = hdr ? 1 : 0;
+		spec[1] = after_taau ? 1 : 0;
+		rcas_pipelines[i] = VK_CreateComputePipelineSpecs ("fsr_rcas_fp32.comp", VK_PathTracerLayout (), spec, 2);
 	}
+	return rcas_pipelines[i];
 }
 
 void VK_DestroyUpscalePipelines (void)
@@ -268,15 +281,19 @@ void VK_DestroyUpscalePipelines (void)
 
 	if (taa_pipeline)
 		vkDestroyPipeline (vk.device, taa_pipeline, NULL);
-	if (easu_pipeline)
-		vkDestroyPipeline (vk.device, easu_pipeline, NULL);
-	for (i = 0; i < 2; i++)
+	taa_pipeline = VK_NULL_HANDLE;
+	for (i = 0; i < (int)Q_COUNTOF(easu_pipelines); i++)
+	{
+		if (easu_pipelines[i])
+			vkDestroyPipeline (vk.device, easu_pipelines[i], NULL);
+		easu_pipelines[i] = VK_NULL_HANDLE;
+	}
+	for (i = 0; i < (int)Q_COUNTOF(rcas_pipelines); i++)
 	{
 		if (rcas_pipelines[i])
 			vkDestroyPipeline (vk.device, rcas_pipelines[i], NULL);
 		rcas_pipelines[i] = VK_NULL_HANDLE;
 	}
-	taa_pipeline = easu_pipeline = VK_NULL_HANDLE;
 }
 
 /* Quake II RTX's vkpt_taa: the lit image (FLAT_COLOR) into TAA_OUTPUT and
@@ -303,20 +320,21 @@ void VK_UpscaleHDR (VkCommandBuffer cmd)
  * mapping */
 void VK_UpscaleDisplay (VkCommandBuffer cmd)
 {
+	qboolean	hdr = VK_HDRHeadroom () > 1.0f && VK_ToneMappingEnabled ();	/* 7.3: the tone-mapped image goes above 1 */
+
 	if (!up.fsr_easu && !up.fsr_rcas)
 		return;
-	CreatePipelines ();
 	VK_ProfilerStart (cmd, PROF_FSR);
 	/* 16x16 pixels per group of 64 threads (4 each), as AMD's integration
 	 * guide dispatches them */
 	if (up.fsr_easu)
 	{
-		VK_DispatchCompute (cmd, easu_pipeline, up.unscaled.width, up.unscaled.height, 16);
+		VK_DispatchCompute (cmd, EasuPipeline (hdr, !up.fsr_rcas), up.unscaled.width, up.unscaled.height, 16);
 		VK_ComputeBarrier (cmd);
 	}
 	if (up.fsr_rcas)
 	{
-		VK_DispatchCompute (cmd, rcas_pipelines[up.fsr_easu ? 0 : 1], up.unscaled.width, up.unscaled.height, 16);
+		VK_DispatchCompute (cmd, RcasPipeline (hdr, !up.fsr_easu), up.unscaled.width, up.unscaled.height, 16);
 		VK_ComputeBarrier (cmd);
 	}
 	VK_ProfilerStop (cmd, PROF_FSR);

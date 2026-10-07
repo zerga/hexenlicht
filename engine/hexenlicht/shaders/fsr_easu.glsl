@@ -23,7 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * gather point to the image, whose size is the largest output; ours have
  * the swapchain's size and hold older frames past it), and nothing is
  * written past the upscaled view (the dispatch is rounded up to 16x16
- * pixels). Only the SDR pipeline (spec_hdr 0) is created: vk_upscale.c. */
+ * pixels). spec_hdr 1 for HDR output only (7.3): vk_upscale.c. */
 
 layout(constant_id = 0) const uint spec_hdr = 0;
 // Whether output goes to display (1) or  will be processed by RCAS FSR pass (0)

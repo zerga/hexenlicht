@@ -22,7 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * Quake II RTX reads its neighbours unclamped, one texel past the edges)
  * or inside TAA_OUTPUT's rendered part (after TAAU; Quake II RTX: the whole
  * image), and nothing is written past the view (the dispatch is rounded
- * up to 16x16 pixels). Only the SDR pipelines (spec_hdr 0) are created:
+ * up to 16x16 pixels). spec_hdr 1 for HDR output only (7.3):
  * vk_upscale.c. */
 
 layout(constant_id = 0) const uint spec_hdr = 0;

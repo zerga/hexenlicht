@@ -88,11 +88,13 @@ typedef struct
 	int	filter_lanczos;	/* else nearest */
 	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
 	float	blend[4];	/* 6.6: GL's view blend (r_scene.blend), a 0 for none */
+	float	max_value;	/* 7.3: the largest linear value shown: 1, the tone-mapped image's headroom with HDR */
 } composite_push_t;
 
 static qboolean			view_drawn;		/* this frame has a 3D view to composite */
 static VkRect2D			view_rect;		/* in the swapchain */
 static float			view_scale;		/* composite_push_t's scale for this frame */
+static float			view_max;		/* composite_push_t's max_value for this frame */
 static float			view_blend[4];		/* composite_push_t's blend for this frame */
 
 /* the images the composite may show (vk_upscale.c's display_source) */
@@ -103,7 +105,8 @@ static const int		display_images[3] = { VKPT_IMG_TAA_OUTPUT, VKPT_IMG_FSR_EASU_O
  * Pipelines
  * ========================================================================== */
 
-/* fullscreen.vert + view_composite.frag, for the swapchain's format */
+/* fullscreen.vert + view_composite.frag, for the target's format (the
+ * swapchain's, or the HDR frame image's) */
 static void CreateCompositePipeline (void)
 {
 	VkShaderModule				vert, frag;
@@ -162,7 +165,7 @@ static void CreateCompositePipeline (void)
 	dynamic.dynamicStateCount = Q_COUNTOF(dynamic_states);
 	dynamic.pDynamicStates = dynamic_states;
 
-	composite_format = vk.surface_format.format;
+	composite_format = VK_TargetFormat ();	/* 7.3: the HDR frame image's with HDR */
 	memset (&rendering, 0, sizeof(rendering));
 	rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
 	rendering.colorAttachmentCount = 1;
@@ -470,6 +473,10 @@ void VK_RenderView3D (void)
 	view_scale = (mode == DEBUGVIEW_LIT && !VK_ToneMappingEnabled ()) ? 1.0f / STORAGE_SCALE_HDR : 1.0f;
 	if (mode != DEBUGVIEW_LIT)
 		view_scale *= q_max (r_debugview_scale.value, 0.0f);	/* 4.9: lighting above 1 unclipped */
+	/* 7.3: HDR output shows the tone-mapped image above 1, up to the
+	 * shoulder's headroom; the debug views and the image without tone
+	 * mapping stay clipped at 1 */
+	view_max = (mode == DEBUGVIEW_LIT && VK_ToneMappingEnabled ()) ? q_max (VK_HDRHeadroom (), 1.0f) : 1.0f;
 	/* 6.6: GL's view blend over the lit view; the debug views stay as they are */
 	if (mode == DEBUGVIEW_LIT && gl_polyblend.integer)
 		memcpy (view_blend, r_scene.blend, sizeof(view_blend));
@@ -506,8 +513,9 @@ void VK_DrawView3D (void)
 	push.filter_lanczos = up->display_lanczos ? 1 : 0;
 	push.source = up->display_source;
 	memcpy (push.blend, view_blend, sizeof(push.blend));
+	push.max_value = view_max;
 
-	if (composite_pipeline && composite_format != vk.surface_format.format)
+	if (composite_pipeline && composite_format != VK_TargetFormat ())
 	{
 		vkDeviceWaitIdle (vk.device);
 		vkDestroyPipeline (vk.device, composite_pipeline, NULL);
