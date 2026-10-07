@@ -21,6 +21,7 @@
 #   metallic      0 or 1 (a metal class sets the B channel of _orm)
 #   bump          the .mat's normal strength
 #   specular      the .mat's dielectric specular (written only when not 1; 0.25 by default)
+#   contrast      a power on the linear luminance (colors scaled with it) before the brightness match (1: none)
 #   albedo_ratio  the albedo's mean luminance against the original's, in linear light
 #                 (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look)
 #   kind          the .mat's kind (regular, chrome, glass); regular is not written
@@ -51,16 +52,19 @@ rough_min = 0.55
 rough_max = 0.9
 metallic = 0
 bump = 1.0
-# 0.25: an authored roughness makes a surface physically based, and a dielectric then
-# reflects 4 % head-on, which on Hexen II's albedo (0.01-0.05) is as bright as its own
-# light: at 1 the mortar of demo1's wall came out as a grey veil. 0.25 keeps the joints
-# dark with a faint sheen (measured in the game, DECISIONS M42); metals ignore it.
-specular = 0.25
-# 1.4: with the specular at 0.25 the wall's lit image was 0.70x the original's at equal albedo
-# means; x1.4 brings it to 0.94x (the cobbles 0.64x to 0.86x) and leaves the joints dark
-# (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look). Metals, glass, liquids and
-# lava keep 1.
-albedo_ratio = 1.4
+# Shine and contrast of the dielectric classes (DECISIONS M42, M43). An authored roughness
+# makes a surface physically based and a dielectric then reflects 4 % of the lit room
+# head-on: where the albedo is near black (the joints of demo1's wall) that reflection is
+# all that is seen, a grey veil. specular 0.04 keeps them black; contrast 1.5 raises the
+# linear luminance (hue and saturation kept) to that power before the brightness match (the darks go darker, the lit
+# faces lighter at the same mean); albedo_ratio 1.2 lifts the mean a little over the
+# original's (AUTHORING.md section 5: 1 to 1.5). Measured in the game on the wall: the
+# darkest 20 % of the view 0.20 against the original's 1.09 (x1000), the brightest 20 %
+# 25 against 17, the mean 7.0 against 6.5. Metals ignore specular; glass, liquids, lava,
+# metals and sprites keep specular 1, contrast 1 and ratio 1.
+specular = 0.04
+contrast = 1.5
+albedo_ratio = 1.2
 kind = "regular"
 emissive = 0
 
@@ -100,10 +104,12 @@ rough_max = 0.85
 [class.metal]
 noun = "metal"
 metallic = 1
+specular = 1.0
 rough_min = 0.3
 rough_max = 0.7
 denoise = 0.24
 albedo_ratio = 1.0
+contrast = 1.0
 
 [class.rust]
 noun = "rusted iron"
@@ -128,7 +134,7 @@ rough_max = 0.85
 
 [class.ice]
 noun = "ice"
-specular = 0.5
+specular = 0.3
 rough_min = 0.15
 rough_max = 0.5
 denoise = 0.24
@@ -145,6 +151,7 @@ rough_max = 0.8
 noun = "stained glass"
 specular = 1.0
 albedo_ratio = 1.0
+contrast = 1.0
 denoise = 0.2
 maps = false
 kind = "glass"
@@ -155,6 +162,7 @@ kind = "glass"
 noun = "water"
 specular = 1.0
 albedo_ratio = 1.0
+contrast = 1.0
 denoise = 0.14
 maps = false
 
@@ -162,6 +170,7 @@ maps = false
 noun = "molten lava"
 specular = 1.0
 albedo_ratio = 1.0
+contrast = 1.0
 denoise = 0.22
 maps = false
 
@@ -185,7 +194,9 @@ rough_max = 0.85
 [class.skin_metal]
 mode = "skin"
 noun = "armor plate"
+specular = 1.0
 albedo_ratio = 1.0
+contrast = 1.0
 prompt = "{desc}, texture map of a game weapon or armor, detailed {noun}, photographic, sharp focus"
 denoise = 0.16
 metallic = 1
@@ -195,6 +206,7 @@ rough_max = 0.7
 [class.sprite]
 mode = "sprite"
 albedo_ratio = 1.0
+contrast = 1.0
 maps = false
 
 [class.skip]

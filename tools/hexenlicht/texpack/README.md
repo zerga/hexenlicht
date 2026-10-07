@@ -104,15 +104,17 @@ the `.mat` values, the albedo's luminance against the original's.
 - **Luminance match.** Hexen II's albedo is very dark (mean 0.04 in linear
   light) and a model draws it lighter; at real albedo a scene is 3.5 to 5 times
   as bright (AUTHORING.md section 5). The result is scaled in linear light to the
-  original's mean times the class's `albedo_ratio` (1.4 for dielectrics, 1 for
-  metals, glass, liquids and lava: with the specular at 0.25 the lit wall came out
-  at 0.7x of the original's at equal means; DECISIONS M42). Put the realism into
+  original's mean times the class's `albedo_ratio` (1.2 for dielectrics, 1 for
+  metals, glass, liquids and lava; DECISIONS M42, M43), after a `contrast` of 1.5 on
+  the linear luminance (hue and saturation kept) that blackens the darkest joints and
+  lifts the lit faces. Put the realism into
   the normal map and the roughness, not the brightness.
 - **Shine.** An authored roughness makes a dielectric reflect 4 % head-on, as
   bright as the light on Hexen II's albedo: the first pack came out "super
   specular" with a grey veil on the darkest joints. The classes now write
-  `specular 0.25` into the `.mat` (`specular=` in a row's overrides changes it;
-  glass, liquids and lava keep 1).
+  `specular 0.04` into the `.mat`: where the albedo is near black, the specular is
+  all that is seen (`specular=`, `contrast=` and `albedo_ratio=` in a row's
+  overrides change them; glass, liquids, lava and metals keep 1).
 - **Alpha.** Holes and coverage come from the original (color bled under the
   holes before upscaling, the alpha upscaled and cut again for 0/255 kinds).
 - **Maps.** PBRify's NormalV3 and RoughnessV2 from the final albedo.

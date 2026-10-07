@@ -79,6 +79,25 @@ check('materials.csv: every row resolves', all(M.resolve(q['pattern'], 'world', 
 check('rows named with # (the liquids) are not comments', any(q['pattern'] == '#lava000' for q in shipped))
 check('every class has keys the pipeline reads', all(set(('mode', 'noun', 'prompt', 'denoise')) <= set({**classes['defaults'], **c}) for c in classes['class'].values()))
 
+# contrast: the darks go darker at the same mean
+cl = rng.integers(5, 200, (64, 64, 3), dtype=np.uint8)
+t0 = P.mean_linear_luminance(cl)
+flat, _ = P.match_luminance(cl, None, t0, 1.0)
+hard, _ = P.match_luminance(cl, None, t0, 2.0)
+p5 = lambda x: np.percentile(((x.astype(float) / 255) ** 2.2) @ P.LUM, 5)  # noqa: E731
+check('contrast darkens the darks at the same mean', p5(hard) < 0.5 * p5(flat) and abs(P.mean_linear_luminance(hard) / t0 - 1) < 0.02,
+      f'{p5(flat) * 1000:.2f} -> {p5(hard) * 1000:.2f}, mean x{P.mean_linear_luminance(hard) / t0:.3f}')
+
+lin = lambda x: (x.astype(float) / 255) ** 2.2  # noqa: E731
+warm = np.zeros((32, 32, 3), np.uint8)
+warm[..., 0] = rng.integers(60, 200, (32, 32))
+warm[..., 1] = warm[..., 0] * 0.6
+warm[..., 2] = warm[..., 0] * 0.3
+w2, _ = P.match_luminance(warm, None, P.mean_linear_luminance(warm), 2.0)
+rg0 = (lin(warm)[..., 0] / lin(warm)[..., 1]).mean()
+rg2 = (lin(w2)[..., 0] / np.maximum(lin(w2)[..., 1], 1e-9)).mean()
+check('contrast keeps the hue (red over green stays)', abs(rg2 / rg0 - 1) < 0.05, f'{rg0:.2f} -> {rg2:.2f}')
+
 # translucent skins: alpha 84 is not a hole (bleed leaves it, the mean counts it); holes are alpha 0
 ta = np.full((8, 8), 84, np.uint8)
 ta[0, :] = 255

@@ -247,10 +247,12 @@ under 5.1's names. What it does, in the order of this guide:
 - **Shine is held down too.** A roughness map makes a dielectric reflect 4 %
   head-on, and on albedo this dark that is as bright as its own light: the
   first pack put a grey veil on the darkest joints of demo1's wall. The
-  classes write `specular 0.25` (glass, liquids and lava keep 1) and lift
-  the albedo to 1.4 times the original's (section 5's 1 to 1.5) so the lit
-  image keeps the original's brightness, the joints stay dark; DECISIONS
-  M42 has the measurements. Judge a pack for shine as well as for detail.
+  classes write `specular 0.04` (glass, liquids and lava keep 1), raise the
+  albedo's luminance contrast (`contrast` 1.5: the darkest joints go black,
+  the lit faces lighter, hue kept) and lift its mean to 1.2 times the
+  original's (section 5's 1 to 1.5); DECISIONS M42 and M43 have the
+  measurements. Judge a pack for shine as well as for detail, and the
+  darkest features first.
 - **The maps are guesses from the picture.** PBRify's normal and roughness
   models see only the albedo: grooves and rivets come out right, a
   material's identity doesn't. The class sets what the picture can't

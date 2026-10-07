@@ -13,7 +13,7 @@ import zlib
 import numpy as np
 from PIL import Image
 
-TOOL_VERSION = '5.8.1'      # bump when a stage's output changes: it invalidates the state
+TOOL_VERSION = '5.8.2'      # bump when a stage's output changes: it invalidates the state
 LUM = np.array([0.2126, 0.7152, 0.0722])
 GAMMA = 2.2                 # the engine's default color transfer (MATERIALS.md, R104)
 LARGE = 1100                # a padded image over this many px is encoded and decoded in tiles
@@ -133,11 +133,18 @@ def pad(rgb, m, wrap, even=False):
     return np.pad(rgb, ((m, m + eh), (m, m + ew), (0, 0)), mode='wrap' if wrap else 'symmetric')
 
 
-def match_luminance(rgb, alpha, target):
-    """Scales the albedo in linear light so its mean luminance is target."""
-    cur = mean_linear_luminance(rgb, alpha)
+def match_luminance(rgb, alpha, target, contrast=1.0):
+    """Scales the albedo in linear light so its mean luminance is target. contrast above 1
+    first raises the linear luminance to that power, each texel's color scaled with it (its
+    hue and saturation stay): the darks go darker, the lights lighter (relative to the mean
+    the scale then restores). A power on each channel would raise the saturation."""
+    lin0 = (rgb.astype(np.float64) / 255.0) ** GAMMA
+    if contrast != 1.0:
+        y = np.maximum(lin0 @ LUM, 1e-9)[..., None]
+        lin0 = lin0 * (y ** (contrast - 1.0))
+    cur = float((lin0 @ LUM)[alpha > 0].mean()) if alpha is not None and (alpha > 0).any() else float((lin0 @ LUM).mean())
     k = target / cur if cur > 0 else 1.0
-    lin = np.clip((rgb.astype(np.float64) / 255.0) ** GAMMA * k, 0.0, 1.0)
+    lin = np.clip(lin0 * k, 0.0, 1.0)
     out = np.clip(np.round(lin ** (1.0 / GAMMA) * 255.0), 0, 255).astype(np.uint8)
     return out, k
 
@@ -311,7 +318,7 @@ class Runner:
         out = up[4 * m:4 * m + 4 * h, 4 * m:4 * m + 4 * w].copy()
         a4 = upscale_alpha(alpha, 4 * w, 4 * h, entry.alpha) if alpha is not None else None
         target = mean_linear_luminance(rgb, alpha) * p['albedo_ratio']
-        out, gain = match_luminance(out, a4, target)
+        out, gain = match_luminance(out, a4, target, p['contrast'])
         albedo = np.dstack([out, a4]) if a4 is not None else out
         for suf in ('_n.png', '_orm.png', '.mat'):     # what an earlier class made and this one doesn't
             old = os.path.join(self.out, 'textures', entry.stem + suf)
