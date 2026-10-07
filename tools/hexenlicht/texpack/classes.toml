@@ -20,7 +20,7 @@
 #   rough_min, rough_max   the roughness map's range: the model's output is stretched over it
 #   metallic      0 or 1 (a metal class sets the B channel of _orm)
 #   bump          the .mat's normal strength
-#   specular      the .mat's dielectric specular (written only when not 1)
+#   specular      the .mat's dielectric specular (written only when not 1; 0.25 by default)
 #   albedo_ratio  the albedo's mean luminance against the original's, in linear light
 #                 (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look)
 #   kind          the .mat's kind (regular, chrome, glass); regular is not written
@@ -51,8 +51,16 @@ rough_min = 0.55
 rough_max = 0.9
 metallic = 0
 bump = 1.0
-specular = 1.0
-albedo_ratio = 1.0
+# 0.25: an authored roughness makes a surface physically based, and a dielectric then
+# reflects 4 % head-on, which on Hexen II's albedo (0.01-0.05) is as bright as its own
+# light: at 1 the mortar of demo1's wall came out as a grey veil. 0.25 keeps the joints
+# dark with a faint sheen (measured in the game, DECISIONS M42); metals ignore it.
+specular = 0.25
+# 1.4: with the specular at 0.25 the wall's lit image was 0.70x the original's at equal albedo
+# means; x1.4 brings it to 0.94x (the cobbles 0.64x to 0.86x) and leaves the joints dark
+# (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look). Metals, glass, liquids and
+# lava keep 1.
+albedo_ratio = 1.4
 kind = "regular"
 emissive = 0
 
@@ -120,6 +128,7 @@ rough_max = 0.85
 
 [class.ice]
 noun = "ice"
+specular = 0.5
 rough_min = 0.15
 rough_max = 0.5
 denoise = 0.24
@@ -134,6 +143,8 @@ rough_max = 0.8
 # tints the view (AUTHORING.md section 6: paint a new one for a real window).
 [class.glass]
 noun = "stained glass"
+specular = 1.0
+albedo_ratio = 1.0
 denoise = 0.2
 maps = false
 kind = "glass"
@@ -142,11 +153,15 @@ kind = "glass"
 # so the shapes stay: at 0.2 the amber one came out as crumpled foil.
 [class.liquid]
 noun = "water"
+specular = 1.0
+albedo_ratio = 1.0
 denoise = 0.14
 maps = false
 
 [class.lava]
 noun = "molten lava"
+specular = 1.0
+albedo_ratio = 1.0
 denoise = 0.22
 maps = false
 
@@ -170,6 +185,7 @@ rough_max = 0.85
 [class.skin_metal]
 mode = "skin"
 noun = "armor plate"
+albedo_ratio = 1.0
 prompt = "{desc}, texture map of a game weapon or armor, detailed {noun}, photographic, sharp focus"
 denoise = 0.16
 metallic = 1
@@ -178,6 +194,7 @@ rough_max = 0.7
 
 [class.sprite]
 mode = "sprite"
+albedo_ratio = 1.0
 maps = false
 
 [class.skip]

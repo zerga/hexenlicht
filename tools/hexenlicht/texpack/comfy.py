@@ -3,6 +3,7 @@ the portable build, uploads an image, runs a workflow in API format and
 fetches the output. Standard library only; ComfyUI's core nodes only (no
 custom nodes), so the same workflow can be rebuilt by hand in its UI.
 """
+import atexit
 import json
 import os
 import subprocess
@@ -68,6 +69,7 @@ class Comfy:
             args.append('--deterministic')
         logf = open(os.path.join(self.work, 'comfy.log'), 'wb')
         self.proc = subprocess.Popen(args, cwd=os.path.join(self.portable, 'ComfyUI'), stdout=logf, stderr=subprocess.STDOUT)
+        atexit.register(self.stop)      # an exception, Ctrl-C or sys.exit still stops it
         log("comfy: starting the server ...")
         t0 = time.time()
         while time.time() - t0 < 300:
@@ -80,8 +82,10 @@ class Comfy:
         raise ComfyError("ComfyUI did not come up in 300 s")
 
     def stop(self):
+        """Ends the server this object started (never one it attached to), with its process
+        tree: a ComfyUI left running keeps the GPU busy and its VRAM taken."""
         if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(self.proc.pid)], capture_output=True)
             try:
                 self.proc.wait(20)
             except subprocess.TimeoutExpired:

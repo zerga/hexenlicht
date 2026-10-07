@@ -244,6 +244,13 @@ under 5.1's names. What it does, in the order of this guide:
 - **Brightness is held** (section 5): the result is scaled in linear light
   to the original's mean, so a pack of these doesn't light the scene 3.5 to
   5 times as bright. Realism goes into the normal map and the roughness.
+- **Shine is held down too.** A roughness map makes a dielectric reflect 4 %
+  head-on, and on albedo this dark that is as bright as its own light: the
+  first pack put a grey veil on the darkest joints of demo1's wall. The
+  classes write `specular 0.25` (glass, liquids and lava keep 1) and lift
+  the albedo to 1.4 times the original's (section 5's 1 to 1.5) so the lit
+  image keeps the original's brightness, the joints stay dark; DECISIONS
+  M42 has the measurements. Judge a pack for shine as well as for detail.
 - **The maps are guesses from the picture.** PBRify's normal and roughness
   models see only the albedo: grooves and rivets come out right, a
   material's identity doesn't. The class sets what the picture can't

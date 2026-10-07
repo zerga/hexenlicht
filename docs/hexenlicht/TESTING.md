@@ -504,8 +504,9 @@ textures: step 5 runs in a data folder of its own.
    originals (`r_materials 0`), the pack (`1`) and for some the shading
    normals (`r_debugview 2`) and roughness (`10`), 8 frames averaged; the
    log's `vk_materials here` per view (`albedo: ... 1.00 times`: the
-   luminance match holds in the game, 1.00–1.01 at every view that shows a
-   pack texture) and `vk_materials problems` (nothing). `-Only 'wall|cobbles'`
+   luminance match holds in the game: 1.00–1.01 at every view that shows a
+   pack texture of the first pack, whose classes all had the ratio 1; the
+   dielectric classes show their 1.4 since M42) and `vk_materials problems` (nothing). `-Only 'wall|cobbles'`
    picks views. The script writes only the pack's files and its scripts and
    deletes them; it refuses a data folder that has textures.
 6. **The normal convention:** on the final `_n.png` the green channel
@@ -517,6 +518,14 @@ textures: step 5 runs in a data folder of its own.
    (`texpack.py calibrate`). Judging a flipped copy by eye in the game
    (the shots of the wall and the cobbles with green flipped) was
    inconclusive at these strengths.
+7. **The shine (M42):** the owner found the first pack "super specular".
+   `proof_run.ps1 -Only 'wall|cobbles'` with the pack and with copies whose
+   `.mat` says `specular 0.25` and `0.10` (and one with the albedo lifted 1.4x),
+   then the mean and the darkest 5 % / 20 % of the view's linear luminance
+   against the original's (a region of the TGAs, `(rgb/255)^2.2` weighted by
+   the Rec. 709 luminance): at `specular` 1 a grey veil lies on the joints,
+   at 0.25 they are dark again with a faint sheen. Judge a pack for shine as
+   well as for detail, and the darkest features first.
 - **Not covered:** the full export (2,100 textures: about three hours,
   the 465 skins most of it), sprites (the `sprite` class's 4x upscale
   alone), the sky, a pack through `pack_dds.ps1`, `r_reloadmaterials`
