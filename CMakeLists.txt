@@ -220,6 +220,7 @@ hexenlicht_add_shaders(hexenlicht_shaders
 	${HEXENLICHT_SHADER_DIR}/model_geometry.comp
 	${HEXENLICHT_SHADER_DIR}/texture_average.comp
 	${HEXENLICHT_SHADER_DIR}/view_composite.frag
+	${HEXENLICHT_SHADER_DIR}/hdr_encode.frag
 )
 
 # The blue noise textures (libs/bluenoise) next to the executable, in
@@ -273,6 +274,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_core.c
 	${HEXENLICHT_DIR}/vk_profiler.c
 	${HEXENLICHT_DIR}/vk_swapchain.c
+	${HEXENLICHT_DIR}/vk_hdr.c
 	${HEXENLICHT_DIR}/vk_shader.c
 	${HEXENLICHT_DIR}/vk_texture.c
 	${HEXENLICHT_DIR}/vk_imagefile.c
@@ -321,7 +323,8 @@ add_executable(hexenlicht WIN32
 target_include_directories(hexenlicht PRIVATE ${HEXENLICHT_DIR} ${LIBS_DIR}/fsr1 ${LIBS_DIR}/streamline)
 target_compile_features(hexenlicht PRIVATE cxx_std_17)	# vk_streamline.cpp
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
-target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image stb_image_write)
+target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image stb_image_write
+	dxgi dxguid)	# vk_hdr.c: the display's HDR state and peak (DXGI)
 add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise hexenlicht_map_files)	# building the exe also builds its shaders and data
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>

@@ -334,7 +334,7 @@ Goal: v1.0 on GitHub Releases.
 |---|---|---|---|
 | 7.1 | Full playthrough per hub, issues logged | M each | Every hub completed |
 | 7.2 | Performance pass (shader execution reordering, BLAS update cost, light lists) | M | 60+ fps target met everywhere |
-| 7.3 | HDR output (optional) | S | HDR on capable displays |
+| 7.3 | HDR output (optional). Since 7.3's proposal (owner, 2026-10-07, DECISIONS W5–W7): `vid_hdr`, scRGB or HDR10 where Windows runs the display in HDR; the frame drawn as in SDR into a half-float image and encoded at Windows' SDR content brightness (the paper white) up to the display's peak, so everything up to SDR's white stays the SDR image; above it a shoulder per channel instead of the clip; the decode of the dark tones the engine's 2.2 or Windows' sRGB (the owner's look). Left out: Quake II RTX's HDR mapping, wide gamut, HDR metadata, HDR screenshots for players | M | HDR on capable displays; SDR unchanged; the output checked in nits; validation 0/0 |
 | 7.4 | Release packaging via CI: zip layout, player README (game data, `h2patch`, optional DLSS download) | S | Release zip works on a clean machine |
 | 7.5 | v1.0 release | S | Published |
 

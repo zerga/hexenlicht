@@ -299,7 +299,7 @@ static void Draw_CreatePipeline (void)
 	dynamic.dynamicStateCount = Q_COUNTOF(dynamic_states);
 	dynamic.pDynamicStates = dynamic_states;
 
-	draw_format = vk.surface_format.format;
+	draw_format = VK_TargetFormat ();	/* 7.3: the HDR frame image's with HDR */
 	memset (&rendering, 0, sizeof(rendering));
 	rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
 	rendering.colorAttachmentCount = 1;
@@ -407,7 +407,7 @@ static void Draw_Flush (void)
 	float		w = (float)vk.extent.width, h = (float)vk.extent.height;
 	float		ox, oy;
 
-	if (draw_pipeline && draw_format != vk.surface_format.format)
+	if (draw_pipeline && draw_format != VK_TargetFormat ())
 	{
 		vkDeviceWaitIdle (vk.device);
 		vkDestroyPipeline (vk.device, draw_pipeline, NULL);

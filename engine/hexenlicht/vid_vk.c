@@ -15,8 +15,9 @@
  * - The process is per-monitor DPI aware (hexenlicht.manifest), so all
  *   sizes here are physical pixels.
  * - No hardware gamma ramps; gamma will be applied by the renderer.
- * - The Video Modes page has a Vsync row (vid_vsync, 6.10), which applies
- *   at once; the renderer's settings are the Options menu's Renderer
+ * - The Video Modes page has a Vsync row (vid_vsync, 6.10) and an HDR row
+ *   (vid_hdr, 7.3: "yes (n/a)" while asked for but not possible), which
+ *   apply at once; the renderer's settings are the Options menu's Renderer
  *   Settings page (vk_menu.c).
  *
  * Copyright (C) 1996-1997  Id Software, Inc.
@@ -1133,6 +1134,7 @@ enum {
 	VID_FULLSCREEN,
 	VID_RESOLUTION,
 	VID_VSYNC,	// 6.10: applies at once
+	VID_HDR,	// 7.3: applies at once
 	VID_BLANKLINE,	// spacer line
 	VID_RESET,
 	VID_APPLY,
@@ -1184,6 +1186,13 @@ static void VID_MenuDraw (void)
 
 	M_Print (76, 92 + 8*VID_VSYNC, "Vsync: ");
 	M_DrawYesNo (76+12*8, 92 + 8*VID_VSYNC, Cvar_VariableValue ("vid_vsync") != 0, true);
+
+	/* 7.3: asked for but not on (the display isn't in Windows' HDR, ...: vk_hdr says why) */
+	M_Print (76, 92 + 8*VID_HDR, "HDR: ");
+	if (Cvar_VariableValue ("vid_hdr") != 0 && !vk.hdr)
+		M_Print (76+12*8, 92 + 8*VID_HDR, "yes (n/a)");
+	else
+		M_DrawYesNo (76+12*8, 92 + 8*VID_HDR, vk.hdr, true);
 
 	if (need_apply)
 	{
@@ -1238,6 +1247,18 @@ static void VID_ToggleVsync (void)
 {
 	S_LocalSound ("raven/menu3.wav");
 	Cvar_SetValue ("vid_vsync", Cvar_VariableValue ("vid_vsync") ? 0 : 1);
+}
+
+/* 7.3: vid_hdr (vk_hdr.c) the same; back on with the value it had (2: HDR10) */
+static void VID_ToggleHDR (void)
+{
+	static float	on = 1;
+	float		v = Cvar_VariableValue ("vid_hdr");
+
+	S_LocalSound ("raven/menu3.wav");
+	if (v)
+		on = v;
+	Cvar_SetValue ("vid_hdr", v ? 0 : on);
 }
 
 static void VID_MenuKey (int key)
@@ -1301,6 +1322,9 @@ static void VID_MenuKey (int key)
 		case VID_VSYNC:
 			VID_ToggleVsync ();
 			break;
+		case VID_HDR:
+			VID_ToggleHDR ();
+			break;
 		}
 		return;
 
@@ -1329,6 +1353,9 @@ static void VID_MenuKey (int key)
 			break;
 		case VID_VSYNC:
 			VID_ToggleVsync ();
+			break;
+		case VID_HDR:
+			VID_ToggleHDR ();
 			break;
 		}
 		return;

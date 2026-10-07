@@ -961,6 +961,54 @@ restores the configs. About 5 minutes in Debug.
   1280x720 with `vid_uiscale 3` (240 lines) the status lines touch the
   status bar.
 
+## HDR output (7.3)
+
+Needs a display Windows runs in HDR (Settings > Display > HDR; `vk_hdr`
+says what the game sees: "off: Windows HDR is off for this display" else).
+`tools/hexenlicht/hdr_run.ps1 -Out <folder> [-Tag <name>] [-Release]`
+(Debug by default, 960x540) goes to demo1's start and meso8's lava room
+(the lava 4× SDR's white and more), paused, and there shoots the albedo
+view in SDR and with `vid_hdr 1`, then for the lit image a `vk_screenshot`
+and a `vk_hdrshot` of one frame each with `vid_hdr 1` (scRGB), `vid_hdr 2`
+(HDR10), `r_hdr_decode 1`, `r_hdr_white 200`, FSR (both passes, EASU
+alone, RCAS alone after TAAU) and the auto exposure; last
+`vk_reload_shaders` and `vid_restart` with HDR on (`r_srgb 0` and the FSR
+switches set at its start). It checks them with
+**`hdr_check.ps1`** against the paper white and peak `vk_hdr` printed
+(`-A`/`-B` two TGAs; `-Tga`/`-Pfm` a shot and its `vk_hdrshot`) and
+writes `results.txt`; it backs up and restores data1's configs (`vid_hdr`
+and `r_hdr_*` are archived: a run without that, or a game started by hand
+for a test, leaves them and the test's settings in the owner's
+`hexenlicht.cfg`). A few minutes in Debug. `-Cost` measures at demo1's
+start instead (Release, a size with `-Width`/`-Height`, nothing else on
+the GPU): the profiler's averages, `vid_hdr` 0 and 1 alternating twice.
+
+- What a pass looks like (7.3, the owner's AW3225QF: paper white 300
+  nits, peak 450; Debug and Release the same numbers): the albedo shots
+  equal but for at most 1 of 255 in about 1.5 % of the values (the frame
+  image's half floats round a value near a step either way; a view of only
+  exact 8-bit colors matched bit for bit); below
+  white each `vk_hdrshot` value within about 0.55 of its screenshot's
+  value as `300 × (value/255)^2.2` nits (the sRGB curve with
+  `r_hdr_decode 1`, 200 with `r_hdr_white 200`), HDR10 within 1–2 at demo1;
+  meso8's lava at the screenshot's 255 between 299 and 450 nits, none
+  above the peak in scRGB. HDR10 shows up to 12 of 255 off in the lava's
+  near-black channels and some values up to 454 nits: its 10-bit PQ through
+  BT.2020 and back to BT.709 in the check, not the output.
+- Without HDR on (no Windows HDR) the script prints why and skips the
+  checks; without a `vk_hdr` line it says so instead of guessing levels.
+- `vk_screenshot` in HDR is the frame image clipped at 1, so the other
+  tools work as in SDR; compare a lit image's SDR and HDR shots as noise
+  (paused frames differ by their samples). Hexen II's menu fade
+  (`Draw_FadeScreen`) draws 40 random boxes every frame: menu shots never
+  match.
+- Window changes: `resize_test.ps1` with a `hl_test.cfg` that sets
+  `vid_hdr 1` (7.3: HDR stayed on through resize, maximize, restore, too
+  small, validation 0/0; `vk_hdrshot` at each size). It doesn't back up
+  the configs: restore them after.
+- DLSS with HDR: a Release run with the DLLs and `-validation` (7.3: SR
+  and RR, scRGB and HDR10, validation 0/0).
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`

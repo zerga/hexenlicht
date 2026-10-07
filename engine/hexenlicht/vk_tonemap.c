@@ -71,6 +71,7 @@ typedef struct
 {
 	float	knee_w, knee_a, knee_b;
 	float	fixed_exposure;		/* > 0: the fixed exposure (4.9), no curve or knee */
+	float	headroom;		/* > 1: HDR output (7.3), the display's peak over the paper white */
 } apply_push_t;				/* tone_mapping_apply.comp's */
 
 /* 0 a fixed exposure in GL's units (4.9), 1 Quake II RTX's auto exposure */
@@ -203,6 +204,7 @@ void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float fra
 		 * within +-20, so the factor is a positive, finite number */
 		KneeConstants (ubo, &apply);
 		apply.fixed_exposure = exp2f (q_min (q_max (VK_MapExposure (), -20.0f), 20.0f));
+		apply.headroom = VK_HDRHeadroom ();
 		VK_DispatchComputeLayout (cmd, apply_pipeline, layout, &apply, sizeof(apply), width, height, 16);
 		VK_ComputeBarrier (cmd);
 		reset_required = true;	/* the auto exposure starts over when it is turned on */
@@ -232,6 +234,7 @@ void VK_ToneMap (VkCommandBuffer cmd, uint32_t width, uint32_t height, float fra
 	/* applied to the image */
 	KneeConstants (ubo, &apply);
 	apply.fixed_exposure = 0.0f;
+	apply.headroom = VK_HDRHeadroom ();
 	VK_DispatchComputeLayout (cmd, apply_pipeline, layout, &apply, sizeof(apply), width, height, 16);
 	VK_ComputeBarrier (cmd);
 

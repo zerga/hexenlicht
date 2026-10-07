@@ -43,6 +43,7 @@ typedef struct
 	qboolean		have_ser;		/* VK_NV_ray_tracing_invocation_reorder */
 	qboolean		have_position_fetch;	/* VK_KHR_ray_tracing_position_fetch */
 	qboolean		have_bc;		/* textureCompressionBC: BC7 and BC5 image files (5.2) */
+	qboolean		have_colorspace;	/* VK_EXT_swapchain_colorspace: HDR swapchains (7.3) */
 
 	/* swapchain (vk_swapchain.c) */
 	VkSwapchainKHR		swapchain;
@@ -54,6 +55,7 @@ typedef struct
 	VkImageView		views[VK_MAX_SWAPCHAIN_IMAGES];
 	VkSemaphore		render_finished[VK_MAX_SWAPCHAIN_IMAGES];	/* per image */
 	qboolean		swapchain_dirty;	/* recreate before the next frame */
+	qboolean		hdr;		/* 7.3: an HDR swapchain; the frame is drawn into vk_hdr.c's image */
 
 	/* textures (vk_texture.c): one bindless array of combined image
 	 * samplers, indexed by the numbers GL_LoadTexture returns */
@@ -104,6 +106,28 @@ void VK_ClearScreen (float r, float g, float b);
 void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op);
 void VK_EndSwapchainRendering (void);
 void VK_EndFrame (void);
+VkFormat VK_TargetFormat (void);	/* what VK_BeginSwapchainRendering draws into: the swapchain's, or vk_hdr.c's frame image (7.3) */
+
+/* vk_hdr.c (7.3): HDR output. With vid_hdr on a display Windows runs in
+ * HDR, the swapchain is scRGB (else HDR10); the frame is drawn as in SDR,
+ * in the 8-bit color values (values above 1 kept), into an
+ * R16G16B16A16_SFLOAT image, which VK_HDRDrawEncode turns into light at
+ * the paper white and writes into the swapchain image. */
+#define VK_HDR_FRAME_FORMAT	VK_FORMAT_R16G16B16A16_SFLOAT
+void VK_InitHDR (void);
+void VK_ShutdownHDR (void);
+void VK_DestroyHDRPipeline (void);
+qboolean VK_HDRChooseFormat (const VkSurfaceFormatKHR *formats, uint32_t count, VkSurfaceFormatKHR *chosen);	/* vk_swapchain.c: true for an HDR swapchain */
+void VK_HDRCreateFrame (void);		/* the frame image at vk.extent, after the swapchain */
+void VK_HDRDestroyFrame (void);
+VkImage VK_HDRFrameImage (void);
+VkImageView VK_HDRFrameView (void);
+void VK_HDRDrawEncode (VkCommandBuffer cmd);	/* inside a rendering into the swapchain image; the frame image readable */
+float VK_HDRHeadroom (void);		/* the peak over the paper white (at least 1) with an HDR swapchain, else 0 */
+const char *VK_HDRStatus (void);	/* one line: on, or why not */
+qboolean VK_HDRShotPending (void);	/* vk_hdrshot: copy this frame's swapchain image */
+void VK_HDRRecordShot (VkCommandBuffer cmd, VkImage image);	/* the image in TRANSFER_SRC_OPTIMAL */
+void VK_HDRWriteShot (VkFence fence);	/* after the frame's submit */
 
 /* vk_texture.c: GL_LoadTexture (declared in glquake.h) returns the slot in
  * vk.texture_set; slot 0 is a 1x1 white texture */
@@ -240,7 +264,8 @@ void VK_DrawTexture (float x0, float y0, float x1, float y1, int slot, qboolean 
 	PROF_DO(BLOOM,			"bloom",		2) \
 	PROF_DO(TONEMAP,		"tone mapping",		2) \
 	PROF_DO(FSR,			"FSR",			2) \
-	PROF_DO(COMPOSITE,		"composite and 2D",	1)
+	PROF_DO(COMPOSITE,		"composite and 2D",	1) \
+	PROF_DO(HDR,			"HDR output",		1)
 
 enum
 {
