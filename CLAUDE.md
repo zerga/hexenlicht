@@ -20,6 +20,7 @@ Read only what the task needs.
 | Quake II RTX module map and import rules | [docs/hexenlicht/Q2RTX.md](docs/hexenlicht/Q2RTX.md) |
 | Material spec: texture file names and maps, `.mat` settings, formats (E5) | [docs/hexenlicht/MATERIALS.md](docs/hexenlicht/MATERIALS.md) |
 | Making a texture pack: the workflow, values, brightness, shipping (5.6) | [docs/hexenlicht/AUTHORING.md](docs/hexenlicht/AUTHORING.md) |
+| Making a texture pack with AI tools: setup, the manifest of material descriptions, the pipeline (5.8) | [tools/hexenlicht/texpack/README.md](tools/hexenlicht/texpack/README.md) |
 | Effects checklist: every effect of both games, its state, the story that owns it (E6) | [docs/hexenlicht/EFFECTS.md](docs/hexenlicht/EFFECTS.md) |
 | Testing: scripted runs, screenshots, pixel regression, check commands, maps | [docs/hexenlicht/TESTING.md](docs/hexenlicht/TESTING.md), tools in [tools/hexenlicht](tools/hexenlicht/README.md) |
 | Development setup: Vulkan SDK, game data, CLion | [docs/hexenlicht/SETUP.md](docs/hexenlicht/SETUP.md) |

@@ -465,6 +465,62 @@ judged by eye; the log's lines are checked.
   half-transparent one and alpha 128: `vk_materials list` shows ", alpha"
   on the latter two only (M31).
 
+## Texture pack tooling (5.8)
+
+`tools/hexenlicht/texpack` (its README: setup and commands; DECISIONS
+M34–M41). About 15 minutes for the proof set once the tools are installed;
+no game window except in step 5. Never in the game folder with your own
+textures: step 5 runs in a data folder of its own.
+
+1. **The pure functions:** `selftest.py` (ComfyUI's Python): the luminance
+   match, bleeding, padding, alpha, map encodings, the manifest's
+   resolution order, that `materials.csv` resolves; 19 checks, no GPU, no
+   models, no game data.
+2. **The proof set:** `texpack.py run --export <data1\export> --select
+   tools\hexenlicht\texpack\testset.txt --manifest ...\materials.csv --out
+   <pack>`: 20 textures of the data1 export (4 walls, 2 plates, brick,
+   rune panel, cloth, wood, plaster with a figure, earth, 2 glass, 3
+   liquids and lava, 4 skins, two with coverage alpha). 4 minutes on an RTX
+   4070 Ti; the log gives each texture's size, luminance gain and time.
+3. **The spec:** `texpack.py verify ... --pack <pack>`: 20 of 20 (sizes 4x
+   and multiples of 4, luminance at the class's ratio, alpha, `_n` unit
+   vectors pointing out, `_orm` channels and the class's range, `.mat`
+   keys and kind). Break a class value (`rough_max`) and the verifier must
+   fail the textures it touches: it does.
+4. **Reproducible:** run into a second folder, compare every file (PNG
+   pixels, text bytes): 52 of 52 identical. Run the first folder again
+   unchanged: every texture "unchanged"; change a class value (the liquid's
+   `denoise`) and only the textures of that class are redone, and the maps
+   of a class that lost them (glass) are deleted.
+   After the review's fixes (translucent alpha, no wrap-around in the
+   bleed, results through the temp folder) a fresh run differs from the first
+   in 8 of 52 files: the two skins with holes (their edges) and the glass
+   `.mat` header comments (the tool version), and passes `verify` 20 of 20.
+5. **In the game:** `texpack\proof_run.ps1 -Pack <pack> -Data <data folder
+   copy> -Out <folder> -Tag a -Release`: a copy of the original's `data1`
+   (`pak0.pak`, `pak1.pak`, `PROGS.DAT`, `PROGS2.DAT`, `Strings.txt`,
+   `Hexen.rc`) with no `textures\` and no configs, never your own data
+   folder; demo1's views of `test_pack.ps1` and meso9's start, shot as the
+   originals (`r_materials 0`), the pack (`1`) and for some the shading
+   normals (`r_debugview 2`) and roughness (`10`), 8 frames averaged; the
+   log's `vk_materials here` per view (`albedo: ... 1.00 times`: the
+   luminance match holds in the game, 1.00–1.01 at every view that shows a
+   pack texture) and `vk_materials problems` (nothing). `-Only 'wall|cobbles'`
+   picks views. The script writes only the pack's files and its scripts and
+   deletes them; it refuses a data folder that has textures.
+6. **The normal convention:** on the final `_n.png` the green channel
+   against the row gradient of the blurred albedo luminance (stones are
+   brighter than mortar: the height proxy) is positive for OpenGL's
+   convention: +0.28 to +0.48 on five textures, the red channel against
+   the column gradient the same (a mirrored map would be negative); PBRify's
+   own output measured -0.79 against its height model before the flip
+   (`texpack.py calibrate`). Judging a flipped copy by eye in the game
+   (the shots of the wall and the cobbles with green flipped) was
+   inconclusive at these strengths.
+- **Not covered:** the full export (2,100 textures: about three hours,
+  the 465 skins most of it), sprites (the `sprite` class's 4x upscale
+  alone), the sky, a pack through `pack_dds.ps1`, `r_reloadmaterials`
+  with a texpack pack loaded (the engine is unchanged).
 ## Effects (6.1)
 
 E6's checklist ([EFFECTS.md](EFFECTS.md), DECISIONS X1) names each effect's

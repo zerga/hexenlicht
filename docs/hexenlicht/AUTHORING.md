@@ -220,6 +220,57 @@ MATERIALS.md "Special materials" has the rules; what matters for authors:
   Raven's, and a pack made from the export is derived from the game's
   textures.
 
+## 8. Many textures at once: texpack
+
+Sections 1–3 make one texture by hand. `tools/hexenlicht/texpack` (story
+5.8; its [README](../../tools/hexenlicht/texpack/README.md) has the setup
+and every command) makes them for as many as you like from a manifest of
+what each one is, with AI models running locally (Stable Diffusion with
+ControlNet Tile through ComfyUI, PBRify's models), and puts the files
+under 5.1's names. What it does, in the order of this guide:
+
+- **Context is the input.** A diffusion model doesn't know that a 64x64
+  grey blur is a cobblestone wall; a line in the manifest does ("dark grey
+  rounded cobblestones in black mortar", class `stone`). A class
+  (`classes.toml`) carries the prompt, how far the model may depart from
+  the upscale (the denoise: 0.16 for creature skins, 0.28 for walls), the
+  roughness range and metallic of the maps, and `.mat` values; rows name a
+  texture or a glob (`models/imp.mdl_*`). A vision-language model drafts
+  the rows from the export; `texpack.py sheet` is the page to correct them
+  on.
+- **Seamless.** A world texture is padded with its own opposite edges
+  before the model sees it and cropped after, so what repeats in the game
+  repeats in the file (skins and sprites are padded mirrored).
+- **Brightness is held** (section 5): the result is scaled in linear light
+  to the original's mean, so a pack of these doesn't light the scene 3.5 to
+  5 times as bright. Realism goes into the normal map and the roughness.
+- **The maps are guesses from the picture.** PBRify's normal and roughness
+  models see only the albedo: grooves and rivets come out right, a
+  material's identity doesn't. The class sets what the picture can't
+  (metallic 0 or 1, the roughness range); set `roughness`, `specular` or a
+  `.mat` `kind` by hand where it matters (chrome, water; sections 3 and
+  6). A normal map from a DirectX-convention tool needs its green flipped
+  (section 3): texpack does it for PBRify's. Where a guess is wrong the
+  class is the fix: glass has no maps (a pane is flat, and the models
+  emboss the scene painted behind the lead), painted pictures (a fresco)
+  come out with a relief of their figure (`bump=0.3` in the row's
+  overrides), a metal is metallic over its rust too.
+- **Smooth textures get invented structure.** The 4x model draws detail
+  where there is none: lava and a plain rug come out well, the blurry amber
+  liquid `#rtex346` as crumpled foil. Lower the row's `denoise`, or leave
+  such textures out of the run.
+- **The baked shading stays.** The models sharpen what is painted: Raven's
+  highlights and shadows in a texture come out as sharper highlights and
+  shadows, which the path tracer then lights again. A low denoise keeps it
+  faithful; for a stronger break from the originals paint the albedo flat
+  first.
+- **Reproducible and incremental.** Seeds are fixed (two runs of the 20
+  test textures were byte-identical), unchanged textures are skipped:
+  correcting a label redoes that texture only. About 5 s a wall texture,
+  50 s the largest skins on an RTX 4070 Ti.
+- **Not in the repository.** The pack is derived from Raven's textures
+  (PLAN §4): the repository has the pipeline and the manifest, a pack is
+  shared (if at all) on its own.
 ## The test pack
 
 `tools/hexenlicht/test_pack.ps1` makes one of each kind with no game data
