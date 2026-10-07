@@ -45,6 +45,9 @@
  * light along each glowing beam (DYNLIGHT_LINE, a thin cylinder: its
  * power per unit length, ranked by its whole intensity across it over the
  * distance^2 to its nearest point) and a sphere at the sunstaff's hit.
+ * 6.8: so do the fire missiles that own no light (vk_beamlight.c): a
+ * line light or a sphere each, of its glowing surface's power. Neither lights what is
+ * flagged a light (DYNLIGHT_NOT_ON_LIGHTS: their own glowing models).
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -115,9 +118,10 @@ typedef struct
 	qboolean	line;		/* 6.3: a beam's line light, from origin to end */
 	vec3_t		end;
 	qboolean	beam;		/* 6.3: a beam's light (a line, or the sunstaff's hit) */
+	qboolean	missile;	/* 6.8: a fire missile's light (a line or a sphere) */
 } candidate_t;
 
-#define MAX_CANDIDATES	(MAX_EFFECT_SPRITES + 2 * MAX_SCENE_BEAMS)
+#define MAX_CANDIDATES	(MAX_EFFECT_SPRITES + 2 * MAX_SCENE_BEAMS + MAX_FIRE_MISSILES)
 
 static candidate_t	candidates[MAX_CANDIDATES];
 static int		order[MAX_CANDIDATES];
@@ -136,6 +140,8 @@ static struct
 	int	owned;		/* left out: the entity owns a dynamic light */
 	int	beams;		/* 6.3: the beams' lights offered (lines and the sunstaff's hits) */
 	int	beams_lit;	/* of them, in the UBO */
+	int	missiles;	/* 6.8: the fire missiles' lights offered (lines and spheres) */
+	int	missiles_lit;	/* of them, in the UBO */
 	int	most;		/* since the map loaded: the most lit in a frame */
 	float	brightest;	/* the largest intensity's luminance */
 	int	averages;	/* the frame averages made */
@@ -306,7 +312,7 @@ void VK_ClearSpriteLights (void)
 {
 	num_candidates = 0;
 	candidates_frame = vk.frame_count;
-	stats.sprites = stats.owned = stats.unknown = stats.beams = 0;
+	stats.sprites = stats.owned = stats.unknown = stats.beams = stats.missiles = 0;
 }
 
 static float Luminance (const vec3_t c)
@@ -335,27 +341,26 @@ static candidate_t *AddSphere (const vec3_t center, float radius, const vec3_t i
 	return c;
 }
 
-/* 6.3 (vk_beamlight.c, after the sprites): a beam's line light from a to
- * b, a cylinder of the radius whose power per unit length (the radiance
- * of its surface times its area, per unit of its length) is power; its
- * intensity across it per unit length is power / pi (a cylinder of
- * radiance L and radius r: L 2 r, its power L 2 pi r); false: none */
-qboolean VK_BeamLineLight (const vec3_t a, const vec3_t b, float radius, const vec3_t power)
+/* a line light from a to b, a cylinder of the radius whose power per unit
+ * length (the radiance of its surface times its area, per unit of its
+ * length) is power; its intensity across it per unit length is power / pi
+ * (a cylinder of radiance L and radius r: L 2 r, its power L 2 pi r);
+ * NULL: none */
+static candidate_t *AddLine (const vec3_t a, const vec3_t b, float radius, const vec3_t power)
 {
 	candidate_t	*c;
 	vec3_t		ab, ap, d;
 	float		lum = Luminance (power), len, t, r2;
 
-	if (!r_effect_lights.integer || !(lum > 0.0f) || num_candidates >= MAX_CANDIDATES)
-		return false;
+	if (!(lum > 0.0f) || num_candidates >= MAX_CANDIDATES)
+		return NULL;
 	VectorSubtract (b, a, ab);
 	len = VectorLength (ab);
 	if (len < 1.0f)
-		return false;
-	stats.beams++;
+		return NULL;
 	c = &candidates[num_candidates++];
 	memset (c, 0, sizeof(*c));
-	c->line = c->beam = true;
+	c->line = true;
 	VectorCopy (a, c->origin);
 	VectorCopy (b, c->end);
 	VectorCopy (power, c->intensity);
@@ -368,6 +373,19 @@ qboolean VK_BeamLineLight (const vec3_t a, const vec3_t b, float radius, const v
 	r2 = q_max (DotProduct (d, d), c->radius * c->radius);
 	c->priority = lum * len / (float)M_PI / r2;
 	stats.brightest = q_max (stats.brightest, lum * len / (float)M_PI);
+	return c;
+}
+
+/* 6.3 (vk_beamlight.c, after the sprites): a beam's line light (AddLine);
+ * false: none */
+qboolean VK_BeamLineLight (const vec3_t a, const vec3_t b, float radius, const vec3_t power)
+{
+	candidate_t	*c;
+
+	if (!r_effect_lights.integer || (c = AddLine (a, b, radius, power)) == NULL)
+		return false;
+	c->beam = true;
+	stats.beams++;
 	return true;
 }
 
@@ -380,6 +398,23 @@ qboolean VK_BeamEndLight (const vec3_t center, float radius, const vec3_t intens
 		return false;
 	c->beam = true;
 	stats.beams++;
+	return true;
+}
+
+/* 6.8 (vk_beamlight.c, after the beams): a fire missile's light: a line
+ * from a to b (value its power per unit length, as a beam's), or a sphere
+ * at a (value its intensity, as a sprite's); false: none */
+qboolean VK_MissileLight (const vec3_t a, const vec3_t b, float radius, const vec3_t value, qboolean line)
+{
+	candidate_t	*c;
+
+	if (!r_effect_lights.integer)
+		return false;
+	c = line ? AddLine (a, b, radius, value) : AddSphere (a, radius, value);
+	if (!c)
+		return false;
+	c->missile = true;
+	stats.missiles++;
 	return true;
 }
 
@@ -515,7 +550,7 @@ static void LineLight (const candidate_t *c, vk_effectlight_t *l)
 	len = VectorNormalize (dir);
 	pull = q_min (1.0f, len * 0.25f);
 	memset (l, 0, sizeof(*l));
-	l->line = l->beam = true;
+	l->line = l->not_on_lights = true;
 	VectorMA (c->origin, pull, dir, l->origin);
 	VectorMA (c->end, -pull, dir, l->end);
 	l->radius = c->radius;
@@ -531,7 +566,7 @@ int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 	int	i, n = 0, count;
 	vec3_t	origin;
 
-	stats.lit = stats.over = stats.solid = stats.beams_lit = 0;
+	stats.lit = stats.over = stats.solid = stats.beams_lit = stats.missiles_lit = 0;
 	if (!r_effect_lights.integer || candidates_frame != vk.frame_count || !r_scene.worldmodel)
 		return 0;
 	count = num_candidates;
@@ -554,7 +589,8 @@ int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 		if (c->line)
 		{
 			LineLight (c, &out[n++]);
-			stats.beams_lit++;
+			stats.beams_lit += c->beam;
+			stats.missiles_lit += c->missile;
 			continue;
 		}
 		VectorCopy (c->origin, origin);
@@ -565,9 +601,10 @@ int VK_ChooseEffectLights (int room, vk_effectlight_t *out)
 			continue;
 		}
 		stats.beams_lit += c->beam;
+		stats.missiles_lit += c->missile;
 		l = &out[n++];
 		memset (l, 0, sizeof(*l));
-		l->beam = c->beam;	/* the sunstaff's hit doesn't light its glowing balls */
+		l->not_on_lights = c->beam || c->missile;	/* the sunstaff's hit doesn't light its glowing balls, a fire missile itself */
 		VectorCopy (origin, l->origin);
 		l->radius = radius;
 		/* a UBO sphere's color is pi x its radiance: the intensity over r^2 */
@@ -596,6 +633,7 @@ void VK_PrintEffectLights (void)
 	Con_Printf ("  beam lights (6.3): last frame %d offered (lines, the sunstaff's hits), %d of them lit; ",
 		    stats.beams, stats.beams_lit);
 	VK_PrintBeamLights ();
+	Con_Printf ("  fire missile lights (6.8): last frame %d offered (lines and spheres), %d of them lit\n", stats.missiles, stats.missiles_lit);
 }
 
 void VK_InitEffectLights (void)

@@ -483,7 +483,8 @@ void VK_DestroyModelPipelines (void);
 void VK_LoadModels (void);		/* on map change, after VK_LoadWorld: every alias model in cl.model_precache */
 int VK_AliasModelIndex (qmodel_t *model);	/* builds the model's data on first use; -1 = can't be drawn */
 const vk_aliasmodel_t *VK_GetAliasModel (int index);
-int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius);	/* 6.3: its triangles' texture coordinates and mean areas over the poses; the farthest vertex from its x axis */
+int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius,
+			   float *pose_areas, int max_poses);	/* 6.3: its triangles' texture coordinates and mean areas over the poses; the farthest vertex from its x axis; 6.8: each pose's areas */
 void VK_UpdateModelGeometry (void);	/* in R_RenderView, after VK_UpdateInstances */
 qboolean VK_ModelGeometryBuiltThisFrame (void);
 const vk_buffer_t *VK_InstancedBuffer (void);	/* the current frame's */
@@ -575,6 +576,9 @@ typedef struct
 	int		emissive;	/* instances with an emissive skin (4.5: the light models' flames) */
 	int		glowing;	/* glowing projectiles (6.2): the whole skin emits, not lit by their own light */
 	int		beams;		/* glowing beam segments and ends (6.3, vk_beamlight.c) */
+	int		missiles;	/* glowing fire missiles without a light of their own (6.8, vk_beamlight.c) */
+	int		flames_above;	/* 6.8: emissive flames over their light (VK_MapLightBelow) */
+	int		flames_translucent;	/* 6.8: translucent ones at their light */
 	int		carriers;	/* translucent ones around a light (6.14: MATERIAL_FLAG_CARRIES_LIGHT) */
 	int		ice;		/* ice (6.15): translucent in the ice skin, a glass model */
 } vk_modelframe_t;
@@ -630,7 +634,7 @@ typedef struct
 	float		range;		/* where its light fades to 0 */
 	qboolean	line;		/* 6.3: a beam's line light (DYNLIGHT_LINE), from origin to end */
 	vec3_t		end;
-	qboolean	beam;		/* 6.3: a beam's light (a line, the sunstaff's hit): doesn't light what is flagged a light */
+	qboolean	not_on_lights;	/* 6.3: a beam's light (a line, the sunstaff's hit), 6.8: a fire missile's: doesn't light what is flagged a light */
 } vk_effectlight_t;
 
 void VK_InitEffectLights (void);		/* its cvar, from VK_InitEffects */
@@ -658,6 +662,16 @@ void VK_BeamLightAverages (void);		/* VK_LoadModels, after the material files ch
 void VK_BeamLightsBetweenFrames (void);		/* VK_EffectLightsBetweenFrames: those of models first drawn last frame */
 void VK_BeamLightsPurged (void);		/* VK_EffectLightsPurged: texture slots freed */
 void VK_PrintBeamLights (void);			/* vk_lights, vk_effects */
+/* 6.8: the fire missiles that own no light (Praevus's blood rain, the
+ * pentacles' spit, the fire storm's flame balls; the tomed crossbow's
+ * flaming arrows, the fallen angel's spell) glow as the beams and light the
+ * scene by a light (a line along a long one, else a sphere) of their
+ * glowing surface's power */
+#define MAX_FIRE_MISSILES	64	/* a frame's glowing ones whose light is offered; more glow without one */
+qboolean VK_FireMissileModel (const qmodel_t *model);	/* vk_instance.c: one of them (r_effect_lights, r_emissive_scale above 0) */
+void VK_ClearMissileLights (void);		/* VK_UpdateInstances, first */
+void VK_AddMissileLight (qmodel_t *model, int skin, int pose, const float transform[4][4], float scale, float level);	/* vk_instance.c: a glowing one drawn, its light to offer (VK_BeamLights) */
+qboolean VK_MissileLight (const vec3_t a, const vec3_t b, float radius, const vec3_t value, qboolean line);	/* vk_effectlight.c: its line (a beam's) or sphere (a sprite's); false: none */
 
 /* vk_accel.c: acceleration structures. Static BLASes for the world's and
  * the submodels' primitive ranges are built on map load; every frame, the
@@ -800,6 +814,7 @@ float VK_MapLightGLScale (void);	/* r_maplight_gl_scale (4.15; 4.16: the lights 
 qboolean VK_DynamicLightOwner (int entnum, const vec3_t origin, float radius);	/* vk_light.c: the entity owns a lit dynamic light within radius this frame */
 int VK_GlowLight (int entnum, const vec3_t origin, float radius, float chain);	/* 6.2: the key of a glowing projectile's light (not a muzzle flash; its own within radius or another's within chain), 0 = none */
 qboolean VK_MapLightAt (const vec3_t origin);
+qboolean VK_MapLightBelow (const vec3_t origin);	/* 6.8: a map light straight below, at most 32 units (Praevus's flames over their light) */
 void VK_CountMapLightModels (int n);	/* vk_instance.c, each frame */
 void VK_PrintMapLights (void);	/* vk_lights */
 void VK_PrintMapLightColors (void);	/* vk_lights colors */

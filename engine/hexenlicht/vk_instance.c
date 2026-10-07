@@ -19,7 +19,10 @@
  * carries the material of the skin (vk_skin.c), the fixed light level and
  * the colorshade tint GL uses (6.2: a glowing projectile's skin emits
  * whole, and its light doesn't light it; 6.3: so does a glowing beam's,
- * vk_beamlight.c, the opaque ones in the light group). 6.11: the view
+ * vk_beamlight.c, the opaque ones in the light group; 6.8: and a fire
+ * missile's that owns no light, whose sphere vk_beamlight.c offers; the
+ * flames Praevus spawns over their light glow as those at it, and a
+ * translucent one at its light glows at its opacity). 6.11: the view
  * entity's own model without the chase camera (r_scene.c) follows in a
  * group of its own as Quake II RTX's viewer models, which only the
  * secondary rays see. The first-person weapon (cl.viewent) comes
@@ -575,6 +578,18 @@ static int GlowKey (const scene_entity_t *e)
 	return (key == e->num || (key && TranslucentPart (key))) ? key : 0;
 }
 
+/* 6.8: a fire missile that owns no light (vk_beamlight.c's
+ * fire_missiles[]: the blood rain, the pentacles' spit, the fire storm's
+ * flame balls, the flaming arrows, the fallen angel's spell): it glows as a
+ * glowing projectile, and its light is of its glowing surface's power
+ * (VK_AddMissileLight); one owning a light is GlowKey's. Chosen by name, so
+ * not GlowCandidate's size: the blood missile is a streak 90 units long */
+static qboolean FireMissile (const scene_entity_t *e)
+{
+	return e->kind == SCENE_ENT_DYNAMIC && e->num > cl.maxclients && !e->movestep && VK_FireMissileModel (e->model) &&
+	       !GlowKey (e) && !VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e));
+}
+
 /* the instance this frame's light of the key doesn't light (vk_light.c), -1 = none */
 int VK_GlowingInstance (int key)
 {
@@ -599,14 +614,32 @@ int VK_GlowingInstance (int key)
  * projectile, the light inside it; vk_light.c); 6.2: nor a glowing one's;
  * 6.3: nor a glowing beam's (its line light is along it, vk_beamlight.c).
  * 6.14: a translucent one around a light is flagged instead
- * (MATERIAL_FLAG_CARRIES_LIGHT): the caustic ray passes it */
+ * (MATERIAL_FLAG_CARRIES_LIGHT): the caustic ray passes it. 6.8: nor a
+ * glowing fire missile's (its sphere is at it), nor the flame Praevus's
+ * burners and palace torches spawn over their light (FlameAbove) */
+static qboolean FlameAbove (const scene_entity_t *e);
+
 static qboolean AroundLight (const scene_entity_t *e)
 {
 	if (VK_BeamGlows (e))
 		return true;
 	if (e->kind != SCENE_ENT_VIEWMODEL && VK_MapLightAt (e->origin))
 		return true;
-	return e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e));
+	if (FlameAbove (e))
+		return true;
+	return e->kind == SCENE_ENT_DYNAMIC && (VK_DynamicLightOwner (e->num, e->origin, AliasBoundsRadius (e)) || GlowKey (e) ||
+						FireMissile (e));
+}
+
+/* 6.8: a static model at GL's fixed light level straight over a map light,
+ * at most 32 units (VK_MapLightBelow): the flame (flame2.mdl) Praevus's
+ * light_burner and light_palace_torch spawn 6 and 32 units over the light,
+ * their own model at it; as the other light models' flames, it glows and
+ * casts no shadows */
+static qboolean FlameAbove (const scene_entity_t *e)
+{
+	return e->kind == SCENE_ENT_STATIC && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT && !VK_MapLightAt (e->origin) &&
+	       VK_MapLightBelow (e->origin);
 }
 
 /* 6.11: never the light group for the view entity's own model, which
@@ -807,7 +840,7 @@ static int AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_
 	const aliashdr_t	*hdr;
 	entity_history_t	*h;
 	scene_entity_t		shown;		/* e where r_lerpmove shows it */
-	qboolean		continues, jumped, bad_skin, emissive, glow, beam, ice;
+	qboolean		continues, jumped, bad_skin, emissive, glow, beam, ice, flame_above, flame_translucent, missile;
 	float			rot[3][3], group_interval, blend, backlerp, alpha;
 	vec3_t			scale, offset;
 	int			index = VK_AliasModelIndex (e->model), pose, curr, prev, material;
@@ -888,14 +921,25 @@ static int AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_
 	 * dynamic light is its light, which doesn't light it (vk_light.c).
 	 * 6.3: so does a glowing beam's, in any group: its line light
 	 * (vk_beamlight.c) is its light, which doesn't light what is flagged a
-	 * light; not the gaze's, a cutout without one (bounces gather it) */
+	 * light; not the gaze's, a cutout without one (bounces gather it).
+	 * 6.8: the flames Praevus spawns over their light are flames too
+	 * (FlameAbove), and so is a translucent model at GL's fixed light level
+	 * at a map light's origin (light_newfire: fire flicker), which glows at
+	 * its opacity; a fire missile without a light glows as 6.2's, and its
+	 * sphere (vk_beamlight.c) is its light, which doesn't light what is
+	 * flagged a light */
 	beam = VK_BeamGlows (e);
-	emissive = !beam && group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
-		   VK_MapLightAt (e->origin);	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
+	flame_above = !beam && group == MODEL_GROUP_LIGHT && FlameAbove (e);
+	flame_translucent = !beam && group == MODEL_GROUP_TRANSPARENT && (e->drawflags & MLS_MASKIN) != MLS_NONE &&
+			    e->kind != SCENE_ENT_VIEWMODEL && !e->viewer && !IsIce (e) && VK_MapLightAt (e->origin);
+	emissive = (!beam && group == MODEL_GROUP_LIGHT && (e->drawflags & MLS_MASKIN) == MLS_ABSLIGHT &&
+		    VK_MapLightAt (e->origin)) || flame_above || flame_translucent;	/* r_emissive_models 0: its material doesn't emit (5.3: nor with an _e) */
 	glow_key = (!beam && !emissive && group == MODEL_GROUP_LIGHT && num_glowing < (int)Q_COUNTOF(glowing) &&
 		    !VK_MapLightAt (e->origin)) ? GlowKey (e) : 0;
 	glow = glow_key != 0 && VK_GlowingInstance (glow_key) < 0;	/* a light doesn't light one instance only */
-	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : (glow || beam) ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
+	missile = !beam && !emissive && !glow_key && group == MODEL_GROUP_LIGHT && !e->viewer && e->kind == SCENE_ENT_DYNAMIC &&
+		  !VK_MapLightAt (e->origin) && FireMissile (e);
+	material = VK_SkinMaterial (e, hdr, emissive ? VK_SKIN_FLAME : (glow || beam || missile) ? VK_SKIN_GLOW : VK_SKIN_LIT, &bad_skin);
 	model_frame.bad_skins += bad_skin;
 	/* 5.5: a skin's files' chrome, Quake II RTX's chrome model (a mirror
 	 * below roughness 0.02); a translucent entity stays translucent; 6.15:
@@ -911,6 +955,17 @@ static int AddAliasInstance (const scene_entity_t *e, int group, uint32_t *next_
 	{
 		mi->material |= MATERIAL_FLAG_LIGHT;
 		model_frame.emissive++;
+		model_frame.flames_above += flame_above;
+		model_frame.flames_translucent += flame_translucent;
+	}
+	if (missile)
+	{
+		float	level = AliasLight (&shown);
+
+		mi->material |= MATERIAL_FLAG_LIGHT;
+		VK_AddMissileLight (e->model, e->skinnum, curr, (const float (*)[4]) mi->transform, e->scale ? e->scale / 100.0f : 1.0f,
+				    (level >= 0.0f) ? level : 1.0f);
+		model_frame.missiles++;
 	}
 	if (glow)
 	{
@@ -978,6 +1033,7 @@ void VK_UpdateInstances (void)
 
 	num_instances = 0;
 	num_glowing = 0;
+	VK_ClearMissileLights ();	/* 6.8 */
 	memset (&model_frame, 0, sizeof(model_frame));
 	model_frame.viewer_instance = -1;
 	model_frame.dropped_total = dropped_total;
@@ -1094,6 +1150,7 @@ void VK_ClearInstances (void)
 {
 	num_instances = 0;
 	num_glowing = 0;
+	VK_ClearMissileLights ();	/* 6.8 */
 	memset (&model_frame, 0, sizeof(model_frame));
 	model_frame.viewer_instance = -1;
 	memset (history_dynamic, 0, sizeof(history_dynamic));

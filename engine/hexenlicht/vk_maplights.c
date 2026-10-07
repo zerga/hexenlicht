@@ -107,6 +107,7 @@
 #define SPOT_COS_OMNI		-0.99984770f	/* cos(179 degrees): a cone at least this wide (half) lights everywhere */
 #define SPOT_COS_NARROWEST	0.99984770f	/* cos(1 degree): narrower cones are made this wide (sphere_light_spot's edge) */
 #define AT_HASH_SIZE		8192	/* VK_MapLightAt's table, a power of 2 above MAX_LIGHT_POLYS */
+#define ABOVE_MAX		32	/* 6.8: VK_MapLightBelow's reach: Praevus's flames 6 (light_burner) and 32 (light_palace_torch) units over their light */
 
 COMPILE_TIME_ASSERT(maplight_hash, AT_HASH_SIZE > MAX_LIGHT_POLYS && MAX_LIGHT_POLYS < 32767);
 
@@ -170,6 +171,7 @@ static int		num_editable;
 static int		at_points[MAX_LIGHT_POLYS][3];	/* the light entities' origins, to the unit: where their models are */
 static int		num_at_points;
 static short		at_hash[AT_HASH_SIZE];	/* at_points index + 1, 0 = empty */
+static short		column_hash[AT_HASH_SIZE];	/* 6.8: the same by x and y only (VK_MapLightBelow) */
 static int		dropped_points[MAX_LIGHT_POLYS][3];	/* light entities the compiler lit nothing from (vk_mapfile's report) */
 static int		num_dropped_points;
 static vk_lightcolors_t	colorinfo;	/* list NULL: not computed (the map's own colors) */
@@ -209,6 +211,11 @@ static unsigned AtHash (const int *p)
 	return ((unsigned)p[0] * 73856093u ^ (unsigned)p[1] * 19349663u ^ (unsigned)p[2] * 83492791u) & (AT_HASH_SIZE - 1);
 }
 
+static unsigned ColumnHash (const int *p)
+{
+	return ((unsigned)p[0] * 73856093u ^ (unsigned)p[1] * 19349663u) & (AT_HASH_SIZE - 1);
+}
+
 static void RoundOrigin (const vec3_t v, int *p)
 {
 	int	k;
@@ -236,6 +243,28 @@ qboolean VK_MapLightAt (const vec3_t origin)
 		const int	*q = at_points[at_hash[h] - 1];
 
 		if (p[0] == q[0] && p[1] == q[1] && p[2] == q[2])
+			return true;
+	}
+	return false;
+}
+
+/* 6.8: is one of the map's light entities straight below the origin (x and
+ * y to the unit), at most 32 units? Praevus's light_burner and
+ * light_palace_torch spawn their flame (a static flame2.mdl) 6 and 32 units
+ * over the light; the other light entities spawn their model at it */
+qboolean VK_MapLightBelow (const vec3_t origin)
+{
+	int		p[3];
+	unsigned	h;
+
+	if (!num_at_points || !r_maplights.integer)
+		return false;
+	RoundOrigin (origin, p);
+	for (h = ColumnHash (p); column_hash[h]; h = (h + 1) & (AT_HASH_SIZE - 1))
+	{
+		const int	*q = at_points[column_hash[h] - 1];
+
+		if (p[0] == q[0] && p[1] == q[1] && p[2] > q[2] && p[2] - q[2] <= ABOVE_MAX)
 			return true;
 	}
 	return false;
@@ -586,6 +615,7 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 	memset (&stats, 0, sizeof(stats));
 	memset (&colorinfo, 0, sizeof(colorinfo));
 	memset (at_hash, 0, sizeof(at_hash));
+	memset (column_hash, 0, sizeof(column_hash));
 	num_base = num_maplights = num_editable = num_at_points = num_dropped_points = 0;
 	ents = ParseEntities (worldmodel->entities, &n);
 	for (i = 0; i < n; i++)
@@ -686,6 +716,9 @@ void VK_LoadMapLights (qmodel_t *worldmodel)
 		for (h = AtHash (at_points[num_at_points]); at_hash[h]; h = (h + 1) & (AT_HASH_SIZE - 1))
 			;
 		at_hash[h] = (short)(num_at_points + 1);
+		for (h = ColumnHash (at_points[num_at_points]); column_hash[h]; h = (h + 1) & (AT_HASH_SIZE - 1))
+			;
+		column_hash[h] = (short)(num_at_points + 1);
 		num_at_points++;
 		num_base++;
 	}
@@ -727,6 +760,7 @@ void VK_ClearMapLights (void)
 	VK_ClearLightFit ();
 	num_base = num_maplights = num_editable = num_at_points = num_dropped_points = 0;
 	memset (at_hash, 0, sizeof(at_hash));
+	memset (column_hash, 0, sizeof(column_hash));
 	memset (&stats, 0, sizeof(stats));
 	memset (&applied, 0, sizeof(applied));
 	memset (&colorinfo, 0, sizeof(colorinfo));

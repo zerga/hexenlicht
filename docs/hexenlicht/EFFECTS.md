@@ -263,7 +263,7 @@ The first flag in `CL_RelinkEntities`' chain wins; `mdl_flags.ps1 -Trails` lists
 - [ ] **`EF_SPELL`** (`rt_spell`).
   - Models: `faspell.mdl`, `famshot.mdl`.
   - Where: the fallen angel, Famine, Death.
-  - Now: not looked at.
+  - Now: not looked at. 6.8: `faspell.mdl` glows and lights (X53).
 - [ ] **`EF_VORP_MISSILE`** (`rt_vorpal`).
   - Models: `vorpshot`, `vorpshok`, `vorpshk2.mdl`.
   - Where: tomed vorpal sword.
@@ -308,10 +308,10 @@ The first flag in `CL_RelinkEntities`' chain wins; `mdl_flags.ps1 -Trails` lists
 - [ ] **Model light modes**: `MLS_ABSLIGHT`, `MLS_POWERMODE`, `MLS_TORCH`, `MLS_FIREFLICKER`, `MLS_FULLBRIGHT`, `MLS_CRYSTALGOLEM`.
   - Draws: GL's fixed light levels on effect models (projectiles, flames, shock balls); Hexenlicht uses the instance's `light` (light styles 25–30).
   - Where: most projectiles, the summoning stone, tomed axe blades, the cube, souls.
-  - Now: differs: models at a fixed light level are brighter than GL's: the summoning stone (power mode), the scarab (abslight 0.5), the cube (abslight 0.1–1); see the weapons and spells.
+  - Now: differs: models at a fixed light level are brighter than GL's: the summoning stone (power mode), the scarab (abslight 0.5), the cube (abslight 0.1–1); see the weapons and spells. 6.8: the fire missiles in fire flicker or abslight that own no light glow at their level (X53).
 - [ ] **HoT's glows** (not planned, X4: HoT's patch, not Raven's; revisit in 7.1 if a missile is hard to see): coronas.
   - Draws: `gl_missile_glows` 1 by default (`XF_MISSILE_GLOW`: 23 names in `gl_model.c`, 21 of them models; `models/shard` wants exactly 12 characters and `models/scrbpbody` misspells `scrbpbdy`, so glass shards and the scarab have none; `fireball`, `drgnball`, `purfir1`, `iceshot`, `iceshot2`, `flaming`, `scrbstp1`, `spit`, `goop`, `snakearr`, `shardice`, `lavaball`, `eidoball`, `famshot`, `pestshot`, `mumshot`, `golemmis`, …); `gl_glows` 0 (torches); `gl_other_glows` 0 (mana).
-  - Now: not drawn. Hexenlicht registers the cvars only. GL's blue and yellow balls on the ice mace's and purifier's missiles are missing (`c2_far_w2`, `c1_far_w4`), as are the red and green ones on the Demoness's blood rain and acid (`c5_far_w1`, `w2t`). Whether to draw them or leave them to bloom is for 6.2 to decide.
+  - Now: not drawn. Hexenlicht registers the cvars only. GL's blue and yellow balls on the ice mace's and purifier's missiles are missing (`c2_far_w2`, `c1_far_w4`), as are the red and green ones on the Demoness's blood rain and acid (`c5_far_w1`, `w2t`). Whether to draw them or leave them to bloom is for 6.2 to decide. 6.8: the blood rain and the flaming arrows glow themselves (X53).
 
 ### Class weapons (Hexen II's four classes; the Demoness is under 6.8)
 Each weapon is in the run, near (the pedestal about 40 units ahead) and far (246 units). A line is the weapon as a whole: its models, trails, impacts and lights. The full run's near steps were level, so the melee weapons missed; run 5 (the Paladin and the Assassin) looked down 20° so they reach the pedestal.
@@ -374,7 +374,7 @@ Each weapon is in the run, near (the pedestal about 40 units ahead) and far (246
 - [ ] **Assassin 2, crossbow**.
   - Normal: 3 `arrow.mdl`; hits give the flash `arrowhit.mdl` (holey, abslight 0.5) and `SpawnPuff`; walls give `CE_WHITE_SMOKE` and wood chunks.
   - Tome: 5 `flaming.mdl` (fire flicker, a missile glow in GL) that stick and explode with `CE_XBOW_EXPLOSION`.
-  - Now: drawn (`c4_near_w2`, `w2t`).
+  - Now: drawn (`c4_near_w2`, `w2t`). 6.8: the flaming arrows glow and light (X53), the five while they stick.
 - [ ] **Assassin 3, grenades**.
   - Normal: `assgren.mdl` with a `svc_particle4` trail; `CE_NEW_EXPLOSION`, or `CE_LG_EXPLOSION` / `CE_FLOOR_EXPLOSION`.
   - Tome: a big grenade, `TE_EXPLOSION` and 3–6 sub-bombs.
@@ -446,7 +446,7 @@ Each is used in the run from far (`c<class>_item_<name>`), shot at 10, 60 and 20
     - The snake's `goop`.
     - Riders' `pestshot`, `famshot`, `boss/waraxe` (transparent), `boss/bone3` (transparent, translucent).
   - Where: see the trails and sparks above for maps.
-  - Now: not looked at.
+  - Now: not looked at. 6.8: the fallen angel's `faspell` (fire flicker, no light of its own) glows and lights (DECISIONS X53; seen by the owner in Praevus's keep5).
 
 ## 6.3 Beams and lightning (#66)
 The client's stream entities (`cl_tent.c`) are beam segments made every frame, alias models at abslight 128. GL gives them no light; the sunstaff's player carries `EF_BRIGHTLIGHT`.
@@ -566,27 +566,29 @@ GL's own screen code (`gl_screen.c`) over `vk_draw.c`'s port of `gl_draw.c`, and
 ## 6.8 Portal of Praevus
 What only the mission pack draws (its gamecode in `gamecode/hc/portals`). The shared effects above apply to it too.
 
+6.8's look (2026-10-07, TESTING.md "Praevus (6.8)"): `effects_run.ps1 -Class 5 -NoPause` against `main`'s build and GL; `praevus_run.ps1`'s views of the light entities' flames; the owner from saves: the `monsters` map's monsters with the Demoness's weapons, the Praevus fight, keep5's fallen angels, tibet1's ice archers and burners, tibet9's snow ("all looks good").
+
 ### The Demoness (class 5, the run's `c5_*`)
-- [ ] **Demoness 1, blood rain**.
+- [x] **Demoness 1, blood rain**.
   - Normal: `sucwp1p.mdl` (fire flicker, scale 1.3) shrinking away; hit `CE_BLDRN_EXPL`; `SpawnPuff`; `EF_MUZZLEFLASH`.
   - Tome: 3 bouncing missiles, the middle one spinning; bounce `CE_BRN_BOUNCE`.
-  - Now: differs: GL's red missile glow is missing, and the missile shows as a small orange speck (`c5_far_w1`, `w1t`).
-- [ ] **Demoness 2, acid rune**.
+  - Now: 6.8: the missile (a streak 90 units long, its origin at the head; it owns no light) glows ×16 and is a line light along it (DECISIONS X53): a bright streak where 6.1 saw a small orange speck; its light is weak (the skin is dark red: the pedestal next to the tome's three about 5 % brighter). GL's red halo is HoT's missile glow (X4) (`c5_far_w1`, `w1t`).
+- [x] **Demoness 2, acid rune**.
   - Normal: `sucwp2p.mdl` (`EF_ACIDBALL` trail and a light of radius 100–120, green with colored lights); hit `CE_ACID_HIT`.
   - Tome: a blob (scale 2.5) trailing `CE_ACID_MUZZFL`; bursts with `TE_EXPLOSION` and `CE_ACID_EXPL`, then 3–10 drops (`CE_ACID_SPLAT`, `CE_GREEN_SMOKE`); in DM and co-op, `CE_CHUNK` acid.
-  - Now: drawn (`c5_*_w2`, `w2t`). The tomed blob's light on the pedestal is faint in glh2 (R83); GL's green missile glows are missing (`c5_far_w2t`).
-- [ ] **Demoness 3, fire storm**.
+  - Now: drawn (`c5_*_w2`, `w2t`), as in `main` (6.8). The tomed blob's light on the pedestal is faint in glh2 (R83); GL's green missile glows are HoT's (X4).
+- [x] **Demoness 3, fire storm**.
   - Normal: an invisible missile (`null.spr`, `EF_DIMLIGHT`) trailing 2 `CE_FLAMESTREAM` and ground fire `CE_FIREWALL_*`. A target hit gives `CE_FBOOM` and may set it alight (`CE_LG_EXPLOSION`, then `CE_ONFIRE`); a wall gives `CE_BOMB`.
   - Tome: a spiral swarm; on a target, flame balls (`sucwp1p.mdl` frame 4, abslight 0.5) rain for 3 s.
-  - Now: paused shots show nothing (X9: a paused game draws no client effects). 6.2, unpaused: the trails, the ground fire and the impacts are drawn and emit, up to 19 lights (`c5_far_w3`); the tome's swarm not looked at.
-- [ ] **Demoness 4, tempest staff**.
+  - Now: 6.2, unpaused: the trails, the ground fire and the impacts are drawn and emit, up to 19 lights (`c5_far_w3`). 6.8: the flame balls glow and light (X53); the owner on the `monsters` map's monsters: the swarm, the flame balls, the victims burning. A burning monster carries `EF_DIMLIGHT`, white with white dynamic lights beside its yellow flames: colored dynamic lights by default since 6.8 (X55), 0.8 0.6 0.2.
+- [x] **Demoness 4, tempest staff**.
   - Normal: a homing ball `lball.mdl` (`EF_DIMLIGHT`, scale 0.75), the "bf" flash; the impact gives `CE_LBALL_EXPL` and 3–4 `TE_STREAM_LIGHTNING` bolts (`CE_LSHOCK` on targets).
   - Tome: a chain of `TE_STREAM_LIGHTNING_SMALL` between targets within 1000 units; with no target, 3 branching arcs.
-  - Now: drawn: the ball, the bolts and the tome's arcs (`c5_*_w4`, `w4t`). 6.3: the bolts and arcs glow and light (line lights).
-- [ ] **The Demoness's glyph and invincibility**.
+  - Now: drawn: the ball, the bolts and the tome's arcs (`c5_*_w4`, `w4t`). 6.3: the bolts and arcs glow and light (line lights). 6.8: on targets by the owner (the `monsters` map). The ball, a cutout, glows with 6.13.
+- [x] **The Demoness's glyph and invincibility**.
   - Glyph: a gas grenade `glyphwir.mdl`; `CE_ACID_EXPL`, then `CE_GREEN_SMOKE` every 0.1 s for up to 30 s; poisoned players get "bf" every second.
   - Invincibility and DM spawn protection: translucent and abslight, `svc_particle2` FIREBALL 416 and REDFIRE 135 every frame, `EF_BRIGHTFIELD` (draws nothing: its call is commented out in `cl_main.c`, in GL too).
-  - Now: the invincibility's particles are drawn (`c5_item_invincibility`); the glyph's gas was not looked at (at the feet).
+  - Now: the invincibility's particles are drawn (`c5_item_invincibility`); 6.8: the glyph's green gas at the pedestal (`c5_item_glyph_60`, as in `main` and GL).
 
 ### Praevus effects
 - [x] **`CE_FLAMESTREAM`**: `flamestr.spr` (translucent, abslight 255).
@@ -595,12 +597,12 @@ What only the mission pack draws (its gamecode in `gamecode/hc/portals`). The sh
 - [x] **`CE_FIREWALL_SMALL`, `_MEDIUM`, `_LARGE`**: `firewal1`, `firewal5`, `firewal4.spr`.
   - Where: the fire storm's ground fire; Praevus's fire wave (medium, large).
   - Now: emits (6.2): the fire storm's ground fire, up to 19 lights in a frame (`c5_far_w3` unpaused).
-- [ ] **`CE_FLAMEWALL`**: `firewal1.spr` (opaque).
+- [x] **`CE_FLAMEWALL`**: `firewal1.spr` (opaque).
   - Where: Praevus's fire wave and fire pillars (tibet10).
-  - Now: emits (6.2); not looked at.
-- [ ] **`CE_ONFIRE`**: `firewal1`–`3.spr` (translucent), puffs for 5–10 s.
+  - Now: emits (6.2); 6.8: the owner in the Praevus fight.
+- [x] **`CE_ONFIRE`**: `firewal1`–`3.spr` (translucent), puffs for 5–10 s.
   - Where: victims the fire storm sets alight.
-  - Now: emits (6.2); not looked at (needs a target).
+  - Now: emits (6.2); 6.8: the owner on the `monsters` map (the victims' `EF_DIMLIGHT`: see Demoness 3).
 - [x] **`CE_FBOOM`**, **`CE_BOMB`**: `fboom.spr`, `pow.spr`.
   - Where: fire storm impacts.
   - Now: emit (6.2): the tomed fire storm's impacts (`c5_*_w3t` unpaused).
@@ -613,28 +615,28 @@ What only the mission pack draws (its gamecode in `gamecode/hc/portals`). The sh
 - [x] **`CE_LBALL_EXPL`**: `Bluexp3.spr`.
   - Where: the tempest staff's ball.
   - Now: emits (6.2; `c5_*_w4` unpaused).
-- [ ] **`CE_LSHOCK`**: `vorpshok.mdl` (torch light mode, scale 255, rolled 90°).
+- [x] **`CE_LSHOCK`**: `vorpshok.mdl` (torch light mode, scale 255, rolled 90°).
   - Where: every lightning hit on a target (it replaces Hexen II's server shock ball), zaps under water.
-  - Now: not looked at (needs a target).
-- [ ] **`CE_FLOOR_EXPLOSION3`**: `biggy.spr`.
+  - Now: 6.8: the owner, the tempest staff on the `monsters` map's monsters; lit by the bolt's light, as Hexen II's shock (6.4).
+- [x] **`CE_FLOOR_EXPLOSION3`**: `biggy.spr`.
   - Where: Praevus shrinking and growing, his fire pillars.
-  - Now: emits (6.2); not looked at.
-- [ ] **`CE_GRAVITYWELL`**: `GravityWellParticle` (`pt_gravwell`).
+  - Now: emits (6.2); 6.8: the owner in the Praevus fight.
+- [x] **`CE_GRAVITYWELL`**: `GravityWellParticle` (`pt_gravwell`).
   - Where: Praevus teleporting (colors 208–223, 0.8 s) and recharging (128, 3 s).
-  - Now: not looked at.
-- [ ] **`CE_SNOW`**: `R_SnowEffect` (`pt_snow`, GL's snow textures and sizes from the count).
+  - Now: 6.8: the owner in the Praevus fight.
+- [x] **`CE_SNOW`**: `R_SnowEffect` (`pt_snow`, GL's snow textures and sizes from the count).
   - Where: `weather_snow` (tibet1–4, tibet9, thomas; TESTING.md: tibet9 looking up under the ceiling's opening).
-  - Now: not looked at in 6.1 (drawn since 2.5).
-- [ ] **`CE_CHUNK`**: client chunks with their trails.
+  - Now: drawn since 2.5; 6.8: the owner in tibet9. About one flake in 64 is Raven's smiley "happy snow" (`r_part.c`, GL's rule; it stays).
+- [x] **`CE_CHUNK`**: client chunks with their trails.
   - Draws: glass (translucent), wood, metal, flesh, stone, clay, leaves, hay, cloth; ice `shard.mdl` (translucent, abslight 127, `rt_ice`); acid `sucwp2p.mdl` (`rt_acidball`); meteor `tempmetr.mdl` (`rt_smoke`); blood (`rt_bloodshot`, `pt_darken`).
   - Where: every gib and debris in DM and co-op; ice and stone shatter always; the meteor and acid bursts in DM and co-op.
-  - Now: not looked at.
-- [ ] **`TE_STREAM_LIGHTNING_SMALL`**: `stltng2.mdl` (the end translucent and brighter).
+  - Now: 6.8: ice and stone shattering looked at by the owner; the DM and co-op kinds not looked at (the models and trails of the single player's).
+- [x] **`TE_STREAM_LIGHTNING_SMALL`**: `stltng2.mdl` (the end translucent and brighter).
   - Where: the tomed tempest staff.
-  - Now: drawn (`c5_*_w4t`). 6.3: glows and lights by the lightning's path (DECISIONS X10–X11); this line is 6.8's.
+  - Now: drawn (`c5_*_w4t`, as in `main`, 6.8). 6.3: glows and lights by the lightning's path (DECISIONS X10–X11).
 
 ### Praevus monsters and the world
-- [ ] **Praevus** (`monster_buddha`, tibet10).
+- [x] **Praevus** (`monster_buddha`, tibet10).
   - Draws:
     - Translucent while shrinking.
     - Shields `shield.mdl` (translucent, abslight).
@@ -642,23 +644,23 @@ What only the mission pack draws (its gamecode in `gamecode/hc/portals`). The sh
     - The fire wave's wind-up (`svc_particle2` BLOB 424); reappearing (`svc_particle4` SLOWGRAV 498).
     - His thunderstorm (`TE_STREAM_LIGHTNING`).
     - His death: the rider death's beams, `EF_BRIGHTLIGHT`, the "wf" white flash.
-  - Now: not looked at.
-- [ ] **Yakman** (tibet2–9, keep5).
+  - Now: 6.8: the owner's fight from `hl68_praevus` ("seems fine"), his death and the soul skulls after it.
+- [x] **Yakman** (tibet2–9, keep5).
   - Draws: snowballs `yakball.mdl` (abslight 0.5, `EF_ICE`) with `CE_ICEHIT` and freezing; skid dust (particle 344) and `CE_WHITE_SMOKE`; `SpawnPuff`.
-  - Now: not looked at.
-- [ ] **Pentacles** (`monster_pentacles`, keep3–4, tibet1/3/4/7).
+  - Now: 6.8: the owner on the `monsters` map (8 yakmen).
+- [x] **Pentacles** (`monster_pentacles`, keep3–4, tibet1/3/4/7).
   - Draws: an `EF_NODRAW` entity with `pent.mdl` attached; spit `sucwp1p.mdl` (fire flicker) → `CE_BLDRN_EXPL`; exploding, `TE_EXPLOSION`, the explosion sprites and meteors.
-  - Now: not looked at.
-- [ ] **Ice archer, snow leopard, weretiger**.
+  - Now: 6.8: the spit glows and lights as the blood rain (X53); the owner on the `monsters` map (17 pentacles).
+- [x] **Ice archer, snow leopard, weretiger**.
   - Draws: blue arrows `akarrow2.mdl` → `CE_BLUESPARK`; the werecats' effects.
-  - Now: not looked at.
-- [ ] **Praevus lights and the world**.
+  - Now: 6.8: the owner: the werecats on the `monsters` map, an ice archer on tibet1 (`hl68_archers`).
+- [x] **Praevus lights and the world**.
   - Draws:
     - `light_newfire` (`newfire.mdl`, translucent, fire flicker).
     - `light_candle`, `light_burner`, `light_lantern`, `light_palace_torch` (abslight 0.75 with `flame2.mdl`); flame lights are no longer static outside DM.
     - `func_train_mp`'s soul skull (the rider death).
     - `weather_dust` (`svc_particle4` FASTGRAV), `air_bubbles`, `trigger_rubble`'s chunks, `func_obstacle` (translucent, abslight).
-  - Now: not looked at.
+  - Now: 6.8 (`praevus_run.ps1`, the owner): the burners' and palace torches' `flame2.mdl`, 6 and 32 units over their light, glow as flames and don't shade their light (X54; before, a pale shape lit by the world); `light_newfire` glows at its opacity (X54), a bright fire where GL shows a faint one (a look for 7.1); candles and lanterns glow as before (4.5); the soul skulls are tibet10's end (`soulskul.mdl` on three trains after Praevus's death; the owner). `air_bubbles` (keep1, triggered) releases Hexen II's `s_bubble.spr` bubbles; no map uses `weather_dust`, `trigger_rubble` or `func_obstacle` (`pak_entities.ps1`).
 
 ## 6.12 GL's near plane (#169)
 - [ ] **Particles at the eye**: GL's near plane clips particles within 4 units of the eye; Hexenlicht's effect rays start at the eye.
