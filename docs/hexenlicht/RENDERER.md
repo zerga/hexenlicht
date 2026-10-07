@@ -59,8 +59,8 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
   into real files. It still holds `R_InitTextures`/`r_notexture_mip` (GL's
   checkerboard), the rest of `R_Init` and GL-named cvars
   kept so configs keep their settings (`gl_glows`, `gl_coloredlight`,
-  `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` (0,
-  white, as in HoT since 4.9; 4.4 had 1) and `gl_extra_dynamic_lights` (0 as in HoT:
+  `gl_lightmapfmt`, …); the client reads `gl_colored_dynamic_lights` (1,
+  HoT's colors, since 6.8; 0, white, as in HoT from 4.9 to 6.7; 4.4 had 1) and `gl_extra_dynamic_lights` (0 as in HoT:
   the renderer makes those lights itself, see [Lights](#lights-vk_lightc))
   for the dynamic lights. To find what a renderer must
   provide, link without it and read the unresolved externals.
@@ -973,7 +973,14 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   skin's emissive texture, flagged `MATERIAL_FLAG_LIGHT`, see
   [Emissive surfaces](#emissive-surfaces-vk_emissivec); 4.4 and 6.2:
   the owners of a dynamic light and the glowing projectiles; 6.3: the
-  opaque glowing beam parts, [Beams](#beams-vk_beamlightc)).
+  opaque glowing beam parts, [Beams](#beams-vk_beamlightc); 6.8: the
+  flames Praevus's burners and palace torches spawn over their light
+  (`FlameAbove`: a static `MLS_ABSLIGHT` model at most 32 units straight
+  over one, `VK_MapLightBelow`), which glow as the others, and the glowing
+  fire missiles (`FireMissile`, [Effect lights](#effect-lights-vk_effectlightc))).
+  6.8: a translucent model at GL's fixed light level at a map light's
+  origin (`light_newfire`) stays transparent and shows its skin's emissive
+  texture too, at its opacity; `vk_models` counts both kinds of flames.
 - **The view entity's own model** (6.11, the scene's `viewer`,
   [Scene](#scene-r_scenec)) comes next, in `MODEL_GROUP_VIEWER` (Q2RTX's
   viewer models, mask `AS_FLAG_VIEWER_MODELS`), which looks like the group
@@ -1266,6 +1273,28 @@ renderer's, not `cl_dlights`, so `cl.light_level` stays GL's (G9).
   its range where a white wall beside a long one gets 1/32 of a full texel
   (power / (2π h)), its ends pulled in by a unit (the game's traces stop
   them in open space: no solid test). `r_effect_lights 0` turns them off.
+- **Fire missiles** (6.8, DECISIONS X53): the fire missiles that own no
+  light, by model name (`vk_beamlight.c`'s `fire_missiles[]`:
+  `sucwp1p.mdl`, Praevus's blood rain, the pentacles' spit and the tomed
+  fire storm's flame balls; `flaming.mdl`, the tomed crossbow's arrows;
+  `faspell.mdl`, the fallen angel's spell), on a server entity that isn't
+  a player or a stepping monster and owns no light (`vk_instance.c`'s
+  `FireMissile`; not the glowing projectiles' 64-unit size: the blood
+  missile is a streak 90 units long, its origin at the head), glow as the
+  glowing projectiles (`VK_SKIN_GLOW`, the light group, flagged a light).
+  `vk_instance.c` hands each drawn one to `VK_AddMissileLight` (its model,
+  skin, pose, transform, scale and GL's light level, 1 lit by the world;
+  64 a frame, more glow without a light); after the beams `VK_BeamLights`
+  offers its light, of the power its glowing surface shows in that pose
+  ([Beams](#beams-vk_beamlightc)' powers, per pose) times the level, the
+  material's emissive factor and the scale²: a line light (`VK_MissileLight`
+  with a line, as a beam's: power per unit length) along the model's x
+  axis through the middle of its y and z extent where the pose is at
+  least 4 times as long as its radius across, else a sphere at the axis'
+  middle showing that radiance (power / 4) of the radius of a sphere of
+  the surface's area. Both don't light what is flagged a light
+  (`DYNLIGHT_NOT_ON_LIGHTS`). The tome's three blood missiles: about
+  +0.1 ms a frame (X56). `vk_models` counts them, `vk_lights` their lights.
 
 ## Beams (`vk_beamlight.c`)
 
@@ -1329,6 +1358,12 @@ GL gives them no light. [Scene](#scene-r_scenec) gets the streams
   proposal): a white wall 64 units from a long sunbeam gets 0.31 of a full
   texel, from the lightning 0.23, Famine's 0.11 (red), the red color beam
   0.06 (0.28 in red), the white one 0.40; the sunstaff's hit 0.13.
+  6.8: the fire missiles' models ([Effect lights](#effect-lights-vk_effectlightc))
+  are in the same table (the precached ones at map load), with a power,
+  an area and an axis per pose for their first 32 poses (later ones take
+  the last's): `VK_AliasTriangleAreas`' areas of each pose, the pose's x
+  extent through the middle of its y and z extent and its farthest vertex
+  from it (`MissileAxes`, from the decoded poses).
 - **Check** (`vk_testlight line`, [Lights](#lights-vk_lightc)): below
   the middle of a 248-unit test line of power 100, 64 units above demo1's
   floor, the direct light (`r_debugview 15`) is 0.2367 against the
@@ -1682,8 +1717,8 @@ Stories 3.3, 3.4, 4.1, 4.4 and 4.5; Q2RTX's two kinds of lights, sampled in
   lights the same way (`dynlight_held_by`), and whose mask its shadow
   rays leave out (`sample_dynamic_lights`' `held`): the model doesn't
   shadow its own torch, muzzle flash or bright light. The
-  color is the client's (with `gl_colored_dynamic_lights`, 0 since 4.9:
-  white), converted to
+  color is the client's (with `gl_colored_dynamic_lights`, 1 since 6.8;
+  white with 0, 4.9 to 6.7's default), converted to
   linear as the map lights' (`VK_ColorToLinear`, 4.17). Dark lights
   (`EF_DARKLIGHT`, the Necromancer's darkness while invincible) aren't
   lights: they follow the sampled ones in `dyn_light_data` and darken the
@@ -1997,7 +2032,12 @@ from `VK_LoadWorld` before the light lists):
   structures](#acceleration-structures-vk_accelc)); in the original no
   model shadowed a map light. Without the group, meso1's and castle4's
   starts get 3.5 % less direct light (up to 10–13 % in 60-pixel blocks),
-  the lit image 1–2 %. `vk_models` counts the group's triangles ("at
+  the lit image 1–2 %. 6.8: Praevus's `light_burner` and
+  `light_palace_torch` spawn their flame (static `flame2.mdl`) 6 and 32
+  units over the light: `VK_MapLightBelow` (a second table of the same
+  points by x and y) answers whether a light is straight below a point, at
+  most 32 units; `vk_instance.c` asks it for static `MLS_ABSLIGHT` models.
+  `vk_models` counts the group's triangles ("at
   lights"), `vk_lights` its models. With `r_maplights 0` no model is at a
   map light: the models shadow test lights as any model does. Since 4.4 an
   alias model whose entity owns a dynamic light within its bounds this
@@ -2296,7 +2336,10 @@ radiance of a texture color of 1):
   its origin), glowing projectiles and other dynamic light owners, sprites
   and particles (effects). *6.2: glowing projectiles emit their whole
   skin, and the fire and explosion sprites are sphere lights ([Effect
-  lights](#effect-lights-vk_effectlightc)).*
+  lights](#effect-lights-vk_effectlightc)). 6.8: the burner's and the
+  palace torch's flames (static `flame2.mdl`, 6 and 32 units over their
+  light, `VK_MapLightBelow`) and `light_newfire`'s translucent fire at its
+  light (at its opacity) are flames too (DECISIONS X54).*
 - **Left out** (not emissive in GL): runes, `+0fire` and `+0sun`
   (buttons), water, slime and the other turbulent textures (unlit in GL
   because they are turbulent; since 5.3 an `_e` or a `.mat`'s `emissive`
@@ -3958,6 +4001,6 @@ overlay, and a measuring mode.
 | `vk_setpos x y z [pitch yaw]`, `vk_bookmark <name>`, `vk_screenshot <name> [frames]` | the player there (single player; `save` on the same line keeps the pitch); a calibration bookmark into the game folder's `bookmarks.txt`; `shots\<name>.tga`, frames averaged in linear light (see [Calibration](#calibration-vk_calibc)) |
 | `vk_freeze` | 6.15: the monster in front frozen by the gamecode's own freeze, for good (single player; see [Calibration](#calibration-vk_calibc)) |
 | `vk_editlight select [x y z\|none]`, `vk_editlight <changes>`, `add`, `reset`, `save`, `help` | the light at the crosshair or by entity origin; `off`, `on`, `level n\|*f`, `scale f\|*f`, `color r g b`, `style n`, `origin x y z\|eye\|cursor`, `move dx dy dz`; a new light at the eye; the map's own light again; the map file into the game folder |
-| `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 0 as in HoT since 4.9) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
+| `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 since 6.8, 0 as in HoT from 4.9) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `r_darklights 0/1`, `vk_darkplaces [n] [threshold]` | GL's dark lights (the invincible Necromancer) darken the world (1; 4.10, see [Darkness](#darkness-shadersdarknessglsl)); the map's dark places where an item or monster stands, with a point to go to (a local game; see [Calibration](#calibration-vk_calibc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |

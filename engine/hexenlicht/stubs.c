@@ -102,8 +102,9 @@ int		gl_coloredstatic;
  * (projectiles) by gl_colored_dynamic_lights and gl_extra_dynamic_lights
  * (GL's OpenGL Features page; in Hexenlicht the colors are on the Renderer
  * Settings page, 6.10, vk_menu.c), which Hexenlicht's lights use (4.4, vk_light.c).
- * Colors off by default, as in HoT and the map lights' (4.9: the
- * original's white light; 4.4 had them on); extra lights off as
+ * Colors on by default since 6.8 (4.9 to 6.7 off, as in HoT and the map
+ * lights', the original's white light: a burning monster's light was white
+ * beside its yellow flames; the map lights stay white); extra lights off as
  * in HoT: the client's count in cl.light_level (r_light.c, GL's rule),
  * which the server uses for how well monsters see the player and the
  * Assassin's cloak, so the renderer makes its own (r_scene.c) */
@@ -111,7 +112,7 @@ cvar_t		gl_glows = {"gl_glows", "0", CVAR_ARCHIVE};
 cvar_t		gl_other_glows = {"gl_other_glows", "0", CVAR_ARCHIVE};
 cvar_t		gl_missile_glows = {"gl_missile_glows", "1", CVAR_ARCHIVE};
 cvar_t		gl_coloredlight = {"gl_coloredlight", "0", CVAR_ARCHIVE};
-cvar_t		gl_colored_dynamic_lights = {"gl_colored_dynamic_lights", "0", CVAR_ARCHIVE};
+cvar_t		gl_colored_dynamic_lights = {"gl_colored_dynamic_lights", "1", CVAR_ARCHIVE};
 cvar_t		gl_extra_dynamic_lights = {"gl_extra_dynamic_lights", "0", CVAR_ARCHIVE};
 cvar_t		gl_lightmapfmt = {"gl_lightmapfmt", "GL_RGBA", CVAR_ARCHIVE};
 

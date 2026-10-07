@@ -771,7 +771,7 @@ void VK_PrepareLights (struct QVKUniformBuffer_s *ubo)
 			d->type = DYNLIGHT_LINE;
 			VectorSubtract (effect[i].end, effect[i].origin, d->spot_direction);
 		}
-		if (effect[i].beam)	/* 6.3: not on the beam's own glowing parts */
+		if (effect[i].not_on_lights)	/* 6.3: not on the beam's own glowing parts; 6.8: nor a fire missile's */
 			d->type |= DYNLIGHT_NOT_ON_LIGHTS;
 	}
 	ubo->num_dyn_lights = n;

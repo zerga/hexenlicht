@@ -3,14 +3,14 @@
 # and steps through it with keys posted to the game's window (PostMessage WM_KEYDOWN/UP: no
 # focus needed): each step's keys go in after the previous screenshot appears, the script
 # shoots every 300 frames. The steps (shot number: keys, what the shot should show):
-#   0: -, the defaults (High, 100 %, full, TAAU, Original, fixed, per map (off), off, off,
+#   0: -, the defaults (High, 100 %, full, TAAU, Original, fixed, per map (off), off, on,
 #      x32); 1: left, Medium 67 %; 2: left, Low 50 % half; 3: left enter, Medium (left stops
 #      at Low, enter steps on); 4: down right, 77 %, Custom; 5: down right, bounce two; 6: down
 #      right right, DLSS SR (Debug: "DLSS can't run: ..."; Release with the DLLs: its
 #      description); 7: right, DLSS RR; 8: enter, TAA (wraps); 9: right down right, TAAU,
 #      Physically based (the cursor skips the blank line); 10: down enter, auto exposure;
-#      11: down right right, sky light on; 12: down enter down right, both colored lights on;
-#      13: down left, x16; 14: down, Reset to defaults; 15: enter, the defaults again;
+#      11: down right right, sky light on; 12: down enter down right, colored map lights on,
+#      dynamic ones off (both on before 6.8, when the dynamic ones started off); 13: down left, x16; 14: down, Reset to defaults; 15: enter, the defaults again;
 #      16: down, the cursor wraps to Quality; 17: up, back to Reset; 18: up right right, x64
 #      (stops there); 19: escape, the Options menu with "Renderer Settings"; 20: up up enter,
 #      the page again; 21: escape down enter, Video Modes; 22: down down right, Vsync yes;
@@ -47,7 +47,7 @@ $keys = @{ U = @(0x26, 0x48, 1); D = @(0x28, 0x50, 1); L = @(0x25, 0x4B, 1); R =
 $steps = @('', 'L', 'L', 'LE', 'DR', 'DR', 'DRR', 'R', 'E', 'RDR', 'DE', 'DRR', 'DEDR', 'DL', 'D', 'E', 'D', 'U', 'URR', 'X', 'UUE', 'XDE', 'DDR', 'R',
 	'XUE', 'UUUUUUUUUDL', 'UL', 'DRRR', 'DLL', 'UUE', 'XXX')
 $settings = [ordered]@{ r_scale = '100'; pt_num_bounce_rays = '1'; r_upscaler = '1'; r_maplight_shape = '2'; tm_auto_exposure = '0'
-			r_sky_mode = '0'; r_maplight_colors = '0'; gl_colored_dynamic_lights = '0'; r_emissive_scale = '32' }
+			r_sky_mode = '0'; r_maplight_colors = '0'; gl_colored_dynamic_lights = '1'; r_emissive_scale = '32' }
 
 function Send-Keys([IntPtr]$hwnd, [string]$seq) {
 	foreach ($c in $seq.ToCharArray()) {
@@ -106,5 +106,5 @@ try {
 }
 Get-Content (Join-Path $dst 'debug_h2.log') | Select-String '^Vulkan validation'
 "$((Get-ChildItem $dst -Filter 'hexen*.tga').Count) shots of $($steps.Count - 1)"
-'saved (expected: r_emissive_scale "64", r_maplight_shape "0", gl_colored_dynamic_lights "0" (always saved)):'
+'saved (expected: r_emissive_scale "64", r_maplight_shape "0", gl_colored_dynamic_lights "1" (always saved)):'
 Get-Content (Join-Path $dst 'written.cfg') | Where-Object { $_ -match '^(\S+) ' -and $settings.Contains($Matches[1]) }

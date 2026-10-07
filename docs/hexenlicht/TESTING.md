@@ -61,6 +61,14 @@ commands are listed in [RENDERER.md](RENDERER.md#console-commands).
   presented one, glh2 an already drawn one): anything that changes per frame
   (beams, effects, animation) must be compared paused (story 2.10 was a false
   alarm from this).
+- **A loaded view turns level** (found in 6.8): `view.c`'s `V_DriftPitch`
+  pulls the pitch to the floor's ideal within about a second while the
+  player stands on the ground and holds no look key (a load leaves
+  `cl.nodrift` false), in both engines. A save keeps the pitch
+  (`vk_setpos ...; save` on one line), the drift then undoes it. Hold
+  `+lookup` at `cl_pitchspeed 0` from before the load (`lookspring 0`, so
+  its release doesn't start the drift): each frame stops the drift without
+  turning the view (`praevus_run.ps1` does).
 
 ## Screenshots
 
@@ -488,7 +496,7 @@ Notes:
 - **The sunstaff fires about 10 frames after the button** (its fire animation), so a shorter burst fires nothing. A weapon switch takes up to 100 frames: the last weapon's deselect and this one's select.
 - **Not repeatable between runs:** where particles and chunks fly, and where the summoned imp and the cube fly.
 - **Needs a target, not in the run:** hits on monsters (`SpawnPuff`), the tomed gauntlets' `CE_WHITE_FLASH`, the tomed Staff of Set's chains, `CE_GHOST`, burning.
-- **Not in the run at all:** monsters', maps' and Praevus's own effects. The checklist names a map for each; `pak_entities.ps1 -Pattern 'monster_...'` finds more, and `mdl_flags.ps1 -Trails` lists the trail each model leaves.
+- **Not in the run at all:** monsters', maps' and Praevus's own effects (6.8: saves for a look by hand, "Praevus (6.8)"). The checklist names a map for each; `pak_entities.ps1 -Pattern 'monster_...'` finds more, and `mdl_flags.ps1 -Trails` lists the trail each model leaves.
 - **6.1's run** (2026-09-30, Debug, 960x540): all five classes in both engines, validation 0/0, nothing left out. Its near steps were still level (before `-NearPitch`); a second run of the Paladin and the Assassin checked the melee hits. What differs is in the checklist's "now" column.
 - **A paused game draws no client effects** (found in 6.2): `host.c` runs `CL_UpdateEffects`, which moves the `CE_*` effects and links their sprites and models, only while the server runs, so a paused shot shows none of them (`vk_effects` counts 0 sprites), only the server's entities (projectiles, their trails' particles, a server entity's sprite). `-NoPause` (6.2) shoots with the game running: game time is fixed (`host_framerate 0.02`), so two runs from the same saves show the same moments. A toggle on a paused frame (`r_effect_lights 0` / 1) is still the cleanest A/B for what the server draws (the glowing projectiles).
 - **6.2's runs** (2026-09-30, Debug, 960x540, Hexenlicht only): `-HlCvars 'r_effect_lights 0'` against the default, paused (classes 1–4) and `-NoPause` (1–5); validation 0/0, nothing left out. Hand-written scripts (not kept) did the rest: the glowing projectiles on a paused frame, lights on and off (the scarab, the summoning stone, the tomed purifier's ball and magic missiles: crops around the projectile); the summoning stone's floor explosion and a magic missile hit near the pedestal unpaused, a shot every 1–2 frames, a run each way.
@@ -865,6 +873,59 @@ The owner looked at the screens by hand from saves made right before each
   a panning camera at demo time 152 s ("Scene of frame" prints the time;
   about 950 frames at 0.1 from the start: the demo jumps 55 s on the way).
 
+## Praevus (6.8)
+
+EFFECTS.md's Portal of Praevus lines: the Demoness's weapons by
+`effects_run.ps1 -Class 5 -NoPause` (6.1's run, with `-Bin` of `main`'s
+build to compare), the flames of the mission pack's light entities by
+`praevus_run.ps1`, the monsters, Praevus and the rest looked at by the
+owner from saves made right before them (as 6.7).
+
+- **`tools/hexenlicht/praevus_run.ps1 -Out <folder> [-Tag <name>]`**:
+  eight views from saves, so both engines and any build show the same
+  camera: tibet1's burners (`t1_burner`, `t1_row`, `t1_hall`), tibet6's
+  candles, tibet7's `light_newfire`, tibet8's palace torches (`t8_torch_n`,
+  `t8_torch_s`: their flames are out of sight, in GL too; the urn under
+  them shows the flame's shadow gone), keep2's lantern. `-Saves` makes the
+  saves `hl68v_<view>` in `portals\` (`-DeleteSaves` removes them); a run
+  loads each, pauses and shoots: Hexenlicht `vk_screenshot <view>` of 8
+  frames, glh2 `screenshot` renamed to `<view>.tga` (`-Exe glh2`). `-Bin`
+  another build (`main`'s), `-HlCvars` Hexenlicht's cvars after each load,
+  `-Only` a pattern of views. It holds `+lookup` at `cl_pitchspeed 0` (see
+  "Repeatable frames"); configs backed up and restored. `crop_strip.ps1
+  -Files gl\..,main\..,new\.. -X 0 -Y 0 -W 1280 -H 720 -Scale 1` puts the
+  three side by side.
+- **The fire missiles:** `vk_models` counts them ("6.8: ... glowing fire
+  missiles"), `vk_lights` their lights. The blood rain from tibet1's burner
+  hall or `effects_run.ps1`'s far spot (`c5_far_w1`, `w1t`: crops around
+  the missile, `-X 420 -Y 300 -W 360 -H 200 -Scale 2`); the tomed
+  crossbow (class 4 `w2t`): the five arrows glow while they stick. A
+  weapon switch right after `impulse 43` is ignored: wait 150 frames.
+- **Cost:** a paused frame keeps the server's entities (the blood
+  missiles) and draws no client effects, so `r_effect_lights` 0 against 1
+  there is the missiles' glow and lights alone (`load hlfx_c5f`, the tome,
+  `impulse 1`, 12 frames of `+attack`, `pause`; `vk_benchmark 1`,
+  `profiler_samples 120`). Measure each setting in its own run: toggling
+  in one run showed this build 0.1 ms slower with the lights off and
+  `main` flat, the GPU's clocks under an alternating load, not the
+  frames' work (the off frames match `main`'s within the runs' noise).
+- **The saves for the owner's look** (2026-10-07): the Demoness
+  (`playerclass 5`, skill 1), made with `map`, 150 waits, `god`, `impulse
+  43` (every weapon and item, the tome too), 60 waits, `vk_setpos ...; save
+  <name>`; monsters awake. Load with `-portals`.
+
+  | Save | Map | `vk_setpos` | Shows |
+  |---|---|---|---|
+  | `hl68_monsters` | monsters | the start | pak3's test map of the mission pack's monsters: 17 pentacles, 8 yakmen, the four werecats, ice imps |
+  | `hl68_praevus` | tibet10 | `-2100 1248 1372 0 180` | Praevus in his birth pose on the throne; the fight; after his death the soul skulls (the trains `t64`, `t67`, `t69`, 2.25–6.25 s after) |
+  | `hl68_keep5` | keep5 | `1700 750 -18 0 0` | two fallen angels: their fire spell (Hexen II's `faspell.mdl`) |
+  | `hl68_tibet1` | tibet1 | `2600 990 -547 0 180` | burners |
+  | `hl68_archers` | tibet1 | `2376 1678 -576 0 0` | an ice archer behind the door ahead |
+  | `hl68_tibet9` | tibet9 | the start | snow: walk forward, look up under the ceiling's opening |
+- **The smiley snowflakes** are Raven's: GL's `R_SnowEffect` gives about
+  one flake in 64 the "happy snow" texture (`r_part.c`), and Hexenlicht
+  draws GL's.
+
 ## Settings menu (6.10)
 
 `tools/hexenlicht/menu_run.ps1 -Out <folder> [-Tag <name>] [-Release]`
@@ -880,8 +941,8 @@ and wrapping around, a value staying at the end of its steps, Quality
 from Custom to the nearest preset, Reset, the Options menu's "Renderer
 Settings" row, Video Modes' Vsync row. It ends with `r_maplight_shape 0`
 in the console and prints the page's lines the game saved (`r_emissive_scale "64"`,
-`r_maplight_shape "0"`, and `gl_colored_dynamic_lights "0"`, which is
-always saved), the validation line and the shot count; it backs up and
+`r_maplight_shape "0"`, and `gl_colored_dynamic_lights "1"`, which is
+always saved; "0" before 6.8), the validation line and the shot count; it backs up and
 restores the configs. About 5 minutes in Debug.
 
 - Checked in 6.10: Debug (the DLSS rows say "DLSS can't run: no
@@ -973,7 +1034,11 @@ restores the configs. About 5 minutes in Debug.
   keeps that file: `hl_run.ps1` runs `r_resetsettings` (the page's Reset
   row) before the test script, so the page's settings start at their
   defaults; the game then drops the player's choices from the file at
-  quit, so restore it.
+  quit, so restore it. Each build resets to its own defaults: since 6.8
+  `gl_colored_dynamic_lights` is 1 (DECISIONS X55), so a comparison with
+  an older build's shots where dynamic lights show needs
+  `gl_colored_dynamic_lights 0` in this build's run (`-HlCvars`, or the
+  script).
 - glh2 runs rewrite `data1\config.cfg` and drop Hexenlicht-only cvars
   (`vid_uiscale`, `vid_vsync`): restore it before each engine run when
   comparing framing.

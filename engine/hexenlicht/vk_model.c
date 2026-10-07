@@ -392,14 +392,18 @@ static const float *PoseNormal (const trivertx_t *v)
  * the seam fix): each one's texture coordinates (u v of its three corners)
  * and its area averaged over the model's poses (model units, unscaled), up
  * to max of them; *axis_radius: the farthest a pose vertex is from the
- * model's x axis (a beam segment's axis). Returns the number of triangles,
+ * model's x axis (a beam segment's axis); 6.8: pose_areas, when not NULL,
+ * each pose's own areas, pose_areas[pose * max + triangle], for the first
+ * max_poses poses. Returns the number of triangles,
  * 0 when there is nothing to draw */
-int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius)
+int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int max, float *axis_radius,
+			   float *pose_areas, int max_poses)
 {
 	const aliashdr_t	*hdr;
 	const trivertx_t	*poses;
 	AliasTriangle		*tris;
 	vec3_t			p[3], e1, e2, n;
+	float			a;
 	int			num_tris, t, pose, k;
 
 	*axis_radius = 0.0f;
@@ -434,7 +438,10 @@ int VK_AliasTriangleAreas (qmodel_t *model, float (*uvs)[6], float *areas, int m
 			VectorSubtract (p[1], p[0], e1);
 			VectorSubtract (p[2], p[0], e2);
 			CrossProduct (e1, e2, n);
-			areas[t] += 0.5f * VectorLength (n);
+			a = 0.5f * VectorLength (n);
+			areas[t] += a;
+			if (pose_areas && pose < max_poses)
+				pose_areas[pose * max + t] = a;
 		}
 		areas[t] /= (float)hdr->numposes;
 	}
@@ -880,6 +887,8 @@ static void VK_Models_f (void)
 	Con_Printf ("%d instances with an emissive skin (the light models' flames), %d glowing projectiles (6.2), "
 		    "%d glowing beam parts (6.3), %d translucent ones around a light (6.14), %d of ice (6.15)\n",
 		    mf->emissive, mf->glowing, mf->beams, mf->carriers, mf->ice);
+	Con_Printf ("6.8: %d glowing fire missiles, %d of the emissive flames over their light, %d translucent at it\n",
+		    mf->missiles, mf->flames_above, mf->flames_translucent);
 }
 
 
