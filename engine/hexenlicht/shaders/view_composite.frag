@@ -9,7 +9,9 @@
  * curve with r_srgb 1; 4.17) with the gamma cvar, like draw2d.frag; 6.6:
  * GL's view blend (the damage and bonus flashes, the power-up tints) over
  * the 8-bit color before the gamma, as GL's R_PolyBlend draws it into the
- * frame buffer under its gamma ramps. The lit
+ * frame buffer under its gamma ramps. 7.3: with HDR output the tone-mapped
+ * image keeps its values above 1 (up to push.max_value), the 8-bit color
+ * values above 1 in vk_hdr.c's frame image. The lit
  * image without tone mapping is still in Quake II RTX's storage scale
  * (STORAGE_SCALE_HDR), which push.scale takes out; the debug views are
  * scaled by r_debugview_scale (4.9).
@@ -53,6 +55,7 @@ layout(push_constant) uniform Push
 	int	filter_lanczos;	/* 0 nearest, 1 Lanczos (TAA_OUTPUT) */
 	int	source;		/* 0 TAA_OUTPUT, 1 FSR_EASU_OUTPUT, 2 FSR_RCAS_OUTPUT */
 	vec4	blend;		/* 6.6: GL's view blend (r_scene.blend), a 0 for none */
+	float	max_value;	/* 7.3: the largest linear value shown: 1, with HDR output the tone-mapped image's headroom */
 } push;
 
 // semi-vector form of the ternary operator: (f == val) ? eq : neq
@@ -144,7 +147,7 @@ void main()
 		else
 			c = texelFetch(TEX_TAA_OUTPUT, p, 0).rgb;
 	}
-	c = linear_to_color(c * push.scale, global_ubo.color_srgb);	/* clamped to [0, 1] */
+	c = linear_to_color_ext(clamp(c * push.scale, 0.0, push.max_value), global_ubo.color_srgb);	/* SDR: [0, 1] */
 	c = mix(c, push.blend.rgb, push.blend.a);	/* 6.6: GL's blend function, SRC_ALPHA, ONE_MINUS_SRC_ALPHA */
 
 	out_color = vec4(pow(c, vec3(push.gamma)), 1.0);

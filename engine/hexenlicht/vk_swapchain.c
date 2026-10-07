@@ -12,11 +12,14 @@
  *
  * The swapchain format is B8G8R8A8_UNORM with sRGB color space: the final
  * pass of the renderer writes 8-bit colors (shaders/transfer.glsl: a 2.2
- * power, the sRGB curve with r_srgb 1; 4.17).
+ * power, the sRGB curve with r_srgb 1; 4.17). With HDR (7.3, vk_hdr.c) it
+ * is scRGB or HDR10: the frame is drawn the same way into vk_hdr.c's
+ * R16G16B16A16_SFLOAT frame image (the target, VK_TargetFormat), which
+ * VK_EndFrame encodes into the swapchain image.
  *
- * Screenshots capture the next presented frame; vk_screenshot's (4.9)
- * average several in linear light (VK_RequestScreenshotAverage), by the
- * same curve.
+ * Screenshots capture the next presented frame (with HDR the frame image,
+ * clipped at 1: the SDR image); vk_screenshot's (4.9) average several in
+ * linear light (VK_RequestScreenshotAverage), by the same curve.
  *
  * Copyright (C) 2026  Hexenlicht contributors
  *
@@ -64,6 +67,7 @@ static char		screenshot_name[MAX_OSPATH];	/* pending request, empty if none */
 static VkBuffer		screenshot_buffer;
 static VmaAllocation	screenshot_allocation;
 static VkDeviceSize	screenshot_size;
+static qboolean		screenshot_half;	/* the copy is the HDR frame image's (R16G16B16A16_SFLOAT) */
 static int		screenshot_frames = 1;	/* averaged into one (vk_screenshot, 4.9) */
 static int		screenshot_taken;	/* of them, captured */
 static float		*screenshot_sum;	/* linear light, w x h x 3 */
@@ -93,13 +97,19 @@ static byte EncodeColor (float x)
 	return (byte)(VK_LinearToColor (x) * 255.0f + 0.5f);
 }
 
-/* copy the current swapchain image into the readback buffer */
+static VkImage TargetImage (void);
+
+/* copy the current target (the swapchain image, or the HDR frame image)
+ * into the readback buffer */
 static void VK_RecordScreenshotCopy (VkCommandBuffer cmd)
 {
 	VkBufferCreateInfo	info;
 	VmaAllocationCreateInfo	alloc;
 	VkBufferImageCopy	copy;
-	VkDeviceSize		size = (VkDeviceSize)vk.extent.width * vk.extent.height * 4;
+	VkDeviceSize		size;
+
+	screenshot_half = vk.hdr;
+	size = (VkDeviceSize)vk.extent.width * vk.extent.height * (screenshot_half ? 8 : 4);
 
 	if (screenshot_size < size)
 	{
@@ -125,8 +135,30 @@ static void VK_RecordScreenshotCopy (VkCommandBuffer cmd)
 	copy.imageExtent.width = vk.extent.width;
 	copy.imageExtent.height = vk.extent.height;
 	copy.imageExtent.depth = 1;
-	vkCmdCopyImageToBuffer (cmd, vk.images[vk.image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	vkCmdCopyImageToBuffer (cmd, TargetImage (), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 				screenshot_buffer, 1, &copy);
+}
+
+/* the HDR frame image's copy as 8-bit RGBA, its values clipped to 0-1 as
+ * an SDR swapchain image would hold them (malloc'd) */
+static byte *HalfToBytes (const byte *pixels, int w, int h)
+{
+	size_t		i, n = (size_t)w * h * 4;
+	byte		*out = (byte *) malloc (n);
+
+	if (!out)
+		return NULL;
+	for (i = 0; i < n; i++)
+	{
+		uint16_t	v;
+		float		f;
+
+		memcpy (&v, pixels + i * 2, 2);
+		f = VK_HalfToFloat (v);
+		f = (f > 0.0f) ? q_min (f, 1.0f) : 0.0f;	/* NaN too */
+		out[i] = (byte)(f * 255.0f + 0.5f);
+	}
+	return out;
 }
 
 /* an averaged screenshot's frame into the sum (the first one starts it, as
@@ -165,25 +197,45 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 {
 	int		w = (int)vk.extent.width, h = (int)vk.extent.height;
 	int		x, y, size = w * h * 3 + 18;
-	qboolean	bgra = (vk.surface_format.format == VK_FORMAT_B8G8R8A8_UNORM ||
-				vk.surface_format.format == VK_FORMAT_B8G8R8A8_SRGB);
-	byte		*tga, *out;
+	qboolean	bgra = !screenshot_half && (vk.surface_format.format == VK_FORMAT_B8G8R8A8_UNORM ||
+						 vk.surface_format.format == VK_FORMAT_B8G8R8A8_SRGB);
+	byte		*tga, *out, *converted = NULL;
 	const byte	*pixels, *in;
 
 	VK_CHECK (vkWaitForFences (vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
 	VK_CHECK (vmaMapMemory (vk.allocator, screenshot_allocation, (void **)&pixels));
 	VK_CHECK (vmaInvalidateAllocation (vk.allocator, screenshot_allocation, 0, VK_WHOLE_SIZE));
+	if (screenshot_half)
+	{
+		converted = HalfToBytes (pixels, w, h);	/* 7.3: the HDR frame image */
+		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		if (!converted)
+		{
+			free (screenshot_sum);
+			screenshot_sum = NULL;
+			screenshot_sum_w = screenshot_sum_h = 0;
+			Con_Printf ("screenshot: not enough memory\n");
+			return;
+		}
+		pixels = converted;
+	}
 
 	if (screenshot_frames > 1 && !SumScreenshot (pixels, w, h, bgra, filename))
 	{
-		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		if (converted)
+			free (converted);
+		else
+			vmaUnmapMemory (vk.allocator, screenshot_allocation);
 		return;		/* more frames to come */
 	}
 
 	tga = (byte *) malloc (size);
 	if (!tga)
 	{
-		vmaUnmapMemory (vk.allocator, screenshot_allocation);
+		if (converted)
+			free (converted);
+		else
+			vmaUnmapMemory (vk.allocator, screenshot_allocation);
 		free (screenshot_sum);
 		screenshot_sum = NULL;
 		screenshot_sum_w = screenshot_sum_h = 0;
@@ -223,7 +275,10 @@ static void VK_WriteScreenshot (VkFence fence, const char *filename)
 			out[2] = bgra ? in[2] : in[0];
 		}
 	}
-	vmaUnmapMemory (vk.allocator, screenshot_allocation);
+	if (converted)
+		free (converted);
+	else
+		vmaUnmapMemory (vk.allocator, screenshot_allocation);
 
 	if (FS_WriteFile (filename, tga, size) == 0)
 		Con_Printf ("Wrote %s%s\n", filename, (screenshot_frames > 1) ? va(" (%d frames averaged)", screenshot_frames) : "");
@@ -250,6 +305,14 @@ static VkSurfaceFormatKHR VK_ChooseSurfaceFormat (void)
 	if (!formats)
 		Sys_Error ("%s: out of memory", __thisfunc__);
 	VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (vk.physical_device, vk.surface, &count, formats));
+
+	/* 7.3: scRGB or HDR10 when vid_hdr asks and Windows runs the display in HDR */
+	vk.hdr = VK_HDRChooseFormat (formats, count, &chosen);
+	if (vk.hdr)
+	{
+		free (formats);
+		return chosen;
+	}
 
 	chosen = formats[0];
 	for (i = 0; i < count; i++)
@@ -305,6 +368,7 @@ static void VK_DestroySwapchainResources (void)
 		vk.images[i] = VK_NULL_HANDLE;
 	}
 	vk.num_images = 0;
+	VK_HDRDestroyFrame ();
 }
 
 /* (re)create the swapchain for the current window size; leaves
@@ -340,6 +404,7 @@ static void VK_CreateSwapchain (void)
 		if (old)
 			vkDestroySwapchainKHR (vk.device, old, NULL);
 		vk.swapchain = VK_NULL_HANDLE;
+		vk.hdr = false;
 		return;
 	}
 
@@ -395,9 +460,12 @@ static void VK_CreateSwapchain (void)
 		VK_CHECK (vkCreateSemaphore (vk.device, &sem_info, NULL, &vk.render_finished[i]));
 	}
 
-	Con_DPrintf ("Vulkan swapchain: %ux%u, %u images, %s\n", vk.extent.width, vk.extent.height, num_images,
+	if (vk.hdr)
+		VK_HDRCreateFrame ();	/* 7.3: the frame is drawn into it */
+
+	Con_DPrintf ("Vulkan swapchain: %ux%u, %u images, %s, HDR %s\n", vk.extent.width, vk.extent.height, num_images,
 			(vk.present_mode == VK_PRESENT_MODE_FIFO_KHR) ? "vsync" :
-			(vk.present_mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate");
+			(vk.present_mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate", VK_HDRStatus ());
 
 	VK_SwapchainRecreated ();	/* the render targets follow its size */
 }
@@ -462,10 +530,27 @@ static void VK_DestroyFrames (void)
 	}
 }
 
-/* layout transition of the current swapchain image */
-static void VK_TransitionImage (VkImageLayout new_layout,
-				VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-				VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access)
+/* what the frame is drawn into: the current swapchain image, or with HDR
+ * vk_hdr.c's frame image (7.3) */
+static VkImage TargetImage (void)
+{
+	return vk.hdr ? VK_HDRFrameImage () : vk.images[vk.image_index];
+}
+
+static VkImageView TargetView (void)
+{
+	return vk.hdr ? VK_HDRFrameView () : vk.views[vk.image_index];
+}
+
+VkFormat VK_TargetFormat (void)
+{
+	return vk.hdr ? VK_HDR_FRAME_FORMAT : vk.surface_format.format;
+}
+
+/* layout transition of an image whose layout *layout tracks */
+static void TransitionImage (VkImage image, VkImageLayout *layout, VkImageLayout new_layout,
+			     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+			     VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access)
 {
 	VkImageMemoryBarrier2	barrier;
 	VkDependencyInfo	dep;
@@ -476,11 +561,11 @@ static void VK_TransitionImage (VkImageLayout new_layout,
 	barrier.srcAccessMask = src_access;
 	barrier.dstStageMask = dst_stage;
 	barrier.dstAccessMask = dst_access;
-	barrier.oldLayout = vk.image_layout;
+	barrier.oldLayout = *layout;
 	barrier.newLayout = new_layout;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = vk.images[vk.image_index];
+	barrier.image = image;
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1;
 	barrier.subresourceRange.layerCount = 1;
@@ -491,7 +576,15 @@ static void VK_TransitionImage (VkImageLayout new_layout,
 	dep.pImageMemoryBarriers = &barrier;
 
 	vkCmdPipelineBarrier2 (vk.frames[vk.frame_index].cmd, &dep);
-	vk.image_layout = new_layout;
+	*layout = new_layout;
+}
+
+/* layout transition of the current target (vk.image_layout) */
+static void VK_TransitionImage (VkImageLayout new_layout,
+				VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+				VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access)
+{
+	TransitionImage (TargetImage (), &vk.image_layout, new_layout, src_stage, src_access, dst_stage, dst_access);
 }
 
 qboolean VK_BeginFrame (void)
@@ -562,12 +655,13 @@ void VK_ClearScreen (float r, float g, float b)
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.levelCount = 1;
 	range.layerCount = 1;
-	vkCmdClearColorImage (vk.frames[vk.frame_index].cmd, vk.images[vk.image_index],
+	vkCmdClearColorImage (vk.frames[vk.frame_index].cmd, TargetImage (),
 				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
 }
 
-/* start rendering into the current swapchain image (dynamic rendering),
- * with viewport and scissor covering it. load_op: CLEAR (to black),
+/* start rendering into the current target (dynamic rendering: the
+ * swapchain image, or with HDR the frame image), with viewport and scissor
+ * covering it. load_op: CLEAR (to black),
  * LOAD (draw on top of what is there) or DONT_CARE (everything is
  * overwritten anyway) */
 void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op)
@@ -589,7 +683,7 @@ void VK_BeginSwapchainRendering (VkAttachmentLoadOp load_op)
 
 	memset (&color, 0, sizeof(color));
 	color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-	color.imageView = vk.views[vk.image_index];
+	color.imageView = TargetView ();
 	color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	color.loadOp = load_op;
 	color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -624,6 +718,87 @@ void VK_EndSwapchainRendering (void)
 	vkCmdEndRendering (vk.frames[vk.frame_index].cmd);
 }
 
+/* the readback copies' writes visible to the host after the fence (a
+ * fence alone covers only device access) */
+static void HostReadBarrier (VkCommandBuffer cmd)
+{
+	VkMemoryBarrier2	barrier;
+	VkDependencyInfo	dep;
+
+	memset (&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	memset (&dep, 0, sizeof(dep));
+	dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dep.memoryBarrierCount = 1;
+	dep.pMemoryBarriers = &barrier;
+	vkCmdPipelineBarrier2 (cmd, &dep);
+}
+
+/* 7.3: the HDR frame image (the target) into the swapchain image, then
+ * vk_hdrshot's copy of that if asked, and the swapchain image ready to
+ * present; true if it copied */
+static qboolean VK_EncodeHDR (VkCommandBuffer cmd)
+{
+	qboolean			copied = false;
+	VkImage				image = vk.images[vk.image_index];
+	VkImageLayout			layout = VK_IMAGE_LAYOUT_UNDEFINED;	/* overwritten */
+	VkRenderingAttachmentInfo	color;
+	VkRenderingInfo			info;
+	VkViewport			viewport;
+	VkRect2D			scissor;
+
+	VK_ProfilerStart (cmd, PROF_HDR);
+	VK_TransitionImage (VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	TransitionImage (image, &layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,	/* after the acquire's semaphore wait */
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+	memset (&color, 0, sizeof(color));
+	color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	color.imageView = vk.views[vk.image_index];
+	color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	/* every pixel is written */
+	color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	memset (&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	info.renderArea.extent = vk.extent;
+	info.layerCount = 1;
+	info.colorAttachmentCount = 1;
+	info.pColorAttachments = &color;
+	vkCmdBeginRendering (cmd, &info);
+	viewport.x = viewport.y = 0.0f;
+	viewport.width = (float)vk.extent.width;
+	viewport.height = (float)vk.extent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport (cmd, 0, 1, &viewport);
+	scissor.offset.x = scissor.offset.y = 0;
+	scissor.extent = vk.extent;
+	vkCmdSetScissor (cmd, 0, 1, &scissor);
+	VK_HDRDrawEncode (cmd);
+	vkCmdEndRendering (cmd);
+	VK_ProfilerStop (cmd, PROF_HDR);
+
+	if (VK_HDRShotPending ())
+	{
+		TransitionImage (image, &layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		VK_HDRRecordShot (cmd, image);
+		copied = true;
+	}
+	TransitionImage (image, &layout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_NONE, 0);
+	return copied;
+}
+
 void VK_EndFrame (void)
 {
 	vk_frame_t			*f;
@@ -633,7 +808,7 @@ void VK_EndFrame (void)
 	VkPresentInfoKHR		present;
 	VkResult			result;
 
-	qboolean			screenshot;
+	qboolean			screenshot, readback;
 
 	if (!vk.frame_active)
 		return;
@@ -643,9 +818,15 @@ void VK_EndFrame (void)
 	if (screenshot)
 		VK_RecordScreenshotCopy (f->cmd);
 
-	VK_TransitionImage (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
-			VK_PIPELINE_STAGE_2_NONE, 0);
+	readback = screenshot;
+	if (vk.hdr)
+		readback |= VK_EncodeHDR (f->cmd);	/* 7.3: the frame image into the swapchain image */
+	else
+		VK_TransitionImage (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+				VK_PIPELINE_STAGE_2_NONE, 0);
+	if (readback)
+		HostReadBarrier (f->cmd);
 	VK_ProfilerEndFrame (f->cmd);
 	VK_CHECK (vkEndCommandBuffer (f->cmd));
 
@@ -702,6 +883,7 @@ void VK_EndFrame (void)
 			screenshot_name[0] = 0;		/* else the next frame is captured too */
 		VK_WriteScreenshot (f->fence, name);
 	}
+	VK_HDRWriteShot (f->fence);	/* vk_hdrshot's, if this frame recorded one */
 }
 
 

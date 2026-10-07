@@ -23,7 +23,7 @@ Contents: [Build](#build-target) · [Window](#window-and-video-modes-vid_vkc) ·
 [Calibration](#calibration-vk_calibc) ·
 [3D view](#3d-view-vk_viewc) · [Denoiser](#denoiser-vk_asvgfc) ·
 [Upscaling](#upscaling-vk_upscalec) · [DLSS](#dlss-vk_dlssc-vk_streamlinecpp) ·
-[Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [Profiler](#profiler-vk_profilerc) ·
+[Bloom and tone mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc) · [HDR output](#hdr-output-vk_hdrc) · [Profiler](#profiler-vk_profilerc) ·
 [Other](#other) · [Console commands](#console-commands)
 
 ## Build target
@@ -86,7 +86,9 @@ Win32 window layer derived from `gl_vidnt.c`, no OpenGL.
 - `VID_InitPalette` builds `d_8to24table`, `d_8to24TranslucentTable` and
   GL's colorshade tints `RTint/GTint/BTint`.
 - The Video Modes page: Fullscreen and Resolution, applied with Apply;
-  since 6.10 a Vsync row (`vid_vsync`), applied at once.
+  since 6.10 a Vsync row (`vid_vsync`), since 7.3 an HDR row (`vid_hdr`,
+  "yes (n/a)" while asked for but not possible; [HDR
+  output](#hdr-output-vk_hdrc)), both applied at once.
 
 ## Settings menu (`vk_menu.c`)
 
@@ -151,7 +153,7 @@ Hexenlicht doesn't register). `menu.c` (upstream,
 - Tested with `menu_run.ps1` (keys posted to the game's window, TESTING.md
   "Settings menu (6.10)").
 - Left out: Quake II RTX's other options (reflection depth, the denoiser
-  switch, texture filtering, projection), HDR (7.3), dynamic resolution
+  switch, texture filtering, projection), HDR (7.3: Video Modes' row), dynamic resolution
   (7.2), `r_dlss_preset` and FSR's sharpness, the comparison switches
   (`r_effect_lights`, `r_water`, `pt_caustics`, `r_ice`, `gl_polyblend`,
   `r_viewer_model`), the GL page's texture purge and extra dynamic lights
@@ -167,7 +169,8 @@ Hexenlicht doesn't register). `menu.c` (upstream,
   acceleration structures, ray query, buffer device address, descriptor
   indexing, dynamic rendering, synchronization2, storage image extended
   formats; enables RT pipeline, NV SER, position fetch and BC textures
-  (`textureCompressionBC`, 5.2) when present), VMA,
+  (`textureCompressionBC`, 5.2) when present; the instance enables
+  `VK_EXT_swapchain_colorspace` when present, for HDR, 7.3), VMA,
   `vk_info`. Before the instance, `VK_SLPreInit` (`vk_streamline.cpp`)
   loads NVIDIA Streamline when `sl.interposer.dll` is next to the exe and
   its signature verifies: volk then loads Vulkan through the interposer's
@@ -181,13 +184,18 @@ Hexenlicht doesn't register). `menu.c` (upstream,
   created ones are only destroyed). New modules join the table.
 - `vk_swapchain.c`: swapchain (UNORM with sRGB color space, so the final
   pass writes 8-bit colors with `linear_to_color()` from `transfer.glsl`,
-  see [Textures](#textures-vk_texturec); recreated lazily
-  when `vk.swapchain_dirty`: `WM_SIZE`, `vid_vsync`, out-of-date; the
+  see [Textures](#textures-vk_texturec); with `vid_hdr` scRGB or HDR10,
+  see [HDR output](#hdr-output-vk_hdrc); recreated lazily
+  when `vk.swapchain_dirty`: `WM_SIZE`, `vid_vsync`, `vid_hdr`, out-of-date; the
   render targets also when DLSS's images change, `VK_DLSSBetweenFrames`),
   two frames in flight, per-image present semaphores, `VK_BeginFrame`/`VK_EndFrame`,
   `VK_BeginSwapchainRendering(loadOp)`/`VK_EndSwapchainRendering()` between
-  them. `screenshot` captures the next presented frame
-  (`VK_RequestScreenshot`).
+  them: into the target, the swapchain image or with HDR `vk_hdr.c`'s
+  frame image (`VK_TargetFormat`, which the composite's and the 2D's
+  pipelines follow), which `VK_EndFrame` then encodes into the swapchain
+  image. `screenshot` captures the next presented frame
+  (`VK_RequestScreenshot`; with HDR the frame image clipped at 1, the SDR
+  image).
 
 ## Shaders
 
@@ -618,7 +626,9 @@ the starting points for authors and their tools.
   `GL_BeginRendering`/`GL_Set2D`/`GL_EndRendering`).
 - Quads are alpha-tested (GL_GREATER 0.632, no blend) or blended per quad;
   the shader works in the 8-bit colors (the UNORM textures as they are,
-  times the vertex color) and applies the `gamma` cvar.
+  times the vertex color) and applies the `gamma` cvar. With HDR (7.3) it
+  draws into the frame image the same way (`VK_TargetFormat`): the 2D at
+  the paper white.
 - No crosshair while a gamecode camera (`camera_remote`) shows the view:
   `Draw_Crosshair` returns while the view entity isn't a player's (6.7,
   DECISIONS X41; GL draws it there).
@@ -2919,7 +2929,8 @@ Story 4.10: Hexen II's darkness as GL shows it.
   `GL_EndRendering` calls `VK_DrawView3D` after beginning swapchain
   rendering: `fullscreen.vert` + `view_composite.frag` (Q2RTX's final
   blit: scales the upscaler's output over the view, see Upscaling; the
-  colors' encode, 4.17, + `gamma` like the 2D) into the 3D rectangle, then restores the
+  colors' encode, 4.17, + `gamma` like the 2D; clamped at 1, with HDR
+  output the tone-mapped image at the shoulder's headroom, 7.3, `max_value`) into the 3D rectangle, then restores the
   full viewport for the 2D.
 - **The view blend** (6.6; DECISIONS X37–X39): the composite draws
   `r_scene.blend` over the lit view as GL's `R_PolyBlend` draws its quad:
@@ -3537,7 +3548,9 @@ one small interface, which DLSS SR and RR (3.10, see
   `fsr_utils.glsl` (Q2RTX's) and AMD's `ffx_a.h`/`ffx_fsr1.h` (`libs/fsr1`,
   v1.0.2, which fixed RCAS's limits after Q2RTX's copy); the constants from
   `FsrEasuCon`/`FsrRcasCon` (the headers compiled as C in `vk_upscale.c`).
-  SDR pipelines only (`spec_hdr` 0; HDR 7.3), FP32 only (FP16 needs
+  `spec_hdr` 1 (Q2RTX's reversible tone map around the passes) only with
+  HDR output above 1 (7.3; the SDR range then filters a little
+  differently from SDR's), made when first used, FP32 only (FP16 needs
   `shaderFloat16`; 7.2). Changes: EASU fetches its input texels one by one,
   each clamped to `TAA_OUTPUT`'s rendered part (Q2RTX clamps the gather
   point to the image, which moves taps by a texel at its edges), RCAS
@@ -3582,8 +3595,7 @@ one small interface, which DLSS SR and RR (3.10, see
   tone mapping 0.69 ms at the view's size, 0.28 ms at 67 %'s render size.
 - Left out: dynamic resolution (Q2RTX's `drs_*`: it steers by frame time,
   which uHexen2's 72 fps cap hides; needs GPU timers, 3.11 or 7.2), scales
-  above 100 % (bigger images), the FP16 FSR variants (7.2), FSR's HDR
-  variant (7.3), Q2RTX's reference accumulation mode (`HQ_COLOR_INTERLEAVED`,
+  above 100 % (bigger images), the FP16 FSR variants (7.2), Q2RTX's reference accumulation mode (`HQ_COLOR_INTERLEAVED`,
   `pt_accumulation_rendering`: 4.9 averages paused frames with
   `vk_screenshot` instead).
 
@@ -3714,7 +3726,7 @@ player's page is [DLSS.md](DLSS.md)). A-SVGF + TAAU stays the default.
   pass is gone.
 - Left out: frame generation, Reflex, dynamic resolution, DLSS's
   sharpening, RR's transparency layer (particles showed no smearing in
-  motion), HDR output (7.3); the menu is 6.10's Upscaler row ([Settings
+  motion); the menu is 6.10's Upscaler row ([Settings
   menu](#settings-menu-vk_menuc)).
 
 ## Bloom and tone mapping (`vk_bloom.c`, `vk_tonemap.c`)
@@ -3777,7 +3789,8 @@ row, saved when changed (6.10).
   curve in; `tm_exposure_bias` −1), a knee towards white
   (`tm_knee_start`, `tm_white_point`; the push constants from
   `KneeConstants`) and blue noise dither (a step of the 8-bit color the
-  composite writes, 4.17), linear [0, 1] out for the composite. Q2RTX's
+  composite writes, 4.17), linear [0, 1] out for the composite (with HDR
+  output, 7.3, no knee or clip: the shoulder below, up to the headroom). Q2RTX's
   `tm_*` cvars (registered since 3.1) with its defaults; `tm_enable` (the
   UBO gets 0 or 1, as the host decides),
   `tm_debug 1/2` (the histogram or the curve over
@@ -3786,7 +3799,10 @@ row, saved when changed (6.10).
   The exposure starts over (Q2RTX's request_reset: the buffer cleared, the
   curve not blended) on a new map, with new pipelines, and when the last
   3D frame wasn't tone mapped (`vk_render_frame` not the next one: a debug
-  view, `tm_enable 0`). Left out: the HDR output variant (7.3); the full
+  view, `tm_enable 0`). Left out: Q2RTX's HDR output variant (its
+  `spec_tone_mapping_hdr`, `tm_hdr_peak_nits`, `tm_hdr_saturation_scale`:
+  exposure 0 at 800 nits, the whole image about 2.7× SDR's white; 7.3 has
+  its own, [HDR output](#hdr-output-vk_hdrc)); the full
   screen blend and colorize (`fs_blend_color`, `fs_colorize`: Q2RTX's
   blend is strongest at the screen's edges, at most 0.2 opaque; GL's view
   blend is drawn as GL's by the composite since 6.6, [3D
@@ -3824,6 +3840,88 @@ row, saved when changed (6.10).
   file's `r_map_exposure` (4.7) adds a per-map EV to the fixed exposure, or
   to `tm_exposure_bias` with `tm_auto_exposure 1`.
 
+## HDR output (`vk_hdr.c`)
+
+Story 7.3 (DECISIONS W5–W8): HDR on displays Windows runs in HDR, an
+addition above SDR's white; everything up to it is the SDR image.
+
+- **The switch:** `vid_hdr` (Quake II RTX's name, archived, 0 by
+  default; the Video Modes page's HDR row): 1 an scRGB swapchain
+  (`R16G16B16A16_SFLOAT`, `VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT`: linear,
+  1 = 80 nits, BT.709's primaries, Windows' own composition format), else
+  HDR10 (`A2B10G10R10_UNORM_PACK32`, `VK_COLOR_SPACE_HDR10_ST2084_EXT`:
+  PQ, BT.2020's primaries); 2 HDR10 only. Chosen at each swapchain
+  creation (`VK_HDRChooseFormat` from `VK_ChooseSurfaceFormat`), only when
+  the instance has `VK_EXT_swapchain_colorspace`, DXGI finds the window's
+  monitor (`MonitorFromWindow`, `IDXGIOutput6::GetDesc1`) and reports its
+  color space as `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020` (Windows HDR
+  on; not the display configuration's "advanced color", which can also
+  mean Windows 11's wide color mode on an SDR display), and the surface
+  offers the format; else SDR, the reason in `vk_hdr` and `vk_info`.
+  Changing it recreates the swapchain (like `vid_vsync`); Windows' HDR
+  switch or a move to another monitor is seen at the next recreation
+  (`vid_hdr`, `vid_restart`, a resize).
+- **The frame:** with HDR the frame is drawn as in SDR, in the 8-bit
+  color values (the composite with GL's view blend and `gamma`, the 2D,
+  the console and menus, blending as GL's), into this module's
+  `R16G16B16A16_SFLOAT` frame image at the swapchain's size
+  (`vk_swapchain.c`'s target, `VK_TargetFormat`), so values above 1 stay.
+  `VK_EndFrame` then draws `fullscreen.vert` + **`hdr_encode.frag`** into
+  the swapchain image (its own descriptor set: the frame image, a nearest
+  sampler): the values as linear light by the engine's transfer (the 2.2
+  power, the sRGB curve with `r_srgb 1`), or by the sRGB curve with
+  `r_hdr_decode 1` up to 1, above it by the engine's transfer that encoded the
+  shoulder, so both reach the peak alike (Windows' look of an SDR program on an HDR desktop:
+  its piecewise sRGB decode lifts the dark tones, 1.15× at a value of 50,
+  1.6× at 25, 3.8× at 10), times the paper white, at most the peak, in
+  scRGB's units or BT.2020 + PQ. SDR keeps drawing into the swapchain
+  image: `main`'s image, no extra pass.
+- **Paper white and peak** (nits): `r_hdr_white` and `r_hdr_peak`
+  (archived, 0 by default: Windows' values), else Windows' SDR content
+  brightness (the display configuration's `SDRWhiteLevel`, in thousandths
+  of 80 nits, for the DXGI output's GDI name) and the display's
+  `MaxLuminance` (DXGI; the HDR calibration app's profile when there is
+  one), 200 and 1000 when Windows doesn't say; read at each swapchain
+  creation with `vid_hdr` on (with it off nothing is queried) and by
+  `vk_hdr`, applied every frame. The owner's AW3225QF
+  (2026-10-07): 300 and 450 nits (full frame 450), headroom 1.5.
+- **Above white:** `tone_mapping_apply.comp` gets the headroom (peak over
+  paper white, `headroom` push constant; 0 in SDR): above 1 it doesn't
+  clip but rolls each channel off, `1 + (h − 1)(1 − e^(−(x − 1)/(h − 1)))`
+  (slope 1 at 1, towards h; per channel as SDR's clip, so lava keeps SDR's
+  orange-white instead of a hue-preserving roll-off's deep red), dithered
+  as in SDR (`linear_to_color_ext`: the 8-bit step above 1 too); the auto
+  exposure (`tm_auto_exposure 1`) skips the knee there. The composite
+  clamps the tone-mapped image at the headroom (`max_value`; 1 for the
+  debug views and `tm_enable 0`); FSR (it runs only with tone mapping) runs Quake II RTX's HDR pipelines
+  (`spec_hdr` 1) then. TAA, DLSS and bloom run before tone mapping,
+  unchanged. Measured at the 8 views of 7.3's proposal (two stops down):
+  above SDR white only the lava (0.9–7.4 % of the pixels at meso5, meso8,
+  meso9, most of it 4× white or more), 0–0.01 % elsewhere.
+- **Screenshots:** `screenshot` and `vk_screenshot` read the frame image,
+  clipped at 1 (the half floats as 8-bit values): the SDR image, but for
+  the half floats' rounding (SDR's and HDR's debug-view shots: at most 1
+  of 255 in about 1.5 % of the values, Debug and Release alike) and
+  where translucent 2D, GL's view blend or `gamma` act on a value above 1
+  (mixed before the clip); **`vk_hdrshot <name>`** writes `shots\<name>.pfm`, the
+  swapchain image as light in nits (BT.709's primaries; HDR10 decoded by
+  PQ's EOTF and BT.2020's inverse), for checking the output
+  (`tools/hexenlicht/hdr_check.ps1`, TESTING.md "HDR output (7.3)").
+- **`vk_hdr`** prints the state (on and how, or why not), the display
+  (name, Windows HDR, bits, SDR content brightness, peak), the paper
+  white, peak and headroom used and where they came from, the decode.
+- Profiler entry `HDR output` (the encode). Cost: DECISIONS W8.
+- `vk_hdr` and `vk_info` say "off while the window has no area" while
+  minimized; the Video Modes row turns HDR back on with the value it had
+  (`vid_hdr 2` stays HDR10).
+- Left out: Quake II RTX's HDR mapping (exposure 0 at `tm_hdr_peak_nits`
+  800, the UI at `ui_hdr_nits` 300, its saturation; [Bloom and tone
+  mapping](#bloom-and-tone-mapping-vk_bloomc-vk_tonemapc)), wide gamut
+  (the content is BT.709's), `VK_EXT_hdr_metadata` (fullscreen is
+  borderless, Windows composes), HDR screenshots for players, following
+  the window's monitor or Windows' slider live, a paper white row in the
+  menu, brighter emissive surfaces for HDR.
+
 ## Profiler (`vk_profiler.c`)
 
 Story 3.11: Quake II RTX's `profiler.c`, GPU timers for every pass, their
@@ -3846,7 +3944,8 @@ overlay, and a measuring mode.
   `bounce 1`, `bounce 2`, `denoiser` (`gradients`, `temporal`, `a-trous`)
   or `compositing`, `interleave`, the upscaler (named by what ran: `TAA`,
   `TAAU`, `TAA copy`, `DLSS SR`, `DLSS RR`), `bloom`, `tone mapping`,
-  `FSR`; `composite and 2D` (the swapchain pass). An entry that didn't run
+  `FSR`; `composite and 2D` (the swapchain pass; with HDR into the frame
+  image); `HDR output` (7.3: the encode into the swapchain image). An entry that didn't run
   in a frame drops its samples and its row. `vk_accel` and `vk_models` read
   their build times from it (3.10 and earlier kept query pools of their
   own).
@@ -3963,7 +4062,9 @@ overlay, and a measuring mode.
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
 | `r_dumpscene` | the last frame's scene |
-| `vk_info` | device, extensions, BC texture support and the largest image, swapchain, validation counts |
+| `vk_info` | device, extensions, BC texture support and the largest image, swapchain, HDR, validation counts |
+| `vid_hdr 0/1/2`, `vk_hdr`, `vk_hdrshot <name>` | 7.3: HDR output (1 scRGB, else HDR10; 2 HDR10; archived, applies at once); its state, the display and the levels used; `shots\<name>.pfm`, the swapchain image in nits (see [HDR output](#hdr-output-vk_hdrc)) |
+| `r_hdr_white`, `r_hdr_peak` (nits, 0), `r_hdr_decode 0/1` | 7.3: the paper white and the peak (0: Windows' SDR content brightness, the display's peak); the 8-bit colors decoded by the engine's transfer (0) or by the sRGB curve (1, Windows' SDR look); archived |
 | `vk_imagefile <file> [scale]`, `vk_imagefile` | 5.2: reads an image file of [MATERIALS.md](MATERIALS.md) (without an extension: `.png`, `.tga`, `.dds`, `.ktx2` in turn), prints what it read and the times, shows it at the top left, scale screen pixels per texel (0 fits); alone hides it (see [Image files](#image-files-vk_imagefilec)) |
 | `vk_textures [list]` | texture slots (`list`: each slot's size, mips, alpha, the CRC of the pixels it was loaded from, which a material file's `~<crc>` names, [MATERIALS.md](MATERIALS.md), and its name) |
 | `r_reloadmaterials`, `r_materials 0/1`, `vk_materials [list\|problems\|here]` | 5.3: the material files again (the new and changed ones read, the materials applied; no map reload); the material files apply (1) or the original textures only (0, not archived; A/B comparisons); the index, textures with files, images, problems; each texture's files; the problems; 5.6: the texture at the view's center, its file names, files and albedo against the original's (see [Material files](#material-files-vk_matfilesc), [AUTHORING.md](AUTHORING.md)) |

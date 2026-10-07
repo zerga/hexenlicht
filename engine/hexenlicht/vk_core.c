@@ -133,6 +133,25 @@ static qboolean VK_HasInstanceLayer (const char *name)
 	return found;
 }
 
+static qboolean VK_HasInstanceExtension (const char *name)
+{
+	uint32_t		i, count = 0;
+	VkExtensionProperties	*exts;
+	qboolean		found = false;
+
+	vkEnumerateInstanceExtensionProperties (NULL, &count, NULL);
+	if (!count)
+		return false;
+	exts = (VkExtensionProperties *) malloc (count * sizeof(*exts));
+	if (!exts)
+		return false;
+	vkEnumerateInstanceExtensionProperties (NULL, &count, exts);
+	for (i = 0; i < count && !found; i++)
+		found = !strcmp (exts[i].extensionName, name);
+	free (exts);
+	return found;
+}
+
 /* false if it failed through Streamline's interposer (VK_Init retries
  * without it); other failures end the game */
 static qboolean VK_CreateInstance (void)
@@ -140,7 +159,7 @@ static qboolean VK_CreateInstance (void)
 	VkApplicationInfo	app;
 	VkInstanceCreateInfo	info;
 	VkDebugUtilsMessengerCreateInfoEXT debug_info;
-	const char		*extensions[3];
+	const char		*extensions[4];
 	const char		*layers[1];
 	uint32_t		num_extensions = 0, api_version = 0;
 	VkResult		result;
@@ -166,6 +185,10 @@ static qboolean VK_CreateInstance (void)
 
 	extensions[num_extensions++] = VK_KHR_SURFACE_EXTENSION_NAME;
 	extensions[num_extensions++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+	/* 7.3: the HDR color spaces (scRGB, HDR10) of vk_hdr.c */
+	vk.have_colorspace = VK_HasInstanceExtension (VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+	if (vk.have_colorspace)
+		extensions[num_extensions++] = VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
 	if (vk.validation)
 		extensions[num_extensions++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 	layers[0] = VALIDATION_LAYER;
@@ -558,6 +581,7 @@ static void VK_Info_f (void)
 	Con_Printf ("Swapchain : %ux%u, %u images, format %d, present mode %d\n",
 			vk.extent.width, vk.extent.height, vk.num_images,
 			(int)vk.surface_format.format, (int)vk.present_mode);
+	Con_Printf ("HDR       : %s (vk_hdr)\n", VK_HDRStatus ());
 	Con_Printf ("Validation: %s (%d errors, %d warnings so far)\n",
 			vk.validation ? "on" : "off", vk.validation_errors, vk.validation_warnings);
 }
@@ -591,6 +615,8 @@ static vk_module_t	vk_modules[] =
 {
 	{ "profiler",	VK_InitProfiler,	VK_ShutdownProfiler,		VK_INIT_DEFAULT },
 	{ "buffers",	VK_InitBuffers,		VK_ShutdownBuffers,		VK_INIT_DEFAULT },
+	{ "hdr",	VK_InitHDR,		VK_ShutdownHDR,			VK_INIT_DEFAULT },
+	{ "hdr|",	NULL,			VK_DestroyHDRPipeline,		VK_INIT_RELOAD_SHADER },
 	{ "swapchain",	VK_InitSwapchain,	VK_ShutdownSwapchain,		VK_INIT_DEFAULT },
 	{ "textures",	VK_InitTextures,	VK_ShutdownTextures,		VK_INIT_DEFAULT },
 	{ "imagefiles",	VK_InitImageFiles,	NULL,				VK_INIT_DEFAULT },

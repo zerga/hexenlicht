@@ -29,13 +29,20 @@ vec3 color_to_linear (vec3 c, uint srgb)
 	return pow (c, vec3 (COLOR_GAMMA));
 }
 
-/* linear light as an 8-bit color, clamped to [0, 1] */
-vec3 linear_to_color (vec3 x, uint srgb)
+/* linear light as an 8-bit color, above 1 too (7.3: HDR output keeps
+ * those values; color_to_linear takes them back) */
+vec3 linear_to_color_ext (vec3 x, uint srgb)
 {
-	x = clamp (x, 0.0, 1.0);
+	x = max (x, vec3 (0.0));
 	if (srgb != 0u)
 		return mix (x * 12.92, 1.055 * pow (x, vec3 (1.0 / 2.4)) - 0.055, step (0.0031308, x));
 	return pow (x, vec3 (1.0 / COLOR_GAMMA));
+}
+
+/* linear light as an 8-bit color, clamped to [0, 1] */
+vec3 linear_to_color (vec3 x, uint srgb)
+{
+	return linear_to_color_ext (clamp (x, 0.0, 1.0), srgb);
 }
 
 #endif	/* TRANSFER_GLSL */
