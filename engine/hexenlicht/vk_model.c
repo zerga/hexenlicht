@@ -42,17 +42,10 @@
 
 COMPILE_TIME_ASSERT(AliasModel, sizeof(AliasModel) == 48);		/* the shaders' std430 layouts */
 COMPILE_TIME_ASSERT(AliasTriangle, sizeof(AliasTriangle) == 32);
-COMPILE_TIME_ASSERT(ModelGeometryPush, sizeof(ModelGeometryPush) == 48);
-COMPILE_TIME_ASSERT(trivertx_t, sizeof(trivertx_t) == 4);		/* one uint per pose vertex */
+COMPILE_TIME_ASSERT(ModelGeometryPush, sizeof(ModelGeometryPush) == 40);
 
 #define MODEL_HASH_SIZE		2048	/* power of 2, over MAX_ALIAS_MODELS */
 #define POSITIONS_OFFSET	((VkDeviceSize)MAX_INSTANCED_PRIMITIVES * sizeof(VboPrimitive))
-
-/* Quake's vertex normals, indexed by trivertx_t.lightnormalindex */
-static const float vertex_normals[NUM_VERTEX_NORMALS][3] =
-{
-#include "anorms.h"
-};
 
 static vk_aliasmodel_t	alias_models[MAX_ALIAS_MODELS];
 static int		num_alias_models;
@@ -62,7 +55,6 @@ static short		model_hash[MODEL_HASH_SIZE];	/* index + 1, 0 = empty */
 static qboolean		loading_models;		/* VK_LoadModels: upload the materials at the end */
 
 static vk_buffer_t	model_table;		/* AliasModel[MAX_ALIAS_MODELS], mapped */
-static vk_buffer_t	normal_buffer;		/* vec4[NUM_VERTEX_NORMALS] */
 
 /* this frame's model triangles: [VboPrimitive x MAX][float x 9 x MAX] */
 static vk_buffer_t	instanced[VK_FRAMES_IN_FLIGHT];
@@ -163,14 +155,60 @@ static void WriteModelTable (int index)
 	VK_CHECK (vmaFlushAllocation (vk.allocator, model_table.allocation, index * sizeof(AliasModel), sizeof(AliasModel)));
 }
 
+/* a model's GPU data (8.2: its poses from vk_modelsmooth.c, the triangles
+ * over its vertices), and a copy for vk_models check */
+static void BuildGeometry (int index)
+{
+	vk_aliasmodel_t		*am = &alias_models[index];
+	const aliashdr_t	*hdr = (const aliashdr_t *) Mod_Extradata (am->model);
+	AliasTriangle		*tris;
+	vk_modelposes_t		poses;
+	byte			*data;
+	size_t			triangles_size, poses_size;
+	int			num_tris, t;
+
+	num_tris = AliasTriangles (hdr, NULL);
+	if (num_tris <= 0 || hdr->numposes <= 0 || hdr->poseverts <= 0 || hdr->poseverts > 0xffff)
+		return;		/* nothing to draw: num_tris 0 */
+
+	/* [AliasTriangle x num_tris][uint32_t x 2 x numposes x vertices] */
+	triangles_size = num_tris * sizeof(AliasTriangle);
+	tris = (AliasTriangle *) malloc (triangles_size);
+	if (!tris)
+		Sys_Error ("%s: out of memory", __thisfunc__);
+	AliasTriangles (hdr, tris);
+	VK_ModelPoses (am->model, hdr, tris, num_tris, &poses);
+	for (t = 0; t < num_tris; t++)	/* command vertices -> the model's vertices */
+	{
+		tris[t].verts[0] = poses.remap[tris[t].verts[0] & 0xffff] | ((uint32_t)poses.remap[tris[t].verts[0] >> 16] << 16);
+		tris[t].verts[1] = poses.remap[tris[t].verts[1]];
+	}
+	poses_size = (size_t)hdr->numposes * poses.num_verts * 2 * sizeof(uint32_t);
+	data = (byte *) malloc (triangles_size + poses_size);
+	if (!data)
+		Sys_Error ("%s: out of memory", __thisfunc__);
+	memcpy (data, tris, triangles_size);
+	memcpy (data + triangles_size, poses.poses, poses_size);
+	free (tris);
+	free (poses.remap);
+	free (poses.poses);
+	VK_CreateBuffer (&am->buffer, triangles_size + poses_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
+	VK_UploadBuffer (&am->buffer, 0, data, triangles_size + poses_size);
+	am->cpu = data;
+
+	am->num_tris = num_tris;
+	am->num_pose_verts = poses.num_verts;
+	am->num_poses = hdr->numposes;
+	am->table_normals = poses.table_normals;
+	WriteModelTable (index);
+}
+
 /* builds a model's GPU data; returns its index, or -1 without room */
 static int BuildAliasModel (qmodel_t *model)
 {
 	vk_aliasmodel_t	*am;
-	aliashdr_t	*hdr;
-	byte		*data;
-	size_t		triangles_size, poses_size;
-	int		index, num_tris;
+	int		index;
 	unsigned	h;
 
 	if (num_alias_models >= MAX_ALIAS_MODELS)
@@ -186,33 +224,37 @@ static int BuildAliasModel (qmodel_t *model)
 		;
 	model_hash[h] = (short)(index + 1);
 
-	hdr = (aliashdr_t *) Mod_Extradata (model);
-	num_tris = AliasTriangles (hdr, NULL);
-	if (num_tris <= 0 || hdr->numposes <= 0 || hdr->poseverts <= 0 || hdr->poseverts > 0xffff)
-		return index;	/* nothing to draw: num_tris 0 */
-
-	/* [AliasTriangle x num_tris][trivertx_t x numposes x poseverts] */
-	triangles_size = num_tris * sizeof(AliasTriangle);
-	poses_size = (size_t)hdr->numposes * hdr->poseverts * sizeof(trivertx_t);
-	data = (byte *) malloc (triangles_size + poses_size);
-	if (!data)
-		Sys_Error ("%s: out of memory", __thisfunc__);
-	AliasTriangles (hdr, (AliasTriangle *) data);
-	memcpy (data + triangles_size, (byte *)hdr + hdr->posedata, poses_size);
-	VK_CreateBuffer (&am->buffer, triangles_size + poses_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
-	VK_UploadBuffer (&am->buffer, 0, data, triangles_size + poses_size);
-	free (data);
-
-	am->num_tris = num_tris;
-	am->num_pose_verts = hdr->poseverts;
-	am->num_poses = hdr->numposes;
-	am->num_skins = hdr->numskins;
-	if (!loading_models)
+	am->num_skins = ((aliashdr_t *) Mod_Extradata (model))->numskins;
+	BuildGeometry (index);
+	if (am->num_tris && !loading_models)
 		built_later++;	/* its skins' materials are made when drawn */
-
-	WriteModelTable (index);
 	return index;
+}
+
+/* 8.2: r_smoothmodels or r_smoothseams changed */
+void VK_RebuildModelGeometry (void)
+{
+	int	i;
+
+	qmodel_t	*models[MAX_ALIAS_MODELS];
+
+	if (!num_alias_models)
+		return;
+	for (i = 0; i < num_alias_models; i++)	/* r_smoothmodels on: their solves on the worker threads first */
+		models[i] = alias_models[i].model;
+	VK_PresolveModels (models, num_alias_models);
+	vkDeviceWaitIdle (vk.device);	/* frames in flight may still use the old buffers */
+	for (i = 0; i < num_alias_models; i++)
+	{
+		if (!alias_models[i].num_tris)
+			continue;
+		VK_DestroyBuffer (&alias_models[i].buffer);
+		free (alias_models[i].cpu);
+		alias_models[i].cpu = NULL;
+		alias_models[i].num_tris = 0;
+		BuildGeometry (i);
+	}
+	last_pass.slot = -1;
 }
 
 int VK_AliasModelIndex (qmodel_t *model)
@@ -242,7 +284,10 @@ static void FreeModels (void)
 	int	i;
 
 	for (i = 0; i < num_alias_models; i++)
+	{
 		VK_DestroyBuffer (&alias_models[i].buffer);
+		free (alias_models[i].cpu);
+	}
 	memset (alias_models, 0, sizeof(alias_models[0]) * num_alias_models);
 	memset (model_hash, 0, sizeof(model_hash));
 	num_alias_models = 0;
@@ -261,6 +306,9 @@ void VK_LoadModels (void)
 	FreeModels ();
 	VK_ClearSkins ();
 
+	for (i = 1; i < MAX_MODELS && cl.model_precache[i]; i++)
+		;
+	VK_PresolveModels (&cl.model_precache[1], i - 1);	/* 8.2: smoothed on worker threads */
 	loading_models = true;
 	for (i = 1; i < MAX_MODELS && cl.model_precache[i]; i++)
 	{
@@ -316,7 +364,6 @@ void VK_UpdateModelGeometry (void)
 	memset (&push, 0, sizeof(push));
 	push.instances = VK_InstanceBuffer ()->address;
 	push.models = model_table.address;
-	push.normals = normal_buffer.address;
 	push.primitives = instanced[slot].address;
 	push.positions = instanced[slot].address + POSITIONS_OFFSET;
 	push.first_instance = (uint32_t)mf->first_instance;
@@ -381,11 +428,6 @@ static void PosePosition (const aliashdr_t *hdr, const trivertx_t *v, vec3_t out
 
 	for (i = 0; i < 3; i++)
 		out[i] = v->v[i] * hdr->scale[i] + hdr->scale_origin[i];
-}
-
-static const float *PoseNormal (const trivertx_t *v)
-{
-	return vertex_normals[q_min (v->lightnormalindex, NUM_VERTEX_NORMALS - 1)];
 }
 
 /* 6.3 (vk_beamlight.c): a model's triangles as drawn (gl_mesh.c's, with
@@ -495,35 +537,28 @@ typedef struct
 } cpu_triangle_t;
 
 /* model_geometry.comp's computation of one triangle */
-static void CpuTriangle (const ModelInstance *mi, const aliashdr_t *hdr, const AliasTriangle *tri,
+static void CpuTriangle (const ModelInstance *mi, const AliasModel *am, const uint32_t *poses, const AliasTriangle *tri,
 			 const float nm[3][3], cpu_triangle_t *out)
 {
-	const trivertx_t	*poses = (const trivertx_t *)((const byte *)hdr + hdr->posedata);
 	const uint32_t		verts[3] = { tri->verts[0] & 0xffff, tri->verts[0] >> 16, tri->verts[1] };
-	vec3_t			e1, e2, face, tangent, bitangent, c, pa, pb, n, avg;
+	vec3_t			e1, e2, face, tangent, bitangent, c, pa, pb, na, nb, n, avg;
 	float			d1[2], d2[2], det_sign, flip_dot, len;
 	int			k, i;
 
 	VectorClear (avg);
 	for (k = 0; k < 3; k++)
 	{
-		const trivertx_t	*a = poses + mi->prim_offset_curr_pose_curr_frame + verts[k];
-		const trivertx_t	*b = poses + mi->prim_offset_prev_pose_curr_frame + verts[k];
-		const trivertx_t	*ppa = poses + mi->prim_offset_curr_pose_prev_frame + verts[k];
-		const trivertx_t	*ppb = poses + mi->prim_offset_prev_pose_prev_frame + verts[k];
-
-		PosePosition (hdr, a, pa);
-		PosePosition (hdr, b, pb);
+		VK_DecodePoseVertex (am, poses + (mi->prim_offset_curr_pose_curr_frame + verts[k]) * 2, pa, na);
+		VK_DecodePoseVertex (am, poses + (mi->prim_offset_prev_pose_curr_frame + verts[k]) * 2, pb, nb);
 		MixVec (pa, pb, mi->pose_lerp_curr_frame, c);
 		TransformPoint4 (mi->transform, c, out->pos[k]);
-		PosePosition (hdr, ppa, pa);
-		PosePosition (hdr, ppb, pb);
+		MixVec (na, nb, mi->pose_lerp_curr_frame, n);
+		if (DotProduct (n, n) < 1e-12f)
+			VectorCopy (na, n);	/* opposite normals */
+		VK_DecodePoseVertex (am, poses + (mi->prim_offset_curr_pose_prev_frame + verts[k]) * 2, pa, na);
+		VK_DecodePoseVertex (am, poses + (mi->prim_offset_prev_pose_prev_frame + verts[k]) * 2, pb, nb);
 		MixVec (pa, pb, mi->pose_lerp_prev_frame, c);
 		TransformPoint4 (mi->transform_prev, c, out->pos_prev[k]);
-
-		MixVec (PoseNormal (a), PoseNormal (b), mi->pose_lerp_curr_frame, n);
-		if (DotProduct (n, n) < 1e-12f)
-			VectorCopy (PoseNormal (a), n);
 		for (i = 0; i < 3; i++)
 			out->nrm[k][i] = nm[i][0] * n[0] + nm[i][1] * n[1] + nm[i][2] * n[2];
 		VectorNormalize (out->nrm[k]);
@@ -583,9 +618,9 @@ static void VK_ModelsCheck (void)
 	VkDependencyInfo	dep;
 	const VboPrimitive	*gpu;
 	const float		*gpu_pos;
-	AliasTriangle		*tris;
+	const AliasTriangle	*tris;
 	int			*inward_per_model;	/* triangles facing against their vertex normals */
-	int			i, k, differences, max_tris = 1, bad_instances = 0, checked = 0, unsure = 0;
+	int			i, k, differences, bad_instances = 0, checked = 0, unsure = 0;
 	int			inward = 0, shown = 0, pos_bad = 0, nrm_bad = 0, tan_bad = 0, flip_bad = 0;
 	int			uv_bad = 0, motion_bad = 0, field_bad = 0, positions_bad = 0, group_bad = 0, table_bad = 0;
 	float			max_pos = 0.0f, min_nrm = 1.0f, min_tan = 1.0f, max_motion = 0.0f;
@@ -629,11 +664,8 @@ static void VK_ModelsCheck (void)
 	gpu_pos = (const float *)((const byte *) readback.mapped + copy[0].size);
 	gpu_materials = (const uint32_t *)((const byte *) readback.mapped + copy[2].dstOffset);
 
-	for (i = 0; i < num_alias_models; i++)
-		max_tris = q_max (max_tris, alias_models[i].num_tris);
-	tris = (AliasTriangle *) malloc (max_tris * sizeof(AliasTriangle));
 	inward_per_model = (int *) calloc (q_max (num_alias_models, 1) * 2, sizeof(int));	/* inward, triangles checked */
-	if (!tris || !inward_per_model)
+	if (!inward_per_model)
 		Sys_Error ("%s: out of memory", __thisfunc__);
 
 	for (i = mf->first_instance; i < mf->first_instance + mf->num_instances; i++)
@@ -641,19 +673,20 @@ static void VK_ModelsCheck (void)
 		const ModelInstance	*mi = VK_GetInstance (i);
 		int			index = (int)mi->source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL;
 		const vk_aliasmodel_t	*am;
-		const aliashdr_t	*hdr;
+		const AliasModel	*entry;
+		const uint32_t		*poses;
 		float			nm[3][3], alpha = VK_HalfToFloat ((uint16_t)(mi->alpha_and_frame & 0xffff));
 		int			num_tris, max_pose;
 
-		if (index < 0 || index >= num_alias_models)
+		if (index < 0 || index >= num_alias_models || !alias_models[index].cpu)
 		{
 			bad_instances++;
 			continue;
 		}
 		am = &alias_models[index];
-		hdr = (const aliashdr_t *) Mod_Extradata (am->model);
-		num_tris = AliasTriangles (hdr, NULL);
-		max_pose = (hdr->numposes - 1) * hdr->poseverts;
+		entry = (const AliasModel *) model_table.mapped + index;
+		num_tris = AliasTriangles ((const aliashdr_t *) Mod_Extradata (am->model), NULL);
+		max_pose = (am->num_poses - 1) * am->num_pose_verts;
 		if (num_tris != am->num_tris || (int)mi->prim_count != num_tris ||
 		    mi->render_prim_offset + mi->prim_count > total ||
 		    (int)mi->prim_offset_curr_pose_curr_frame > max_pose || (int)mi->prim_offset_prev_pose_curr_frame > max_pose ||
@@ -662,7 +695,8 @@ static void VK_ModelsCheck (void)
 			bad_instances++;
 			continue;
 		}
-		AliasTriangles (hdr, tris);
+		tris = (const AliasTriangle *) am->cpu;	/* as uploaded (8.2) */
+		poses = (const uint32_t *)(tris + num_tris);
 		NormalMatrix (mi->transform, nm);
 		inward_per_model[index * 2 + 1] += num_tris;
 
@@ -721,7 +755,7 @@ static void VK_ModelsCheck (void)
 			qboolean		bad = false;
 			int			v, j;
 
-			CpuTriangle (mi, hdr, &tris[k], nm, &c);
+			CpuTriangle (mi, entry, poses, &tris[k], nm, &c);
 			checked++;
 			if (c.facing < 0.0f)
 			{
@@ -815,7 +849,6 @@ static void VK_ModelsCheck (void)
 			}
 		}
 	}
-	free (tris);
 	VK_DestroyBuffer (&readback);
 
 	differences = pos_bad + nrm_bad + tan_bad + flip_bad + uv_bad + motion_bad + field_bad + positions_bad + bad_instances +
@@ -856,6 +889,37 @@ static void VK_Models_f (void)
 			VK_ModelsCheck ();
 		return;
 	}
+	if (Cmd_Argc () > 2 && !q_strcasecmp (Cmd_Argv (1), "smooth"))
+	{	/* 8.2: mdl_smooth.ps1's numbers for a model, by name (precached or not) */
+		const char		*name = Cmd_Argv (2);
+		qmodel_t		*model;
+		const aliashdr_t	*hdr;
+		AliasTriangle		*mtris;
+		int			num_tris;
+		size_t			len = strlen (name);
+
+		/* only a .mdl: Mod_ForName loads anything, and keeps a slot for a bad name */
+		model = (len > 4 && !q_strcasecmp (name + len - 4, ".mdl")) ? Mod_ForName (name, false) : NULL;
+		if (!model || model->type != mod_alias)
+		{
+			Con_Printf ("%s: no alias model (a .mdl name)\n", name);
+			return;
+		}
+		hdr = (const aliashdr_t *) Mod_Extradata (model);
+		num_tris = AliasTriangles (hdr, NULL);
+		if (num_tris <= 0 || hdr->numposes <= 0 || hdr->poseverts <= 0 || hdr->poseverts > 0xffff)
+		{
+			Con_Printf ("%s: nothing to draw\n", model->name);
+			return;
+		}
+		mtris = (AliasTriangle *) malloc (num_tris * sizeof(AliasTriangle));
+		if (!mtris)
+			Sys_Error ("%s: out of memory", __thisfunc__);
+		AliasTriangles (hdr, mtris);
+		VK_ModelSmoothStats (model, mtris, num_tris);
+		free (mtris);
+		return;
+	}
 
 	for (i = 0; i < num_alias_models; i++)
 	{
@@ -866,14 +930,16 @@ static void VK_Models_f (void)
 		bytes += am->buffer.size;
 		if (Cmd_Argc () > 1 && !q_strcasecmp (Cmd_Argv (1), "list"))
 		{
-			Con_Printf ("%3d %-28s %5d tris %5d verts %4d poses %7.1f KB %2d skins%s\n", i, am->model->name,
+			Con_Printf ("%3d %-28s %5d tris %5d verts %4d poses %7.1f KB %2d skins%s%s\n", i, am->model->name,
 					am->num_tris, am->num_pose_verts, am->num_poses, am->buffer.size / 1024.0,
-					am->num_skins, VK_ModelHasCutouts (am->model) ? " cutout" : "");
+					am->num_skins, VK_ModelHasCutouts (am->model) ? " cutout" : "",
+					am->table_normals ? " table-normals" : "");
 		}
 	}
 	Con_Printf ("%d alias models on the GPU (%d built after the map loaded): %d triangles, %d poses, %.2f MB%s\n",
 			num_alias_models, built_later, tris, poses, bytes / (1024.0 * 1024.0),
 			too_many_models ? va(" (%d found no room)", too_many_models) : "");
+	VK_ModelSmoothSummary ();
 	Con_Printf ("instanced buffer: %d triangles per frame in flight, %.1f MB each\n", MAX_INSTANCED_PRIMITIVES,
 			instanced[0].size / (1024.0 * 1024.0));
 	VK_ProfilerTime (PROF_MODELS, &geometry_ms, &geometry_avg);
@@ -900,20 +966,10 @@ void VK_InitModels (void)
 {
 	VkPushConstantRange		push_range;
 	VkPipelineLayoutCreateInfo	layout_info;
-	float				normals[NUM_VERTEX_NORMALS][4];
 	int				i;
 
 	VK_CreateBuffer (&model_table, MAX_ALIAS_MODELS * sizeof(AliasModel),
 			 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_UPLOAD);
-
-	for (i = 0; i < NUM_VERTEX_NORMALS; i++)
-	{
-		VectorCopy (vertex_normals[i], normals[i]);
-		normals[i][3] = 0.0f;
-	}
-	VK_CreateBuffer (&normal_buffer, sizeof(normals), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_DEVICE);
-	VK_UploadBuffer (&normal_buffer, 0, normals, sizeof(normals));
 
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
 	{
@@ -933,6 +989,7 @@ void VK_InitModels (void)
 	VK_CHECK (vkCreatePipelineLayout (vk.device, &layout_info, NULL, &geometry_layout));
 
 	Cmd_AddCommand ("vk_models", VK_Models_f);
+	VK_InitModelSmoothing ();
 }
 
 void VK_CreateModelPipelines (void)
@@ -954,8 +1011,8 @@ void VK_ShutdownModels (void)
 	FreeModels ();
 	for (i = 0; i < VK_FRAMES_IN_FLIGHT; i++)
 		VK_DestroyBuffer (&instanced[i]);
-	VK_DestroyBuffer (&normal_buffer);
 	VK_DestroyBuffer (&model_table);
+	VK_ShutdownModelSmoothing ();
 	VK_DestroyModelPipelines ();
 	if (geometry_layout)
 		vkDestroyPipelineLayout (vk.device, geometry_layout, NULL);

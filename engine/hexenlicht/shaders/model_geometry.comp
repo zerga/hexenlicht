@@ -9,9 +9,11 @@
  *
  * The vertex animation half of Quake II RTX's instance_geometry.comp
  * (src/refresh/vkpt/shader/instance_geometry.comp), with Hexen II's
- * compact poses and normals transformed by the inverse transpose (scale
- * types can scale x and y only, or z only). vk_model.c's check repeats
- * this on the CPU; keep the two the same.
+ * poses (8.2: vk_modelsmooth.c's 8-byte pose vertices, smoothed and with
+ * rebuilt normals or the bytes and the table's) and normals transformed
+ * by the inverse transpose (scale types can scale x and y only, or z
+ * only). vk_model.c's check repeats this on the CPU; keep the two the
+ * same.
  *
  * Copyright (C) 2018 Christoph Schied
  * Copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
@@ -44,8 +46,7 @@ layout(local_size_x = LOCAL_SIZE_X) in;
 layout(buffer_reference, std430) readonly buffer InstanceBuffer { ModelInstance m[]; };
 layout(buffer_reference, std430) readonly buffer ModelTable { AliasModel m[]; };
 layout(buffer_reference, std430) readonly buffer TriangleBuffer { AliasTriangle t[]; };
-layout(buffer_reference, std430) readonly buffer UintBuffer { uint d[]; };
-layout(buffer_reference, std430) readonly buffer NormalTable { vec4 n[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer PoseBuffer { uvec2 d[]; };
 layout(buffer_reference, std430) writeonly buffer PrimitiveBuffer { VboPrimitive p[]; };
 layout(buffer_reference, std430) writeonly buffer FloatBuffer { float d[]; };
 
@@ -54,16 +55,25 @@ layout(push_constant) uniform Push
 	ModelGeometryPush p;
 } push;
 
+/* 8.2 (vk_modelsmooth.c): x, y, z in 12 bits each, grid steps x 16 with
+ * half a step added; the normal in 14 + 14 bits, octahedral */
 vec3
-pose_position(AliasModel m, uint v)
+pose_position(AliasModel m, uvec2 v)
 {
-	return vec3(uvec3(v, v >> 8, v >> 16) & 0xffu) * m.scale + m.scale_origin;
+	uvec3 q = uvec3(v.x & 0xfffu, (v.x >> 12) & 0xfffu, (v.x >> 24) | ((v.y & 0xfu) << 8));
+	return (vec3(q) * (1.0 / 16.0) - 0.5) * m.scale + m.scale_origin;
 }
 
 vec3
-pose_normal(uint v)
+pose_normal(uvec2 v)
 {
-	return NormalTable(push.p.normals).n[min(v >> 24, uint(NUM_VERTEX_NORMALS - 1))].xyz;
+	uint e = v.y >> 4;
+	vec2 f = vec2(e & 0x3fffu, (e >> 14) & 0x3fffu) / 16383.0 * 2.0 - 1.0;
+	vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+	float t = max(-n.z, 0.0);
+	n.x += (n.x >= 0.0) ? -t : t;
+	n.y += (n.y >= 0.0) ? -t : t;
+	return normalize(n);
 }
 
 /* a direction in the plane of n, like vk_world.c's fallback tangent */
@@ -91,10 +101,10 @@ main()
 
 		for (int k = 0; k < 3; k++)
 		{
-			uint a = UintBuffer(m.poses).d[mi.prim_offset_curr_pose_curr_frame + verts[k]];
-			uint b = UintBuffer(m.poses).d[mi.prim_offset_prev_pose_curr_frame + verts[k]];
-			uint pa = UintBuffer(m.poses).d[mi.prim_offset_curr_pose_prev_frame + verts[k]];
-			uint pb = UintBuffer(m.poses).d[mi.prim_offset_prev_pose_prev_frame + verts[k]];
+			uvec2 a = PoseBuffer(m.poses).d[mi.prim_offset_curr_pose_curr_frame + verts[k]];
+			uvec2 b = PoseBuffer(m.poses).d[mi.prim_offset_prev_pose_curr_frame + verts[k]];
+			uvec2 pa = PoseBuffer(m.poses).d[mi.prim_offset_curr_pose_prev_frame + verts[k]];
+			uvec2 pb = PoseBuffer(m.poses).d[mi.prim_offset_prev_pose_prev_frame + verts[k]];
 
 			vec3 p = mix(pose_position(m, a), pose_position(m, b), mi.pose_lerp_curr_frame);
 			vec3 pp = mix(pose_position(m, pa), pose_position(m, pb), mi.pose_lerp_prev_frame);

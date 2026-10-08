@@ -495,10 +495,12 @@ typedef struct
 {
 	qmodel_t	*model;
 	vk_buffer_t	buffer;		/* [AliasTriangle x num_tris][pose vertices x num_poses x num_pose_verts] */
+	void		*cpu;		/* the buffer's data, for vk_models check */
 	int		num_tris;	/* 0: nothing to draw */
-	int		num_pose_verts;	/* vertices per pose (gl_mesh.c's command vertices) */
+	int		num_pose_verts;	/* vertices per pose (8.2: the model's, vk_modelsmooth.c) */
 	int		num_poses;
 	int		num_skins;
+	qboolean	table_normals;	/* 8.2: the table's normals (r_smoothmodels 0, or rebuilt ones would jerk more) */
 } vk_aliasmodel_t;
 
 void VK_InitModels (void);
@@ -514,6 +516,31 @@ void VK_UpdateModelGeometry (void);	/* in R_RenderView, after VK_UpdateInstances
 qboolean VK_ModelGeometryBuiltThisFrame (void);
 const vk_buffer_t *VK_InstancedBuffer (void);	/* the current frame's */
 VkDeviceAddress VK_InstancedPositionsAddress (void);
+void VK_RebuildModelGeometry (void);	/* 8.2: every built model's GPU data again (r_smoothmodels, r_smoothseams) */
+
+/* vk_modelsmooth.c (8.2): a model's poses for model_geometry.comp, made
+ * when vk_model.c builds it: its vertices (the command vertices that are
+ * the same in every pose), smoothed and with rebuilt normals by
+ * r_smoothmodels and r_smoothseams, 8 bytes each (pose_vertex) */
+struct AliasTriangle;
+struct AliasModel;
+typedef struct
+{
+	int		num_verts;	/* per pose */
+	uint16_t	*remap;		/* [hdr->poseverts]: each command vertex's vertex */
+	uint32_t	*poses;		/* [pose][vertex][2] */
+	qboolean	table_normals;
+	double		solve_ms;	/* 0 when solved earlier this session */
+} vk_modelposes_t;
+
+void VK_InitModelSmoothing (void);
+void VK_ShutdownModelSmoothing (void);
+void VK_ModelPoses (const qmodel_t *model, const aliashdr_t *hdr, const struct AliasTriangle *tris, int num_tris,
+		    vk_modelposes_t *out);	/* tris: in command vertices; the caller frees out->remap and out->poses */
+void VK_DecodePoseVertex (const struct AliasModel *am, const uint32_t v[2], vec3_t pos, vec3_t nrm);	/* model_geometry.comp's */
+void VK_ModelSmoothStats (qmodel_t *model, const struct AliasTriangle *tris, int num_tris);	/* vk_models smooth */
+void VK_ModelSmoothSummary (void);
+void VK_PresolveModels (qmodel_t **models, int count);	/* at map load: the models' solves on worker threads */
 
 /* vk_skin.c: alias model skins: GL's choice of skin per entity, as a
  * material (one per skin texture; the skin is the cutout mask of EF_HOLEY

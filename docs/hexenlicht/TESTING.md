@@ -1083,7 +1083,7 @@ the GPU): the profiler's averages, `vid_hdr` 0 and 1 alternating twice.
 - DLSS with HDR: a Release run with the DLLs and `-validation` (7.3: SR
   and RR, scRGB and HDR10, validation 0/0).
 
-## Model smoothing (8.1)
+## Model smoothing (8.1, 8.2)
 
 No game run: `tools/hexenlicht/mdl_smooth.ps1` reads the paks (data1's
 pak0/pak1 and portals' pak3 by default, `-Paks` others; `-Model` a regex
@@ -1138,6 +1138,33 @@ browser pane needs it served (a static server on localhost).
   normal jerk the same (3.19), worse than the table also on `axblade`,
   `stlghtng`, `hamthrow`, `funnal`. The solver (C# through Add-Type, one
   thread): 34 s in all, the Eidolon 2.8 s.
+
+**In the engine (8.2):**
+- `vk_models smooth <model>` prints the tool's numbers for the engine's own
+  result (with `r_smoothseams 1` they are `-Weld`'s): they should match
+  `mdl_smooth.ps1 -Weld -Model` for the same pak's model within about
+  0.03 degrees (the engine's tolerance is 1e-2, the tool's 1e-3). 8.2:
+  data1's imp 29.0 degrees table against rebuilt, jerk 8.03 / 5.38 / 2.71
+  (tool 2.68); the Paladin 36.6, the golem 41.5, the medusa 22.1, the
+  Eidolon 35.0; Portal of Praevus' imp 37.7 (`-Portals`, keep1), Paladin
+  34.1; round trip 0 in all.
+- `vk_models check` after toggling `r_smoothmodels` and `r_smoothseams`
+  (each rebuilds every model): all agree in every state; `vk_models` prints
+  the session's solves, the builds' time and the last threaded solve.
+- `tools/hexenlicht/smooth_run.ps1 -Out <folder> [-Release] [-Portals]
+  [-Width 1280 -Height 720]`: per view a monster created in front of the
+  camera (village1's start; keep1's with `-Portals`) or the Paladin in the
+  chase camera, paused, shot as `<view>_orig` (`r_smoothmodels 0`),
+  `_side` (`r_smoothseams 0`) and `_weld` (the default), `vk_models check`
+  after each. Framing is rough: a created monster drifts while it idles
+  and a big one may not fit where it spawns (8.2's golem at village1's
+  start didn't); look at the shots before using them. The shake itself is
+  motion: watch it in game.
+- Load cost: `vk_models` after a map load in Release (`the last threaded
+  solve ...: N models on T threads in X ms`, and the builds' time). 8.2,
+  demo1: 181 models on 16 threads in 100–116 ms, the builds 107 ms (41
+  with `r_smoothmodels 0`); `r_smoothmodels 1` after a load with 0 solves
+  them on the threads too (100 ms).
 
 ## Pixel regression (renderer refactors)
 
