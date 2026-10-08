@@ -11,7 +11,7 @@ param([string]$Data = '', [string[]]$Paks, [string]$Model = '', [string]$Csv = '
 # the -ViewerModels (pak:name) in it: Raven's vertex data, so outside the
 # repository, never published. The paks: -Paks, else data1's pak0/pak1 and
 # portals' pak3 in -Data ($env:HEXENLICHT_DATA, else Hexenlicht-data next to
-# the repository). See docs/hexenlicht/TESTING.md "Model smoothing (8.1)".
+# the repository). See docs/hexenlicht/TESTING.md "Model smoothing (8.1, 8.2)".
 $repo = Split-Path (Split-Path $PSScriptRoot)
 if (-not $Data) { $Data = if ($env:HEXENLICHT_DATA) { $env:HEXENLICHT_DATA } else { Join-Path (Split-Path $repo) 'Hexenlicht-data' } }
 $abs = { param($p) $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($p) }

@@ -286,6 +286,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/vk_pvs.c
 	${HEXENLICHT_DIR}/vk_medium.c
 	${HEXENLICHT_DIR}/vk_model.c
+	${HEXENLICHT_DIR}/vk_modelsmooth.c
 	${HEXENLICHT_DIR}/vk_skin.c
 	${HEXENLICHT_DIR}/vk_instance.c
 	${HEXENLICHT_DIR}/vk_effects.c

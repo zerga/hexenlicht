@@ -83,9 +83,11 @@ END_SHADER_STRUCT( MediumCheckPush )
 /* ==========================================================================
  * Alias models (vk_model.c). The model table has one AliasModel per model
  * (index = source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL); each model's
- * buffer holds its triangles and its poses. A pose vertex is Quake's
- * trivertx_t in one uint: x | y << 8 | z << 16 | normal index << 24, the
- * normal index into Quake's 162 vertex normals (anorms.h). Every frame,
+ * buffer holds its triangles and its poses. A pose vertex is 8 bytes
+ * (vk_modelsmooth.c, 8.2): x, y, z in 12 bits each (grid steps x 16, half
+ * a step added) and the normal in 14 + 14 bits, octahedral; smoothed with
+ * rebuilt normals, or the trivertx_t bytes and Quake's 162 vertex normals
+ * (anorms.h) by r_smoothmodels. Every frame,
  * model_geometry.comp turns the alias instances into VboPrimitives in
  * VERTEX_BUFFER_INSTANCED.
  * ========================================================================== */
@@ -101,7 +103,7 @@ BEGIN_SHADER_STRUCT( AliasModel )
 	vec3 scale_origin;
 	uint num_pose_verts;	/* vertices per pose */
 	DeviceAddress triangles;	/* AliasTriangle[num_tris] */
-	DeviceAddress poses;		/* uint[poses * num_pose_verts] */
+	DeviceAddress poses;		/* uvec2[poses * num_pose_verts] */
 }
 END_SHADER_STRUCT( AliasModel )
 
@@ -119,7 +121,6 @@ BEGIN_SHADER_STRUCT( ModelGeometryPush )
 {
 	DeviceAddress instances;	/* ModelInstance[] */
 	DeviceAddress models;		/* AliasModel[] */
-	DeviceAddress normals;		/* vec4[NUM_VERTEX_NORMALS] */
 	DeviceAddress primitives;	/* VboPrimitive[], the instanced buffer */
 	DeviceAddress positions;	/* float[9 per primitive], for the BLASes */
 	uint first_instance;		/* the first alias instance; one workgroup each */

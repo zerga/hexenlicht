@@ -1063,14 +1063,19 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
 - `R_NewMap` calls `VK_LoadModels` after `VK_LoadWorld` (every alias model in
   `cl.model_precache`); others are built when first drawn
   (`VK_AliasModelIndex`, mid-frame upload; `vk_models` counts them).
-- A model's buffer is `[AliasTriangle x n][trivertx_t x poses x pose verts]`,
-  built from `gl_mesh.c`'s strips/fans (both MDL formats, seams included,
-  winding reversed like the world's). The host-visible model table
+- A model's buffer is `[AliasTriangle x n][uvec2 x poses x vertices]`
+  (8.2), built from `gl_mesh.c`'s strips/fans (both MDL formats, seams
+  included, winding reversed like the world's), the triangles over the
+  model's vertices and the poses from [Model smoothing](#model-smoothing-vk_modelsmoothc)
+  (`VK_ModelPoses`); a copy stays on the CPU for `vk_models check`.
+  `VK_RebuildModelGeometry` builds every model again (`r_smoothmodels`,
+  `r_smoothseams`). The host-visible model table
   (`AliasModel`: decode scale/origin, counts, addresses) is indexed by
   `source_buffer_idx - VERTEX_BUFFER_FIRST_MODEL`.
 - `VK_UpdateModelGeometry`: `model_geometry.comp` (Q2RTX's
-  `instance_geometry.comp`, one workgroup per alias instance; normals from the
-  162-entry table by inverse transpose, per-triangle tangents orthogonalized
+  `instance_geometry.comp`, one workgroup per alias instance; 8.2's pose
+  vertices decoded by `pose_position`/`pose_normal`, normals by inverse
+  transpose, per-triangle tangents orthogonalized
   per vertex + handedness flag, motion `prev - curr` as half floats in
   `custom0-2`) writes VboPrimitives and packed positions into this frame's
   instanced buffer (`VERTEX_BUFFER_INSTANCED`, `MAX_INSTANCED_PRIMITIVES`, one
@@ -1079,12 +1084,73 @@ flight (`VK_InstanceBuffer`). `vk_instances [step|box]` prints them.
   light level, rounded to a half so the packing is exact; 1 when lit by
   the world): an emissive skin (4.5, the light models' flames) shows at
   GL's abslight.
-- `vk_models [list|check]` (the geometry pass's GPU time from the profiler,
-  the instances with an emissive skin);
+- `vk_models [list|check|smooth <model>]` (the geometry pass's GPU time
+  from the profiler, the instances with an emissive skin, the smoothing's
+  session totals; `list` marks the models drawn with the table's normals);
   `check` compares every triangle of the last frame
   with the same computation on the CPU (`CpuTriangle` — keep it in step with
   the shader), and each instance's material against its group (a masked
-  one's mask is its albedo or, 5.3, the original skin).
+  one's mask is its albedo or, 5.3, the original skin); `smooth` see below.
+
+## Model smoothing (`vk_modelsmooth.c`)
+
+Story 8.2 (DECISIONS G14, G15): 8.1's prototype (`tools/hexenlicht/mdl_smooth.cs`)
+in the engine. `VK_ModelPoses` makes a model's poses when `vk_model.c`
+builds it:
+- **Vertices:** `gl_mesh.c` keeps the poses in its command order (a vertex
+  once per strip that uses it; the file's numbering is gone). Command
+  vertices with the same bytes and table normal in every pose are one
+  vertex (the imp: 270 of 490); seam duplicates differ in their one-sided
+  table normals and stay apart (file vertices that coincide with equal
+  normals in every pose become one, which 8.1's tool kept apart: the same
+  numbers to 0.1 degrees). The triangles are remapped to them.
+- **Positions** (`r_smoothmodels 1`, archived): per sequence (frame names
+  alike but for a trailing number; a frame group's subframes; a loop when
+  the last pose is within 1.5x the mean frame-to-frame distance of the
+  first) each vertex's path on each axis the smoothest within 0.49 grid
+  steps of its byte (ADMM over the second differences, cyclic for loops;
+  `DtD + rho I` factored per sequence keeping its envelope; all the
+  sequence's moving paths at once, a column each; tolerance 1e-2 grid
+  steps, 8.1's numbers with half its iterations). Rounding gives back every
+  byte.
+- **Normals:** rebuilt from the smoothed shape as the original tables were
+  made (each face's unit normal counts the same); a face under a quarter of
+  a grid cell by its area; of faces on the same three vertices the one
+  agreeing with the table over all poses; a vertex whose faces weigh less
+  than one full face takes the rest from its table normal.
+  `r_smoothseams 1` (archived, the default, provisional: G15) welds
+  vertices at the same place in every pose (a seam's duplicates) except a
+  card's two sides (faces lying on each other only once welded, or table
+  normals with a mean dot under -0.5); 0 keeps each side's. A model whose
+  rebuilt normals change more between frames (8.1's normal jerk) than its
+  table's keeps the table's (`vk_models list`: `table-normals`).
+  `r_smoothmodels 0`: the bytes and the table normals (GL's poses).
+- **Packing:** 8 bytes a vertex: x, y, z in 12 bits each ((grid + 0.5) x 16,
+  a sixteenth of a step), the normal in 14 + 14 bits octahedral
+  (`VK_DecodePoseVertex` = the shader's `pose_position`/`pose_normal`); a
+  byte of 255 smoothed above 255.47 clamps at 255.44 (at most 0.05 of a
+  step; it still rounds to 255), and a byte packs exactly with smoothing
+  off.
+- **When:** `VK_LoadModels` first solves the precached models that the
+  session hasn't on worker threads (`VK_PresolveModels`: the main thread
+  and up to 15 workers, as many as the cores; each job a copy of the pose
+  data and its vertices and sequences, found on the main thread, so the
+  model cache may move; the workers make no engine calls; out of memory on
+  one is reported after the join), then builds them; `VK_RebuildModelGeometry` (the cvars) does
+  the same; a model first drawn later is solved on the main thread.
+  Solved positions stay for the session, keyed by name and a hash of the
+  pose data: a map change or a switch of the cvars only rebuilds normals
+  and packing once solved.
+- **Cost** (Release, 16 cores; demo1's 181 models): the solve 116 ms wall
+  on 15 threads (421 ms on one; 2.4 s before batching and the tolerance),
+  the builds 107 ms (40 ms with `r_smoothmodels 0`): about 180 ms more on
+  the map load; 13.6 MB kept for the session, the GPU data 9.6 MB (and its
+  CPU copy). The geometry pass 0.020 ms.
+- `vk_models smooth <model>` prints `mdl_smooth.ps1`'s numbers for the
+  engine's own result (`-Weld` with `r_smoothseams 1`): accel, edges, the
+  normal jerk (table / rebuilt / smoothed), the table against the rebuilt
+  normals, the round trip, the solve; `vk_models` prints the session's
+  totals and the last threaded solve (a map load or the cvars).
 
 ## Skins (`vk_skin.c`)
 
@@ -4061,6 +4127,7 @@ overlay, and a measuring mode.
 | `pt_num_bounce_rays 0/0.5/1/2` | bounces (Q2RTX's cvar, 1); Q2RTX's other `pt_*` cvars, e.g. `pt_roughness_override`, `pt_metallic_override` (−1 = off) to test reflections |
 | `pt_reflect_refract 0-10` | reflection and refraction passes (Q2RTX's cvar, 2) |
 | `r_lerpmodels`, `r_lerpmove` | frame and movement blending (1) or GL's look (0) |
+| `r_smoothmodels`, `r_smoothseams` | 8.2: smoothed model animation and rebuilt normals (1) or the bytes and the table's normals (0); welded seams (1) or each side's (0) (see [Model smoothing](#model-smoothing-vk_modelsmoothc)) |
 | `r_dumpscene` | the last frame's scene |
 | `vk_info` | device, extensions, BC texture support and the largest image, swapchain, HDR, validation counts |
 | `vid_hdr 0/1/2`, `vk_hdr`, `vk_hdrshot <name>` | 7.3: HDR output (1 scRGB, else HDR10; 2 HDR10; archived, applies at once); its state, the display and the levels used; `shots\<name>.pfm`, the swapchain image in nits (see [HDR output](#hdr-output-vk_hdrc)) |
