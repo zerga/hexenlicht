@@ -338,6 +338,14 @@ Goal: v1.0 on GitHub Releases.
 | 7.4 | Release packaging via CI: zip layout, player README (game data, `h2patch`, optional DLSS download) | S | Release zip works on a clean machine |
 | 7.5 | v1.0 release | S | Published |
 
+### E8 — Models and animation
+Goal: the original models move and shade smoothly in the path tracer, worked out from the game's own data at load: no asset files made or shipped, the mesh, UVs and skins unchanged (mesh replacements stay a non-goal, §1). Found in the owner's question (2026-10-08: the models' animations are "shaky"); the epic and its stories approved the same day.
+
+| # | Story | Size | Done when |
+|---|---|---|---|
+| 8.1 | Smoother model animation, offline prototype (a spike): `tools/hexenlicht/mdl_smooth.ps1` smooths each sequence's vertex paths within the 8-bit vertices' rounding cells (the smoothest path, least squared second differences, loops across the wrap) and rebuilds the normals from the smoothed shape; reports the shake before and after for every model of both games; a local before/after viewer (Raven's vertex data: never in the repository). DECISIONS G14; go, seams welded provisionally (owner, 2026-10-08) | S | Numbers for all models; the owner has watched the viewer and decided whether 8.2 goes ahead |
+| 8.2 | Smoother model animation in the engine: 8.1's smoothing, seams welded by default (G14; a setting keeps today's per-side normals, the owner confirms with the skins in game), run when an alias model loads, poses as 16-bit positions and a packed normal, `model_geometry.comp` and the CPU readers of the poses following, a cvar for the original | M | Models shake visibly less in a scripted side-by-side; the cvar off shows today's image; load time and memory measured; validation 0/0 |
+
 ### Recurring
 - Upstream merge from `sezero/uhexen2` when upstream changes — procedure in
   [UPSTREAM.md](UPSTREAM.md).
@@ -375,13 +383,13 @@ GitHub Issues + a GitHub Project board:
 [issues](https://github.com/zerga/hexenlicht/issues),
 [project board](https://github.com/users/zerga/projects/1).
 
-- **Epics** = one issue per epic (E0–E7, issues #1–#8), label `epic`.
+- **Epics** = one issue per epic (E0–E7, issues #1–#8; E8 #202, 2026-10-08), label `epic`.
 - **Stories** = sub-issues of their epic, label `story` (or `spike`), titled
   with their plan number (e.g. `3.9 Spike: ...`). The epic shows a progress
   bar from its sub-issues.
 - **Milestones**: `0.1 Boots on Vulkan` (E0, E1), `0.2 First path-traced
   frame` (E2, E3), `0.3 Lit and textured` (E4, E5), `0.4 Complete game` (E6),
-  `1.0` (E7).
+  `1.0` (E7); E8 has none.
 - New work found along the way becomes a new story under the right epic;
   this plan is updated only when a decision or the scope changes.
 - **Labels**: `area:build`, `area:vid`, `area:2d`, `area:geometry`,

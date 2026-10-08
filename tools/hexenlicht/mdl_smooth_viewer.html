@@ -1,0 +1,312 @@
+<!doctype html>
+<!--
+  mdl_smooth_viewer.html -- story 8.1's before/after viewer
+
+  A template: mdl_smooth.ps1 -Viewer <file> replaces the DATA marker below
+  with the models' vertices (the original bytes, the smoothed offsets, the
+  table normals) and writes the result. That file holds Raven's vertex
+  data: it stays on the owner's machine, outside the repository, and is
+  never published (PLAN section 4).
+
+  Left: the game today (the bytes, the 162-direction table normals). Right:
+  the smoothed positions with normals rebuilt from them, or either change
+  alone. Frames blend as r_lerpmodels does (normals mixed, then normalized).
+
+  Copyright (C) 2026  Hexenlicht contributors
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 2 of the License, or (at
+  your option) any later version.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model smoothing</title>
+<style>
+:root {
+	--bg: #16181c; --panel: #1f2228; --text: #e6e6e6; --muted: #9aa0a8; --accent: #e0a040; --border: #33373f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+header label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+select, button, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+#views { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; flex: 1; min-height: 300px; }
+@media (max-width: 800px) { body { height: auto; } #views { grid-template-columns: 1fr; } .view { height: 60vw; } }
+.view { position: relative; background: #0d0e10; }
+.view canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+.view .label { position: absolute; top: 8px; left: 10px; color: var(--muted); pointer-events: auto; }
+.view .label b { color: var(--text); font-weight: 600; }
+#info { padding: 6px 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+	<label>Model <select id="model"></select></label>
+	<label>Sequence <select id="seq"></select></label>
+	<button id="play">Pause</button>
+	<button id="prev" title="Previous frame (left arrow)">&#9664;</button>
+	<button id="next" title="Next frame (right arrow)">&#9654;</button>
+	<label>Speed <select id="speed"><option>1</option><option>0.5</option><option selected>0.25</option><option>0.1</option></select></label>
+	<label>Rate <select id="rate"><option value="10" selected>10 Hz</option><option value="20">20 Hz</option></select></label>
+	<label><input type="checkbox" id="lerp" checked> Blend frames</label>
+	<label><input type="checkbox" id="wire"> Wireframe</label>
+	<label title="Vertices at the same place in every pose (a UV seam's duplicates) share one rebuilt normal"><input type="checkbox" id="weld"> Weld seams</label>
+	<label>Shine <input type="range" id="shine" min="0" max="1" step="0.05" value="0.6"></label>
+</header>
+<div id="views">
+	<div class="view"><canvas id="c0"></canvas><div class="label"><b>Today</b>: the bytes, table normals</div></div>
+	<div class="view"><canvas id="c1"></canvas><div class="label"><b>Smoothed</b>:
+		<select id="mode">
+			<option value="both" selected>smoothed positions, rebuilt normals</option>
+			<option value="normals">rebuilt normals only</option>
+			<option value="positions">smoothed positions only</option>
+		</select></div></div>
+</div>
+<div id="info"></div>
+<script>
+/*@DATA@*/
+</script>
+<script>
+"use strict";
+const MIN_FACE = 0.25;	/* mdl_smooth.cs's MinFace: below it a face counts by its area */
+
+function b64(s) { const b = atob(s), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+function u16(s) { const b = b64(s), a = new Uint16Array(b.length / 2); for (let i = 0; i < a.length; i++) a[i] = b[i * 2] | (b[i * 2 + 1] << 8); return a; }
+
+const models = MODELS.map(j => {
+	return { ...j, tris: u16(j.tris), rep: u16(j.rep), q: b64(j.q), d: new Int8Array(b64(j.d).buffer), n: b64(j.n), keep: b64(j.keep), keepWeld: b64(j.keepWeld), cache: new Map() };
+});
+
+/* a pose's positions in model units: the bytes, or smoothed */
+function positions(m, pose, smoothed) {
+	const key = "p" + pose + smoothed;
+	if (m.cache.has(key)) return m.cache.get(key);
+	const out = new Float32Array(m.verts * 3), base = pose * m.verts * 3;
+	for (let i = 0; i < m.verts * 3; i++) {
+		const a = i % 3;
+		out[i] = (m.q[base + i] + (smoothed ? m.d[base + i] / 250 : 0)) * m.scale[a] + m.origin[a];
+	}
+	m.cache.set(key, out);
+	return out;
+}
+
+function tableNormals(m, pose) {
+	const key = "t" + pose;
+	if (m.cache.has(key)) return m.cache.get(key);
+	const out = new Float32Array(m.verts * 3), nn = ANORMS.length / 3;
+	for (let v = 0; v < m.verts; v++) {
+		const i = Math.min(m.n[pose * m.verts + v], nn - 1);
+		for (let a = 0; a < 3; a++) out[v * 3 + a] = ANORMS[i * 3 + a];
+	}
+	m.cache.set(key, out);
+	return out;
+}
+
+/* mdl_smooth.cs's Rebuild with its filter: unit face normals averaged,
+ * small faces by their area, the back-to-back face Prepare left out, the
+ * table filling in under one full face; with weld, as its Weld (the
+ * vertices welded as its Prepare welded them: m.rep) */
+function rebuiltNormals(m, pose, smoothed, weld) {
+	const key = "r" + pose + smoothed + weld;
+	const rep = weld ? m.rep : null;
+	if (m.cache.has(key)) return m.cache.get(key);
+	const p = positions(m, pose, smoothed), tn = tableNormals(m, pose);
+	const n = new Float64Array(m.verts * 3), w = new Float64Array(m.verts);
+	const s = Math.max(...m.scale), full = 2 * MIN_FACE * s * s;
+	for (let t = 0; t < m.tris.length / 3; t++) {
+		if (!(weld ? m.keepWeld : m.keep)[t]) continue;
+		const i0 = m.tris[t * 3] * 3, i1 = m.tris[t * 3 + 1] * 3, i2 = m.tris[t * 3 + 2] * 3;
+		const e1 = [p[i1] - p[i0], p[i1 + 1] - p[i0 + 1], p[i1 + 2] - p[i0 + 2]];
+		const e2 = [p[i2] - p[i0], p[i2 + 1] - p[i0 + 1], p[i2 + 2] - p[i0 + 2]];
+		let c = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+		if (m.flip) c = c.map(x => -x);
+		const l = Math.hypot(c[0], c[1], c[2]);
+		if (l === 0) continue;
+		const k = Math.min(1, l / full) / l;
+		for (let vi of [i0, i1, i2]) {
+			if (rep) vi = rep[vi / 3] * 3;
+			n[vi] += c[0] * k; n[vi + 1] += c[1] * k; n[vi + 2] += c[2] * k;
+			w[vi / 3] += k * l;
+		}
+	}
+	const out = new Float32Array(m.verts * 3);
+	for (let v = 0; v < m.verts; v++) {
+		if (rep && rep[v] !== v) continue;
+		if (w[v] < 1) for (let a = 0; a < 3; a++) n[v * 3 + a] += (1 - w[v]) * tn[v * 3 + a];
+		const l = Math.hypot(n[v * 3], n[v * 3 + 1], n[v * 3 + 2]);
+		for (let a = 0; a < 3; a++) out[v * 3 + a] = l > 0 ? n[v * 3 + a] / l : tn[v * 3 + a];
+	}
+	if (rep) for (let v = 0; v < m.verts; v++) for (let a = 0; a < 3; a++) out[v * 3 + a] = out[rep[v] * 3 + a];
+	m.cache.set(key, out);
+	return out;
+}
+
+/* ---------- WebGL ---------- */
+const VS = `#version 300 es
+in vec3 pos; in vec3 nrm; in vec3 bary;
+uniform mat4 mvp;
+out vec3 vn; out vec3 vb; out vec3 vp;
+void main() { vn = nrm; vb = bary; vp = pos; gl_Position = mvp * vec4(pos, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 vn; in vec3 vb; in vec3 vp;
+uniform vec3 eye; uniform float shine; uniform float wire;
+out vec4 color;
+void main() {
+	vec3 n = normalize(vn), v = normalize(eye - vp);
+	if (dot(n, v) < 0.0) n = -n;	/* two-sided, as the path tracer's primary rays */
+	vec3 l1 = normalize(vec3(0.5, -0.4, 0.8)), l2 = normalize(vec3(-0.7, 0.6, 0.2));
+	vec3 base = vec3(0.62, 0.58, 0.52);
+	float d = max(dot(n, l1), 0.0) * 0.85 + max(dot(n, l2), 0.0) * 0.3 + 0.08;
+	float s = pow(max(dot(n, normalize(l1 + v)), 0.0), 60.0) * shine + pow(max(dot(n, normalize(l2 + v)), 0.0), 60.0) * shine * 0.4;
+	vec3 c = base * d + vec3(s);
+	if (wire > 0.5) {
+		vec3 fw = fwidth(vb), e = smoothstep(vec3(0.0), fw * 1.2, vb);
+		c = mix(vec3(0.95, 0.65, 0.2), c, min(min(e.x, e.y), e.z));
+	}
+	color = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+
+function makeView(canvas) {
+	const gl = canvas.getContext("webgl2", { antialias: true });
+	const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; };
+	const prog = gl.createProgram();
+	gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+	const buf = {};
+	for (const name of ["pos", "nrm", "bary"]) {
+		buf[name] = gl.createBuffer();
+		const loc = gl.getAttribLocation(prog, name);
+		gl.bindBuffer(gl.ARRAY_BUFFER, buf[name]); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+	}
+	gl.enable(gl.DEPTH_TEST);
+	return { gl, prog, buf, canvas, count: 0, baryFor: null };
+}
+
+const views = [makeView(document.getElementById("c0")), makeView(document.getElementById("c1"))];
+const cam = { yaw: -0.6, pitch: 0.25, dist: 1 };
+
+function mat4mul(a, b) { const o = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; o[i * 4 + j] = s; } return o; }
+function perspective(fov, aspect, near, far) { const f = 1 / Math.tan(fov / 2), o = new Float32Array(16); o[0] = f / aspect; o[5] = f; o[10] = (far + near) / (near - far); o[11] = -1; o[14] = 2 * far * near / (near - far); return o; }
+function lookAt(e, c, up) {
+	const z = norm(sub(e, c)), x = norm(cross(up, z)), y = cross(z, x);
+	return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]);
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+/* ---------- state and UI ---------- */
+const ui = id => document.getElementById(id);
+let model = models[0], seq = null, time = 0, playing = true, center = [0, 0, 0], radius = 50, holdUntil = 0;
+
+for (const [i, m] of models.entries()) ui("model").add(new Option(m.name, i));
+
+function pickModel(i, seqName) {
+	model = models[i];
+	ui("seq").innerHTML = "";
+	for (const [k, s] of model.seqs.entries())
+		if (s.count > 1) ui("seq").add(new Option(`${s.name} (${s.count}, ${s.loop ? "loop" : "once"})`, k));
+	const pref = model.seqs.findIndex(s => s.name === seqName);
+	ui("seq").value = pref >= 0 ? pref : ui("seq").options[0].value;
+	pickSeq();
+}
+function pickSeq() {
+	seq = model.seqs[+ui("seq").value]; time = 0; holdUntil = 0;
+	/* frame the sequence: its bounds over its poses */
+	const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], n = model.verts * 3;
+	for (let i = seq.start * n; i < (seq.start + seq.count) * n; i++) { const a = i % 3, x = model.q[i] * model.scale[a] + model.origin[a]; lo[a] = Math.min(lo[a], x); hi[a] = Math.max(hi[a], x); }
+	center = lo.map((l, a) => (l + hi[a]) / 2);
+	radius = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2;
+	cam.dist = radius * 3;
+}
+
+ui("model").onchange = () => pickModel(+ui("model").value);
+ui("seq").onchange = pickSeq;
+ui("play").onclick = () => { playing = !playing; ui("play").textContent = playing ? "Pause" : "Play"; };
+const step = d => { playing = false; ui("play").textContent = "Play"; time = Math.floor(time) + d; };
+ui("prev").onclick = () => step(-1); ui("next").onclick = () => step(1);
+addEventListener("keydown", e => { if (e.key === "ArrowLeft") step(-1); else if (e.key === "ArrowRight") step(1); else if (e.key === " ") { ui("play").click(); e.preventDefault(); } });
+
+for (const v of views) {
+	let drag = null;
+	v.canvas.onpointerdown = e => { drag = [e.clientX, e.clientY]; v.canvas.setPointerCapture(e.pointerId); };
+	v.canvas.onpointermove = e => { if (!drag) return; cam.yaw -= (e.clientX - drag[0]) * 0.008; cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + (e.clientY - drag[1]) * 0.008)); drag = [e.clientX, e.clientY]; };
+	v.canvas.onpointerup = () => drag = null;
+	v.canvas.onwheel = e => { cam.dist *= Math.exp(e.deltaY * 0.001); e.preventDefault(); };
+}
+
+/* the frame shown: pose a blended toward pose b by f */
+function framePoses() {
+	const n = seq.count;
+	let i = Math.floor(time), f = time - i;
+	if (seq.loop) { i = ((i % n) + n) % n; return [seq.start + i, seq.start + (i + 1) % n, f]; }
+	if (i >= n - 1) return [seq.start + n - 1, seq.start + n - 1, 0];
+	if (i < 0) return [seq.start, seq.start, 0];
+	return [seq.start + i, seq.start + i + 1, f];
+}
+
+function draw(view, smoothedPos, normalsKind, a, b, f) {
+	const { gl, prog, buf, canvas } = view, m = model;
+	const w = Math.round(canvas.clientWidth * devicePixelRatio), h = Math.round(canvas.clientHeight * devicePixelRatio);
+	if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+	const pa = positions(m, a, smoothedPos), pb = positions(m, b, smoothedPos);
+	const na = normalsKind === "table" ? tableNormals(m, a) : rebuiltNormals(m, a, smoothedPos, ui("weld").checked);
+	const nb = normalsKind === "table" ? tableNormals(m, b) : rebuiltNormals(m, b, smoothedPos, ui("weld").checked);
+	const nt = m.tris.length / 3, P = new Float32Array(nt * 9), N = new Float32Array(nt * 9);
+	for (let t = 0; t < nt; t++)
+		for (let k = 0; k < 3; k++) {
+			const v = m.tris[t * 3 + k] * 3, o = (t * 3 + k) * 3;
+			let nx = na[v] + (nb[v] - na[v]) * f, ny = na[v + 1] + (nb[v + 1] - na[v + 1]) * f, nz = na[v + 2] + (nb[v + 2] - na[v + 2]) * f;
+			const l = Math.hypot(nx, ny, nz) || 1;
+			for (let c = 0; c < 3; c++) P[o + c] = pa[v + c] + (pb[v + c] - pa[v + c]) * f;
+			N[o] = nx / l; N[o + 1] = ny / l; N[o + 2] = nz / l;
+		}
+	if (view.baryFor !== m) {
+		const B = new Float32Array(nt * 9);
+		for (let i = 0; i < nt * 3; i++) B[i * 3 + (i % 3)] = 1;
+		gl.bindBuffer(gl.ARRAY_BUFFER, buf.bary); gl.bufferData(gl.ARRAY_BUFFER, B, gl.STATIC_DRAW);
+		view.baryFor = m;
+	}
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf.pos); gl.bufferData(gl.ARRAY_BUFFER, P, gl.DYNAMIC_DRAW);
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf.nrm); gl.bufferData(gl.ARRAY_BUFFER, N, gl.DYNAMIC_DRAW);
+	gl.viewport(0, 0, w, h);
+	gl.clearColor(0.05, 0.055, 0.065, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	const eye = [center[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), center[1] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw), center[2] + cam.dist * Math.sin(cam.pitch)];
+	const mvp = mat4mul(perspective(0.8, w / h, radius * 0.05, radius * 20), lookAt(eye, center, [0, 0, 1]));
+	gl.useProgram(prog);
+	gl.uniformMatrix4fv(gl.getUniformLocation(prog, "mvp"), false, mvp);
+	gl.uniform3fv(gl.getUniformLocation(prog, "eye"), eye);
+	gl.uniform1f(gl.getUniformLocation(prog, "shine"), +ui("shine").value);
+	gl.uniform1f(gl.getUniformLocation(prog, "wire"), ui("wire").checked ? 1 : 0);
+	gl.drawArrays(gl.TRIANGLES, 0, nt * 3);
+}
+
+let last = performance.now();
+function frame(now) {
+	const dt = (now - last) / 1000; last = now;
+	if (playing) {
+		if (!seq.loop && time >= seq.count - 1) {
+			if (!holdUntil) holdUntil = now + 800;
+			else if (now > holdUntil) { time = 0; holdUntil = 0; }
+		} else time += dt * +ui("rate").value * +ui("speed").value;
+	}
+	let [a, b, f] = framePoses();
+	if (!ui("lerp").checked) { f = 0; b = a; }
+	const mode = ui("mode").value;
+	draw(views[0], false, "table", a, b, f);
+	draw(views[1], mode !== "normals", mode === "positions" ? "table" : "rebuilt", a, b, f);
+	const grid = Math.max(...model.scale);
+	ui("info").textContent = `${model.name}: ${model.verts} vertices, grid step ${grid.toFixed(2)} units; ${seq.name} frame ${a - seq.start + 1}/${seq.count}` +
+		(f > 0 ? ` (+${f.toFixed(2)})` : "") + ` — drag to orbit, wheel to zoom, arrows step, space pauses`;
+	requestAnimationFrame(frame);
+}
+pickModel(0, "impwat");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
