@@ -1009,6 +1009,62 @@ the GPU): the profiler's averages, `vid_hdr` 0 and 1 alternating twice.
 - DLSS with HDR: a Release run with the DLLs and `-validation` (7.3: SR
   and RR, scRGB and HDR10, validation 0/0).
 
+## Model smoothing (8.1)
+
+No game run: `tools/hexenlicht/mdl_smooth.ps1` reads the paks (data1's
+pak0/pak1 and portals' pak3 by default, `-Paks` others; `-Model` a regex
+on the model's name) and, per model, smooths each animation sequence's
+vertex paths within their rounding cells and rebuilds the normals
+(`mdl_smooth.cs`'s header says how; DECISIONS G14). It prints a row per
+animated model and the medians:
+- `accel`: the RMS second difference per vertex and axis, in grid steps
+  (mostly the real motion's; it falls only by the noise).
+- `edge_med`, `edge_p90`: each triangle edge's length variation over a
+  sequence against what rounding alone gives a rigid edge (1.0: as much as
+  the rounding; joints and deforming parts above it).
+- `normal_jerk`: the mean angle between a frame's normal and the
+  direction halfway between its neighbours', in degrees: the table's
+  (today's shading) / rebuilt from the bytes / rebuilt from the smoothed
+  shape; `over5` the share above 5 degrees, table → smoothed.
+- the round trip (rounding the smoothed positions must give back every
+  byte: 0 differ), the largest shift (< 0.5 grid steps) and the solver's
+  time and iterations.
+
+`-List` prints each model's sequences (frame range, loop, once, frame
+group; the last-to-first and mean frame-to-frame distances the loop rule
+compares); `-Sequence <regex>` smooths and measures only matching
+sequences, `-StepBelow 1`/`-StepAbove 1` only those moving less (more)
+than a grid step per frame (idle animations against the rest; the
+table-against-rebuilt line still covers every pose); `-Weld` rebuilds
+normals with a UV seam's duplicates welded (DECISIONS G14); `-Csv` the
+per-model numbers. All 476 models take about 35 s.
+
+`-Viewer <file.html>` also writes `mdl_smooth_viewer.html` with
+`-ViewerModels` (pak:name; the imp of the original game first, at its
+idle `impwat`, then Portal of Praevus' imp) filled in: left the game
+today (the bytes, the table normals), right smoothed (or only the
+positions, only the normals; "Weld seams" as `-Weld`), frames blended as
+`r_lerpmodels` does, 10 or 20 Hz, slowed down, frame by frame, wireframe.
+**The file holds Raven's vertex data: the tool refuses a folder inside
+any git working tree; never commit or publish it.** `-Model` must
+include the viewer's models. A browser opens it from disk; the app's
+browser pane needs it served (a static server on localhost).
+
+- What 8.1 measured (2026-10-08, all three paks): 476 models, 137
+  animated, 1120 sequences; 0 of 14,250,078 samples changed by the round
+  trip; normal jerk 6.5 → 3.2 degrees (median model), above 5 degrees 52
+  → 17 %. Sequences under a grid step per frame (45 models' idles):
+  edges 0.84 → 0.27 of rounding, normal jerk 2.5 → 0.23 degrees, above 5
+  degrees 19 → 0.2 %; the imp's `impwat` 0.85 → 0.27 and 3.6 → 0.08
+  degrees. Faster sequences: edges 1.12 → 1.01 (the motion dwarfs the
+  grid), normals 7.2 → 3.6 degrees. Worse than the table's normals:
+  `vorpswip`, `swarm`, `stltng2`, `candle` (effects, few frames or not
+  rigid). Table against rebuilt (median model): pak0 and pak1 5.7–5.8
+  degrees, pak3 32 (its welded seams); with `-Weld` 27–34 per pak, the
+  normal jerk the same (3.19), worse than the table also on `axblade`,
+  `stlghtng`, `hamthrow`, `funnal`. The solver (C# through Add-Type, one
+  thread): 34 s in all, the Eidolon 2.8 s.
+
 ## Pixel regression (renderer refactors)
 
 1. Build the old code: `git worktree add --detach ..\hexenlicht-main <sha>`
