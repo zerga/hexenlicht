@@ -51,6 +51,18 @@ Used from the LunarG Vulkan SDK at build time, not vendored:
 | Vulkan headers (Khronos) | Apache-2.0 OR MIT — used under MIT | Vulkan API declarations |
 | glslangValidator | BSD-3-Clause and others (see the SDK) | Compiling shaders at build time; not part of the binary |
 
+Used outside the repository by `tools/hexenlicht/texpack` (story 5.8), downloaded
+by whoever makes a texture pack, never vendored or shipped; the pack it makes is
+derived from Raven's textures and stays out of the repository and releases:
+
+| Component | License | Used for |
+|---|---|---|
+| [ComfyUI](https://github.com/comfyanonymous/ComfyUI) portable build (its Python, PyTorch, spandrel) | GPL-3.0 (PyTorch BSD-3-Clause) | Runs the diffusion stage headless and the tool's own code |
+| [PBRify_Remix](https://github.com/Kim2091/PBRify_Remix) 1.7.2 models (4x upscaler, normal, roughness, height) | CC0 1.0 | The 4x upscale and the normal and roughness maps |
+| [Stable Diffusion 1.5](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) | CreativeML OpenRAIL-M | The img2img pass |
+| [ControlNet 1.1 Tile](https://huggingface.co/lllyasviel/control_v11f1e_sd15_tile) (fp16 safetensors) | CreativeML OpenRAIL-M | Holds the upscale's shapes and colors in the img2img pass |
+| [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) | Apache-2.0 | Drafting the manifest's classes and descriptions (a tool, not shipped code) |
+
 ## Bundled by upstream (Hammer of Thyrion)
 
 These come unchanged from upstream and are used by the existing uHexen2

@@ -1,0 +1,225 @@
+# Material classes for texpack (story 5.8): what a class of surface gets when the
+# manifest names it. A manifest row picks a class and a short description; the
+# row's `overrides` (key=value;key=value) change any key below for its
+# textures. Resolution order, least specific first: [defaults], the class, the
+# manifest rows whose pattern matches (a literal pattern beats a glob, a longer
+# glob a shorter one), the rows' overrides. See README.md.
+#
+# Keys
+#   mode          diffuse: 4x upscale, a diffusion pass, normal and roughness maps
+#                 skin: as diffuse, but not tileable (mirrored padding) and a low denoise
+#                 sprite: 4x upscale only (sprites take an albedo only, MATERIALS.md)
+#                 skip: left alone
+#   noun          the surface in one word, for the prompt's default text
+#   prompt        {desc} is the manifest's description (else the noun), {noun} the noun
+#   negative      the negative prompt
+#   denoise       the diffusion pass's strength: 0.20 keeps the upscale, 0.35 invents detail
+#   steps, cfg    the sampler's
+#   cn_strength   ControlNet Tile's strength: higher holds the upscale's shapes and colors
+#   maps          write the normal and roughness/metallic maps and the .mat
+#   rough_min, rough_max   the roughness map's range: the model's output is stretched over it
+#   metallic      0 or 1 (a metal class sets the B channel of _orm)
+#   bump          the .mat's normal strength
+#   specular      the .mat's dielectric specular (written only when not 1; 0.25 by default)
+#   contrast      a power on the linear luminance (colors scaled with it) before the brightness match (1: none)
+#   albedo_ratio  the albedo's mean luminance against the original's, in linear light
+#                 (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look)
+#   kind          the .mat's kind (regular, chrome, glass); regular is not written
+#   emissive      the .mat's emissive (0: not written)
+
+# The models: names of files in ComfyUI's models folders (the upscaler, the
+# checkpoint, the ControlNet), PBRify's map models in $TEXPACK_HOME\models\pbrify.
+[models]
+upscaler = "4x-PBRify-UpscalerV4.safetensors"
+checkpoint = "v1-5-pruned-emaonly.safetensors"
+controlnet = "control_v11f1e_sd15_tile_fp16.safetensors"
+normal = "1x-PBRify_NormalV3.pth"
+roughness = "1x-PBRify_RoughnessV2.pth"
+height = "1x-PBRify_Height.pth"
+vlm = "qwen3-vl-4b"
+
+[defaults]
+mode = "diffuse"
+noun = "surface"
+prompt = "{desc}, seamless tileable game texture, flat even lighting, highly detailed {noun} surface, photographic, sharp focus"
+negative = "text, watermark, signature, border, frame, vignette, perspective, strong shadows, gradient lighting, blurry, cartoon, painting, jpeg artifacts"
+denoise = 0.28
+steps = 24
+cfg = 6.0
+cn_strength = 1.0
+maps = true
+rough_min = 0.55
+rough_max = 0.9
+metallic = 0
+bump = 1.0
+# Shine and contrast of the dielectric classes (DECISIONS M42, M43). An authored roughness
+# makes a surface physically based and a dielectric then reflects 4 % of the lit room
+# head-on: where the albedo is near black (the joints of demo1's wall) that reflection is
+# all that is seen, a grey veil. specular 0.04 keeps them black; contrast 1.5 raises the
+# linear luminance (hue and saturation kept) to that power before the brightness match (the darks go darker, the lit
+# faces lighter at the same mean); albedo_ratio 1.2 lifts the mean a little over the
+# original's (AUTHORING.md section 5: 1 to 1.5). Measured in the game on the wall: the
+# darkest 20 % of the view 0.20 against the original's 1.09 (x1000), the brightest 20 %
+# 25 against 17, the mean 7.0 against 6.5. Metals ignore specular; glass, liquids, lava,
+# metals and sprites keep specular 1, contrast 1 and ratio 1.
+specular = 0.04
+contrast = 1.5
+albedo_ratio = 1.2
+kind = "regular"
+emissive = 0
+
+# What a texture is when no manifest row names it: by the export's kind column.
+[kind_default]
+world = "world"
+liquid = "liquid"
+skin = "skin"
+sprite = "sprite"
+sky = "skip"
+picture = "skip"
+
+[class.world]
+noun = "wall"
+
+[class.stone]
+noun = "stone"
+rough_min = 0.7
+rough_max = 0.95
+
+[class.brick]
+noun = "brick"
+rough_min = 0.7
+rough_max = 0.95
+
+[class.plaster]
+noun = "plaster"
+rough_min = 0.8
+rough_max = 0.98
+denoise = 0.24
+bump = 0.5      # painted walls: their figures would be embossed in the normal map at 1
+
+[class.wood]
+noun = "wood"
+rough_min = 0.55
+rough_max = 0.85
+
+[class.metal]
+noun = "metal"
+metallic = 1
+specular = 1.0
+rough_min = 0.3
+rough_max = 0.7
+denoise = 0.24
+albedo_ratio = 1.0
+contrast = 1.0
+
+[class.rust]
+noun = "rusted iron"
+rough_min = 0.6
+rough_max = 0.9
+denoise = 0.28
+
+[class.cloth]
+noun = "woven fabric"
+rough_min = 0.8
+rough_max = 0.98
+
+[class.earth]
+noun = "earth"
+rough_min = 0.85
+rough_max = 1.0
+
+[class.foliage]
+noun = "foliage"
+rough_min = 0.6
+rough_max = 0.85
+
+[class.ice]
+noun = "ice"
+specular = 0.3
+rough_min = 0.15
+rough_max = 0.5
+denoise = 0.24
+
+[class.bone]
+noun = "bone"
+rough_min = 0.5
+rough_max = 0.8
+
+# Glass: a pane is flat, and the maps would emboss the scene painted behind the
+# lead into relief; only the kind is written. The albedo keeps that scene, which
+# tints the view (AUTHORING.md section 6: paint a new one for a real window).
+[class.glass]
+noun = "stained glass"
+specular = 1.0
+albedo_ratio = 1.0
+contrast = 1.0
+denoise = 0.2
+maps = false
+kind = "glass"
+
+# Painted things (books, bottles, tools, meat, shop signs, parchment): pictures of objects,
+# not a material. A low denoise keeps a bottle a bottle, and little relief.
+[class.prop]
+noun = "painted object"
+prompt = "{desc}, game texture of everyday objects, painted, detailed, photographic, sharp focus"
+denoise = 0.2
+bump = 0.5
+rough_min = 0.5
+rough_max = 0.85
+
+# Liquids: the engine warps them and 6.16's caustics read their brightness pattern,
+# so the shapes stay: at 0.2 the amber one came out as crumpled foil.
+[class.liquid]
+noun = "water"
+specular = 1.0
+albedo_ratio = 1.0
+contrast = 1.0
+denoise = 0.14
+maps = false
+
+[class.lava]
+noun = "molten lava"
+specular = 1.0
+albedo_ratio = 1.0
+contrast = 1.0
+denoise = 0.22
+maps = false
+
+# Symbols (rune switches, element panels): the model must not reinterpret them, a gentle denoise.
+[class.rune]
+noun = "carved symbol"
+denoise = 0.14
+rough_min = 0.6
+rough_max = 0.9
+
+# Creature and object skins: a UV atlas, not a tile. A low denoise keeps the
+# painted shapes (faces, scales, armor plates) where they are.
+[class.skin]
+mode = "skin"
+noun = "creature hide"
+prompt = "{desc}, texture map of a game character, detailed {noun}, photographic, sharp focus"
+denoise = 0.16
+cn_strength = 1.0
+rough_min = 0.5
+rough_max = 0.85
+
+[class.skin_metal]
+mode = "skin"
+noun = "armor plate"
+specular = 1.0
+albedo_ratio = 1.0
+contrast = 1.0
+prompt = "{desc}, texture map of a game weapon or armor, detailed {noun}, photographic, sharp focus"
+denoise = 0.16
+metallic = 1
+rough_min = 0.3
+rough_max = 0.7
+
+[class.sprite]
+mode = "sprite"
+albedo_ratio = 1.0
+contrast = 1.0
+maps = false
+
+[class.skip]
+mode = "skip"

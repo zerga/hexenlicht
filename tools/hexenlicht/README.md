@@ -1,6 +1,7 @@
 # Hexenlicht test tools
 
-PowerShell scripts (and a patch) for testing Hexenlicht; how to use them is in
+PowerShell scripts (and a patch) for testing Hexenlicht, and `texpack/`, a Python tool that runs
+on ComfyUI's bundled interpreter (its README); how to use them is in
 [docs/hexenlicht/TESTING.md](../../docs/hexenlicht/TESTING.md). Run them
 from a PowerShell 7 (`pwsh`) prompt: through `pwsh -File`/`powershell -File`
 (e.g. from Git Bash) array parameters (`-Files`, `-Paks`) arrive as one
@@ -33,6 +34,7 @@ or `Hexenlicht-data` next to the repository.
 | `special_set.ps1`, `special_check.ps1` | the special materials' test set (chrome and glass, a water normal map, a translucent albedo, animated frames, lava's light, skies with and without alpha, refusals; the run with two file swaps; `-Remove`) and the checks of its screenshots and log (5.5) |
 | `test_pack.ps1` | the test material pack (5.6): generated stone, iron, water, glowing runes and leaded glass on demo1's, the cathedral's and village1's textures (`-Albedo matched`, `-Dds`), its scripted views; `-LoadSet` a stone material on every world texture of maps, for load times and the albedo question; `-Run`, `-Remove` ([AUTHORING.md](../../docs/hexenlicht/AUTHORING.md)) |
 | `pack_dds.ps1` | converts material files as authored (PNG, TGA) into a pack's shipping formats with texconv: BC7, BC5 for normal maps, `_r`/`_m`/the sky and `.mat` copied (5.6) |
+| `texpack/` | AI-upscaled texture packs from a manifest of material descriptions (5.8): `texpack.py` draft, sheet, merge, run, verify, calibrate; Python on ComfyUI's bundled one; [its README](texpack/README.md) |
 | `tga_luminance.ps1` | each TGA screenshot's mean luminance in linear light (5.6's albedo measurements), or a rectangle's (`-Rect`; 6.18: the view centre over consecutive frames) |
 | `export_check.ps1` | checks a texture export (`r_exporttextures`) against the paks without the engine: its own reading, conversion and names of every texture against each manifest row and each PNG, decoded by texconv (5.4) |
 | `jsh2color_colors.patch`, `jsh2color_colors.ps1`, `light_colors_compare.ps1` | `utils/jsh2color` printing each light's color; runs it on the maps with its batch files' options; compares with `vk_lights colors` |

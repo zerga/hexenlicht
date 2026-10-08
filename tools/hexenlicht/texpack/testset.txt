@@ -1,0 +1,21 @@
+# The 20-texture proof set of story 5.8 (data1 export): what each tests
+#lava000            # lava: emissive, no maps
+#rtex078            # liquid: blue water
+#rtex346            # liquid: amber
+models/gauntlet.mdl_0   # skin_metal: the view weapon, seen at every start
+models/golem_s.mdl_0    # skin_metal: a large armored atlas (tiled VAE)
+models/icestaff.mdl_0   # skin with coverage alpha (holey)
+models/imp.mdl_0        # skin with coverage alpha: wings
+mtex437            # stone: a carved relief with color
+rtex005            # stone: cobbles (demo1)
+rtex011            # metal: riveted iron plate (demo1)
+rtex018            # glass: tall window, aspect 1:4 (demo1)
+rtex022            # stone: ashlar wall, aspect 1:2.75 (demo1)
+rtex054            # rust: corroded plate (demo1)
+rtex083            # glass: panes (demo1)
+rtex426~6123       # rune: carved knotwork panel (demo1), a ~crc variant
+rtex429~0a31       # brick: floor (demo1), a ~crc variant
+rtex041            # wood: planks
+rtex407            # plaster: a painted fresco, a figure the model must not change
+rtex089            # cloth: a rug with a pattern
+rtex070            # earth: cracked ground

@@ -1,0 +1,21 @@
+pattern,class,description,overrides,source
+#lava000,lava,molten lava with glowing orange cracks in a black crust,,human
+#rtex078,liquid,clear blue water with bright ripple highlights,,human
+#rtex346,liquid,murky amber liquid with soft swirling ripples,,human
+models/gauntlet.mdl_0,skin_metal,"armored gauntlet: brown leather fists, steel cuffs and dark chain mail",,human
+models/golem_s.mdl_0,skin_metal,steel golem: riveted dark grey armor plates,,human
+models/icestaff.mdl_0,skin,shards of dark blue ice crystal and a gold and wood hilt,,human
+models/imp.mdl_0,skin,"imp demon: orange leathery bat wings, dark scaly skin, glowing eyes",,human
+mtex437,stone,carved stone relief of a dragon face with colored inset stones,,human
+rtex005,stone,dark grey rounded cobblestones in black mortar,,human
+rtex011,metal,riveted iron plate with brown rust and a green-grey patina,,human
+rtex018,glass,"tall gothic leaded window, pale glass panes in dark lead",,human
+rtex022,stone,tan-brown ashlar stone blocks with dark mortar joints,,human
+rtex041,wood,dark brown vertical wooden planks with grain and cracks,,human
+rtex054,rust,"heavily rusted riveted steel plate, orange-brown corrosion",,human
+rtex070,earth,cracked red-brown rocky ground with dark crevices,,human
+rtex083,glass,window of clear glass panes in a dark wooden grid,,human
+rtex089,cloth,dark blue woven rug with an ornate silver octagon pattern and fringe,,human
+rtex407,plaster,weathered plaster wall with a faded red fresco of a seated woman,,human
+rtex426~6123,rune,dark stone panel with a carved Celtic knotwork square,,human
+rtex429~0a31,brick,dark brown irregular bricks with black mortar,,human
