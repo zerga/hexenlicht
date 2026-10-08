@@ -526,6 +526,15 @@ textures: step 5 runs in a data folder of its own.
    the Rec. 709 luminance): at `specular` 1 a grey veil lies on the joints,
    at 0.25 they are dark again with a faint sheen. Judge a pack for shine as
    well as for detail, and the darkest features first.
+8. **The whole world pack (M44):** `texpack.py run ... --kind world,liquid` over
+   both games' export (975 textures; 966 made, 9 skipped by class): `verify` 966
+   of 966; then `proof_run.ps1` with that pack (3,819 files in the data folder, 154 MB
+   of images for demo1): `materials: 92 of 712 textures with files, 266 files read in
+   1573 ms`, `vk_materials problems` nothing, the albedo ratios as the classes' (1.20
+   stone, 1.00 glass, 1.01 metal). The first run slowed from 4 s to 16 s a texture
+   after about 250 (ComfyUI's caches, then this process's GPU blocks after the first
+   832x512 texture's maps: `--restart-every` and `empty_cache`): a run's log gives the
+   per-texture seconds, watch them.
 - **Not covered:** the full export (2,100 textures: about three hours,
   the 465 skins most of it), sprites (the `sprite` class's 4x upscale
   alone), the sky, a pack through `pack_dds.ps1`, `r_reloadmaterials`

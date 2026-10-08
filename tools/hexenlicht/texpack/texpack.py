@@ -3,7 +3,7 @@
 
   %TEXPACK_HOME%\\ComfyUI_windows_portable\\python_embeded\\python.exe texpack.py <command> ...
 
-Commands: check-env, draft, sheet, merge, run, verify, calibrate.
+Commands: check-env, draft, montage, sheet, merge, run, verify, calibrate.
 """
 import argparse
 import os
@@ -82,7 +82,7 @@ def cmd_run(a):
     res = resolve_all(sel, rows, classes)
     out = os.path.abspath(a.out)
     print(f"texpack run: {len(sel)} textures from {ex} into {out}")
-    done = skipped = 0
+    done = skipped = since = 0
     t0 = time.time()
     with Comfy(texpack_home(), attach=a.attach, deterministic=not a.nondeterministic) as c:
         c.start()
@@ -96,6 +96,13 @@ def cmd_run(a):
                 print(f"[{i}/{len(sel)}] {e.stem}: unchanged")
             else:
                 done += 1
+                since += 1
+                if a.restart_every and since >= a.restart_every:
+                    # ComfyUI's caches grow over a long run until the VRAM is full and a texture takes
+                    # four times as long (the first full run: 4 s, then 16 s after about 250)
+                    c.stop()
+                    c.start(log=lambda m: None)
+                    since = 0
                 print(f"[{i}/{len(sel)}] {e.stem}: {res[e.stem].cls}, {info['size'][0]}x{info['size'][1]}, "
                       f"luminance x{info['gain']} to {info['lum_out']:.4f} (was {info['lum_in']:.4f}), {info['seconds']} s")
     print(f"{done} made, {skipped} unchanged, {time.time() - t0:.0f} s")
@@ -155,6 +162,17 @@ def cmd_merge(a):
     return 0
 
 
+def cmd_montage(a):
+    import sheet
+    ex, entries, sel = selection(a)
+    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+    rows = manifest.load_manifest(a.manifest)
+    res = resolve_all(sel, rows, classes)
+    if a.cls:
+        sel = [e for e in sel if res[e.stem].cls in a.cls.split(',')]
+    return sheet.montage(ex, sel, res, a.out)
+
+
 def cmd_sheet(a):
     import sheet
     ex, entries, sel = selection(a)
@@ -175,6 +193,7 @@ def main():
     p.add_argument('--out', required=True, help='the pack folder (its textures\\ is what goes into data1)')
     p.add_argument('--seed', type=int, default=5800)
     p.add_argument('--force', action='store_true', help='redo textures that are unchanged')
+    p.add_argument('--restart-every', type=int, default=80, help='restart ComfyUI after this many textures made (0: never)')
     p.add_argument('--attach', action='store_true', help='use a ComfyUI already running on port 8199')
     p.add_argument('--nondeterministic', action='store_true', help='without ComfyUI\'s --deterministic')
     p.set_defaults(f=cmd_run)
@@ -195,6 +214,12 @@ def main():
     p.add_argument('edits')
     p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
     p.set_defaults(f=cmd_merge)
+    p = sub.add_parser('montage', help='PNG pages of labelled textures to review the manifest by eye')
+    add_select(p)
+    p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--class', dest='cls', help='only textures of these classes (comma-separated)')
+    p.add_argument('--out', required=True, help='path prefix: <out>_01.png, ...')
+    p.set_defaults(f=cmd_montage)
     p = sub.add_parser('sheet', help='an HTML contact sheet to review (and correct) the manifest, or compare a pack')
     add_select(p)
     p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))

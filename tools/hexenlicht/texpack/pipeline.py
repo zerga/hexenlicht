@@ -178,6 +178,11 @@ class Maps:
         with torch.no_grad():
             y = self.models[which](x)
         y = y[0].permute(1, 2, 0).clamp(0, 1).float().cpu().numpy()
+        # a 4x skin is a 3000 px image through a 1x model: gigabytes of activations that this
+        # process's allocator would keep reserved, squeezing ComfyUI into offloading (4 s a
+        # texture became 16 s after the first large one)
+        del x
+        torch.cuda.empty_cache()
         return y[margin:-margin, margin:-margin]
 
 

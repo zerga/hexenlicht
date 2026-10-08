@@ -12,8 +12,9 @@ materials.csv, columns: pattern, class, description, overrides, source.
 Blank lines and lines starting with '# ' (a hash and a space: the liquids' names
 start with # themselves, #lava000) are skipped; `draft` and `merge` rewrite the file
 sorted and without comments. Resolution: every row whose
-pattern matches applies, least specific first (a literal pattern beats a glob,
-a glob with more literal characters beats one with fewer); a later row's
+pattern matches applies, least specific first (draft rows first, then human
+rows; within each a literal pattern beats a glob, a glob with more literal
+characters beats one with fewer); a later row's
 class/description replaces an earlier one's, its overrides add to them.
 """
 import csv
@@ -99,7 +100,8 @@ def resolve(stem, kind, rows, classes):
     desc = ''
     over = {}
     matched = [r for r in rows if fnmatch.fnmatchcase(stem, r['pattern'])]
-    matched.sort(key=lambda r: _specificity(r['pattern']))
+    # a human row beats a draft whatever its pattern; then a literal beats a glob
+    matched.sort(key=lambda r: (r['source'] != 'draft', _specificity(r['pattern'])))
     for r in matched:
         if r['class']:
             cls = r['class']

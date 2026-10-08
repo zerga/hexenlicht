@@ -50,7 +50,9 @@ $py = "$env:TEXPACK_HOME\ComfyUI_windows_portable\python_embeded\python.exe"
 2. **Draft** the manifest: `texpack.py draft --kind world,liquid,skin`. A local
    vision-language model proposes a class and a ten-word description per
    texture (about a second each). Drafts are marked `source=draft`.
-3. **Review** it: `texpack.py sheet --out sheet.html` makes a page of the
+3. **Review** it: `texpack.py montage --out pages --kind world` writes PNG pages of 40
+textures each with their class and description under them: the fastest way to
+spot a bottle labelled stone. `texpack.py sheet --out sheet.html` makes a page of the
    textures grouped by map (`--group kind|class`), each with its class and
    description editable. "Download edits" saves the changed rows; `texpack.py
    merge texpack_edits.csv` puts them into `materials.csv` as `source=human`
@@ -68,6 +70,15 @@ $py = "$env:TEXPACK_HOME\ComfyUI_windows_portable\python_embeded\python.exe"
    meso9's views (TESTING.md "Texture pack tooling (5.8)"; never `-Data` your own
    game folder). `selftest.py` checks the functions without models or data.
 
+## The whole export
+
+World and liquid textures first (about 70 minutes for the 975 of both games on an
+RTX 4070 Ti; the 555 skins are slower, up to 55 s each):
+`texpack.py run --export <export> --manifest <manifest> --kind world,liquid --out <pack>`.
+A run restarts ComfyUI every 80 textures (`--restart-every`) and frees the GPU
+cache after every map inference: without these a long run slowed from 4 s to
+16 s a texture within 250. Anything the review changes is redone alone on the next run.
+
 ## What it gets wrong
 
 The proof set (`testset.txt`, 20 textures, `materials.csv`'s rows) shows where to
@@ -84,8 +95,9 @@ from the picture. A draft calls most walls stone: review it.
 liquids' names start with `#` themselves. A pattern is a
 texture's name as the export files it, without `textures\` and `.png`
 (`rtex022`, `rtex343~ad81`, `#lava000`, `models/imp.mdl_0`) or an fnmatch glob.
-Every matching row applies, least specific first (a literal beats a glob, a
-glob with more literal characters beats a shorter one): a later class or
+Every matching row applies, least specific first (a human row beats a draft
+whatever its pattern; then a literal beats a glob, a glob with more literal
+characters beats a shorter one): a later class or
 description replaces an earlier one, overrides add up. `overrides` are
 `key=value;key=value` over any key of `classes.toml` (`denoise=0.2;rough_max=0.8`).
 A texture no row names takes the class of its export kind (world, liquid,

@@ -95,6 +95,7 @@ noun = "plaster"
 rough_min = 0.8
 rough_max = 0.98
 denoise = 0.24
+bump = 0.5      # painted walls: their figures would be embossed in the normal map at 1
 
 [class.wood]
 noun = "wood"
@@ -156,6 +157,16 @@ denoise = 0.2
 maps = false
 kind = "glass"
 
+# Painted things (books, bottles, tools, meat, shop signs, parchment): pictures of objects,
+# not a material. A low denoise keeps a bottle a bottle, and little relief.
+[class.prop]
+noun = "painted object"
+prompt = "{desc}, game texture of everyday objects, painted, detailed, photographic, sharp focus"
+denoise = 0.2
+bump = 0.5
+rough_min = 0.5
+rough_max = 0.85
+
 # Liquids: the engine warps them and 6.16's caustics read their brightness pattern,
 # so the shapes stay: at 0.2 the amber one came out as crumpled foil.
 [class.liquid]
@@ -174,9 +185,10 @@ contrast = 1.0
 denoise = 0.22
 maps = false
 
+# Symbols (rune switches, element panels): the model must not reinterpret them, a gentle denoise.
 [class.rune]
-noun = "glowing carved rune"
-denoise = 0.2
+noun = "carved symbol"
+denoise = 0.14
 rough_min = 0.6
 rough_max = 0.9
 

@@ -31,6 +31,33 @@ def _data_uri(path):
     return 'data:image/png;base64,' + base64.b64encode(b.getvalue()).decode()
 
 
+def montage(ex, sel, resolved, out_prefix, cols=8, rows=5, cell=128):
+    """PNG pages of the textures, cols x rows to a page, each with its stem, class and the start
+    of its description under it (yellow-green: a human row, blue: a draft or the default):
+    the quickest way to review labels by eye, a few dozen at a glance (the sheet's HTML is for
+    editing). Writes <out_prefix>_01.png and on."""
+    from PIL import ImageDraw
+    per = cols * rows
+    pages = (len(sel) + per - 1) // per
+    for p in range(pages):
+        img = Image.new('RGB', (cols * (cell + 8), rows * (cell + 34)), (24, 24, 24))
+        d = ImageDraw.Draw(img)
+        for i, e in enumerate(sel[p * per:(p + 1) * per]):
+            x, y = (i % cols) * (cell + 8), (i // cols) * (cell + 34)
+            t = Image.open(os.path.join(ex, e.file)).convert('RGBA')
+            t = Image.alpha_composite(Image.new('RGBA', t.size, (70, 70, 70, 255)), t).convert('RGB')
+            s = min(cell / t.width, cell / t.height)
+            t = t.resize((max(1, round(t.width * s)), max(1, round(t.height * s))), Image.NEAREST if s >= 1 else Image.LANCZOS)
+            img.paste(t, (x + 4, y + 30))
+            r = resolved[e.stem]
+            human = bool(r.rows) and r.rows[-1]['source'] != 'draft'
+            d.text((x + 4, y + 2), e.stem[:22], fill=(255, 255, 0))
+            d.text((x + 4, y + 14), f'{r.cls}: {r.description[:18]}', fill=(130, 255, 150) if human else (120, 220, 255))
+        img.save(f'{out_prefix}_{p + 1:02d}.png')
+    print(f"texpack montage: {len(sel)} textures, {pages} pages -> {out_prefix}_NN.png")
+    return 0
+
+
 def _group(e, key, res):
     if key == 'map':
         return e.used_in[0] if e.used_in else e.kind
