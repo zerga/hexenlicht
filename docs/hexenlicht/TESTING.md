@@ -544,6 +544,46 @@ textures: step 5 runs in a data folder of its own.
   the 465 skins most of it), sprites (the `sprite` class's 4x upscale
   alone), the sky, a pack through `pack_dds.ps1`, `r_reloadmaterials`
   with a texpack pack loaded (the engine is unchanged).
+## Art-directed pack pilot (9.1)
+
+`tools/hexenlicht/texpack/redraw.py` and `bspviews.py` (its README, "Redraw";
+DECISIONS M46–M52). The pilot set is `pilot.csv` (33 world textures by tier, the
+rune's five frames among them, and three skins). About 15 minutes with klein once the models are
+in place; the game runs in a data folder of its own, never yours.
+
+1. **The pure functions:** `selftest.py`: 47 checks, the redraw's stages among them
+   (a seam blended away 4.8 -> 1.0, a light from a side taken out of a synthetic
+   lit texture 0.90 -> 0.05, the color guard, the palette's special row, the
+   animation seed, `bspviews`' CRC, entities and boxes); no GPU, no models.
+2. **The redraw:** `redraw.py run --gen klein --export <both games' export> --out
+   <pack>` (the export of `r_exporttextures` with `-portals`: the pilot has
+   mission-pack textures); `--gen qwen` for the comparison (36 s an edit, more where
+   32 GB of RAM page). `<pack>\measure.json` has per texture the edit's seconds, the
+   light left in (`light_dir_before`/`after`), the seam against the original's,
+   the color drift, the layout kept and the brightness ratio. A second run skips
+   what is unchanged; `--reuse` redoes the stages after the model from
+   `work\<stem>_A.png`. `redraw.py sheet --packs klein=<pack>,qwen=<pack> --base
+   <5.8 pack> --out <dir> --lift 4`: a PNG per texture (the original, the 5.8 pack,
+   per pack the model's image, the albedo, the normal and a 2x2 tiling). Pass Windows
+   paths in `--packs` from Git Bash (it converts only the first of a comma list).
+3. **The views:** `bspviews.py --export <export> --maps demo1,meso9,egypt1,romeric1,tibet1
+   --stems <list> > views.txt` (7 s); put the `tibet*` lines in a file of their own.
+4. **In the game:** `proof_run.ps1 -Pack <pack> -Data <a data copy with the mission
+   pack's portals folder> -ViewFile views.txt -Out <folder> -Tag <tag> [-Bin <build>]`
+   and with `-Portals` for the Tulku file: each view as the originals, the pack, its
+   normals and roughness; `vk_materials here` names the texture hit (all 29 of the
+   pilot's) and its albedo against the original's (1.19–1.20 times for the 1.2
+   classes). Skins: `-Creatures -Behind 0 -Only 'imp|archer'` (80 units from the
+   monster; demo1 has only imps and archers). The pilot measured each view's shots
+   (the upper two thirds: no view weapon) in linear luminance, the pack's mean,
+   darkest and brightest 20 % against the original's (M50).
+5. **By hand:** a data copy with the pack in `data1\textures`, saves made at the views
+   (`vk_setpos x y z pitch yaw; save p91_<view>` on one line keeps the pitch), the
+   player's own config files copied in, `load p91_<view>` and `r_materials 0/1`.
+- **Not covered:** the full run (9.4, 9.5), the skins on their models up close (9.6's
+  turntable), the golem in the game (demo1 doesn't precache it), a pack through
+  `pack_dds.ps1`.
+
 ## Effects (6.1)
 
 E6's checklist ([EFFECTS.md](EFFECTS.md), DECISIONS X1) names each effect's

@@ -348,6 +348,19 @@ Goal: the original models move and shade smoothly in the path tracer, worked out
 | 8.1 | Smoother model animation, offline prototype (a spike): `tools/hexenlicht/mdl_smooth.ps1` smooths each sequence's vertex paths within the 8-bit vertices' rounding cells (the smoothest path, least squared second differences, loops across the wrap) and rebuilds the normals from the smoothed shape; reports the shake before and after for every model of both games; a local before/after viewer (Raven's vertex data: never in the repository). DECISIONS G14; go, seams welded provisionally (owner, 2026-10-08) | S | Numbers for all models; the owner has watched the viewer and decided whether 8.2 goes ahead |
 | 8.2 | Smoother model animation in the engine: 8.1's smoothing, seams welded by default (G14; a setting keeps today's per-side normals, the owner confirms with the skins in game), run when an alias model loads, `model_geometry.comp` and the CPU readers of the poses following, a cvar for the original. Since 8.2's proposal (owner, 2026-10-08, DECISIONS G15): `vk_modelsmooth.c`, the model's vertices from the command vertices, poses of 8 bytes (12-bit positions, 14 + 14-bit octahedral normals), `r_smoothmodels` and `r_smoothseams`, the table's normals for a model whose rebuilt ones jerk more, solved on worker threads at map load and kept for the session, `vk_models smooth` against 8.1's numbers. Left out: a disk cache, a GPU solver, a menu row | M | Models shake visibly less in a scripted side-by-side; the cvar off shows today's image; load time and memory measured; validation 0/0 |
 
+### E9 — Art-directed texture pack
+Goal: a high-resolution texture pack that is art-directed, not only upscaled: each texture's surface redrawn by a local image-editing model within the original's theme (its colors, motifs, layout where the layout matters, scale and tiling), the painted light taken out of the albedo so that the path tracer and the normal maps carry the shading, materials per region (metal, rust, cloth) rather than per texture, and skins that still fit the models. Everything runs locally; the pack is derived from Raven's textures and stays outside the repository and releases (§4): the repository gets the tooling, the manifest and the style guides. Found in the owner's look at 5.8/5.9's pack (2026-10-09: "kind of underwhelming", Quake II RTX's packs take more artistic liberty); the epic and its stories approved the same day (the models on C:, the labeling done by Claude).
+
+| # | Story | Size | Done when |
+|---|---|---|---|
+| 9.1 | Pilot of the art-directed pack (a spike): about 30 world textures across the tiers (reimagine: generic fill; layout: trims, doors, carvings; faithful: pictures, symbols, signs; special: glass, liquids, lava) and three skins through FLUX.2 klein 4B and Qwen-Image-Edit-2511 (Apache-2.0, ComfyUI's core nodes, M34), the 5.8 pack as the baseline; the descriptions by hand; numbers for seams, light left in the albedo, color drift, layout and brightness. Since the pilot (owner, 2026-10-09, DECISIONS M46–M52): one edit pass, the light taken out by numbers from the normal map (a second edit "to an albedo" flattened the material), the original's colors put back after the brightness; FLUX.2 klein 4B the generator; every tier go, skins into 9.6 with a description per region; `redraw.py`, `bspviews.py`, `proof_run.ps1 -ViewFile -Portals` | M | The owner has judged them in the game and on contact sheets; the generator and the go or no-go per tier are DECISIONS lines; the speed measured |
+| 9.2 | Texture census and in-game shots: per world texture of both games the maps and area, floor, wall or ceiling, brush entity (door, button, platform, breakable), scale, darkness and the textures it meets, from the BSPs; a close and a wider shot of each at its largest visible face, `vk_materials here` confirming it | M | `census.csv` and the shots of every world texture; the tools in `tools/hexenlicht/texpack`, the shots outside the repository |
+| 9.3 | Art direction: every world texture and skin labeled by Claude from 9.2 (purpose, materials by palette ramp, tier, family), a style guide per hub as text, the unclear ones on a page for the owner | M | Every texture has a reviewed row; the style guides in the repository; the owner's answers in the manifest |
+| 9.4 | texpack pipeline v2: 9.1's chosen pipeline in `texpack.py run` for any selection, reproducible and incremental (M41), the family's hero as a reference image, materials per region, 9.1's checks in `verify` | L | A run of any selection; `verify` and `selftest.py` cover the new stages; README, AUTHORING and DECISIONS updated |
+| 9.5 | The world pack: a hero per family picked by the owner from candidates, every world, liquid and glass texture of both games run, each hub reviewed in the game at 9.2's views | L | The owner has reviewed every hub; `verify` passes; shipped as DDS outside the repository |
+| 9.6 | Skins v2: the UV islands from the `.mdl` triangles with their borders protected, materials per region, the light taken out as 9.1 decided, a turntable in a local viewer, then the game | L | Every skin run; the owner has looked at them on their models; no break at the UV seams; `verify` passes |
+| 9.7 | Material occlusion from `_orm`'s red channel (read since 5.3, unused), only if 9.1 shows that the albedo alone doesn't keep M43's black joints (an approximation, not physically based) | S | Applied and switchable, compared in the game by the owner; validation 0/0 |
+
 ### Recurring
 - Upstream merge from `sezero/uhexen2` when upstream changes — procedure in
   [UPSTREAM.md](UPSTREAM.md).
@@ -385,13 +398,13 @@ GitHub Issues + a GitHub Project board:
 [issues](https://github.com/zerga/hexenlicht/issues),
 [project board](https://github.com/users/zerga/projects/1).
 
-- **Epics** = one issue per epic (E0–E7, issues #1–#8; E8 #202, 2026-10-08), label `epic`.
+- **Epics** = one issue per epic (E0–E7, issues #1–#8; E8 #202, 2026-10-08; E9 #209, 2026-10-09), label `epic`.
 - **Stories** = sub-issues of their epic, label `story` (or `spike`), titled
   with their plan number (e.g. `3.9 Spike: ...`). The epic shows a progress
   bar from its sub-issues.
 - **Milestones**: `0.1 Boots on Vulkan` (E0, E1), `0.2 First path-traced
   frame` (E2, E3), `0.3 Lit and textured` (E4, E5), `0.4 Complete game` (E6),
-  `1.0` (E7); E8 has none.
+  `1.0` (E7); E8 and E9 have none.
 - New work found along the way becomes a new story under the right epic;
   this plan is updated only when a decision or the scope changes.
 - **Labels**: `area:build`, `area:vid`, `area:2d`, `area:geometry`,
