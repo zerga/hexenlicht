@@ -79,6 +79,15 @@ A run restarts ComfyUI every 80 textures (`--restart-every`) and frees the GPU
 cache after every map inference: without these a long run slowed from 4 s to
 16 s a texture within 250. Anything the review changes is redone alone on the next run.
 
+## Skins
+
+`texpack.py run --kind skin` makes the skins (a model's atlas, not a tile: mirrored padding,
+denoise 0.16). Light, flame, missile and effect models are class `fx`: the 4x upscale only
+(their glow is the engine's). `skin_metal` sets metallic 1 for the whole atlas, so give it
+only to atlases that are mostly metal. Check them in the game with `proof_run.ps1
+-Creatures` (monsters created around demo1's courtyard; only the types the map
+precaches appear). PNG skins at 4x are about 1 GB of images in a map: ship DDS.
+
 ## What it gets wrong
 
 The proof set (`testset.txt`, 20 textures, `materials.csv`'s rows) shows where to

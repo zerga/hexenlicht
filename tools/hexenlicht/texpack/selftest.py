@@ -164,4 +164,31 @@ with tempfile.TemporaryDirectory() as tmp:
         check('a failing run raises', False)
     except RuntimeError:
         check('a failing run raises and keeps the old files', os.path.exists(base + '_orm.png') and os.path.exists(base + '.png'))
+# the fx class: the 4x upscale only
+fx = M.resolve('models/flame1.mdl_0', 'skin', [row('models/flame1.mdl_*', 'fx')], classes).params
+check('fx: sprite mode, no maps, ratio 1, contrast 1', fx['mode'] == 'sprite' and not fx['maps'] and fx['albedo_ratio'] == 1.0 and fx['contrast'] == 1.0)
+sk = M.resolve('models/imp.mdl_0', 'skin', [], classes).params
+check('a skin keeps the dielectric defaults', sk['mode'] == 'skin' and sk['contrast'] == 1.5 and sk['specular'] == 0.04)
+
+# verify: a translucent skin keeps its mean opacity AND its alpha shape
+import verify  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    ex, pk = os.path.join(tmp, 'ex'), os.path.join(tmp, 'pk')
+    for d in (ex, pk):
+        os.makedirs(os.path.join(d, 'textures'))
+    oa = np.zeros((16, 16), np.uint8)
+    oa[:, :8] = 84
+    oa[:, 8:] = 255
+    orgb = np.dstack([rng.integers(30, 90, (16, 16, 3), dtype=np.uint8), oa])
+    Image.fromarray(orgb).save(os.path.join(ex, 'textures', 't.png'))
+    good = np.asarray(Image.fromarray(oa).resize((64, 64), Image.BICUBIC))
+    smear = np.full((64, 64), int(oa.mean()), np.uint8)             # same mean, no shape
+    for name, a in (('good', good), ('smear', smear)):
+        rgb4 = np.asarray(Image.fromarray(orgb[..., :3]).resize((64, 64), Image.NEAREST))
+        Image.fromarray(np.dstack([rgb4, a])).save(os.path.join(pk, 'textures', 't.png'))
+        ent = P.Entry({'file': 'textures/t.png', 'name': 't', 'width': '16', 'height': '16', 'kind': 'skin', 'alpha': 'translucent', 'used in': ''})
+        res = M.resolve('t', 'skin', [row('t', 'fx')], classes)
+        errs, _ = verify.check(ex, pk, ent, res)
+        bad = any('alpha' in e or 'opacity' in e for e in errs)
+        check(f'verify translucent: the {name} alpha is {"refused" if name == "smear" else "accepted"}', bad == (name == 'smear'), str(errs))
 sys.exit(1 if fails else 0)

@@ -215,6 +215,17 @@ metallic = 1
 rough_min = 0.3
 rough_max = 0.7
 
+# Light, flame, missile and effect models (torches, fire, orbs, bolts, shards): their glow is the
+# engine's (X7, R82) and their look is shape and color art, so only the 4x upscale: no
+# diffusion pass, no maps, brightness and contrast as they are.
+[class.fx]
+mode = "sprite"
+noun = "effect"
+maps = false
+specular = 1.0
+contrast = 1.0
+albedo_ratio = 1.0
+
 [class.sprite]
 mode = "sprite"
 albedo_ratio = 1.0

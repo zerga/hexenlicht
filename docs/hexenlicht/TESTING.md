@@ -535,6 +535,11 @@ textures: step 5 runs in a data folder of its own.
    after about 250 (ComfyUI's caches, then this process's GPU blocks after the first
    832x512 texture's maps: `--restart-every` and `empty_cache`): a run's log gives the
    per-texture seconds, watch them.
+9. **Skins (M45):** `proof_run.ps1 -Pack <skin pack> -Data <data copy> -Creatures -Release`:
+   `create monster_imp_fire` and five more around demo1's start with god and notarget, a
+   view of each, `r_materials 0` and `1`, 8 frames; only demo1's own types (imps, archers)
+   appear; the log's `materials:` line (564 files, 5.4 s, 1,097 MB for the full skin pack) and
+   `vk_materials problems`. `verify` over the whole skin pack: 547 of 547.
 - **Not covered:** the full export (2,100 textures: about three hours,
   the 465 skins most of it), sprites (the `sprite` class's 4x upscale
   alone), the sky, a pack through `pack_dds.ps1`, `r_reloadmaterials`

@@ -44,9 +44,20 @@ def check(ex, pack, entry, res):
     if orig_a is not None and alpha is not None:
         if entry.alpha == 'coverage' and not np.isin(alpha, (0, 255)).all():
             errs.append('coverage alpha has values between 0 and 255')
-        d = abs(float((alpha < 128).mean()) - float((orig_a < 128).mean()))
-        if d > 0.02:
-            errs.append(f'hole area differs by {d * 100:.1f} %')
+        if entry.alpha == 'translucent':
+            # opacity, not holes: a smooth edge between 84 and 255 moves texels across 128
+            d = abs(float(alpha.mean()) - float(orig_a.mean())) / 255
+            if d > 0.01:
+                errs.append(f'mean opacity differs by {d * 100:.1f} % of full')
+            # and the shape: the original's alpha stretched to the albedo's size, texel for texel
+            ref = np.asarray(Image.fromarray(orig_a).resize((alpha.shape[1], alpha.shape[0]), Image.BICUBIC)).astype(float)
+            e = float(np.abs(alpha.astype(float) - ref).mean()) / 255
+            if e > 0.02:
+                errs.append(f'alpha shape differs from the original by {e * 100:.1f} % of full')
+        else:
+            d = abs(float((alpha < 128).mean()) - float((orig_a < 128).mean()))
+            if d > 0.02:
+                errs.append(f'hole area differs by {d * 100:.1f} %')
     lo = pipeline.mean_linear_luminance(orig_rgb, orig_a)
     ln = pipeline.mean_linear_luminance(rgb, alpha)
     ratio = ln / lo if lo > 0 else 0

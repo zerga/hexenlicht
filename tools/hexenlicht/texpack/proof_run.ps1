@@ -13,7 +13,7 @@
 # Strings.txt, Hexen.rc) with no textures\ and no config files. Run it with
 # PowerShell 7 (the pwsh tool), Debug unless -Release; -Bin another build.
 param([Parameter(Mandatory)][string]$Pack, [Parameter(Mandatory)][string]$Out, [Parameter(Mandatory)][string]$Data,
-      [string]$Tag = 'proof', [string]$Only = '', [switch]$Release, [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '')
+      [string]$Tag = 'proof', [string]$Only = '', [switch]$Creatures, [switch]$Release, [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '')
 $ErrorActionPreference = 'Stop'
 $Data = (Resolve-Path -LiteralPath $Data).ProviderPath
 $game = Join-Path $Data 'data1'
@@ -35,6 +35,24 @@ $views = @(
 	@('skylight', 'demo1', 1, '157 -1848 318 -51 180', @()),
 	@('meso9', 'meso9', 1, '', @())
 )
+# -Creatures: demo1's courtyard (the start), a monster created 80 units ahead of the player at six
+# headings (`create <classname>`: with god and notarget they stand still), each shot from 200 units
+# behind the player's spot looking at it; the paladin's gauntlets are in every shot. Skins with a
+# model name in the first column; the view weapon of the class, the monsters', or whatever -Pack has.
+# A monster the map doesn't precache isn't created (demo1 has imps and archers): its view is an empty
+# courtyard, so the log gets a `T58_CREATURE <view> <n> models` line from `vk_models` per view to read.
+$cx, $cy, $cz = -918, -2034, 0
+$creatureSet = @(
+	@('imp', 'monster_imp_fire', 0, @(2)), @('golem', 'monster_golem_stone', 60, @(2, 10)), @('archer', 'monster_archer', 120, @()),
+	@('mummy', 'monster_mummy', 180, @()), @('skullwiz', 'monster_skull_wizard', 240, @()), @('medusa', 'monster_medusa', 300, @()))
+if ($Creatures) {
+	$views = @()
+	foreach ($c in $creatureSet) {
+		$th = [double]$c[2] * [Math]::PI / 180
+		$bx = [int]($cx - 120 * [Math]::Cos($th)); $by = [int]($cy - 120 * [Math]::Sin($th))
+		$views += , @($c[0], 'demo1', 1, "$bx $by $cz 0 $($c[2])", $c[3], $c[1], $c[2])
+	}
+}
 if ($Only) { $views = @($views | Where-Object { $_[0] -match $Only }) }
 if (-not $views.Count) { throw "no view matches -Only '$Only'" }
 
@@ -44,8 +62,15 @@ $end = @('echo T58_END', 'vk_materials problems', 'toggleconsole', (Waits 3), 'v
 $blocks = @(); $lastMap = ''
 foreach ($v in $views) {
 	$b = @()
-	if ($v[1] -ne $lastMap) { $b += @("playerclass $($v[2])", "map $($v[1])", (Waits 150), 'god', 'notarget', 'noclip'); $lastMap = $v[1] }
+	if ($v[1] -ne $lastMap) {
+		$b += @("playerclass $($v[2])", "map $($v[1])", (Waits 150), 'god', 'notarget', 'noclip'); $lastMap = $v[1]
+		if ($Creatures) {	# all the monsters first, one heading each; the views come after
+			foreach ($c in $creatureSet) { if ($views | Where-Object { $_[0] -eq $c[0] }) { $b += @("vk_setpos $cx $cy $cz 0 $($c[2])", (Waits 5), "create $($c[1])", (Waits 15)) } }
+			$b += (Waits 30)
+		}
+	}
 	if ($v[3]) { $b += "vk_setpos $($v[3])" }
+	if ($Creatures) { $b += @((Waits 60), "echo T58_MODELS $($v[0])", 'vk_models') }
 	$b += @((Waits 60), 'pause', (Waits 10), 'r_debugview 0',
 		'r_materials 0', (Waits 40), "vk_screenshot $($v[0])_orig 8", (Waits 12),
 		'r_materials 1', (Waits 40), "vk_screenshot $($v[0])_pack 8", (Waits 12), "echo T58_VIEW $($v[0])", 'vk_materials here')
