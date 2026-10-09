@@ -1,0 +1,78 @@
+# The art direction's families (story 9.3; docs/hexenlicht/STYLE.md): textures that should
+# read as one material, each to get one hero in 9.5 (its redraw the others' reference, 9.4).
+# lead: the texture redrawn as the hero (empty: `texpack.py labels leads` takes the member
+# with the most area in the maps). Columns: family, hub, lead, what.
+family,hub,lead,what
+bm-fieldstone,blackmarsh,rtex005,dark grey rounded fieldstone walls in black mortar and their root and vine variants
+bm-ashlar,blackmarsh,rtex022,the castle's brown-tan rough-hewn ashlar and its cracked and carved variants
+bm-oak,blackmarsh,rtex041,dark oak planks and boards and crates
+bm-doors,blackmarsh,rtex251,oak doors and shutters with wrought-iron straps and studs
+bm-timber,blackmarsh,rtex175,half-timbered frames
+bm-celtic,blackmarsh,celt2,Celtic knotwork slabs and inlays
+bm-horsemen,blackmarsh,rtex063,the Four Horsemen's grey stone reliefs
+bm-rugs,blackmarsh,rtex124,woven rugs and tapestries
+bm-banners,blackmarsh,rtex147~7c03,heraldic banners
+bm-ground,blackmarsh,rtex388~6280,mud and earth and grass and thatch
+bm-shelves,blackmarsh,rtex087,the shops' painted props
+mz-limestone,mazaera,rtex274,ochre and tan limestone blocks and slabs
+mz-frets,mazaera,mtex458,carved step-frets and meanders and glyph panels
+mz-idols,mazaera,mtex443,idol masks and faces and totem figures
+mz-sun,mazaera,mtex472,red-painted sun stars and the calendar stones
+mz-jade,mazaera,rtex333,jade-green carved stone
+mz-redrock,mazaera,ttex016,red-brown cracked rock and earth
+mz-jungle,mazaera,rtex100,jungle foliage and vines and moss
+th-sandstone,thysis,rtex337,tan sandstone blocks and their cracked and bloody variants
+th-glyphs,thysis,rtex361~70aa,carved hieroglyph reliefs and panels
+th-murals,thysis,rtex382~d2b1,painted plaster: its plaster and paint alike
+th-lapis,thysis,rtex350,blue-painted stone and starry ceilings and stripes
+th-winged,thysis,rtex347,winged scarabs and falcons
+th-statues,thysis,rtex360~cf6b,the colossi's parts
+sp-marble,septimus,marbleseam,veined marble
+sp-greystone,septimus,rtex441~3aaf,grey dressed blocks and bricks
+sp-moldings,septimus,rtex306,classical trims and cornices
+sp-reliefs,septimus,rtex511,figurative reliefs and statues
+sp-masks,septimus,rtex454~d848,lion and gorgon masks and rosettes
+sp-terracotta,septimus,rtex456~b509,terracotta tiles
+sp-drapes,septimus,rtex158,curtains and banners
+sp-elements,septimus,+0tria,the elements' rune switches
+ef-blackstone,cathedral,rtex006,the finale's dark castle blocks and their variants
+ef-gothic,cathedral,rtex348,Gothic ribs and columns and tracery
+ef-crates,cathedral,rtex235,crates and boards
+kp-ashlar,keep,rtex040,the keep's big rough-cut limestone blocks
+kp-greystone,keep,rtex001,grey castle stone and bricks
+kp-beams,keep,rtex440~c299,timber frames and beams
+kp-bones,keep,rtex444~e23c,bone piles
+kp-snow,keep,rtex502~77eb,snow and ice over rock
+kp-ground,keep,rtex066,earth and stony ground
+tk-flagstone,tulku,rpal308,square stone flagstones
+tk-cobbles,tulku,ttex100,cobbles and fieldstone
+tk-brick,tulku,ttex126,ochre brick and blocks
+tk-rock,tulku,ttex024,rough mountain rock
+tk-snow,tulku,ttex098,snow and ice and the walls under it
+tk-timber,tulku,ttex107,red-brown painted beams and friezes and lattices
+tk-planks,tulku,ttex068,plain planks
+tk-ornament,tulku,ttex264,carved and gilded ornament
+tk-deities,tulku,ttex080,the wrathful deities' and guardians' reliefs
+tk-gates,tulku,ttex096,carved doors
+tk-switches,tulku,+0rtex5,the switches' symbol discs
+bm-drapes,blackmarsh,rtex152,curtains and hangings
+mz-webs,mazaera,mtex484,cobwebs over dark rock
+mz-darkstone,mazaera,rtex099,dark rough speckled stone
+th-granite,thysis,rtex028,dark grey granite beams and slabs and frames
+th-tiles,thysis,rtex390~5c9c,patterned small-tile floors
+sp-brownstone,septimus,rtex422~cba5,warm brown-taupe dressed blocks and slabs
+sp-ground,septimus,rtex473,grass and soil and meadow and hedge
+sp-painted,septimus,rtex406,painted Pompeian wall plaster and its panels
+ef-iron,cathedral,rtex054,riveted and perforated rusted iron plates and sheets
+ef-organ,cathedral,rtex363~5e61,organ pipes
+ot-brick,other,rtex430~6995,dark weathered brick and cobble paving of the mission pack's test map
+ot-mottled,other,rtex452~6404,cloudy brown-grey mottled stone of the mission pack's test map
+kp-redstone,keep,rtex122,speckled deep red stone
+kp-demons,keep,rtex491,carved demonic reliefs
+tk-carpets,tulku,rpal311,patterned carpets or inlaid floors
+tk-marble,tulku,rpal317,veined dark marble
+tk-redcloth,tulku,ttex005,plain red cloth and lacquer
+tk-greystone,tulku,ttex059,dark grey rough wall stone with gold lines and glyph panels
+tk-bandwall,tulku,ttex054,banded walls of grey-green stone with red strips and a gold meander
+tk-clay,tulku,ttex248,ochre clay plaster and its grooved panels
+tk-rugs,tulku,ttex039,woven rugs and cloth hangings

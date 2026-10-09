@@ -342,4 +342,139 @@ check('hit_matches: the name, the CRC where the stem has one, any frame of an an
       and C.hit_matches('+0rune1', hits[('p0rune1', 'close')], {'+0rune1', '+2rune1~77aa'})
       and not C.hit_matches('+0rune1', hits[('p0rune1', 'close')]) and not C.hit_matches('x', hits[('sky', 'close')]))
 check('fmt: whole above 10, a decimal above 1, two below', [C.fmt(x) for x in (123.4, 3.25, 1.0, 0.25, 0.5)] == ['123', '3.2', '1', '0.25', '0.5'])
+# story 9.3: the labels
+import labels as L  # noqa: E402
+pal = np.stack([np.arange(256), 255 - np.arange(256), np.arange(256) // 2], axis=1).astype(np.uint8)  # 256 colors, all distinct
+ix = np.zeros((4, 4), np.int64)
+ix[0] = 5            # grey
+ix[1] = 40           # slate
+ix[2] = 230          # amber
+ix[3, :2] = 245      # special
+ix[3, 2:] = 255      # white: grey
+tex = np.concatenate([pal[ix], np.full((4, 4, 1), 255, np.uint8)], axis=2)
+tex[3, 3, 3] = 0     # a hole
+rr = L.texel_ramps(tex, pal)
+check('texel_ramps: a texel\'s ramp by its palette index, holes -1',
+      [L.RAMP_NAMES[i] for i in rr[:3, 0]] == ['grey', 'slate', 'amber'] and L.RAMP_NAMES[rr[3, 0]] == 'special'
+      and L.RAMP_NAMES[rr[3, 2]] == 'grey' and rr[3, 3] == -1, str(rr.tolist()))
+sh = L.shares(rr)
+check('shares of the opaque texels', abs(sh['grey'] - 5 / 15) < 1e-9 and abs(sh['slate'] - 4 / 15) < 1e-9 and abs(sum(sh.values()) - 1) < 1e-9, str(sh))
+check('every palette index has a ramp', len(L.RAMPS) == len(L.RAMP_NAMES) == len(L.FALSE) and L.ramp_of_index().max() == len(L.RAMPS) - 1
+      and sorted(set(range(255))) == sorted(i for _, a, b in L.RAMPS for i in range(a, b)))
+check('parse_regions: ramp sets, `*`, two materials of a ramp',
+      L.parse_regions('grey,taupe=iron; *=wood ;red=iron/stone') == [(('grey', 'taupe'), ('iron',)), (('*',), ('wood',)), (('red',), ('iron', 'stone'))])
+fams = {'bm-doors': {'family': 'bm-doors', 'lead': ''}}
+good = {'purpose': 'door', 'tier': 'layout', 'class': 'wood', 'family': 'bm-doors', 'regions': 'grey=iron;amber,slate=wood',
+        'description': 'an oak door', 'overrides': ''}
+check('check_row: a good row', L.check_row('x', 'world', good, sh, classes, fams) == [], str(L.check_row('x', 'world', good, sh, classes, fams)))
+bad = [(dict(good, regions=''), 'no regions'), (dict(good, regions='grey=iron'), 'without a material'),
+       (dict(good, regions='grey=iron;amber=wood;slate=wood;red=gold'), 'red is 0.0 %'),
+       (dict(good, regions='grey=iron;*=wood;*=gold'), "'*' named twice"), (dict(good, regions='grey=nope;*=wood'), "material 'nope'"),
+       (dict(good, tier='glass'), 'tier glass takes class glass'), (dict(good, **{'class': 'lava'}), 'class lava goes with tier lava'),
+       (dict(good, purpose='creature'), 'purpose'), (dict(good, family='zz'), "family 'zz'"), (dict(good, description=''), 'no description')]
+for rowb, want in bad:
+    got = L.check_row('x', 'world', rowb, sh, classes, fams)
+    check(f'check_row finds: {want}', any(want in g for g in got), str(got))
+check('check_row: `*` covers the rest, a skin\'s purposes',
+      L.check_row('x', 'world', dict(good, regions='*=wood'), sh, classes, fams) == []
+      and L.check_row('m', 'skin', dict(good, purpose='creature', tier='skin', **{'class': 'skin'}), sh, classes, fams) == [])
+lrow = lambda pat, tier, cls, src, d='', o='': {'pattern': pat, 'purpose': 'fill', 'tier': tier, 'class': cls, 'family': '', 'regions': '*=stone',  # noqa: E731
+                                                'description': d, 'overrides': o, 'source': src}
+rows3 = [row('rtex*', 'wood', 'old', 'bump=0.3'), lrow('rtex1', 'reimagine', 'stone', 'claude', 'new'), lrow('rtex1', 'reimagine', 'brick', 'human', 'owner')]
+r3 = M.resolve('rtex1', 'world', rows3, classes)
+check('a labeled row stands alone, the owner\'s over Claude\'s', r3.cls == 'brick' and r3.description == 'owner' and r3.tier == 'reimagine'
+      and r3.params['bump'] == classes['defaults']['bump'], f'{r3.cls} {r3.description} {r3.params["bump"]}')
+check('without a label the old rows apply', M.resolve('rtex2', 'world', rows3, classes).cls == 'wood' and M.resolve('rtex2', 'world', rows3, classes).tier == '')
+
+
+class _E:
+    def __init__(self, stem, kind='world'):
+        self.stem, self.kind = stem, kind
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    man, lab_csv = os.path.join(tmp, 'm.csv'), os.path.join(tmp, 'l.csv')
+    M.write_manifest(man, [row('rtex*', 'wood', 'old', 'bump=0.3'), row('ttex*', 'stone', 'kept'), row('+0a', 'rune', 'draft', '', 'draft')])
+    with open(lab_csv, 'w', encoding='utf-8', newline='') as f:
+        f.write('pattern,purpose,tier,class,family,regions,description,overrides,question\n'
+                'rtex1,fill,reimagine,,,*=wood,planks,denoise=0.2,is it?\n+0a,symbol,faithful,rune,,*=stone,a rune,,\n')
+    ents = {s: _E(s) for s in ('rtex1', '+0a', '+1a', 'ttex1')}
+    n, dropped, _, folded = L.apply(lab_csv, man, ents, classes, {'+0a': {'anim': '+0a +1a'}})
+    got = {q['pattern']: q for q in M.load_manifest(man)}
+    check('apply: the old class and overrides folded in, the label\'s own added',
+          got['rtex1']['class'] == 'wood' and M.parse_overrides(got['rtex1']['overrides']) == {'bump': '0.3', 'denoise': '0.2'}
+          and got['rtex1']['source'] == 'claude', str(got.get('rtex1')))
+    check('apply: an animation\'s other frames copied, covered rows dropped, the others kept',
+          got['+1a']['description'] == 'a rune' and 'rtex*' not in got and 'ttex*' in got and n == 3 and dropped == 2, f'{sorted(got)} {n} {dropped}')
+    fpath = os.path.join(tmp, 'f.csv')
+    with open(fpath, 'w', encoding='utf-8', newline='') as f:
+        f.write('# c\nfamily,hub,lead,what\nbm-x,blackmarsh,,"a, b"\nbm-y,blackmarsh,keep,c\n')
+    lr = [lrow('a1', 'reimagine', 'stone', 'claude'), lrow('a2', 'reimagine', 'stone', 'claude')]
+    for q in lr:
+        q['family'] = 'bm-x'
+    done = L.set_leads(fpath, lr, {'a1': {'area': '10'}, 'a2': {'area': '300'}})
+    fl = L.load_families(fpath)
+    check('set_leads: the member with the most area, a set lead and the comments kept',
+          done == ['bm-x'] and fl['bm-x']['lead'] == 'a2' and fl['bm-x']['what'] == 'a, b' and fl['bm-y']['lead'] == 'keep'
+          and open(fpath, encoding='utf-8').read().startswith('# c'), str(fl))
+fam_file = L.load_families(os.path.join(HERE, 'families.csv'))
+PREFIX = {'blackmarsh': 'bm', 'mazaera': 'mz', 'thysis': 'th', 'septimus': 'sp', 'cathedral': 'ef', 'keep': 'kp', 'tulku': 'tk', 'other': 'ot'}
+check('families.csv: hubs are census hubs (or other), names carry their hub\'s prefix',
+      fam_file and all(PREFIX.get(f['hub']) == f['family'].split('-')[0] for f in fam_file.values()),
+      str([f['family'] for f in fam_file.values() if PREFIX.get(f['hub']) != f['family'].split('-')[0]]))
+
+
+class _F(_E):
+    def __init__(self, stem):
+        super().__init__(stem)
+        self.file = stem + '.png'
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    for s in ('t1', 't2', 'a1', 'a2'):
+        Image.fromarray(tex).save(os.path.join(tmp, s + '.png'))
+    ents = {s: _F(s) for s in ('t1', 't2', 'a1', 'a2')}
+    lr = [dict(good, pattern='t1', source='claude', regions='*=stone'), dict(good, pattern='t2', source='claude', regions='*=stone', family=''),
+          dict(good, pattern='a1', source='claude', regions='*=stone'), dict(good, pattern='a2', source='claude', regions='*=wood')]
+    cen = {'a1': {'anim': 'a1 a2'}, 'a2': {'anim': 'a1 a2'}}
+    _, probs = L.check(ents, [ents['t1'], ents['t2']], lr, classes, pal, tmp, cen, {'bm-doors': {'family': 'bm-doors', 'lead': 'a1'}})
+    check('check: textures of the same pixels labeled alike, the lead counted among all labeled rows',
+          list(probs) == ['t2'] and 'same pixels as t1' in probs['t2'][0], str(probs))
+    _, probs = L.check(ents, [ents['a1'], ents['a2']], lr, classes, pal, tmp, cen, fams)
+    check('check: an animation\'s frames alike, not held to the same-pixels rule', list(probs) == ['a2'] and len(probs['a2']) == 1 and 'frame of a1' in probs['a2'][0], str(probs))
+check('check_row: a region needs ramps and a material',
+      all(any('needs ramps and a material' in g for g in L.check_row('x', 'world', dict(good, regions=rg), sh, classes, fams))
+          for rg in ('grey=;*=wood', '*=wood/', '=wood;grey,amber,slate=iron')))
+import types  # noqa: E402
+import texpack as TP  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    p = os.path.join(tmp, 'q.csv')
+    with open(p, 'w', encoding='utf-8', newline='') as f:
+        f.write('# a comment, "quoted"\npattern,description\nx,"two\n\n# not a comment, ""q"""\ny,one\n')
+    head, recs = M.read_rows(p)
+    check('read_rows: comments skipped after the parse, a quoted cell keeps blank and # lines',
+          head == ['pattern', 'description'] and recs[0]['description'] == 'two\n\n# not a comment, "q"' and recs[1]['pattern'] == 'y', str(recs))
+    man, lab_csv = os.path.join(tmp, 'm.csv'), os.path.join(tmp, 'l.csv')
+    M.write_manifest(man, [dict(lrow('rtex1', 'reimagine', 'stone', 'human', 'owner\'s'), overrides='bump=2'),
+                           lrow('rtex2', 'reimagine', 'stone', 'claude', 'old'), row('sk*', 'skin', 'a skin'), row('zz*', 'stone', 'elsewhere')])
+    with open(lab_csv, 'w', encoding='utf-8', newline='') as f:
+        f.write('pattern,purpose,tier,class,family,regions,description,overrides\n'
+                'rtex1,fill,reimagine,stone,,*=stone,Claude\'s,\nrtex2,fill,reimagine,brick,,*=brick,new,\n')
+    ents = {s: _E(s) for s in ('rtex1', 'rtex2', 'sk1')}
+    res = L.apply(lab_csv, man, ents, classes, {})
+    got = {q['pattern']: q for q in M.load_manifest(man)}
+    check('apply: the owner\'s labeled row kept, Claude\'s replaced, rows of other textures and exports kept',
+          got['rtex1']['description'] == 'owner\'s' and got['rtex1']['source'] == 'human' and got['rtex2']['class'] == 'brick'
+          and 'sk*' in got and 'zz*' in got and res[0] == 1 and res[2] == 1, f'{res} {sorted(got)}')
+    # merge: a 5.8 sheet's empty overrides keep the row's; an animation's frames follow (the census's +0rune1)
+    M.write_manifest(man, [dict(lrow('+0rune1', 'faithful', 'rune', 'claude', 'a rune'), overrides='bump=2'),
+                           lrow('+1rune1', 'faithful', 'rune', 'claude', 'a rune')])
+    edits = os.path.join(tmp, 'e.csv')
+    with open(edits, 'w', encoding='utf-8', newline='') as f:
+        f.write('pattern,class,description,overrides,source\n+0rune1,rune,"the owner\'s rune, red",,human\n')
+    TP.cmd_merge(types.SimpleNamespace(edits=edits, manifest=man))
+    got = {q['pattern']: q for q in M.load_manifest(man)}
+    check('merge: an empty overrides cell keeps the row\'s; the animation\'s other frames follow',
+          got['+0rune1']['overrides'] == 'bump=2' and got['+0rune1']['source'] == 'human'
+          and got['+1rune1']['description'] == 'the owner\'s rune, red' and got['+1rune1']['source'] == 'human', str(got))
 sys.exit(1 if fails else 0)

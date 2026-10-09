@@ -234,3 +234,50 @@ maps = false
 
 [class.skip]
 mode = "skip"
+
+# Story 9.3's labels (labels.py; README "Labels"): the manifest's purpose and tier columns
+# take these words, its regions these materials.
+#   purpose (world)  fill: a wall's, floor's or ceiling's main surface; trim: a strip (border,
+#                    frieze, step, baseboard); pillar: columns, beams, posts; panel: a framed or
+#                    carved unit (a shutter, a slab, an ornament); door, window, grate (bars,
+#                    grilles, vents); picture: a painted or carved scene with figures; sign:
+#                    lettering, a plaque; symbol: runes, emblems, switch faces; prop: painted
+#                    objects (books, bottles, crates); liquid; sky; tool: never drawn
+#   purpose (skin)   creature, player, weapon, item (pickups, artifacts), object (props,
+#                    statues, furniture), debris (gibs, chunks), fx (lights, flames, missiles)
+#   tier             reimagine: a new surface at the same arrangement; layout: every shape
+#                    stays; faithful: restored, no new content; glass; liquid; lava; skin;
+#                    fx: upscaled only; skip: left as it is
+[labels]
+purposes_world = ["fill", "trim", "pillar", "panel", "door", "window", "grate", "picture", "sign",
+                  "symbol", "prop", "liquid", "sky", "tool"]
+purposes_skin = ["creature", "player", "weapon", "item", "object", "debris", "fx"]
+tiers = ["reimagine", "layout", "faithful", "glass", "liquid", "lava", "skin", "fx", "skip"]
+
+# The materials a region can be (9.4 gives each its values: roughness, metallic).
+[materials]
+stone = "rock: rough-hewn, dressed or carved"
+marble = "polished veined stone"
+brick = "fired clay bricks"
+tile = "glazed or fired tiles, mosaic"
+plaster = "plaster, stucco, painted wall"
+wood = "timber, planks, carved or painted wood"
+iron = "wrought or cast iron, dark and dull"
+steel = "bright worked steel: blades, plate armour"
+bronze = "bronze or brass"
+gold = "gold and gilding"
+silver = "silver"
+rust = "corroded iron"
+cloth = "woven fabric: robes, banners, tapestries"
+leather = "tanned leather: straps, bindings, boots"
+hide = "a creature's scaly or furless skin"
+flesh = "exposed flesh, gore, a face's skin"
+bone = "bone, skulls, horn, teeth"
+hair = "hair, fur, feathers"
+earth = "soil, mud, sand, gravel"
+foliage = "grass, leaves, moss, thatch, vines"
+ice = "ice, frost"
+glass = "glass panes"
+crystal = "crystal, gems, glowing stones"
+parchment = "paper, parchment, scrolls"
+wax = "candle wax"

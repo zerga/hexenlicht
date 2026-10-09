@@ -4,9 +4,10 @@
   %TEXPACK_HOME%\\ComfyUI_windows_portable\\python_embeded\\python.exe texpack.py <command> ...
 
 Commands: check-env, draft, montage, sheet, merge, run, verify, calibrate; census, views,
-checkviews (story 9.2: census.py).
+checkviews (story 9.2: census.py); cards, families, labels (story 9.3: labels.py).
 """
 import argparse
+import collections
 import os
 import sys
 import time
@@ -152,16 +153,28 @@ def cmd_draft(a):
 
 
 def cmd_merge(a):
+    import census
     rows = manifest.load_manifest(a.manifest)
     by = {r['pattern']: r for r in rows}
     n = 0
+    # a sheet's edits name the columns they change; an empty overrides cell keeps the row's
+    # (5.8's sheet wrote the column without ever filling it)
+    given = set(manifest.read_rows(a.edits)[0]) - {'pattern', 'source'}
+    cen = census.load(census.default_census())
+    label_cols = ('purpose', 'tier', 'class', 'family', 'regions', 'description')
     for r in manifest.load_manifest(a.edits):
         old = by.get(r['pattern'])
         if old:
-            old.update({'class': r['class'], 'description': r['description'], 'source': 'human'})
+            old.update({k: r[k] for k in manifest.COLUMNS if k in given and (k != 'overrides' or r[k])})
+            old['source'] = 'human'
         else:
-            by[r['pattern']] = dict(r, source='human')
+            old = by[r['pattern']] = dict(r, source='human')
         n += 1
+        # an animation's frames are labeled alike (the owner's page shows one of them)
+        for s in (cen.get(r['pattern'], {}).get('anim') or '').split():
+            if s != r['pattern'] and s in by and by[s].get('tier'):
+                by[s].update({k: old[k] for k in label_cols})
+                by[s]['source'] = 'human'
     manifest.write_manifest(a.manifest, list(by.values()))
     print(f"texpack merge: {n} rows from {a.edits} into {a.manifest}")
     return 0
@@ -183,7 +196,122 @@ def cmd_sheet(a):
     ex, entries, sel = selection(a)
     classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
     rows = manifest.load_manifest(a.manifest)
+    if a.questions:
+        asked = {r['pattern']: r['question'].strip() for r in manifest.read_rows(a.questions)[1] if (r.get('question') or '').strip()}
+        missing = [s for s in asked if s not in entries]
+        if missing:
+            raise SystemExit(f"not in the export: {', '.join(missing)}")
+        sel = [entries[s] for s in asked]
+        return sheet.questions(ex, sel, resolve_all(sel, rows, classes), classes, asked,
+                               a.views or os.path.join(texpack_home(), 'views'), a.out)
     return sheet.run(ex, sel, resolve_all(sel, rows, classes), classes, a.out, pack=a.pack, group=a.group)
+
+
+def label_inputs(a):
+    import census
+    import labels
+    from redraw import load_palette
+    ex, entries, sel = selection(a)
+    palette = load_palette(a.data or default_data())
+    if palette is None:
+        raise SystemExit(f"no data1\\pak0.pak in {a.data or default_data()} (--data): the palette's ramps need it")
+    cen = census.load(a.census or census.default_census())
+    if getattr(a, 'hub', None):
+        want = set(a.hub.split(','))
+        sel = [e for e in sel if ((cen.get(e.stem, {}).get('hubs') or 'none').split() or ['none'])[0] in want]
+    return labels, ex, entries, sel, palette, cen
+
+
+def cmd_cards(a):
+    labels, ex, entries, sel, palette, cen = label_inputs(a)
+    if not a.frames:
+        # an animation's frames are labeled alike: one card for it, the frame its view shows
+        shown = set()
+        for e in sel:
+            anim = cen.get(e.stem, {}).get('anim', '').split()
+            if anim:
+                ok = [s for s in anim if cen.get(s, {}).get('view') == 'ok'] or anim
+                shown.add(ok[0])
+        sel = [e for e in sel if not cen.get(e.stem, {}).get('anim') or e.stem in shown]
+    rel = labels.candidates(ex, [e for e in entries.values() if e.kind in ('world', 'liquid', 'sky')], palette, cen)
+    # related textures next to each other: by the first of their chain of shared texels
+    root = {e.stem: e.stem for e in sel}
+    for e in sel:
+        for o, k, _ in rel.get(e.stem, []):
+            if k == 'texels' and o in root:
+                ra, rb = root[e.stem], root[o]
+                while root[ra] != ra:
+                    ra = root[ra]
+                while root[rb] != rb:
+                    rb = root[rb]
+                root[max(ra, rb)] = min(ra, rb)
+
+    def top(s):
+        while root[s] != s:
+            s = root[s]
+        return s
+    sel.sort(key=lambda e: (top(e.stem), e.stem))
+    rows = manifest.load_manifest(a.manifest)
+    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    if a.family:
+        fam = set(a.family.split(','))
+        sel = [e for e in sel if manifest.resolve(e.stem, e.kind, rows, classes).family in fam]
+        sel.sort(key=lambda e: (manifest.resolve(e.stem, e.kind, rows, classes).family, e.stem))
+    if a.overview:
+        n = labels.overview(ex, sel, rows, classes, a.out)
+        print(f"texpack cards: {len(sel)} textures on {n} overview pages -> {a.out}_NN.png")
+        return 0
+    n = labels.cards(ex, sel, rows, classes, palette, cen, a.views or os.path.join(texpack_home(), 'views'), a.out,
+                     per_page=a.per_page, related=rel)
+    print(f"texpack cards: {len(sel)} textures on {n} pages -> {a.out}_NN.png and .txt")
+    return 0
+
+
+def cmd_families(a):
+    labels, ex, entries, sel, palette, cen = label_inputs(a)
+    rel = labels.candidates(ex, sel, palette, cen)
+    for e in sel:
+        if e.stem in rel:
+            print(f"{e.stem}: {labels.related_text(rel[e.stem])}")
+    return 0
+
+
+def cmd_labels(a):
+    labels, ex, entries, sel, palette, cen = label_inputs(a)
+    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+    if a.action == 'apply':
+        if not a.labels:
+            raise SystemExit('labels apply: name the labels CSV (--labels)')
+        n, dropped, owners, folded = labels.apply(a.labels, a.manifest, entries, classes, cen)
+        print(f"texpack labels: {n} rows from {a.labels} into {a.manifest}, {dropped} rows it covered dropped"
+              f" ({folded} labeled textures had a human row of the earlier kind, folded in)"
+              + (f"; {owners} of the owner's labeled rows kept (the CSV's rows aren't `human`)" if owners else ''))
+        return 0
+    rows = manifest.load_manifest(a.manifest)
+    if a.action == 'leads':
+        done = labels.set_leads(a.families, rows, cen)
+        print(f"texpack labels: {len(done)} families given a lead (the member with the most area) in {a.families}")
+        return 0
+    if a.labels:
+        # a labels CSV checked as if applied, the manifest untouched
+        extra = manifest.load_manifest(a.labels)
+        unknown = [r['pattern'] for r in extra if r['pattern'] not in entries]
+        if unknown:
+            print(f"not in the export: {', '.join(unknown)}")
+        for r in extra:
+            r['source'] = r['source'] if r['source'] in labels.LABELED else 'claude'
+        stems = {r['pattern'] for r in extra}
+        rows = [r for r in rows if r['pattern'] not in stems] + extra
+        sel = [e for e in sel if e.stem in stems]
+    fams = labels.load_families(a.families)
+    lab, probs = labels.check(entries, sel, rows, classes, palette, ex, cen, fams)
+    for s in sorted(probs):
+        print(f"{s}: {'; '.join(probs[s])}")
+    by = collections.Counter(r['source'] for r in lab.values())
+    print(f"texpack labels: {len(lab)} of {len(sel)} labeled ({', '.join(f'{k} {v}' for k, v in sorted(by.items()))}), "
+          f"{len(probs)} with problems; {len(fams)} families")
+    return 1 if probs else 0
 
 
 def cmd_census(a):
@@ -257,8 +385,31 @@ def main():
     p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
     p.add_argument('--pack', help='show each texture\'s result beside the original')
     p.add_argument('--group', choices=['map', 'kind', 'class'], default='map')
+    p.add_argument('--questions', help='the owner\'s page: a labels CSV whose `question` column asks about its rows')
+    p.add_argument('--views', help='--questions: 9.2\'s shots (default: $TEXPACK_HOME\\views)')
     p.add_argument('--out', required=True)
     p.set_defaults(f=cmd_sheet)
+    for name, f, hlp in (('cards', cmd_cards, 'the pages a labeler reads: original, ramp map, the three shots, census facts'),
+                         ('families', cmd_families, 'candidate families: shared texels, long shared edges, the same ramps'),
+                         ('labels', cmd_labels, 'check the labels, or apply a labels CSV to the manifest')):
+        p = sub.add_parser(name, help=hlp)
+        if name == 'labels':
+            p.add_argument('action', choices=['check', 'apply', 'leads'])
+            p.add_argument('--labels', help='the labels CSV (the manifest\'s columns, a stem per row): apply it, or check it as if applied')
+            p.add_argument('--families', default=os.path.join(HERE, 'families.csv'))
+        add_select(p)
+        p.add_argument('--hub', help='only textures whose home (the hub where they cover the most) is one of these; none: on no drawn face')
+        p.add_argument('--data', help='the game data folder (the palette from data1\\pak0.pak)')
+        p.add_argument('--census')
+        p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+        if name == 'cards':
+            p.add_argument('--out', required=True, help='path prefix: <out>_01.png and .txt, ...')
+            p.add_argument('--views', help='9.2\'s shots (default: $TEXPACK_HOME\\views)')
+            p.add_argument('--per-page', type=int, default=6)
+            p.add_argument('--frames', action='store_true', help='a card for every frame of an animation')
+            p.add_argument('--overview', action='store_true', help='the originals only, 60 to a page, with their stems and labels')
+            p.add_argument('--family', help='only these families (comma-separated), members side by side')
+        p.set_defaults(f=f)
     p = sub.add_parser('census', help='the census of every world texture from the maps, and its views (census.csv)')
     p.add_argument('--export')
     p.add_argument('--data', help='the game data folder whose paks have the maps (default: Hexenlicht-data beside the repository)')

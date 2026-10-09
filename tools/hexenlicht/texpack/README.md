@@ -100,11 +100,14 @@ from the picture. A draft calls most walls stone: review it.
 
 ## The manifest
 
-`materials.csv`: `pattern,class,description,overrides,source`. Lines starting with `# ` (hash, space) are comments: the
+`materials.csv`: `pattern,purpose,tier,class,family,regions,description,overrides,source`
+(story 9.3 added purpose, tier, family and regions: "Labels" below). Lines starting with `# ` (hash, space) are comments: the
 liquids' names start with `#` themselves. A pattern is a
 texture's name as the export files it, without `textures\` and `.png`
 (`rtex022`, `rtex343~ad81`, `#lava000`, `models/imp.mdl_0`) or an fnmatch glob.
-Every matching row applies, least specific first (a human row beats a draft
+A labeled row (a literal pattern with a tier, source `claude` or `human`) stands alone: the
+texture takes it and no other row, the owner's over Claude's. Otherwise
+every matching row applies, least specific first (a human row beats a draft
 whatever its pattern; then a literal beats a glob, a glob with more literal
 characters beats a shorter one): a later class or
 description replaces an earlier one, overrides add up. `overrides` are
@@ -247,3 +250,59 @@ animation) the view is `ok` and its shots become `$TEXPACK_HOME\views\<stem>_clo
 --todo` and another run take only those. `census --reset` starts every view again at the first
 face (after a change to the picker). The shots are derived from Raven's textures: they stay
 outside the repository.
+
+## Labels (story 9.3)
+
+E9's art direction per texture (DECISIONS M57–; the rules and the hubs' styles in
+[STYLE.md](../../../docs/hexenlicht/STYLE.md)), written by Claude from 9.2's census and shots,
+in the manifest's columns:
+
+| Column | What |
+|---|---|
+| `purpose` | what the texture is for: fill, trim, pillar, panel, door, window, grate, picture, sign, symbol, prop, liquid, sky, tool; skins: creature, player, weapon, item, object, debris, fx (`classes.toml`'s `[labels]`) |
+| `tier` | how far a redraw may depart (redraw.py's reimagine, layout, faithful, glass, liquid, lava, skin; fx: upscaled only; skip) |
+| `family` | the textures that should read as one material (`families.csv`: name, hub, lead, what; each family's lead is redrawn as its hero in 9.5) |
+| `regions` | which of the palette's ramps is which material (`grey,taupe=iron;orange,amber=wood`; `*` the ramps not named; `a/b` a ramp of two materials, the larger first), from `classes.toml`'s `[materials]` |
+| `source` | `claude` for 9.3's labels; the owner's answers make a row `human` |
+
+The palette's 256 colors are 17 **ramps** (`labels.py`): one grey of 32 (black to white), then
+mostly 16, two of 8 (maroon, brown), one of 15 (amber) and a single purple, and the saturated
+row (240–254, `special`, kept as drawn: M49). Raven shaded one material over several ramps, so
+a region is a set of them.
+
+```
+& $py tools\hexenlicht\texpack\texpack.py cards --kind world,liquid,sky --hub thysis --data <data copy> --out <dir>\thysis
+& $py tools\hexenlicht\texpack\texpack.py cards --kind world --hub tulku --overview --out <dir>\tulku
+& $py tools\hexenlicht\texpack\texpack.py labels check --labels <labels.csv> --kind world,liquid,sky --data <data copy>
+& $py tools\hexenlicht\texpack\texpack.py labels apply --labels <labels.csv> --data <data copy>
+& $py tools\hexenlicht\texpack\texpack.py labels leads --data <data copy>
+& $py tools\hexenlicht\texpack\texpack.py sheet --questions <labels.csv> --out questions.html
+& $py tools\hexenlicht\texpack\texpack.py merge texpack_answers.csv
+```
+
+- **`cards`** writes the pages a labeler reads, 6 textures a page: the original, its ramp map
+  (each texel colored by its ramp, the shares under it), 9.2's close, wide and albedo shots, and
+  a .txt beside each page with the census facts (home hub, maps, floor, wall or ceiling, brush
+  entities, size in metres, tiles, light, neighbours, animation, ramps, the earlier label, the
+  related textures). One card per animation (its frames are labeled alike). `--overview`: the
+  originals only, 60 to a page; `--family`: a family's members side by side (the review).
+- **`families`** lists each texture's related ones: `texels` (the same color at the same place
+  in a texture of its size: Raven's variants), `beside` (long shared edges on one plane, from the
+  census), `colors` (the same ramp shares in its home hub). Candidates for a labeler, not
+  decisions.
+- **`labels check`** checks every selected texture's labeled row: the words, tier and class
+  agreeing (glass, liquid, lava, skip, fx and skin tiers have their own classes), regions that
+  cover every ramp of 5 % or more and name only ramps the texture uses, families in
+  `families.csv`, an animation's frames alike, copies (the same pixels under two names)
+  labeled alike, a family's lead one of its members. With `--labels` it checks a labels CSV as
+  if applied.
+- **`labels apply`** puts a labels CSV (the manifest's columns, a stem per row) into the manifest
+  as literal rows: the class and overrides the texture had are folded in, an animation's other
+  frames get a copy, and the old rows that matched a labeled texture and match no unlabeled one
+  are dropped. A labeled row of the owner's stays unless the CSV's row is `human` too.
+- **`labels leads`** gives each family without a lead its member with the most area in the maps.
+- **`sheet --questions`** is the owner's page: the textures a labels CSV's `question` column asks
+  about, with 9.2's shots, the labels editable and an answer each; "Download answers" saves the
+  answered or edited rows, `merge` takes their fields as the owner's (`human`) and copies them to
+  an animation's other frames (the `answer` column is read by hand). It embeds Raven's textures:
+  keep it local.
