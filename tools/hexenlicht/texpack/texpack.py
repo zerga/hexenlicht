@@ -3,7 +3,8 @@
 
   %TEXPACK_HOME%\\ComfyUI_windows_portable\\python_embeded\\python.exe texpack.py <command> ...
 
-Commands: check-env, draft, montage, sheet, merge, run, verify, calibrate.
+Commands: check-env, draft, montage, sheet, merge, run, verify, calibrate; census, views,
+checkviews (story 9.2: census.py).
 """
 import argparse
 import os
@@ -23,8 +24,12 @@ def texpack_home():
     return os.environ.get('TEXPACK_HOME') or os.path.join(os.path.dirname(REPO), 'hexenlicht-tools', 'texpack')
 
 
+def default_data():
+    return os.environ.get('HEXENLICHT_DATA') or os.path.join(os.path.dirname(REPO), 'Hexenlicht-data')
+
+
 def default_export():
-    data = os.environ.get('HEXENLICHT_DATA') or os.path.join(os.path.dirname(REPO), 'Hexenlicht-data')
+    data = default_data()
     for sub in ('portals', 'data1'):
         p = os.path.join(data, sub, 'export')
         if os.path.exists(os.path.join(p, 'textures.csv')):
@@ -181,6 +186,33 @@ def cmd_sheet(a):
     return sheet.run(ex, sel, resolve_all(sel, rows, classes), classes, a.out, pack=a.pack, group=a.group)
 
 
+def cmd_census(a):
+    import census
+    return census.run_census(a.data or default_data(), a.export or default_export(), a.census, reset=a.reset)
+
+
+def cmd_views(a):
+    import bspviews
+    import census
+    maps = bspviews.Maps(a.data or default_data())
+    rows = census.load(a.census)
+    unknown = sorted({r['view_map'] for r in rows.values() if r['view_map'] and r['view_map'] not in maps.files})
+    if unknown:
+        raise SystemExit(f"not in the paks of {a.data or default_data()}: {', '.join(unknown)}")
+    lines = census.view_lines(rows, a.todo, a.game, a.hub, set(a.stems.split(',')) if a.stems else None, maps.game)
+    with open(a.out, 'w', newline='', encoding='utf-8') as f:
+        f.write(f'# game {a.game}: views_run.ps1' + (' -Portals' if a.game == 'portals' else '') + '\r\n')
+        f.writelines(ln + '\r\n' for ln in lines)
+    print(f"texpack views: {len(lines)} textures into {a.out}")
+    return 0
+
+
+def cmd_checkviews(a):
+    import census
+    return census.check_runs(a.runs, a.census, a.shots or os.path.join(texpack_home(), 'views'),
+                             a.data or default_data(), a.export or default_export())
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -227,7 +259,33 @@ def main():
     p.add_argument('--group', choices=['map', 'kind', 'class'], default='map')
     p.add_argument('--out', required=True)
     p.set_defaults(f=cmd_sheet)
+    p = sub.add_parser('census', help='the census of every world texture from the maps, and its views (census.csv)')
+    p.add_argument('--export')
+    p.add_argument('--data', help='the game data folder whose paks have the maps (default: Hexenlicht-data beside the repository)')
+    p.add_argument('--census', help='the file (default: census.csv here)')
+    p.add_argument('--reset', action='store_true', help='every view from the first face again, unchecked (after the picker changed)')
+    p.set_defaults(f=cmd_census)
+    p = sub.add_parser('views', help='the census\'s views as views_run.ps1\'s lines')
+    p.add_argument('--census')
+    p.add_argument('--out', required=True)
+    p.add_argument('--todo', action='store_true', help='only the views not checked yet')
+    p.add_argument('--game', choices=['data1', 'portals'], required=True,
+                   help='the views in this game\'s maps (a run of views_run.ps1 each: portals with -Portals)')
+    p.add_argument('--hub', help='only views in this hub\'s maps (census.py\'s HUBS)')
+    p.add_argument('--stems', help='comma-separated stems')
+    p.add_argument('--data', help='the game data folder (for --game: which pak has the map)')
+    p.set_defaults(f=cmd_views)
+    p = sub.add_parser('checkviews', help='read views_run.ps1\'s runs into the census, the shots as PNGs')
+    p.add_argument('runs', nargs='+', help='views_run.ps1\'s output folders (-Out\\<Tag>)')
+    p.add_argument('--census')
+    p.add_argument('--shots', help='where the PNGs go (default: $TEXPACK_HOME\\views)')
+    p.add_argument('--export')
+    p.add_argument('--data')
+    p.set_defaults(f=cmd_checkviews)
     a = ap.parse_args()
+    if a.cmd in ('census', 'views', 'checkviews') and not a.census:
+        import census
+        a.census = census.default_census()
     return a.f(a)
 
 

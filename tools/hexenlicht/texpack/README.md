@@ -201,6 +201,49 @@ in `vae` (Comfy-Org/vae-text-encorder-for-flux-klein-4b); for `qwen`
 (Comfy-Org/Qwen-Image_ComfyUI), `Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors`
 in `loras` (lightx2v/Qwen-Image-Edit-2511-Lightning). About 16 GB and 31 GB.
 
-`bspviews.py` finds a view of each texture in the maps (the largest face the camera sees,
-`vk_setpos` lines; brush entities at their origins, triggers ignored) for `proof_run.ps1
--ViewFile` (`-Portals` for the mission pack's maps). TESTING.md, "Art-directed pack pilot (9.1)".
+`bspviews.py` finds a view of each texture in the maps (`vk_setpos` lines; since 9.2 the
+census's picker, below) for `proof_run.ps1 -ViewFile` (`-Portals` for the mission pack's maps).
+TESTING.md, "Art-directed pack pilot (9.1)".
+
+## Census and views (story 9.2)
+
+What each world texture is for, from the game itself (9.3 labels from it; DECISIONS M54–M56):
+`census.csv` here has a row per world, liquid and sky texture of both games' export, read from
+the maps' BSPs in the paks in about a minute (`census.py`, `bspviews.py`'s reader). It holds
+facts about the maps, no pixels, so it is in the repository; `texpack.py census` makes it again.
+
+| Column | What |
+|---|---|
+| `stem`, `name`, `kind`, `size` | the texture as the export names it, its BSP name, world, liquid or sky, its size in texels |
+| `game`, `hubs`, `maps`, `area`, `faces` | where it is: data1 or portals; the hubs and maps (`map:area`) by area, most first; the area in square units of its drawn faces, their count |
+| `floor`, `wall`, `ceiling` | percent of the area by the face's normal (\|z\| > 0.7: floor or ceiling; a liquid's surface is both, seen from either side) |
+| `entities` | percent of the area on brush entities: `door`, `button` (and `func_angletrigger`, `func_pressure`), `plaque`, `mover` (platforms, trains, crushers, rotators, pushables), `breakable`, `static` (`func_wall`, `func_illusionary`), `other`; the rest is the world. What the game doesn't draw doesn't count: triggers, weather volumes, invisible plaques, breakables and (the mission pack's) walls, glowing trains (DECISIONS M54) |
+| `scale`, `tiles` | world units per texel (texinfo; `2` is a texture drawn at twice its size, `1x2` differs along s and t), and how many tiles the typical face spans (`4x0.25`: a strip, a quarter of the texture's height shown) |
+| `light`, `light_lo`, `light_hi` | how dark it usually is: its faces' lightmaps (0–255, the styles summed with switched lights on), the area's mean and its 10th and 90th percentile; empty for liquids and the sky (no lightmap) |
+| `beside`, `corner` | the textures it meets at shared edges, by the edges' length in units: on the same plane (a trim and its wall) and at an angle (the floor under a wall) |
+| `anim` | an animation's frames (`+0…`, `+a…`), the same in every member's row |
+| `view`, `view_rank`, `view_map`, `view_close`, `view_wide`, `view_hit` | the views: `picked` (not shot yet), `ok` (`vk_materials here` named it), `none` (no face the camera sees), `unused` (on no drawn face), `frame` (a frame no face shows: its animation's view), `sky`; which face it is (1 the best), the map, `vk_setpos` numbers of both views, what was hit instead |
+
+```
+& $py tools\hexenlicht\texpack\texpack.py census --export <both games' export>
+& $py tools\hexenlicht\texpack\texpack.py views --todo --game data1 --data <data copy> --out views_data1.txt
+& pwsh tools\hexenlicht\texpack\views_run.ps1 -Views views_data1.txt -Data <data copy> -Out <runs> -Tag r1_data1 -Release
+& $py tools\hexenlicht\texpack\texpack.py checkviews <runs>\r1_data1 --data <data copy> --export <export>
+```
+
+The **views** (`bspviews.py`): a texture's faces in the map where it covers the most area
+first; in a map by their area, a dark face counting less and a brush entity's less (it may
+move); the first face the camera can see gets a close view along its normal at a distance that
+fits it (48–220 units; floors and ceilings from 55°) and a wide one about 2.5 times as far.
+Each is checked as the game will show it: exact traces through the world and the brush
+entities, the player's box off triggers (a teleporter would move it, a `trigger_once` would
+change the map for the views after it), the view's angles in the protocol's steps, and first
+clear of monsters and props (a torch's flame in front of a wall). **`views_run.ps1`** shoots the
+originals at both and the wide view's albedo (`r_debugview 1`, unlit: readable where the room
+is dark), paused, with `vk_materials here` after each; under a second a texture.
+**`checkviews`** reads a run: where `vk_materials here` named the texture (any frame of an
+animation) the view is `ok` and its shots become `$TEXPACK_HOME\views\<stem>_close.png`,
+`_wide.png` and `_albedo.png`; a miss gets the texture's next face (up to 8), so `views
+--todo` and another run take only those. `census --reset` starts every view again at the first
+face (after a change to the picker). The shots are derived from Raven's textures: they stay
+outside the repository.
