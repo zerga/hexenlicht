@@ -584,6 +584,44 @@ in place; the game runs in a data folder of its own, never yours.
   turntable), the golem in the game (demo1 doesn't precache it), a pack through
   `pack_dds.ps1`.
 
+## Texture census and views (9.2)
+
+`census.csv` and the in-game shots of every world texture (`tools/hexenlicht/texpack`:
+`census.py`, `bspviews.py`, `views_run.ps1`; its README, "Census and views"; DECISIONS
+M54–M56). The game runs in a data folder of its own, never yours (it has your textures and
+configs): a copy of the original's `data1` (`pak0.pak`, `pak1.pak`, `PROGS.DAT`,
+`PROGS2.DAT`, `Strings.txt`, `Hexen.rc`) and `portals` (`pak3.pak`, `progs.dat`, `hexen.rc`,
+`default.cfg`, `strings.txt`, `puzzles.txt`, `infolist.txt`). `$py` is ComfyUI's Python
+(the README's setup); no models are needed.
+
+1. **The pure functions:** `selftest.py` (the census's among them: lightmap sizes, scale and
+   tiles from texinfo, the neighbours' planes, the faces' ranking, the trace, the log's
+   parsing and the match).
+2. **The census:** `texpack.py census --export <both games' export> --data <data copy>`
+   (about a minute): `census.csv`, and per view state the counts. A second run keeps the
+   checked views whose spots haven't changed; `--reset` starts every view at its first face
+   again (after a change to the picker).
+3. **The views to shoot:** `texpack.py views --todo --game data1 --data <data copy> --out
+   views_data1.txt`, and `--game portals` into a file of its own (the mission pack's maps; the
+   file's first line names its game, and `views_run.ps1` refuses it with the wrong `-Portals`).
+4. **The shots:** `views_run.ps1 -Views views_data1.txt -Data <data copy> -Out <runs> -Tag
+   <tag> -Release`, and the portals file with `-Portals`: each map loaded once, at each
+   view the originals close and wide and the wide view's albedo, `vk_materials here` after
+   each lit shot (`-Only` a regex on the names; `-Settle` the frames waited, 40). Release,
+   uncapped (`vk_benchmark 1`): data1's 493 textures in under 6 minutes with the map loads,
+   the mission pack's 418 in about 5. Two runs give the same pixels; three times the wait
+   changes a still view by a median 2.6 % (close) and 4 % (wide) of its mean (an animated
+   texture by its frame).
+5. **The check:** `texpack.py checkviews <runs>\<tag> --data <data copy> --export <export>`:
+   `ok` where `vk_materials here` named the texture, its shots as PNGs in
+   `$TEXPACK_HOME\views`; a miss gets the next face. Repeat 3–5 with `--todo` until no
+   view is `picked`; `none` is a texture no face of which the camera sees.
+6. **Validation:** a Debug run of one map's views (`-Only`, without `-Release`) ends with
+   `Vulkan validation: 0 errors, 0 warnings`.
+- **Not covered:** a texture's views in the other hubs it is used in (the census has one,
+  in the map where it covers the most; `views --hub` selects by that map), brush entities
+  in their moved states (doors open, a button pressed: the `+a` frames), the sky.
+
 ## Effects (6.1)
 
 E6's checklist ([EFFECTS.md](EFFECTS.md), DECISIONS X1) names each effect's

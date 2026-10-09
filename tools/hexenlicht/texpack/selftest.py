@@ -257,4 +257,89 @@ check('bspviews.parse_entities reads a door\'s origin', ents[1].get('origin') ==
 check('bspviews: a segment through a box hits it, one beside it not',
       bspviews._segment_hits_box(np.array([0., 0, 0]), np.array([10., 0, 0]), np.array([4., -1, -1]), np.array([6., 1, 1]))
       and not bspviews._segment_hits_box(np.array([0., 5, 0]), np.array([10., 5, 0]), np.array([4., -1, -1]), np.array([6., 1, 1])))
+
+# the census (story 9.2)
+import census as C  # noqa: E402
+check('bspviews.drawn: triggers, weather volumes and invisible plaques are not drawn, a door and a plaque are',
+      not bspviews.drawn({'classname': 'trigger_once'}) and not bspviews.drawn({'classname': 'weather_snow'})
+      and not bspviews.drawn({'classname': 'plaque', 'spawnflags': '1'}) and bspviews.drawn({'classname': 'plaque', 'spawnflags': '2'})
+      and bspviews.drawn({'classname': 'func_door'}))
+check('bspviews.drawn: an invisible breakable (128), a glowing train (1), the mission pack\'s func_wall 2 and its trains with a model are not',
+      not bspviews.drawn({'classname': 'breakable_brush', 'spawnflags': '129'}) and bspviews.drawn({'classname': 'breakable_brush', 'spawnflags': '1'})
+      and not bspviews.drawn({'classname': 'func_train', 'spawnflags': '1'})
+      and bspviews.drawn({'classname': 'func_wall', 'spawnflags': '2'}) and not bspviews.drawn({'classname': 'func_wall', 'spawnflags': '2'}, portals=True)
+      and bspviews.drawn({'classname': 'func_train', 'weaponmodel': 'models/x.mdl'}, portals=True)
+      and not bspviews.drawn({'classname': 'func_train', 'weaponmodel': 'models/x.mdl'}, portals=True, mission=True))
+check('bspviews.spawns: single player, the Paladin, skill 1',
+      bspviews.spawns({'spawnflags': '4096'}) and not bspviews.spawns({'spawnflags': '256'})
+      and not bspviews.spawns({'spawnflags': '8192'}) and not bspviews.spawns({'spawnflags': str(0x20000)}))
+check('bspviews.door_field: a door that opens on its own, not a fired, shootable or puzzle one',
+      bspviews.door_field({'classname': 'func_door'}) and not bspviews.door_field({'classname': 'func_door', 'targetname': 't1'})
+      and not bspviews.door_field({'classname': 'func_door', 'health': '10'}) and not bspviews.door_field({'classname': 'func_door', 'puzzle_piece_1': 'x'})
+      and not bspviews.door_field({'classname': 'func_button'}))
+check('sent_angle: whole degrees in 360/256 steps, half away from zero', bspviews.sent_angle(45.2) == 45.0
+      and abs(bspviews.sent_angle(-55) + 54.84375) < 1e-9 and abs(bspviews.sent_angle(10) - 9.84375) < 1e-9)
+sq = np.array([[0., 0, 0], [16, 0, 0], [16, 16, 0], [0, 16, 0]])
+check('inside: a point of the polygon by the margin, not one at its edge or outside',
+      bspviews.inside(sq, np.array([0., 0, 1]), np.array([8., 8, 0])) and not bspviews.inside(sq, np.array([0., 0, 1]), np.array([16.2, 8, 0]))
+      and not bspviews.inside(sq, np.array([0., 0, 1]), np.array([8., 0.2, 0])) and bspviews.inside(sq[::-1], np.array([0., 0, 1]), np.array([8., 8, 0])))
+tb = bspviews.Bsp.__new__(bspviews.Bsp)
+tb.triggers = [(np.array([100., -10, 0]), np.array([120., 10, 64]))]
+check('player_touches: the player\'s box (16 around, 56 up, 1 more) against a trigger\'s',
+      bspviews.player_touches(tb, np.array([84., 0, 0])) and not bspviews.player_touches(tb, np.array([82., 0, 0]))
+      and bspviews.player_touches(tb, np.array([110., 0, -56])) and not bspviews.player_touches(tb, np.array([110., 0, -59])))
+check('bspviews.category', bspviews.category('func_door_rotating') == 'door' and bspviews.category('breakable_brush') == 'breakable'
+      and bspviews.category('func_train_mp') == 'mover' and bspviews.category('worldspawn') == 'world' and bspviews.category('obj_x') == 'other')
+quad = np.array([[0., 0, 0], [64, 0, 0], [64, 0, 32], [0, 0, 32]])     # a wall 64 wide, 32 high, in the x-z plane
+tx = (1., 0, 0, 0, 0, 0, -1, 0)                                        # s along x, t down z, one texel per unit
+check('lightmap_size: 64x32 texels are 5x3 samples (CalcSurfaceExtents)', bspviews.lightmap_size(quad, tx) == (5, 3),
+      str(bspviews.lightmap_size(quad, tx)))
+check('lightmap_size: an offset of 8 texels needs a sample more', bspviews.lightmap_size(quad, (1., 0, 0, 8, 0, 0, -1, 0)) == (6, 3))
+check('texel_scale: texinfo of 0.5 texels per unit is 2 units per texel', C.texel_scale((0.5, 0, 0, 0, 0, 0, -1, 0)) == (2.0, 1.0))
+check('tile_extent: the wall spans 1 x 0.5 tiles of a 64x64 texture', C.tile_extent(quad, tx, 64, 64) == (1.0, 0.5))
+check('orientation by the normal', C.orientation((0, 0, 1)) == 'floor' and C.orientation((0, 0.8, -0.6)) == 'wall'
+      and C.orientation((0.3, 0, -0.95)) == 'ceiling')
+up, side = np.array([0., 0, 1]), np.array([1., 0, 0])
+ed = {('k1',): [('trim', side, 64.0), ('wall', side, 64.0)], ('k2',): [('wall', side, 32.0), ('floor', up, 32.0)],
+      ('k3',): [('wall', side, 16.0), ('wall', side, 16.0)]}
+bs, co = C.neighbours(ed)
+check('neighbours: the same plane is beside, an angle a corner, the texture itself neither',
+      bs['trim']['wall'] == 64 and bs['wall']['trim'] == 64 and co['wall']['floor'] == 32 and 'wall' not in bs['wall'] and not co['trim'])
+check('edge_key: an edge is the same either way round', C.edge_key(np.array([1., 2, 3]), np.array([4., 5, 6])) == C.edge_key(np.array([4., 5, 6]), np.array([1., 2, 3])))
+check('wpercentile weighs by area', bspviews.wpercentile([10, 200], [9, 1], 50) == 10 and bspviews.wpercentile([10, 200], [1, 9], 50) == 200)
+ranked = bspviews.rank_faces([(0, 1, 1000.0, 2.0, 'world'), (0, 2, 600.0, 120.0, 'world'), (3, 4, 2000.0, 120.0, 'mover')])
+check('rank_faces: a lit face before a larger dark one, a platform after', [f[1] for f in ranked] == [2, 4, 1], str([f[1] for f in ranked]))
+check('directions: a wall is seen along its normal first; a floor from above, a ceiling within the pitch clamp',
+      np.allclose(bspviews.directions(np.array([0., 1, 0]))[0], [0, 1, 0])
+      and all(u[2] > 0 for u in bspviews.directions(np.array([0., 0, 1])))
+      and all(bspviews.aim(u * 100, np.zeros(3)) for u in bspviews.directions(np.array([0., 0, -1]))))
+check('aim: straight up is outside the clamp, 45 degrees down is pitch 45',
+      bspviews.aim(np.array([0., 0, 0]), np.array([0., 0, 10])) is None
+      and abs(bspviews.aim(np.array([0., 0, 10]), np.array([10., 0, 0]))[0] - 45) < 1e-6)
+# a one-plane world: x >= 0 open, x < 0 solid
+w = bspviews.Bsp.__new__(bspviews.Bsp)
+w._planes = [(1.0, 0.0, 0.0, 0.0)]
+w.nodes = [(0, -1, -2)]
+w.leafs = [(bspviews.CONTENTS_EMPTY,), (bspviews.CONTENTS_SOLID,)]
+w.models = [tuple([0] * 9 + [0])]
+check('trace: a segment in the open is clear, one into the solid not',
+      w.trace((1., 0, 0), (50., 3, 0)) and not w.trace((10., 0, 0), (-0.01, 0, 0)) and w.contents((5., 0, 0)) == bspviews.CONTENTS_EMPTY)
+check('hub_of', C.hub_of('village3') == 'blackmarsh' and C.hub_of('rider2c') == 'mazaera' and C.hub_of('tibet10') == 'tulku'
+      and C.hub_of('castle4') == 'cathedral' and C.hub_of('thomas') == 'other')
+log = ['T92_VIEW rtex022 close ', 'here: world opaque, 120 units away: rtex022 (material 4)',
+       '  files: textures/rtex022~1a2b (this texture\'s pixels only) or textures/rtex022 (every texture of the name)',
+       'T92_VIEW rtex022 wide ', 'here: *3 opaque, 300 units away: rtex100 (material 9)',
+       '  files: textures/rtex100~0c0c (this texture\'s pixels only) or textures/rtex100 (every texture of the name)',
+       'T92_VIEW p0rune1 close ', 'here: world opaque, 80 units away: +2rune1 (material 12)',
+       '  files: textures/+2rune1~77aa (this texture\'s pixels only) or textures/+2rune1 (every texture of the name)',
+       'T92_VIEW sky close ', 'vk_materials here: nothing at the view\'s center', 'T92_END']
+hits = C.parse_log(log)
+check('parse_log reads each view\'s hit', hits[('rtex022', 'close')]['name'] == 'rtex022' and hits[('rtex022', 'wide')]['crc'] == '0c0c'
+      and hits[('sky', 'close')]['name'] is None and 'nothing' in hits[('sky', 'close')]['what'], str(hits))
+check('hit_matches: the name, the CRC where the stem has one, any frame of an animation',
+      C.hit_matches('rtex022', hits[('rtex022', 'close')]) and C.hit_matches('rtex022~1a2b', hits[('rtex022', 'close')])
+      and not C.hit_matches('rtex022~ffff', hits[('rtex022', 'close')]) and not C.hit_matches('rtex022', hits[('rtex022', 'wide')])
+      and C.hit_matches('+0rune1', hits[('p0rune1', 'close')], {'+0rune1', '+2rune1~77aa'})
+      and not C.hit_matches('+0rune1', hits[('p0rune1', 'close')]) and not C.hit_matches('x', hits[('sky', 'close')]))
+check('fmt: whole above 10, a decimal above 1, two below', [C.fmt(x) for x in (123.4, 3.25, 1.0, 0.25, 0.5)] == ['123', '3.2', '1', '0.25', '0.5'])
 sys.exit(1 if fails else 0)
