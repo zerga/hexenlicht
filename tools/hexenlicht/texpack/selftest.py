@@ -191,4 +191,70 @@ with tempfile.TemporaryDirectory() as tmp:
         errs, _ = verify.check(ex, pk, ent, res)
         bad = any('alpha' in e or 'opacity' in e for e in errs)
         check(f'verify translucent: the {name} alpha is {"refused" if name == "smear" else "accepted"}', bad == (name == 'smear'), str(errs))
+
+# redraw (story 9.1): the stages after the model
+import redraw as R  # noqa: E402
+import bspviews  # noqa: E402
+
+
+def field(h, w, r, seed):
+    g = np.random.default_rng(seed)
+    return np.dstack([R._smooth(g.random((h, w)), r) for _ in range(3)])
+
+
+per = (np.sin(np.arange(64) * 2 * np.pi / 64)[None, :] * np.cos(np.arange(64) * 2 * np.pi / 64)[:, None] * 0.4 + 0.5)
+check('seam score: a periodic texture tiles (about 1)', R.seam_score(np.uint8(np.dstack([per] * 3) * 255)) < 1.3)
+m4, h4, w4 = 16, 64, 64
+big = np.uint8(np.clip(field(h4 + 2 * m4, w4 + 2 * m4, 5, 3) * 1.6 - 0.3, 0, 1) * 255)
+plain = big[m4:m4 + h4, m4:m4 + w4]
+blended = R.blend_seams(big, m4, h4, w4)
+check('blend_seams: a crop of a random field has a seam, the blend none',
+      R.seam_score(plain) > 2 and R.seam_score(blended) < 1.5, f'{R.seam_score(plain):.2f} -> {R.seam_score(blended):.2f}')
+
+# shading: an albedo times the light of a height field's normals from the top left; taking the
+# directional part out leaves (almost) no correlation with the normals' x and y
+hgt = R._smooth(np.random.default_rng(4).random((96, 96)), 3) * 40
+gy, gx = np.gradient(hgt)
+n = np.dstack([-gx, gy, np.ones_like(gx)])          # OpenGL: green up (a row index grows downwards)
+n /= np.linalg.norm(n, axis=2, keepdims=True)
+n8 = np.uint8(np.round((n * 0.5 + 0.5) * 255))
+light = np.clip(n @ np.array([-0.5, 0.5, 0.7071]), 0.05, 1)
+alb = 0.2 + 0.3 * field(96, 96, 10, 5)
+lit = R._enc(alb * light[..., None])
+c, rd0, _ = R.shading_fit(lit, n8, 8)
+out, _ = R.take_light_out(lit, n8, 8, front=1.0)
+_, rd1, _ = R.shading_fit(out, n8, 8)
+check('take_light_out: the light from a side goes', rd0 > 0.5 and rd1 < 0.25, f'directional fit {rd0:.2f} -> {rd1:.2f}')
+check('take_light_out keeps the mean brightness', abs(P.mean_linear_luminance(out) / P.mean_linear_luminance(lit) - 1) < 0.02)
+
+# the color guard: a grey redraw of a red original gets its red back, the detail stays
+orig = np.zeros((16, 16, 3), np.uint8)
+orig[...] = (120, 40, 30)
+grey = np.uint8(np.clip(np.dstack([field(64, 64, 2, 6)[..., 0]] * 3) * 200, 0, 255))
+guarded = R.color_guard(orig, grey, 1.0, 1 / 24)
+check('color_guard brings the broad hue back', R.color_drift(orig, guarded) < 0.3 * R.color_drift(orig, grey),
+      f'{R.color_drift(orig, grey):.3f} -> {R.color_drift(orig, guarded):.3f}')
+ly = lambda x: R._lin(x) @ P.LUM  # noqa: E731
+check('color_guard keeps the lightness detail', R._corr(R._highpass(ly(grey), 4), R._highpass(ly(guarded), 4)) > 0.9)
+
+# the palette's special row: found by exact color, kept over the result
+pal = np.zeros((256, 3), np.uint8)
+pal[:, 0] = np.arange(256)
+pal[243] = (40, 250, 40)
+src = np.zeros((8, 8, 3), np.uint8)
+src[2, 3] = pal[243]
+sm = R.special_mask(src, pal)
+check('special_mask finds the special row\'s texels only', sm is not None and sm.sum() == 1 and sm[2, 3])
+kept = R.keep_special(np.zeros((32, 32, 3), np.uint8), src, sm)
+check('keep_special puts their color back', kept[2 * 4 + 1, 3 * 4 + 1, 1] > 150, str(kept[9, 13]))
+check('special_mask: none without the row', R.special_mask(np.zeros((4, 4, 3), np.uint8), pal) is None)
+
+check('bspviews.crc16 is CRC-16/CCITT (0xffff, not reflected): 123456789 -> 29b1', bspviews.crc16(b'123456789') == 0x29b1)
+check('anim_base: the frames of an animation (and their variants) share a seed',
+      R.anim_base('+0rune1') == R.anim_base('+4rune1') == R.anim_base('+arune1~1a2b') == 'rune1' and R.anim_base('rtex022') == 'rtex022')
+ents = bspviews.parse_entities('{\n"classname" "worldspawn"\n}\n{\n"model" "*3"\n"origin" "16 -8 4"\n"classname" "func_door_rotating"\n}\n')
+check('bspviews.parse_entities reads a door\'s origin', ents[1].get('origin') == '16 -8 4' and ents[0]['classname'] == 'worldspawn')
+check('bspviews: a segment through a box hits it, one beside it not',
+      bspviews._segment_hits_box(np.array([0., 0, 0]), np.array([10., 0, 0]), np.array([4., -1, -1]), np.array([6., 1, 1]))
+      and not bspviews._segment_hits_box(np.array([0., 5, 0]), np.array([10., 5, 0]), np.array([4., -1, -1]), np.array([6., 1, 1])))
 sys.exit(1 if fails else 0)

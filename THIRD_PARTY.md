@@ -62,6 +62,8 @@ derived from Raven's textures and stays out of the repository and releases:
 | [Stable Diffusion 1.5](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) | CreativeML OpenRAIL-M | The img2img pass |
 | [ControlNet 1.1 Tile](https://huggingface.co/lllyasviel/control_v11f1e_sd15_tile) (fp16 safetensors) | CreativeML OpenRAIL-M | Holds the upscale's shapes and colors in the img2img pass |
 | [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) | Apache-2.0 | Drafting the manifest's classes and descriptions (a tool, not shipped code) |
+| [FLUX.2 klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8) (distilled and base, fp8) with its Qwen3 4B text encoder and the FLUX.2 VAE ([Comfy-Org's repackage](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b)) | Apache-2.0 | `redraw.py`'s edit (story 9.1; the generator since M50) |
+| [Qwen-Image-Edit-2511](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI) (fp8mixed) with Qwen2.5-VL 7B and the Qwen-Image VAE ([Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI)), [lightx2v's 8-step Lightning LoRA](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning) | Apache-2.0 | `redraw.py --gen qwen`, 9.1's comparison |
 
 ## Bundled by upstream (Hammer of Thyrion)
 

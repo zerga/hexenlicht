@@ -67,6 +67,9 @@ class Comfy:
                 '--output-directory', os.path.join(self.work, 'out'), '--temp-directory', os.path.join(self.work, 'temp')]
         if self.deterministic:
             args.append('--deterministic')
+        extra = os.path.join(self.home, 'extra_model_paths.yaml')     # models kept elsewhere (9.1)
+        if os.path.exists(extra):
+            args += ['--extra-model-paths-config', extra]
         logf = open(os.path.join(self.work, 'comfy.log'), 'wb')
         self.proc = subprocess.Popen(args, cwd=os.path.join(self.portable, 'ComfyUI'), stdout=logf, stderr=subprocess.STDOUT)
         atexit.register(self.stop)      # an exception, Ctrl-C or sys.exit still stops it

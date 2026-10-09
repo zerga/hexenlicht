@@ -152,3 +152,55 @@ the `.mat` values, the albedo's luminance against the original's.
 Model licenses: the PBRify models are CC0, ControlNet and Stable Diffusion
 1.5 are OpenRAIL(-M) (use restrictions, none that touch this), ComfyUI is GPL.
 None is vendored here; see THIRD_PARTY.md.
+
+## Redraw (story 9.1, E9's pilot)
+
+`redraw.py` redraws a texture instead of upscaling it (DECISIONS M46–M52; PLAN E9):
+an image-editing model gets the 4x upscale of the padded original and a prompt for the
+texture's **tier** (reimagine: a new surface at the same arrangement; layout: every shape
+in place; faithful: restored, no new content; glass; liquid; lava; skin) and draws it as a
+real material under a soft frontal light. What follows is this process, not a model:
+
+- **Seams:** the redrawn padding is faded into the tile's opposite edges.
+- **Maps:** PBRify's normal and roughness of the redraw, as `texpack.py run`'s.
+- **The light out:** the part of the redraw's brightness that the normal map's directions
+  explain is divided out: the light from a side fully, the frontal part (faces brighter,
+  joints darker) by half (`--front`, how much of it stays). A second edit "to an albedo"
+  flattens the material away (M46).
+- **Brightness, then colors:** 5.8's match (M37, M43), then the original's broad colors
+  put back (Oklab; the models draw real-world colors, Hexen II's palette is the theme),
+  then the brightness again.
+- **Special colors:** texels in the palette's saturated row (240–254: glowing eyes, the
+  archer's arrow) keep the original's color, unless more than 5 % of the texture is in the
+  row (rtex465, the water); the palette comes from the game's `pak0.pak` (`--data`).
+- **Animations:** the frames of `+0…` to `+9…`, `+a…` share one seed; a pack needs them all.
+
+```
+& $py tools\hexenlicht\texpack\redraw.py run --gen klein --export <both games' export> --out <pack>
+& $py tools\hexenlicht\texpack\redraw.py sheet --packs klein=D:/...pack --base <5.8 pack> --out <dir> --lift 4
+& $py tools\hexenlicht\texpack\bspviews.py --export <export> --maps demo1,meso9 --stems rtex022,mtex466 > views.txt
+```
+
+`--gen`: `klein` (FLUX.2 klein 4B, distilled: the generator since M50, about 6.5 s a
+texture), `klein-base`, `qwen` (Qwen-Image-Edit-2511 with the 8-step Lightning LoRA, 37 s).
+The rows are `pilot.csv`'s (stem, tier, class, description, overrides: the manifest's
+classes and keys); 9.4 brings the stage into `texpack.py run`. A run skips a texture whose
+model image (the source, the prompt, the generator, the seed) and stages (the class's values,
+the models, `--front`, the tool's version) are unchanged and redoes only the stages from
+`work\<stem>_A.png` when only they changed; `--reuse` does that for every texture, keeping
+what each image was made from; `measure.json` has the numbers
+(the light left in, the seam, the color drift, the layout kept, the brightness ratio).
+
+The models (Apache-2.0), in ComfyUI's folders or any folder named in
+`$TEXPACK_HOME\extra_model_paths.yaml` (`comfy.py` passes it to ComfyUI; the owner's are on
+C:): `flux-2-klein-4b-fp8.safetensors` (and `-base-`) from black-forest-labs/FLUX.2-klein-4b-fp8
+in `diffusion_models`, `qwen_3_4b.safetensors` in `text_encoders` and `flux2-vae.safetensors`
+in `vae` (Comfy-Org/vae-text-encorder-for-flux-klein-4b); for `qwen`
+`qwen_image_edit_2511_fp8mixed.safetensors` (Comfy-Org/Qwen-Image-Edit_ComfyUI),
+`qwen_2.5_vl_7b_fp8_scaled.safetensors` and `qwen_image_vae.safetensors`
+(Comfy-Org/Qwen-Image_ComfyUI), `Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors`
+in `loras` (lightx2v/Qwen-Image-Edit-2511-Lightning). About 16 GB and 31 GB.
+
+`bspviews.py` finds a view of each texture in the maps (the largest face the camera sees,
+`vk_setpos` lines; brush entities at their origins, triggers ignored) for `proof_run.ps1
+-ViewFile` (`-Portals` for the mission pack's maps). TESTING.md, "Art-directed pack pilot (9.1)".

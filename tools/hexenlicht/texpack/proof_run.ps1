@@ -12,11 +12,17 @@
 # copy of the original's data1 (pak0.pak, pak1.pak, PROGS.DAT, PROGS2.DAT,
 # Strings.txt, Hexen.rc) with no textures\ and no config files. Run it with
 # PowerShell 7 (the pwsh tool), Debug unless -Release; -Bin another build.
+# -ViewFile a file of bspviews.py's lines (story 9.1: `<texture> <map> x y z pitch yaw`, # comments)
+# instead of the views below, each shot with its normals and roughness too; -Portals runs the
+# game with the mission pack (its maps, tibet*: put them in a file of their own). -Behind: how far
+# behind the creature's spot -Creatures shoots from (120: 200 units from the monster).
 param([Parameter(Mandatory)][string]$Pack, [Parameter(Mandatory)][string]$Out, [Parameter(Mandatory)][string]$Data,
-      [string]$Tag = 'proof', [string]$Only = '', [switch]$Creatures, [switch]$Release, [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '')
+      [string]$Tag = 'proof', [string]$Only = '', [switch]$Creatures, [int]$Behind = 120, [string]$ViewFile = '', [switch]$Portals,
+      [switch]$Release, [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '')
 $ErrorActionPreference = 'Stop'
 $Data = (Resolve-Path -LiteralPath $Data).ProviderPath
 $game = Join-Path $Data 'data1'
+$gdir = if ($Portals) { Join-Path $Data 'portals' } else { $game }	# where the game writes its configs and shots
 $run = Join-Path (Split-Path $PSScriptRoot) 'hl_run.ps1'
 $Pack = (Resolve-Path -LiteralPath $Pack).ProviderPath
 function Waits([int]$n) { if ($n -le 0) { return '' }; (@('wait') * $n) -join ';' }
@@ -36,7 +42,7 @@ $views = @(
 	@('meso9', 'meso9', 1, '', @())
 )
 # -Creatures: demo1's courtyard (the start), a monster created 80 units ahead of the player at six
-# headings (`create <classname>`: with god and notarget they stand still), each shot from 200 units
+# headings (`create <classname>`: with god and notarget they stand still), each shot from 200 units (80 + -Behind)
 # behind the player's spot looking at it; the paladin's gauntlets are in every shot. Skins with a
 # model name in the first column; the view weapon of the class, the monsters', or whatever -Pack has.
 # A monster the map doesn't precache isn't created (demo1 has imps and archers): its view is an empty
@@ -49,12 +55,23 @@ if ($Creatures) {
 	$views = @()
 	foreach ($c in $creatureSet) {
 		$th = [double]$c[2] * [Math]::PI / 180
-		$bx = [int]($cx - 120 * [Math]::Cos($th)); $by = [int]($cy - 120 * [Math]::Sin($th))
+		$bx = [int]($cx - $Behind * [Math]::Cos($th)); $by = [int]($cy - $Behind * [Math]::Sin($th))
 		$views += , @($c[0], 'demo1', 1, "$bx $by $cz 0 $($c[2])", $c[3], $c[1], $c[2])
+	}
+}
+if ($ViewFile -and $Creatures) { throw "-ViewFile and -Creatures are runs of their own" }
+if ($Portals -and -not (Test-Path (Join-Path $Data 'portals\pak3.pak'))) { throw "-Portals: $Data has no portals\pak3.pak" }
+if ($ViewFile) {	# bspviews.py's lines; the shot names without the characters a texture name may have (~ # +)
+	$views = @()
+	foreach ($ln in Get-Content -LiteralPath $ViewFile) {
+		$t = ($ln -split '\s+#\s')[0].Trim() -split '\s+'	# a comment is '# ' (#lava000 is a name)
+		if ($ln -match '^\s*#\s' -or $t.Count -lt 7) { continue }
+		$views += , @(($t[0] -replace '[/#]', '_' -replace '~', '-' -replace '\+', 'p'), $t[1], 1, ($t[2..6] -join ' '), @(2, 10))
 	}
 }
 if ($Only) { $views = @($views | Where-Object { $_[0] -match $Only }) }
 if (-not $views.Count) { throw "no view matches -Only '$Only'" }
+if (-not $Portals -and ($views | Where-Object { $_[1] -match '^tibet' })) { throw "the mission pack's maps (tibet*) need -Portals" }
 
 $start = @((Waits 3), 'vid_vsync 0', 'host_framerate 0.02', 'sensitivity 0', 'viewsize 130', 'showpause 0', 'crosshair 0',
 	   'con_notifytime 0', 'r_maplight_shape 2', 'color 0 0', 'skill 1')
@@ -88,12 +105,16 @@ for ($i = 0; $i -lt $blocks.Count; $i++) {
 	$texts += $text
 }
 $texDir = Join-Path $game 'textures'
-if ((Test-Path $texDir) -and (Get-ChildItem $texDir -Recurse -File)) { throw "data1\textures has files: remove them first (a pack, or a test set's -Remove)" }
+# with -portals the game reads portals\ first: files there would hide the pack's
+foreach ($t in @($texDir) + @(if ($Portals) { Join-Path $Data 'portals\textures' })) {
+	if ((Test-Path $t) -and (Get-ChildItem $t -Recurse -File)) { throw "$t has files: remove them first (a pack, or a test set's -Remove)" }
+}
 $dst = Join-Path $Out $Tag
 if (Test-Path $dst) { throw "$dst exists: a fresh -Tag keeps an old run's config backups from being restored" }
 $bk = Join-Path $dst 'configs'; New-Item -ItemType Directory -Force $bk | Out-Null
-foreach ($c in 'config.cfg', 'hexenlicht.cfg') { if (Test-Path (Join-Path $game $c)) { Copy-Item (Join-Path $game $c) $bk -Force } }
-$shots = Join-Path $game 'shots'; New-Item -ItemType Directory -Force $shots | Out-Null
+foreach ($c in 'config.cfg', 'hexenlicht.cfg') { if (Test-Path (Join-Path $gdir $c)) { Copy-Item (Join-Path $gdir $c) $bk -Force } }
+$made = @('config.cfg', 'hexenlicht.cfg' | Where-Object { -not (Test-Path (Join-Path $gdir $_)) })	# the game writes them at quit
+$shots = Join-Path $gdir 'shots'; New-Item -ItemType Directory -Force $shots | Out-Null
 $aside = Join-Path $dst 'aside'; New-Item -ItemType Directory -Force $aside | Out-Null
 $written = New-Object System.Collections.Generic.List[string]
 try {
@@ -110,6 +131,7 @@ try {
 	Set-Content -LiteralPath (Join-Path $dst 'files.txt') -Value $written
 	"$($written.Count) files written (the pack's and the scripts')"
 	$a = @{ Exe = 'hexenlicht'; Cfg = 'hl58_0.cfg'; Timeout = 2400; Width = $Width; Height = $Height; Data = $Data }
+	if ($Portals) { $a.Portals = $true }
 	if ($Bin) { $a.Bin = $Bin }
 	if ($Release) { $a.Release = $true }
 	& $run @a
@@ -117,7 +139,8 @@ try {
 	Copy-Item (Join-Path $Data 'debug_h2.log') (Join-Path $dst 'debug_h2.log') -Force
 } finally {
 	# the configs and scripts first, then the pack's files; the folders only if empty
-	foreach ($c in 'config.cfg', 'hexenlicht.cfg') { if (Test-Path (Join-Path $bk $c)) { Copy-Item (Join-Path $bk $c) $game -Force } }
+	foreach ($c in 'config.cfg', 'hexenlicht.cfg') { if (Test-Path (Join-Path $bk $c)) { Copy-Item (Join-Path $bk $c) $gdir -Force } }
+	foreach ($c in $made) { $p = Join-Path $gdir $c; if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -ErrorAction Continue } }
 	foreach ($f in $written) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -ErrorAction Continue } }
 	foreach ($d in (Get-ChildItem -LiteralPath $texDir -Recurse -Directory -ErrorAction SilentlyContinue | Sort-Object { $_.FullName.Length } -Descending)) {
 		if (-not (Get-ChildItem -LiteralPath $d.FullName)) { Remove-Item -LiteralPath $d.FullName }
