@@ -343,6 +343,7 @@ check('hit_matches: the name, the CRC where the stem has one, any frame of an an
       and not C.hit_matches('+0rune1', hits[('p0rune1', 'close')]) and not C.hit_matches('x', hits[('sky', 'close')]))
 check('fmt: whole above 10, a decimal above 1, two below', [C.fmt(x) for x in (123.4, 3.25, 1.0, 0.25, 0.5)] == ['123', '3.2', '1', '0.25', '0.5'])
 # story 9.3: the labels
+import types  # noqa: E402
 import labels as L  # noqa: E402
 pal = np.stack([np.arange(256), 255 - np.arange(256), np.arange(256) // 2], axis=1).astype(np.uint8)  # 256 colors, all distinct
 ix = np.zeros((4, 4), np.int64)
@@ -417,9 +418,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check('set_leads: the member with the most area, a set lead and the comments kept',
           done == ['bm-x'] and fl['bm-x']['lead'] == 'a2' and fl['bm-x']['what'] == 'a, b' and fl['bm-y']['lead'] == 'keep'
           and open(fpath, encoding='utf-8').read().startswith('# c'), str(fl))
+    with open(fpath, 'w', encoding='utf-8', newline='') as f:
+        f.write('family,hub,lead,what\nmd-x,models,,skins\n')
+    for q, s in zip(lr, ('models/a.mdl_0', 'models/b.mdl_0')):
+        q.update(family='md-x', pattern=s)
+    big = types.SimpleNamespace(w=300, h=200)
+    L.set_leads(fpath, lr, {}, {'models/a.mdl_0': types.SimpleNamespace(w=100, h=50), 'models/b.mdl_0': big})
+    check('set_leads: a skin family\'s lead is its biggest atlas', L.load_families(fpath)['md-x']['lead'] == 'models/b.mdl_0')
 fam_file = L.load_families(os.path.join(HERE, 'families.csv'))
-PREFIX = {'blackmarsh': 'bm', 'mazaera': 'mz', 'thysis': 'th', 'septimus': 'sp', 'cathedral': 'ef', 'keep': 'kp', 'tulku': 'tk', 'other': 'ot'}
-check('families.csv: hubs are census hubs (or other), names carry their hub\'s prefix',
+PREFIX = {'blackmarsh': 'bm', 'mazaera': 'mz', 'thysis': 'th', 'septimus': 'sp', 'cathedral': 'ef', 'keep': 'kp', 'tulku': 'tk', 'other': 'ot',
+          'models': 'md'}
+check('families.csv: hubs are census hubs (or other, or models for the skins), names carry their hub\'s prefix',
       fam_file and all(PREFIX.get(f['hub']) == f['family'].split('-')[0] for f in fam_file.values()),
       str([f['family'] for f in fam_file.values() if PREFIX.get(f['hub']) != f['family'].split('-')[0]]))
 
@@ -445,7 +454,116 @@ with tempfile.TemporaryDirectory() as tmp:
 check('check_row: a region needs ramps and a material',
       all(any('needs ramps and a material' in g for g in L.check_row('x', 'world', dict(good, regions=rg), sh, classes, fams))
           for rg in ('grey=;*=wood', '*=wood/', '=wood;grey,amber,slate=iron')))
-import types  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    Image.fromarray(tex).save(os.path.join(tmp, 'k1.png'))
+    Image.fromarray(tex).resize((8, 8), Image.NEAREST).save(os.path.join(tmp, 'k2.png'))   # the same shares, no texels shared
+    kk = [_F('k1'), _F('k2')]
+    kk[0].w = kk[0].h = 4
+    kk[1].w = kk[1].h = 8
+    kinds = [{k for v in L.candidates(tmp, kk, pal, {}, skins=c).values() for _, k, _ in v} for c in (False, True)]
+    # two atlases of one size, mostly black, their pieces different: shared texels only for world textures
+    at = np.zeros((10, 10, 3), np.uint8)
+    at[0, :2] = 200
+    Image.fromarray(at).save(os.path.join(tmp, 'm1.png'))
+    at[0, :2] = 90
+    Image.fromarray(at).save(os.path.join(tmp, 'm2.png'))
+    mm2 = [_F('m1'), _F('m2')]
+    for q in mm2:
+        q.w = q.h = 10
+    tl = [L.candidates(tmp, mm2, pal, {}, skins=c).get('m1', []) for c in (False, True)]
+check('candidates: color links not for skins; a skin\'s shared texels leave out the black both have',
+      kinds == [{'colors'}, set()] and [k for _, k, _ in tl[0]] == ['texels'] and tl[1] == [], f'{kinds} {tl}')
+check('skin_model: a skin\'s model and index, the export\'s ~crc dropped',
+      L.skin_model('models/imp.mdl_2') == ('models/imp.mdl', 2) and L.skin_model('models/puzzle/scepter.mdl_0~4107') == ('models/puzzle/scepter.mdl', 0))
+# mdlview: a model of three quads, front (x 10, facing +x), back (x 0) and left side (y 25), each with its texels
+import mdlview as MV  # noqa: E402
+import struct  # noqa: E402
+
+
+def _mdl(rapo, group=False):
+    quads = [  # corners (x, y, z), s per corner
+        ([(10, 0, 0), (10, 20, 0), (10, 20, 20), (10, 0, 20)], [0, 3, 3, 0]),     # front: texels 0-3 (10 10 11 11)
+        ([(0, 0, 0), (0, 20, 0), (0, 20, 20), (0, 0, 20)], [4, 7, 7, 4]),         # back: texels 4-7 (20)
+        ([(0, 25, 0), (10, 25, 0), (10, 25, 20), (0, 25, 20)], [8, 11, 11, 8])]   # left side: texels 8-11 (30)
+    verts, st, tris = [], [], []
+    for corners, ss in quads:
+        b = len(verts)
+        verts += corners
+        st += [(0, s, 0) for s in ss]
+        tris += [(1, (b, b + 1, b + 2)), (1, (b, b + 2, b + 3))]
+    sw, sh_ = 12, 1
+    skin = bytes([10, 10, 11, 11, 20, 20, 20, 20, 30, 30, 30, 30])
+    head = struct.pack('<4si3f3ff3f6iiif', b'RAPO' if rapo else b'IDPO', 6, 1, 1, 1, 0, 0, 0, 30, 0, 0, 0,
+                       1, sw, sh_, len(verts), len(tris), 1, 0, 0, 0)
+    order = list(range(len(st)))[::-1] if rapo else list(range(len(st)))   # RAPO: its own order of texture coordinates
+    body = (struct.pack('<i', len(st)) if rapo else b'') + struct.pack('<i', 0) + skin
+    body += b''.join(struct.pack('<3i', *st[i]) for i in order)
+    for front, vi in tris:
+        if rapo:
+            body += struct.pack('<i3H3H', front, *vi, *(order.index(v) for v in vi))
+        else:
+            body += struct.pack('<i3i', front, *vi)
+    pose = bytes(8) + b'f0'.ljust(16, b'\0') + b''.join(struct.pack('<4B', x, y, z, 0) for x, y, z in verts)
+    if group:       # a frame group of two poses
+        body += struct.pack('<ii', 1, 2) + bytes(8) + struct.pack('<2f', 0.1, 0.2) + pose + pose
+    else:
+        body += struct.pack('<i', 0) + pose
+    return head + body
+
+
+gpal = np.repeat(np.arange(256, dtype=np.uint8)[:, None], 3, axis=1)
+for rapo in (False, True):
+    mm = MV.read_mdl(_mdl(rapo))
+    sk = MV.skin_rgb(mm, 0, gpal)
+    v0, v180, v90 = (MV.render(mm, sk, 0, yaw, 0, 64, bg=(0, 0, 0))[..., 0] for yaw in (0, 180, 90))
+    row0 = v0[32][v0[32] > 0]
+    check(f'mdlview ({"RAPO" if rapo else "IDPO"}): the front at yaw 0, its +y on the right, the back at 180, the left side at 90',
+          mm['rapo'] == rapo and len(mm['tris']) == 6 and row0[0] == 10 and row0[-1] == 11
+          and set(np.unique(v180[v180 > 0])) == {20} and 30 in set(np.unique(v90)) and 10 not in set(np.unique(v90)),
+          f'{row0[:3]} {row0[-3:]} {np.unique(v180)} {np.unique(v90)}')
+gm = MV.read_mdl(_mdl(False, group=True), max_frames=5)
+check('mdlview: a frame group\'s poses each counted and read', gm['numframes'] == 2 and len(gm['frames']) == 2, str(gm['numframes']))
+with tempfile.TemporaryDirectory() as tmp:
+    vers = []
+    for game, rapo in (('data1', False), ('portals', True)):
+        b = _mdl(rapo)
+        with open(os.path.join(tmp, game + '.mdl'), 'wb') as f:
+            f.write(b)
+        vers.append((game, os.path.join(tmp, game + '.mdl'), 0, len(b)))
+    fl = {'models/t.mdl': vers}
+    lv = [MV.load(fl, 'models/t.mdl', (12, 1), g) for g in ('data1', 'portals', None)]
+    try:
+        MV.load(fl, 'models/t.mdl', (13, 1))
+        bad = False
+    except ValueError:
+        bad = True
+    check('mdlview.load: the export\'s game\'s version of the skin\'s size, the last game\'s without one, none of another size',
+          [(m_['game'], m_['rapo']) for m_ in lv] == [('data1', False), ('portals', True), ('portals', True)] and bad, str([m_['game'] for m_ in lv]))
+seam = {'sw': 8, 'st': np.array([[1, 2, 0], [0, 3, 0], [0, 3, 4]]), 'tris': [(0, (0, 1, 2), (0, 1, 2)), (1, (0, 1, 2), (0, 1, 2))]}
+check('mdlview.tri_uv: a back face\'s onseam corner half a skin to the right, texel centers',
+      MV.tri_uv(seam, 0).tolist() == [[6.5, 0.5], [3.5, 0.5], [3.5, 4.5]] and MV.tri_uv(seam, 1)[0].tolist() == [2.5, 0.5])
+with tempfile.TemporaryDirectory() as tmp:
+    os.makedirs(os.path.join(tmp, 'gamecode', 'hc', 'h2'))
+    with open(os.path.join(tmp, 'gamecode', 'hc', 'h2', 'imp.hc'), 'w', encoding='latin-1') as f:
+        f.write('/*QUAKED monster_imp (1 0 0) (-16 -16 0) (16 16 55)\nan imp\n*/\nvoid monster_imp ()\n{\n'
+                '\tsetmodel (self, "models/imp.mdl");\n}\n\nvoid() imp_think =\n{\n\tif (self.model == "models/h_imp.mdl")\n'
+                '\t\tsetmodel (self, "models/Fireball.mdl");\n};\n'
+                '// setmodel (self, "models/commented.mdl");\n/*\nvoid() old =\n{\n\tsetmodel (self, "models/block.mdl");\n};\n*/\n'
+                'void init_beast (float which, void() th) [++ $a .. $b]\n{\n\tsetmodel (self, "models/beast.mdl"); // "models/x.mdl"\n}\n'
+                '/*QUAKED monster_beast_fire (1 0 0) (-16 -16 0) (16 16 55)\n*/\nvoid monster_beast_fire ()\n{\n\tinit_beast (0, SUB_Null);\n}\n'
+                '/*QUAKED monster_beast_ice (1 0 0) (-16 -16 0) (16 16 55)\n*/\nvoid() monster_beast_ice =\n{\n\tinit_beast(1, SUB_Null);\n};\n')
+    us = MV.gamecode_users(tmp, ('h2',))
+    check('gamecode_users: a spawn class from the QUAKED comment heading its function, a function\'s name, comparisons left out',
+          us.get('models/imp.mdl') == {('imp.hc', 'monster_imp', 'monster_imp')} and us.get('models/fireball.mdl') == {('imp.hc', 'imp_think', '')}
+          and 'models/h_imp.mdl' not in us, str(dict(us)))
+    check('gamecode_users: comments left out; a frame-macro helper with a void() parameter credited to the spawn functions calling it',
+          not {'models/commented.mdl', 'models/block.mdl', 'models/x.mdl'} & set(us)
+          and us.get('models/beast.mdl') == {('imp.hc', 'init_beast', 'monster_beast_fire'), ('imp.hc', 'init_beast', 'monster_beast_ice')},
+          str(dict(us)))
+    ents = ({'monster_imp': {'demo1', 'demo2'}}, {'scepter': {('Vajra Scepter', 'tibet8')}})
+    check('users_text: spawn classes and their maps, a puzzle item\'s name',
+          MV.users_text('models/imp.mdl', us, ents) == 'spawned as monster_imp | maps demo1 demo2'
+          and MV.users_text('models/puzzle/scepter.mdl', {}, ents) == 'puzzle item "Vajra Scepter" | maps tibet8', MV.users_text('models/imp.mdl', us, ents))
 import texpack as TP  # noqa: E402
 with tempfile.TemporaryDirectory() as tmp:
     p = os.path.join(tmp, 'q.csv')

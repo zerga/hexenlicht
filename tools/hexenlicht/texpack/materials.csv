@@ -91,688 +91,561 @@ clip,tool,skip,skip,,,,,claude
 eviltex,panel,layout,stone,,*=stone,"a wide near-black grey stone slab about 4.8 by 2.5 m with a plain raised border and a carved horned demon skull with swept wings at its centre, grimy and worn",,claude
 marble,fill,reimagine,stone,,*=marble,"a sheet of rust-brown marble about 3 m square with swirling dark brown veins and cracks running through orange and tan, yellow-ochre patches between the veins, aged surface",,claude
 marbleseam,fill,reimagine,stone,sp-marble,*=marble,"dark brown marble with swirling amber and orange veins, two slabs about 1.5 m wide above one slab about 3 m wide, thin dark seams between them; about 3 by 3 m",,claude
-models/4arm.mdl_0,,,skin,,,Metallic armor with gold accents,,draft
-models/a_blast.mdl_0,,,skin,,,"Golden, textured, segmented armor-like surface",,draft
-models/a_cube.mdl_0,,,skin,,,Wooden surface with gemstone inlays,,draft
-models/a_glyph.mdl_0,,,skin_metal,,,Dark metallic surface with red glowing eyes,,draft
-models/a_haste.mdl_0,,,skin,,,Brown leather with stitched seams and metal accents,,draft
-models/a_hboost.mdl_0,,,skin,,,Purple glass with gold ornate tops,,draft
-models/a_invinc.mdl_0,,,skin,,,"Stone-like texture with rough, weathered surface",,draft
-models/a_invis.mdl_0,,,skin,,,Stone-like surface with carved face and hexagonal patterns,,draft
-models/a_mboost.mdl_0,,,skin,,,Purple textured surface with intricate patterns,,draft
-models/a_poly.mdl_0,,,skin,,,Wooden handle with metallic accents,,draft
-models/a_shbost.mdl_0,,,skin,,,Stone with gold Ankh symbol engraved,,draft
-models/a_summon.mdl_0,,,skin,,,Golden metallic texture on dark stone surface,,draft
-models/a_telprt.mdl_0,,,skin,,,Red star on metallic circular surface,,draft
-models/a_tome.mdl_0,,,skin,,,"Dark, textured leather with red accents",,draft
-models/a_torch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/a_torch.mdl_0,,,skin,,,Wooden torch with metal top and flame,,draft
-models/akarrow.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/akarrow.mdl_0,,,skin,,,Green glowing arrow-shaped material,,draft
-models/akarrow.mdl_1,,,skin,,,Red glowing arrow with sharp edges,,draft
-models/akarrow.mdl_2,,,skin,,,Red arrow-shaped texture with gradient shading,,draft
-models/akarrow2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/akarrow2.mdl_0,,,skin,,,Blue glowing arrow-like material with sharp edges,,draft
-models/anglstat.mdl_0,,,skin,,,"dark, textured leather-like material",,draft
-models/archer.mdl_*,,,skin,,,,,human
-models/archer.mdl_0,,,skin_metal,,,Metal armor with green glowing accents,,draft
-models/archer.mdl_1,,,skin,,,Metallic armor with red and gold accents,,draft
-models/archer2.mdl_*,,,skin,,,,,human
-models/archer2.mdl_0,,,skin_metal,,,Metallic armor with purple accents,,draft
-models/archerhd.mdl_*,,,skin,,,,,human
-models/archerhd.mdl_0,,,skin,,,Red and black textured skin with splatters,,draft
-models/archerhd.mdl_1,,,skin,,,Red and black textured skin with blood-like patterns,,draft
-models/arrow.mdl_0,,,skin,,,Wooden arrows with red fletching and metal tips,,draft
-models/arrowhit.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/arrowhit.mdl_0,,,skin,,,Golden sunburst pattern on a flat surface,,draft
-models/assassin.mdl_*,,,skin,,,,,human
-models/assassin.mdl_0,,,skin,,,Black leather with red and gold accents,,draft
-models/assgren.mdl_0,,,skin,,,metallic teeth with red cross marks,,draft
-models/athena.mdl_0,,,skin,,,"Stone-like, weathered, gray surface",,draft
-models/axblade.mdl_*,,,skin_metal,,,,,human
-models/axblade.mdl_0,,,skin_metal,,,Metallic axe blade with reflective surface,,draft
-models/axblade.mdl_1,,,skin,,,Purple metallic blade with intricate designs,,draft
-models/axe.mdl_*,,,skin_metal,,,,,human
-models/axe.mdl_0,,,skin_metal,,,Metallic axe with wooden handle and chainmail,,draft
-models/axtail.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/axtail.mdl_0,,,skin,,,Purple textured skin with subtle gradient,,draft
-models/bag.mdl_0,,,skin,,,Brown leather with worn texture,,draft
-models/balbolt.mdl_0,,,skin,,,Wooden shaft with metallic spearhead,,draft
-models/ball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/ball.mdl_0~6104,,,skin,,,Purple glowing orb with sharp spikes,,draft
-models/ball.mdl_0~7d5c,,,skin,,,Purple glowing orb with sharp spikes,,draft
-models/ballista.mdl_0,,,skin,,,Wooden and metal ballista texture,,draft
-models/barrel.mdl_0,,,skin,,,Wooden barrel with metal bands,,draft
-models/barrel.mdl_1,,,skin,,,Wooden barrel with metal bands,,draft
-models/barrel.mdl_2,,,skin,,,Wooden barrel with metal bands and lid,,draft
-models/beefslab.mdl_0,,,skin,,,"Brown, textured beef slab surface",,draft
-models/bellring.mdl_0,,,skin,,,rusty metal bell with dark interior,,draft
-models/bench.mdl_0,,,skin,,,Weathered wooden bench with rough texture,,draft
-models/birdmisl.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/birdmisl.mdl_0,,,skin,,,"dark, textured surface with red accents",,draft
-models/birdmsl2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/birdmsl2.mdl_0,,,skin,,,"gray, textured, slightly reflective surface",,draft
-models/blast.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/blast.mdl_0,,,skin,,,orange-red textured skin surface,,draft
-models/bonefx.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/bonefx.mdl_0,,,skin,,,"gray, smooth, slightly reflective bone texture",,draft
-models/bonefx.mdl_1,,,skin,,,"dark, rough, organic bone texture",,draft
-models/bonefx.mdl_2,,,skin,,,"dark, textured bone-like material",,draft
-models/bonelump.mdl_0,,,skin,,,"rough, textured bone-like material with dark brown and beige tones",,draft
-models/bonepile.mdl_0,,,skin,,,"Bone texture with rough, weathered surface",,draft
-models/boneshot.mdl_0,,,skin,,,"rough, beige, bone-like texture",,draft
-models/boneshrd.mdl_0,,,skin,,,Red and gray textured skin-like material,,draft
-models/booberry.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/booberry.mdl_0,,,skin,,,"gray, textured, organic-looking skin",,draft
-models/bookclos.mdl_0,,,skin,,,Wooden book cover with red textured surface,,draft
-models/bookopen.mdl_0,,,skin,,,"Leather-bound book with aged, worn pages",,draft
-models/boss/bigeido.mdl_0,,,skin,,,Red textured skin with metallic accents,,draft
-models/boss/boar.mdl_0,,,skin,,,"rough, textured, dark brown hide",,draft
-models/boss/bone1.mdl_0,,,skin,,,"Brown, rough, bone-like surface texture",,draft
-models/boss/bone2.mdl_0,,,skin,,,"Brown, rough, bone-like surface texture",,draft
-models/boss/bone3.mdl_0,,,skin,,,"Bone-like texture with rough, weathered surface",,draft
-models/boss/bone4.mdl_0,,,skin,,,"Brown, rough, bone-like surface texture",,draft
-models/boss/bone5.mdl_0,,,skin,,,"Brown, rough, bone-like surface texture",,draft
-models/boss/bone6.mdl_0,,,skin,,,"Bone texture with rough, weathered surface",,draft
-models/boss/chaosorb.mdl_0,,,skin,,,"Stone-like texture with rough, cracked surface",,draft
-models/boss/circle.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/boss/circle.mdl_0,,,skin,,,"smooth, matte, light gray circular surface",,draft
-models/boss/circle.mdl_1,,,skin,,,Red and gray circular textured surface,,draft
-models/boss/dthhorse.mdl_0,,,skin,,,horse skin with detailed fur texture,,draft
-models/boss/dthrider.mdl_0,,,skin,,,Black leather with red accents and bone details,,draft
-models/boss/famhorse.mdl_0,,,skin,,,"dark, textured horse skin with red eyes",,draft
-models/boss/famrider.mdl_0,,,skin,,,"Wooden and stone-like textures with dark, weathered appearance",,draft
-models/boss/hive.mdl_0,,,skin,,,Brown textured material with hexagonal pattern,,draft
-models/boss/pstrider.mdl_0,,,skin,,,Leather and metal armor with worn textures,,draft
-models/boss/shaft.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/boss/shaft.mdl_0,,,skin,,,"Gray stone with sharp, pointed texture",,draft
-models/boss/smaleido.mdl_0,,,skin,,,Red textured material with metallic accents,,draft
-models/boss/star.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/boss/star.mdl_0,,,skin,,,White star-shaped texture with pixelated edges,,draft
-models/boss/swarm.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/boss/swarm.mdl_0,,,skin,,,Gray stone-like texture with green leafy top,,draft
-models/boss/waraxe.mdl_*,,,skin_metal,,,,,human
-models/boss/waraxe.mdl_0,,,skin_metal,,,Metallic axe with gold and silver finish,,draft
-models/boss/waraxe.mdl_1,,,skin,,,"Red, textured, blood-like material",,draft
-models/boss/warhorse.mdl_0,,,skin,,,Brown leather with metallic accents,,draft
-models/boss/warrider.mdl_0,,,skin,,,dark metallic armor with intricate designs,,draft
-models/brains.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/brains.mdl_0,,,skin,,,"Red, splattered brain-like texture",,draft
-models/budd_star.mdl_0,,,skin,,,"Blue glowing, pixelated star-like texture",,draft
-models/buddal.mdl_0,,,skin,,,Stone-like texture with carved details,,draft
-models/buddal.mdl_1,,,skin,,,White stone-like surface with fragmented texture,,draft
-models/buddar.mdl_0,,,skin,,,Stone-like surface with carved patterns,,draft
-models/burner.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/burner.mdl_0,,,skin,,,"Bronze-colored, ornate, textured pillars",,draft
-models/burnerfl.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/burnerfl.mdl_0,,,skin,,,"Bronze-colored, ornate, textured surface",,draft
-models/bush1.mdl_0,,,skin,,,"dark, leafy bush texture with subtle green highlights",,draft
-models/caesar.mdl_0,,,skin,,,"Stone-like texture with weathered, rough surface",,draft
-models/candle.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/candle.mdl_0,,,skin,,,glowing orange candle wax surface,,draft
-models/cart.mdl_0,,,skin,,,Wooden cart with metal reinforcements,,draft
-models/castrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/castrch.mdl_0,,,skin_metal,,,metallic with rust-like surface texture,,draft
-models/cattest.mdl_0,,,skin,,,Wooden planks with metal reinforcements,,draft
-models/cauldron.mdl_0,,,skin,,,"dark, textured surface with scattered orange specks",,draft
-models/cflmtrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/cflmtrch.mdl_0,,,skin,,,rusty metal with flame texture,,draft
-models/ch-hang.mdl_0,,,skin,,,ornate wooden texture with gold inlay,,draft
-models/ch-kite.mdl_0,,,skin,,,dark red fabric with gold trim and symbols,,draft
-models/chair.mdl_0,,,skin,,,"Wooden chair with dark, weathered texture",,draft
-models/chest1.mdl_0,,,skin,,,Stone texture with engraved patterns and metal accents,,draft
-models/chest1.mdl_1,,,skin,,,wooden chest with metal reinforcements,,draft
-models/chest2.mdl_0,,,skin,,,Stone-like surface with carved faces and symbols,,draft
-models/chest2.mdl_1,,,skin,,,Weathered stone with moss and rust,,draft
-models/chest2.mdl_2,,,skin,,,wooden chest with metal accents,,draft
-models/chest3.mdl_0,,,skin,,,"Wooden chest with weathered, rustic surface",,draft
-models/clshard1.mdl_0,,,skin,,,"rough, textured stone surface",,draft
-models/clshard1.mdl_1,,,skin,,,Stone with green and blue speckles,,draft
-models/clshard2.mdl_0,,,skin,,,Stone-like surface with carved patterns,,draft
-models/clshard2.mdl_1,,,skin,,,"rough, cracked stone surface with green moss",,draft
-models/clshard3.mdl_0,,,skin,,,"Wooden, weathered, textured surface",,draft
-models/clshard3.mdl_1,,,skin,,,Weathered stone with mossy texture,,draft
-models/clshard4.mdl_0,,,skin,,,textured leather with red and gold patterns,,draft
-models/clshard4.mdl_1,,,skin,,,"rough, textured stone surface with embedded green and blue flecks",,draft
-models/clthchk1.mdl_0,,,skin,,,Red textured fabric with layered pattern,,draft
-models/clthchk2.mdl_0,,,skin,,,Red textured fabric with wavy pattern,,draft
-models/clthchk3.mdl_0,,,skin,,,Red fabric with textured surface,,draft
-models/corps1.mdl_0,,,skin,,,"Red, textured, bloody, decaying flesh",,draft
-models/corps1.mdl_1,,,skin,,,Human skin with visible muscle and veins,,draft
-models/corps1.mdl_2,,,skin,,,"Rough, decaying flesh with dark, mottled texture",,draft
-models/corps1.mdl_3,,,skin,,,"tattered, bloody, dark fabric with visible wear",,draft
-models/corps2.mdl_0,,,skin,,,"Worn, bloody, tattered fabric with visible damage",,draft
-models/corps2.mdl_1,,,skin,,,"tattered, bloody, worn leather-like material",,draft
-models/corps2.mdl_2,,,skin,,,"tattered, blood-stained, dirty fabric",,draft
-models/corps2.mdl_3,,,skin,,,"rough, weathered human skin texture",,draft
-models/corps2.mdl_4,,,skin,,,"cracked, grayish, textured human skin",,draft
-models/cross.mdl_0,,,skin,,,"Golden cross with intricate, embossed design",,draft
-models/crossbow.mdl_0,,,skin,,,Wooden crossbow with metal fittings,,draft
-models/crusader.mdl_*,,,skin,,,,,human
-models/crusader.mdl_0,,,skin,,,Metallic armor with red and green accents,,draft
-models/cube.mdl_0,,,skin,,,Wooden surface with gemstone inlays,,draft
-models/demstat.mdl_0,,,skin,,,Stone-like surface with gold accents,,draft
-models/draglion.mdl_0,,,skin,,,Stone-like texture with gold accents,,draft
-models/drgnball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/drgnball.mdl_0,,,skin,,,"Golden, textured, flame-like material",,draft
-models/dthball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/dthball.mdl_0,,,skin,,,Red glowing lava-like surface,,draft
-models/eflmtrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/eflmtrch.mdl_0,,,skin,,,Wooden staff with flame and metal accents,,draft
-models/egtorch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/egtorch.mdl_0,,,skin,,,Wooden torches with metal bands and pentagonal base,,draft
-models/eidoball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/eidoball.mdl_0,,,skin,,,"brown, textured, organic-looking material",,draft
-models/escargolon.mdl_0,,,skin,,,"dark red, textured, spiral shell surface",,draft
-models/fablade.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/fablade.mdl_0,,,skin,,,Green leaf-like texture with glossy surface,,draft
-models/fambeam.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/fambeam.mdl_0,,,skin,,,Red cracked stone surface texture,,draft
-models/famshot.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/famshot.mdl_0,,,skin,,,"Red, textured, dripping material",,draft
-models/fangel.mdl_0,,,skin,,,Red fabric with gold trim and dark accents,,draft
-models/fangel.mdl_1,,,skin,,,Gray fabric with gold trim and texture,,draft
-models/faspell.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/faspell.mdl_0,,,skin,,,"Orange star-shaped, pixelated, glowing material",,draft
-models/fence.mdl_0,,,skin,,,Dark stone fence with vertical slats,,draft
-models/fether.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/fether.mdl_0,,,skin,,,Faintly textured leaf-like material,,draft
-models/fireball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/fireball.mdl_0,,,skin,,,Flame-like texture with orange and yellow hues,,draft
-models/fish.mdl_0,,,skin,,,fish skin with orange and gray patterns,,draft
-models/flag.mdl_0,,,skin,,,Red fabric with metallic frame and black tip,,draft
-models/flag.mdl_1,,,skin,,,Red fabric with gold eagle emblem and metallic button,,draft
-models/flag.mdl_2,,,skin,,,Textured fabric with embroidered emblem and metallic button,,draft
-models/flame.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/flame.mdl_0,,,skin,,,flame texture with golden and red hues,,draft
-models/flame1.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/flame1.mdl_0,,,skin,,,Flame texture with glowing orange and yellow hues,,draft
-models/flame2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/flame2.mdl_0,,,skin,,,Flame texture with golden and brown hues,,draft
-models/flaming.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/flaming.mdl_0,,,skin,,,Flaming texture with orange and yellow flames,,draft
-models/flesh1.mdl_0,,,skin,,,"Red flesh with textured, uneven surface",,draft
-models/flesh1.mdl_1,,,skin,,,flesh-like texture with red and brown tones,,draft
-models/flesh2.mdl_0,,,skin,,,Reddish flesh with textured surface,,draft
-models/flesh2.mdl_1,,,skin,,,flesh-like texture with red and brown tones,,draft
-models/flesh3.mdl_0,,,skin,,,"Red, textured flesh-like material",,draft
-models/flesh3.mdl_1,,,skin,,,"Rough, textured flesh with reddish-brown patches",,draft
-models/fountain.mdl_0,,,skin,,,"Stone fountain with weathered, rough texture",,draft
-models/funnal.mdl_0,,,skin,,,textured stone surface with red and gray patterns,,draft
-models/g-head.mdl_0,,,skin,,,Stone-like texture with carved details,,draft
-models/g-head.mdl_1,,,skin,,,"textured, ornate, metallic-looking head surface",,draft
-models/g-head.mdl_2,,,skin,,,"Bronze-colored, textured, slightly worn surface",,draft
-models/gauntlet.mdl_*,,,skin,,,,,human
-models/gauntlet.mdl_0,,,skin_metal,,,"armored gauntlet: brown leather fists, steel cuffs and dark chain mail",,human
-models/gemlight.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/gemlight.mdl_0,,,skin,,,"Golden gem with dark, rough surface",,draft
-models/glowball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/glowball.mdl_0,,,skin,,,"blue glowing, textured, organic surface",,draft
-models/glyph.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/glyph.mdl_0,,,skin,,,Green textured skin with scratchy surface,,draft
-models/glyphwir.mdl_*,,,skin_metal,,,,,human
-models/glyphwir.mdl_0,,,skin_metal,,,Dark metallic surface with red glowing eyes,,draft
-models/glyphwir.mdl_1,,,skin_metal,,,Dark metallic surface with glowing red accents,,draft
-models/goarm.mdl_*,,,skin_metal,,,,,human
-models/goarm.mdl_0,,,skin_metal,,,"Dark metallic armor with worn, textured surface",,draft
-models/goarm.mdl_1,,,skin,,,"Weathered, cracked stone surface",,draft
-models/goarm.mdl_2,,,skin,,,"rusty metal with worn, textured surface",,draft
-models/golegs.mdl_*,,,skin_metal,,,,,human
-models/golegs.mdl_0,,,skin_metal,,,"Dark metallic armor with worn, textured surface",,draft
-models/golegs.mdl_1,,,skin_metal,,,Weathered metallic armor with rust and wear,,draft
-models/golegs.mdl_2,,,skin,,,"metallic armor with worn, textured surface",,draft
-models/golem_b.mdl_*,,,skin_metal,,,,,human
-models/golem_b.mdl_0,,,skin_metal,,,"Bronze-colored, weathered metallic surface",,draft
-models/golem_i.mdl_*,,,skin_metal,,,,,human
-models/golem_i.mdl_0,,,skin_metal,,,Weathered metallic armor with rust and wear,,draft
-models/golem_s.mdl_*,,,skin_metal,,,,,human
-models/golem_s.mdl_0,,,skin_metal,,,steel golem: riveted dark grey armor plates,,human
-models/golemmis.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/golemmis.mdl_0,,,skin,,,Red crystalline material with sharp facets,,draft
-models/goodsphr.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/goodsphr.mdl_0,,,skin,,,"Yellowish, smooth, circular textured surface",,draft
-models/goop.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/goop.mdl_0,,,skin,,,"Red gooey, viscous, dripping substance",,draft
-models/h_ass.mdl_0,,,skin,,,"dark, textured leather with red glowing veins",,draft
-models/h_cru.mdl_0,,,skin,,,Human skin with blood and armor,,draft
-models/h_fangel.mdl_0,,,skin,,,textured leather with bloodstains,,draft
-models/h_fangel.mdl_1,,,skin,,,textured leather with bloodstains,,draft
-models/h_imp.mdl_0,,,skin,,,"dark, textured, blood-splattered skin",,draft
-models/h_imp.mdl_1,,,skin,,,"Purple, cracked, blood-splattered demonic skin",,draft
-models/h_imp.mdl_2,,,skin,,,"dark, textured, blood-splattered skin",,draft
-models/h_imp.mdl_3,,,skin,,,"dark, textured, blood-splattered skin",,draft
-models/h_mez.mdl_0,,,skin,,,textured leather with red and brown patterns,,draft
-models/h_mez.mdl_1,,,skin,,,"dark, textured leather with red stitching",,draft
-models/h_mez2.mdl_0,,,skin,,,textured leather with red stitching,,draft
-models/h_mez2.mdl_1,,,skin,,,Red and gold patterned fabric texture,,draft
-models/h_nec.mdl_0,,,skin,,,"dark, textured, blood-splattered skin",,draft
-models/h_pal.mdl_0,,,skin,,,Red and gray textured skin with blood splatters,,draft
-models/h_suc.mdl_0,,,skin,,,"dark, textured leather with red glowing veins",,draft
-models/hamthrow.mdl_0,,,skin,,,Purple metallic surface with gold cross emblem,,draft
-models/handfx.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/handfx.mdl_0,,,skin,,,Purple textured skin with black symbols,,draft
-models/hay1.mdl_0,,,skin,,,"Dry hay with rough, fibrous texture",,draft
-models/hay2.mdl_0,,,skin,,,"Brown hay texture with rough, fibrous surface",,draft
-models/hay3.mdl_0,,,skin,,,Wooden texture with vertical grain pattern,,draft
-models/hedge1.mdl_0,,,skin,,,"dark, textured stone with mossy green and brown patterns",,draft
-models/hedge2.mdl_0,,,skin,,,"dark, mossy, textured surface",,draft
-models/hedge3.mdl_0,,,skin,,,"dark, textured hedge-like material with leaf patterns",,draft
-models/hydra.mdl_0,,,skin,,,"metallic, ornate, segmented armor with red gem accents",,draft
-models/i_amulet.mdl_0,,,skin,,,Stone amulet with blue gem and gold accents,,draft
-models/i_bmana.mdl_0,,,skin,,,Dark textured skin with blue and gold symbols,,draft
-models/i_bplate.mdl_*,,,skin_metal,,,,,human
-models/i_bplate.mdl_0,,,skin_metal,,,"Dark metallic plates with worn, textured surface",,draft
-models/i_bracer.mdl_*,,,skin,,,,,human
-models/i_bracer.mdl_0,,,skin,,,"Metallic bracer with worn, textured surface",,draft
-models/i_btmana.mdl_0,,,skin,,,Red textured skin with green and blue symbols,,draft
-models/i_gmana.mdl_0,,,skin,,,Green and gold textured skin with glowing symbols,,draft
-models/i_hboost.mdl_0,,,skin,,,Blue fabric with gold trim and texture,,draft
-models/i_helmet.mdl_*,,,skin_metal,,,,,human
-models/i_helmet.mdl_0,,,skin_metal,,,Metallic helmet with gold accents and rivets,,draft
-models/iceshot1.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/iceshot1.mdl_0,,,skin,,,"Icy, crystalline surface with frosty texture",,draft
-models/iceshot2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/iceshot2.mdl_0,,,skin,,,"White, icy, textured surface with frosty patterns",,draft
-models/icestaff.mdl_0,,,skin,,,shards of dark blue ice crystal and a gold and wood hilt,,human
-models/imp.mdl_0,,,skin,,,"imp demon: orange leathery bat wings, dark scaly skin, glowing eyes",,human
-models/imp.mdl_1,,,skin,,,"Purple, textured, slightly rough surface",,draft
-models/imp.mdl_2,,,skin,,,"Rough, cracked stone-like texture",,draft
-models/imp.mdl_3,,,skin,,,Red and gold textured imp skin,,draft
-models/king.mdl_0,,,skin,,,"dark, textured leather with worn, rugged surface",,draft
-models/lantern.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/lantern.mdl_0,,,skin,,,"Golden, textured, glowing lantern surface",,draft
-models/larm.mdl_0,,,skin,,,"Worn leather with faded, cracked texture",,draft
-models/lavaball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/lavaball.mdl_0,,,skin,,,blue textured surface with white and brown speckles,,draft
-models/lavaball.mdl_1,,,skin,,,"gray, speckled, rough surface texture",,draft
-models/lavaball.mdl_2,,,skin,,,"Dark, rough, cracked stone surface",,draft
-models/lball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/lball.mdl_0,,,skin,,,Blue and white crystalline icy surface,,draft
-models/leafchk1.mdl_0,,,skin,,,dark green leafy texture with jagged edges,,draft
-models/leafchk2.mdl_0,,,skin,,,Dark green leafy texture with detailed veins,,draft
-models/leafchk3.mdl_0,,,skin,,,dark green leafy texture with subtle veins,,draft
-models/leg.mdl_0,,,skin,,,Metallic with red and gold ornate patterns,,draft
-models/lion.mdl_0,,,skin,,,"dark, weathered stone lion texture",,draft
-models/mars.mdl_0,,,skin,,,"rough, weathered stone texture",,draft
-models/medhead.mdl_0,,,skin,,,"dark, textured, blood-stained stone surface",,draft
-models/medhead.mdl_1,,,skin,,,Red and black textured skin-like material,,draft
-models/medsnake.mdl_0,,,skin,,,textured snake skin with red and green patterns,,draft
-models/medusa.mdl_0,,,skin,,,"scaly, greenish-brown reptilian skin texture",,draft
-models/medusa2.mdl_0,,,skin,,,"scaly, greenish-brown reptilian skin texture",,draft
-models/megaweb.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/megaweb.mdl_0,,,skin,,,black web-like material with intricate patterns,,draft
-models/mesotrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/mesotrch.mdl_0,,,skin,,,Weathered stone with carvings and circular motifs,,draft
-models/meteor.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/meteor.mdl_0,,,skin,,,"Dark, textured surface with glowing red patterns",,draft
-models/metlchk1.mdl_0,,,skin,,,"rough, textured stone surface",,draft
-models/metlchk2.mdl_0,,,skin,,,"dark, rough, textured stone surface",,draft
-models/metlchk3.mdl_0,,,skin_metal,,,Metallic surface with rust and wear,,draft
-models/metlchk4.mdl_0,,,skin_metal,,,"Metallic surface with weathered, textured appearance",,draft
-models/mezzoman.mdl_0,,,skin,,,"brown, textured, muscular human skin",,draft
-models/mezzoman.mdl_1,,,skin,,,"dark, textured leather with gold accents",,draft
-models/mflmtrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/mflmtrch.mdl_0,,,skin,,,Stone with carved symbols and glowing orange flames,,draft
-models/mhdstatu.mdl_0,,,skin,,,"Bronze-colored, textured stone surface",,draft
-models/muhead.mdl_0,,,skin,,,"Bronze-colored, textured, ornate headpiece",,draft
-models/muhead.mdl_1,,,skin,,,Dark armored with orange glowing patterns,,draft
-models/mummy.mdl_0,,,skin,,,"Worn, textured fabric with faded, mummy-like appearance",,draft
-models/mummy.mdl_1,,,skin,,,"Tattered, mummy-like fabric with red accents",,draft
-models/mumshot.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/mumshot.mdl_0,,,skin,,,"Flame-like textured surface, golden and glowing",,draft
-models/mumstatu.mdl_0,,,skin,,,Weathered stone with carved hieroglyphs,,draft
-models/necro.mdl_*,,,skin,,,,,human
-models/necro.mdl_0,,,skin,,,dark fabric with red accents and glowing details,,draft
-models/neptune.mdl_0,,,skin,,,"dark, textured stone-like surface",,draft
-models/newfire.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/newfire.mdl_0,,,skin,,,"Golden, cracked, textured material",,draft
-models/nfarrow.mdl_0,,,skin,,,Metallic with green and red stripes,,draft
-models/olmec1.mdl_0,,,skin,,,Rusty metal with orange glowing eyes,,draft
-models/openbook.mdl_0,,,skin,,,Ancient leather-bound book with gold-embossed symbols,,draft
-models/paladin.mdl_*,,,skin,,,,,human
-models/paladin.mdl_0,,,skin_metal,,,Silver armor with red accents and gold trim,,draft
-models/palight.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/palight.mdl_0,,,skin,,,Dark stone with carved symbols and glowing center,,draft
-models/pent.mdl_0,,,skin,,,rough stone with red glowing eyes,,draft
-models/pent.mdl_1,,,skin,,,Stone-like surface with red accents,,draft
-models/pestshot.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/pestshot.mdl_0,,,skin,,,Green leafy texture with brown veins,,draft
-models/pew.mdl_0,,,skin,,,Dark wooden texture with carved details,,draft
-models/ph_eido.mdl_0,,,skin,,,Red textured leather with gold accents,,draft
-models/plantgen.mdl_0,,,skin,,,Green leafy plant texture with detailed veins,,draft
-models/plantmez.mdl_0,,,skin,,,green leafy plant texture with detailed veins,,draft
-models/plantrom.mdl_0,,,skin,,,Greenish plant-like texture with rough surface,,draft
-models/playrbox.mdl_*,,,skip,,,a flat color or a test cube,,human
-models/playrbox.mdl_0,,,skin,,,pixelated cube with colored symbols,,draft
-models/pot1.mdl_0,,,skin,,,ornate ceramic pot with gold and green patterns,,draft
-models/pot1.mdl_1,,,skin,,,Stone-like texture with carved details,,draft
-models/pot1.mdl_2,,,skin,,,Patterned ceramic pot with red and gold accents,,draft
-models/pot1.mdl_3,,,skin,,,Stone pot with red and gold decorative patterns,,draft
-models/pot2.mdl_0,,,skin,,,Stone-like surface with blue and orange swirls,,draft
-models/pot2.mdl_1,,,skin,,,Ancient stone pot with carved faces,,draft
-models/pot2.mdl_2,,,skin,,,Stone pot with red and gold decorative patterns,,draft
-models/pot2.mdl_3,,,skin,,,Green ceramic pot with orange stripes,,draft
-models/pot3.mdl_0,,,skin,,,Red and gold ornate ceramic pot,,draft
-models/pot3.mdl_1,,,skin,,,Ancient stone pot with eye symbol,,draft
-models/pot3.mdl_2,,,skin,,,Stone pot with green and orange patterns,,draft
-models/pot3.mdl_3,,,skin_metal,,,Metallic pot with green and gold trim,,draft
-models/powersh.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/powersh.mdl_0,,,skin_metal,,,Shiny metallic surface with vertical ridges,,draft
-models/pravus.mdl_0,,,skin,,,Red fabric with gold trim and metallic accents,,draft
-models/punchdgr.mdl_*,,,skin_metal,,,,,human
-models/punchdgr.mdl_0,,,skin_metal,,,dark metallic surface with sharp edges,,draft
-models/purfir1.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/purfir1.mdl_0,,,skin,,,"Golden, textured, flame-like material",,draft
-models/purifier.mdl_0,,,skin,,,Metallic armor with glowing red accents,,draft
-models/puzzle/air.mdl_0,,,skin,,,"dark, textured stone with carved patterns",,draft
-models/puzzle/amult.mdl_0,,,skin,,,metallic armor with red accents,,draft
-models/puzzle/ankey.mdl_0,,,skin,,,"Golden metal with dark, worn surface",,draft
-models/puzzle/bell.mdl_0,,,skin,,,Golden metallic bell with intricate details,,draft
-models/puzzle/chalice.mdl_0,,,skin,,,"Golden chalice with ornate, reflective surface",,draft
-models/puzzle/clueb.mdl_0,,,skin,,,Carved stone with intricate golden patterns,,draft
-models/puzzle/cross.mdl_0,,,skin,,,Weathered stone with orange-brown carvings,,draft
-models/puzzle/crosskey.mdl_0,,,skin,,,Wooden cross with metal accents,,draft
-models/puzzle/cskey.mdl_0,,,skin,,,"Stone-like surface with rough, weathered texture",,draft
-models/puzzle/dagger.mdl_0,,,skin,,,Wooden handle with metal blade,,draft
-models/puzzle/dtongue.mdl_0,,,skin,,,"Reddish-brown, textured, organic material",,draft
-models/puzzle/dukeseal.mdl_0,,,skin,,,Golden stone with red gem and carvings,,draft
-models/puzzle/e1.mdl_0,,,skin,,,Patterned fabric with gold and black stripes,,draft
-models/puzzle/e2.mdl_0,,,skin,,,gray stone with carved patterns and small colorful accents,,draft
-models/puzzle/e3.mdl_0,,,skin,,,Wooden with green decorative patterns,,draft
-models/puzzle/e4.mdl_0,,,skin,,,Weathered stone with rusted metal bands,,draft
-models/puzzle/e5.mdl_0,,,skin,,,Stone-like texture with weathered surface,,draft
-models/puzzle/e6.mdl_0,,,skin,,,"metallic, textured, segmented armor-like surface",,draft
-models/puzzle/earth.mdl_0,,,skin,,,Earth-like textured surface with red and brown tones,,draft
-models/puzzle/eyeh.mdl_0,,,skin,,,"Golden, ornate, textured surface with intricate carvings",,draft
-models/puzzle/fire.mdl_0,,,skin,,,Fire texture with orange and red flames,,draft
-models/puzzle/glass.mdl_0,,,skin,,,"Glass with reflective, cracked surface",,draft
-models/puzzle/goldgem.mdl_0,,,skin,,,"Golden gemstone with faceted, reflective surface",,draft
-models/puzzle/greengem.mdl_0,,,skin,,,Green gemstone with faceted surface,,draft
-models/puzzle/gsphere.mdl_0,,,skin,,,Orange glowing orb with metallic base,,draft
-models/puzzle/h-book.mdl_0,,,skin,,,textured book cover with faded pages,,draft
-models/puzzle/headkey.mdl_0,,,skin,,,"Bronze-colored, ornate key-like objects",,draft
-models/puzzle/holycrss.mdl_0,,,skin,,,Metallic with ornate golden crosses and dark gray surface,,draft
-models/puzzle/incense.mdl_0,,,skin,,,Bronze incense sticks with cross patterns,,draft
-models/puzzle/keep1.mdl_0,,,skin,,,"Weathered bone texture with rough, cracked surface",,draft
-models/puzzle/keep2.mdl_0,,,skin,,,"Brown, rough, granular stone texture",,draft
-models/puzzle/keep3.mdl_0,,,skin_metal,,,"Rusty metal keys with worn, textured surfaces",,draft
-models/puzzle/lbudda.mdl_0,,,skin,,,Green stone with carved details,,draft
-models/puzzle/lcrwn.mdl_0,,,skin,,,Stone-like surface with carved details,,draft
-models/puzzle/lens.mdl_0,,,skin,,,"smooth, reflective glass-like surface",,draft
-models/puzzle/m1.mdl_0,,,skin,,,Stone-like surface with mossy green patches,,draft
-models/puzzle/m2.mdl_0,,,skin,,,gray stone with carved skull texture,,draft
-models/puzzle/m3.mdl_0,,,skin,,,"Greenish, textured, possibly stone or moss-covered surface",,draft
-models/puzzle/m4.mdl_0,,,skin,,,"Red textured material with worn, cracked surface",,draft
-models/puzzle/m5.mdl_0,,,skin,,,"metallic surface with worn, textured appearance",,draft
-models/puzzle/mage.mdl_0,,,skin,,,"Carved stone with ornate, glowing golden patterns",,draft
-models/puzzle/magekey.mdl_0,,,skin,,,Brown leather with embossed patterns,,draft
-models/puzzle/mask.mdl_0,,,skin,,,Metallic mask with intricate carvings and worn texture,,draft
-models/puzzle/mithl.mdl_0,,,skin,,,metallic with gold and brown accents,,draft
-models/puzzle/music.mdl_0,,,skin,,,textured metal with engraved lines,,draft
-models/puzzle/orb.mdl_0,,,skin,,,Golden metallic orb with purple glass-like sections,,draft
-models/puzzle/orb2.mdl_0,,,skin,,,Brown leather-like texture with rough surface,,draft
-models/puzzle/prayer.mdl_0,,,skin,,,Stone with carved Tibetan script,,draft
-models/puzzle/prayer2.mdl_0,,,skin,,,Stone with carved Tibetan script,,draft
-models/puzzle/prybar.mdl_0,,,skin,,,"dark, weathered stone with rough texture",,draft
-models/puzzle/r1.mdl_0,,,skin,,,Wooden surface with carved patterns,,draft
-models/puzzle/r2.mdl_0,,,skin,,,"Red, faceted gem-like surface",,draft
-models/puzzle/r3.mdl_0,,,skin,,,"Golden, textured, ornate, hanging decorative material",,draft
-models/puzzle/r4.mdl_0,,,skin,,,Stone with purple gem accents,,draft
-models/puzzle/r5.mdl_0,,,skin,,,"Golden, segmented, glowing surface with red outlines",,draft
-models/puzzle/r6.mdl_0,,,skin,,,Dark textured leather with red accents,,draft
-models/puzzle/r7.mdl_0,,,skin,,,dark stone with carved symbols and weathered texture,,draft
-models/puzzle/r8.mdl_0,,,skin,,,"dark, textured stone surface with worn patterns",,draft
-models/puzzle/ra1.mdl_0,,,skin,,,Golden stone with carved hieroglyphic patterns,,draft
-models/puzzle/rakey.mdl_0,,,skin,,,Golden stone with carved patterns,,draft
-models/puzzle/rcjem.mdl_0,,,skin,,,Red textured material with diagonal pattern,,draft
-models/puzzle/redgem.mdl_0,,,skin,,,"Red gemstone with faceted, glossy surface",,draft
-models/puzzle/s1.mdl_0,,,skin,,,gray stone with carved patterns and small colorful accents,,draft
-models/puzzle/s2.mdl_0,,,skin,,,wooden surface with red glowing symbols,,draft
-models/puzzle/sand.mdl_0,,,skin,,,"brown sand with rough, uneven texture",,draft
-models/puzzle/scept.mdl_0,,,skin,,,Golden and purple ornate scepter texture,,draft
-models/puzzle/scepter.mdl_0~4107,,,skin,,,Stone-like surface with carved patterns and worn texture,,draft
-models/puzzle/scepter.mdl_0~8334,,,skin,,,Golden scepter with intricate carvings,,draft
-models/puzzle/scrol.mdl_0,,,skin,,,weathered parchment with faded symbols and a red pentagram,,draft
-models/puzzle/scroll.mdl_0,,,skin,,,Ancient parchment with faded ink and decorative borders,,draft
-models/puzzle/shovl.mdl_0,,,skin,,,wooden handle with metal blade,,draft
-models/puzzle/silver.mdl_*,,,skin_metal,,,,,human
-models/puzzle/silver.mdl_0,,,skin_metal,,,"Silver metal with reflective, polished surface",,draft
-models/puzzle/soul.mdl_0,,,skin,,,"Stone-like texture with rough, weathered surface",,draft
-models/puzzle/speye.mdl_0,,,skin,,,"Red, glossy, faceted gem-like surface",,draft
-models/puzzle/staff.mdl_0,,,skin,,,Golden staff with intricate carvings and gemstones,,draft
-models/puzzle/stime.mdl_0,,,skin,,,dark stone with carved patterns and glowing red center,,draft
-models/puzzle/stkey.mdl_0,,,skin,,,"dark, textured stone surface with worn details",,draft
-models/puzzle/stonet.mdl_0,,,skin,,,"Golden stone with faceted, polished surface",,draft
-models/puzzle/takey.mdl_0,,,skin,,,Wooden surface with metal accents,,draft
-models/puzzle/tbtkey.mdl_0,,,skin,,,"Stone-like texture with rough, weathered surface",,draft
-models/puzzle/tbtmask.mdl_0,,,skin,,,"Golden, ornate mask with intricate carvings",,draft
-models/puzzle/tienkey.mdl_0,,,skin,,,Brown leather with embossed patterns,,draft
-models/puzzle/trkey.mdl_0,,,skin,,,Stone-like surface with carved patterns and gold accents,,draft
-models/puzzle/ucrwn.mdl_0,,,skin,,,wooden surface with carved details,,draft
-models/puzzle/vial.mdl_0,,,skin,,,Golden vial with intricate engraved patterns,,draft
-models/puzzle/water.mdl_0,,,skin,,,Water surface with ripples and reflections,,draft
-models/rat.mdl_0,,,skin,,,"dark, rough, textured rat skin",,draft
-models/raven.mdl_0,,,skin,,,"dark, textured raven feather material",,draft
-models/ravenstf.mdl_0,,,skin,,,"Dark, textured material with glowing orange eyes",,draft
-models/ravproj.mdl_0,,,skin,,,"dark, textured bird-like material with red eye",,draft
-models/rflmtrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/rflmtrch.mdl_0,,,skin,,,dark stone with flame texture,,draft
-models/ring.mdl_0,,,skin_metal,,,"Metallic ring with rough, worn surface",,draft
-models/ring.mdl_1,,,skin,,,"Dark, textured ring material",,draft
-models/ring.mdl_2,,,skin,,,"Dark, textured, organic-looking ring material",,draft
-models/ring.mdl_3,,,skin,,,"Dark, textured, worn leather-like surface",,draft
-models/ring.mdl_4,,,skin,,,"Dark, textured, rubbery material with rough surface",,draft
-models/ringft.mdl_0,,,skin,,,"dark, textured, segmented material with glowing red eyes",,draft
-models/ringre.mdl_0,,,skin,,,Wooden ring with green gemstone top,,draft
-models/ringtn.mdl_0,,,skin,,,"Black and gold striped, glossy surface",,draft
-models/ringwb.mdl_*,,,skin,,,,,human
-models/ringwb.mdl_0,,,skin,,,metallic ring with purple glowing orbs,,draft
-models/rometrch.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/rometrch.mdl_0,,,skin,,,Stone-like texture with carved patterns,,draft
-models/samurai.mdl_*,,,skin,,,,,human
-models/samurai.mdl_0,,,skin,,,Metallic armor with gold accents and worn texture,,draft
-models/scarabst.mdl_0,,,skin,,,Metallic with gold and purple accents,,draft
-models/schunk1.mdl_0,,,skin,,,"rough, weathered stone surface",,draft
-models/schunk1.mdl_1,,,skin,,,"rough, textured stone surface",,draft
-models/schunk2.mdl_0,,,skin,,,"rough, dark, textured stone surface",,draft
-models/schunk2.mdl_1,,,skin,,,"rough, textured stone surface with earthy tones",,draft
-models/schunk3.mdl_0,,,skin,,,"rough, textured stone surface",,draft
-models/schunk3.mdl_1,,,skin,,,"rough, textured stone surface",,draft
-models/schunk4.mdl_0,,,skin,,,"rough, dark, rocky surface texture",,draft
-models/schunk4.mdl_1,,,skin,,,"rough, textured stone surface with red and brown patches",,draft
-models/scorpion.mdl_*,,,skin,,,,,human
-models/scorpion.mdl_0,,,skin,,,scorpion armor with brown and red textures,,draft
-models/scorpion.mdl_1,,,skin,,,"Dark, segmented scorpion exoskeleton with orange accents",,draft
-models/scrbpbdy.mdl_0,,,skin,,,Brown leather-like surface with textured pattern,,draft
-models/scrbpwng.mdl_0,,,skin,,,textured gray fabric-like material,,draft
-models/scrbstp1.mdl_0,,,skin,,,Brown leather-like surface with textured pattern,,draft
-models/seaweed.mdl_0,,,skin,,,Seaweed texture with green and brown tones,,draft
-models/sflesh1.mdl_0,,,skin,,,"Greenish, textured flesh-like material",,draft
-models/sflesh2.mdl_0,,,skin,,,"rough, textured flesh-like material",,draft
-models/sflesh3.mdl_0,,,skin,,,"rough, textured, greenish-brown organic material",,draft
-models/shard.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard.mdl_0,,,skin,,,blue pixelated stone-like surface,,draft
-models/shard.mdl_1,,,skin,,,gray stone with white speckles,,draft
-models/shard.mdl_2,,,skin,,,"rough, cracked stone surface",,draft
-models/shard1.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard1.mdl_0,,,skin,,,White fabric with dark pattern,,draft
-models/shard1.mdl_1,,,skin,,,Shiny metallic surface with diagonal striations,,draft
-models/shard1.mdl_2,,,skin,,,Red textured surface with diagonal lines,,draft
-models/shard1.mdl_3,,,skin,,,"Shattered, reflective, crystalline surface",,draft
-models/shard2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard2.mdl_0,,,skin,,,Textured stone with gold and black patterns,,draft
-models/shard2.mdl_1,,,skin,,,"metallic, scratched, diagonal streaks",,draft
-models/shard2.mdl_2,,,skin,,,Red textured surface with diagonal lines,,draft
-models/shard2.mdl_3,,,skin,,,Shattered glass-like texture with reflective surfaces,,draft
-models/shard3.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard3.mdl_0,,,skin,,,Patterned fabric with mixed colors,,draft
-models/shard3.mdl_1,,,skin,,,"metallic, reflective, angular surface",,draft
-models/shard3.mdl_2,,,skin,,,Red textured surface with subtle gradient,,draft
-models/shard3.mdl_3,,,skin,,,"Shattered, reflective, icy surface",,draft
-models/shard4.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard4.mdl_0,,,skin,,,"Metallic, textured surface with sharp edges and reflective highlights",,draft
-models/shard4.mdl_1,,,skin,,,shiny metallic surface with diagonal striations,,draft
-models/shard4.mdl_2,,,skin,,,Red textured surface with diagonal stripes,,draft
-models/shard4.mdl_3,,,skin,,,"cracked, weathered stone surface",,draft
-models/shard5.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shard5.mdl_0,,,skin,,,Wooden surface with carved details,,draft
-models/shard5.mdl_1,,,skin,,,"white, textured, slightly rough surface",,draft
-models/shard5.mdl_2,,,skin,,,Red textured skin with subtle white highlights,,draft
-models/shard5.mdl_3,,,skin,,,shiny metallic surface with reflective highlights,,draft
-models/shardice.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/shardice.mdl_0,,,skin,,,Purple crystalline shards with sharp edges,,draft
-models/sheep.mdl_0,,,skin,,,Gray woolly sheep skin texture,,draft
-models/sheepmis.mdl_0,,,skin,,,"gray, rough, stone-like surface with brown spots",,draft
-models/shield.mdl_0,,,skin,,,Purple textured shield with central emblem,,draft
-models/sickle.mdl_0,,,skin,,,Wooden handle with ornate metal sickle blade,,draft
-models/sk-throne.mdl_0,,,skin,,,Weathered stone with mossy texture,,draft
-models/skeleton.mdl_0,,,skin,,,"bone-like texture with rough, weathered surface",,draft
-models/skllstk1.mdl_0,,,skin,,,"Weathered stone with rough, cracked surface",,draft
-models/skllstk2.mdl_0,,,skin,,,Weathered stone skull texture,,draft
-models/skulbook.mdl_0,,,skin,,,Green leather with orange cross design,,draft
-models/skulhead.mdl_0,,,skin,,,"Bone-like texture with rough, weathered surface",,draft
-models/skull.mdl_0,,,skin,,,"bone-like texture with rough, weathered surface",,draft
-models/skullwiz.mdl_0,,,skin,,,Red fabric with gold trim and skull motifs,,draft
-models/skullwiz.mdl_1,,,skin,,,Dark fabric with gold and red accents,,draft
-models/skulshot.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/skulshot.mdl_0,,,skin,,,Flame-covered skull with glowing eyes,,draft
-models/skulshot.mdl_1,,,skin,,,Flame-covered skull with glowing eyes,,draft
-models/snake.mdl_0,,,skin,,,"scaled, textured reptilian skin",,draft
-models/snakearr.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/snakearr.mdl_0,,,skin,,,Green mossy stone surface,,draft
-models/snkstatu.mdl_0,,,skin,,,Brown textured snake skin with scales,,draft
-models/snout.mdl_0,,,skin,,,"dark, textured skin with white hair",,draft
-models/snowcrnr.mdl_0,,,skin,,,"Snowy, rough, textured surface",,draft
-models/snowleopard.mdl_0,,,skin,,,"dark, textured, spotted animal hide",,draft
-models/snowleopard.mdl_1,,,skin,,,Tiger-striped fur texture,,draft
-models/snowpile.mdl_0,,,skin,,,"Snowy, textured surface with icy, uneven appearance",,draft
-models/snowwall.mdl_0,,,skin,,,"Snowy, rough, icy surface texture",,draft
-models/soulball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/soulball.mdl_0,,,skin,,,"Red glowing, smooth, spherical surface",,draft
-models/soulskul.mdl_0,,,skin,,,"Rough, textured stone with carved skull details",,draft
-models/spider.mdl_0,,,skin,,,"dark, textured spider-like material",,draft
-models/spider.mdl_1,,,skin,,,black with orange accents,,draft
-models/spike.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/spike.mdl_0,,,skin,,,"Golden, textured, spiked surface",,draft
-models/spit.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/spit.mdl_0,,,skin,,,Purple crystalline material with sharp facets,,draft
-models/spllbook.mdl_0,,,skin,,,"brown leather with worn, textured surface",,draft
-models/splnter1.mdl_0,,,skin,,,rusty metal with green mossy texture,,draft
-models/splnter2.mdl_0,,,skin,,,textured wooden surface with vertical grain,,draft
-models/splnter3.mdl_0,,,skin,,,Wooden texture with vertical grain pattern,,draft
-models/splnter4.mdl_0,,,skin,,,"textured leather with faded, worn appearance",,draft
-models/star.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/star.mdl_0,,,skin,,,Blue star-shaped glowing texture,,draft
-models/star.mdl_1,,,skin,,,"Golden starburst with sharp, glowing rays",,draft
-models/stchain.mdl_0,,,skin,,,"dark, textured metal with worn, aged appearance",,draft
-models/stclrbm.mdl_*,,,skip,,,a flat color or a test cube,,human
-models/stclrbm.mdl_0,,,skin,,,"smooth, matte gray stone surface",,draft
-models/stclrbm.mdl_1,,,skin,,,"smooth, matte blue stone surface",,draft
-models/stclrbm.mdl_2,,,skin,,,"smooth, matte green stone surface",,draft
-models/stclrbm.mdl_3,,,skin,,,"smooth, matte gray stone surface",,draft
-models/stclrbm.mdl_4,,,skin,,,Brown leather-like surface texture,,draft
-models/stice.mdl_0,,,skin,,,Purple and gray marbled stone texture,,draft
-models/stlghtng.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stlghtng.mdl_0,,,skin,,,shiny metallic surface with blue glowing patterns,,draft
-models/stlgmt1.mdl_0,,,skin,,,textured stone surface with purple and gray tones,,draft
-models/stlgmt2.mdl_0,,,skin,,,"textured stone surface with rough, weathered appearance",,draft
-models/stltng2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stltng2.mdl_0,,,skin,,,Metallic cylindrical surface with blue glowing patterns,,draft
-models/stmedgaz.mdl_0,,,skin,,,Green mossy textured surface,,draft
-models/stool.mdl_0,,,skin,,,Wooden stool with grain texture,,draft
-models/stsunsf1.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stsunsf1.mdl_0,,,skin,,,"smooth white surface, simple texture",,draft
-models/stsunsf2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stsunsf2.mdl_0,,,skin,,,"Golden, textured, organic-looking material",,draft
-models/stsunsf3.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stsunsf3.mdl_0,,,skin,,,"White, smooth, slightly textured surface",,draft
-models/stsunsf4.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stsunsf4.mdl_0,,,skin,,,"Golden, glowing, hexagonal surface texture",,draft
-models/stsunsf5.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/stsunsf5.mdl_0,,,skin,,,"Golden, swirling, textured skin surface",,draft
-models/succubus.mdl_*,,,skin,,,,,human
-models/succubus.mdl_0,,,skin,,,Red and black leather with gold accents,,draft
-models/sucwp1.mdl_0,,,skin,,,"Red, bloody, wrapped in dark straps",,draft
-models/sucwp1p.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/sucwp1p.mdl_0,,,skin,,,Red and brown textured skin,,draft
-models/sucwp2.mdl_0,,,skin,,,Red and black leather with green accents,,draft
-models/sucwp2p.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/sucwp2p.mdl_0,,,skin,,,Green textured skin with speckled pattern,,draft
-models/sucwp3.mdl_0,,,skin,,,Red and black textured skin with metallic bands,,draft
-models/sucwp4.mdl_0,,,skin,,,Blue lightning pattern on dark metallic surface,,draft
-models/sucwp4.mdl_1,,,skin,,,Black leather with blue glowing patterns,,draft
-models/sunstaff.mdl_0,,,skin,,,Golden sun staff with intricate designs,,draft
-models/sword.mdl_*,,,skin_metal,,,,,human
-models/sword.mdl_0,,,skin_metal,,,Metallic sword with orange glowing hilt,,draft
-models/teleport.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/teleport.mdl_0,,,skin,,,Purple skin with white vein-like patterns,,draft
-models/teleport.mdl_1,,,skin,,,Red textured skin with white vein-like patterns,,draft
-models/tempmetr.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/tempmetr.mdl_0,,,skin,,,Reddish-brown textured surface with scattered glowing orange spots,,draft
-models/test.mdl_*,,,skip,,,a flat color or a test cube,,human
-models/test.mdl_0,,,skin,,,"dark, textured skin with subtle surface details",,draft
-models/test.mdl_1,,,skin,,,"Solid blue, smooth, flat surface",,draft
-models/throne.mdl_0,,,skin,,,Wooden throne with carved skulls and bones,,draft
-models/tombstn1.mdl_0,,,skin,,,Stone cross with engraved text,,draft
-models/tombstn2.mdl_0,,,skin,,,Weathered stone with engraved text,,draft
-models/tornato.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/tornato.mdl_0,,,skin,,,"Torn, glowing orange and black material",,draft
-models/tree.mdl_0,,,skin,,,"rough, weathered tree bark texture",,draft
-models/tree2.mdl_0,,,skin,,,rough bark with dark green and brown tones,,draft
-models/tutstatu.mdl_0,,,skin,,,Stone-like texture with carved details,,draft
-models/twspike.mdl_0,,,skin,,,Dark metallic spikes with red tops,,draft
-models/v_assgr.mdl_*,,,skin_metal,,,,,human
-models/v_assgr.mdl_0,,,skin_metal,,,Dark metallic armor with rivets and plates,,draft
-models/vindsht1.mdl_0,,,skin,,,Metallic armor with orange glowing edges,,draft
-models/vorpal.mdl_*,,,skin_metal,,,,,human
-models/vorpal.mdl_0,,,skin,,,Metallic blade with ornate brown leather straps,,draft
-models/vorpshk2.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/vorpshk2.mdl_0,,,skin,,,Purple and black lightning bolt pattern,,draft
-models/vorpshk2.mdl_1,,,skin,,,"Purple glowing, organic, vein-like texture",,draft
-models/vorpshok.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/vorpshok.mdl_0,,,skin,,,Purple lightning on dark textured surface,,draft
-models/vorpshok.mdl_1,,,skin,,,"Purple glowing, textured skin with branching patterns",,draft
-models/vorpshot.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/vorpshot.mdl_0,,,skin,,,"Purple glowing, branching, organic material",,draft
-models/vorpshot.mdl_1,,,skin,,,Purple lightning-like pattern on dark surface,,draft
-models/vorpswip.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/vorpswip.mdl_0,,,skin,,,gray textured skin with rough surface,,draft
-models/w_l2_c1.mdl_0,,,skin_metal,,,Shiny metallic blades with ornate golden hilts,,draft
-models/w_l2_c2.mdl_0,,,skin,,,Golden armor with purple glowing runes,,draft
-models/w_l2_c3.mdl_0,,,skin,,,"Red, textured, glossy surface with sharp edges",,draft
-models/w_l2_c4.mdl_0,,,skin,,,Wooden with metal accents and straps,,draft
-models/w_l2_c5.mdl_0,,,skin,,,Metallic armor with green glowing symbols,,draft
-models/w_l3_c1.mdl_*,,,skin_metal,,,,,human
-models/w_l3_c1.mdl_0,,,skin_metal,,,"Metallic axe with ornate, weathered surface",,draft
-models/w_l3_c2.mdl_0,,,skin,,,Metallic with glowing red accents,,draft
-models/w_l3_c3.mdl_0,,,skin_metal,,,"Metallic, angular, dark gray with red accents",,draft
-models/w_l3_c4.mdl_0,,,skin,,,Metallic surface with red grid pattern,,draft
-models/w_l3_c5.mdl_0,,,skin,,,Dark ornate metal with red glowing symbols,,draft
-models/w_l41_c1.mdl_0,,,skin,,,Brown leather with metallic accents,,draft
-models/w_l41_c2.mdl_0,,,skin,,,"Golden, ornate, textured surface with intricate patterns",,draft
-models/w_l41_c3.mdl_0,,,skin,,,"dark, textured leather-like surface",,draft
-models/w_l41_c4.mdl_0,,,skin,,,Golden wings with blue and red inlay,,draft
-models/w_l41_c5.mdl_0,,,skin,,,"Metallic with dark, reflective surface",,draft
-models/w_l42_c1.mdl_0,,,skin,,,Wooden texture with red glowing accents,,draft
-models/w_l42_c2.mdl_0,,,skin,,,"Golden, ornate, textured surface with intricate patterns",,draft
-models/w_l42_c3.mdl_0,,,skin,,,dark metallic rods with glowing orange tips,,draft
-models/w_l42_c4.mdl_0,,,skin,,,Wooden staff with purple gem and gold accents,,draft
-models/w_l42_c5.mdl_0,,,skin,,,Black and silver metallic with gold accents,,draft
-models/warhamer.mdl_*,,,skin_metal,,,,,human
-models/warhamer.mdl_0,,,skin_metal,,,Dark metallic surface with chainmail texture,,draft
-models/webs.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/webs.mdl_0,,,skin,,,"dark, tangled webbing texture",,draft
-models/webs.mdl_1,,,skin,,,"dark, tangled spiderweb texture",,draft
-models/webs.mdl_2,,,skin,,,"dark, web-like, textured surface",,draft
-models/webs.mdl_3,,,skin,,,black web-like material with intricate patterns,,draft
-models/xhair.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/xhair.mdl_0,,,skin,,,"dark, textured skin with vertical ridges",,draft
-models/yakball.mdl_*,,,fx,,,"glow, flame or effect art: upscaled only",,human
-models/yakball.mdl_0,,,skin,,,Purple textured skin with intricate patterns,,draft
-models/yakman.mdl_*,,,skin,,,,,human
-models/yakman.mdl_0,,,skin_metal,,,Silver metallic armor with intricate designs,,draft
-models/yakman.mdl_1,,,skin,,,brown leather with gold accents,,draft
-models/yakman.mdl_2,,,skin,,,"dark, textured, organic-looking material",,draft
+models/4arm.mdl_0,object,skin,skin,md-statues-tulku,"grey,taupe=stone;orange,tan=gold","a four-armed Tibetan deity statue of dark grey-brown stone, bare torso with four raised arms, a tall gilded conical crown, gold bracelets, necklace and waist ornaments; weathered and chipped",,claude
+models/a_blast.mdl_0,item,skin,skin_metal,,*=gold,"a golden ring pickup: an octagonal double frame of gold bars around a dark open centre, crossed by a heavy gold cross of flat beams; engraved edges, lightly worn",,claude
+models/a_cube.mdl_0,item,skin,skin,md-cube,"sand,grey=wood;yellow=gold;special=crystal","a small cube of carved tan wood: every face a latticed panel with scrollwork around a dark opening, a violet, blue or green gemstone in the centre, orange-gold edge caps; worn and scuffed",,claude
+models/a_glyph.mdl_0,item,skin,skin_metal,md-glyph,*=iron,"a spiked mine of dark iron: an octagonal riveted shell with long grey conical spikes, four hooded recessed windows filled with red crystal, a round bolted hatch; scratched and sooty",,claude
+models/a_haste.mdl_0,item,skin,skin,,"orange,brown=leather;grey=hair","a pair of brown leather boots with stitched seams and a dark sole, a small pair of pale grey-white feathered wings on each ankle",,claude
+models/a_hboost.mdl_0,item,skin,skin,,"grey,slate=glass;yellow=gold;purple=glass","a square glass flask with a thin grey-blue rim, filled with violet liquid, capped with an ornate gold stopper with a ribbed collar and pointed top",,claude
+models/a_invinc.mdl_0,item,skin,skin,md-artifacts,*=stone,"a stone rook pillar: a battlemented grey tower top over a tall octagonal shaft of dark carved block panels, a stepped grey base; chipped and weathered",,claude
+models/a_invis.mdl_0,item,skin,skin,md-artifacts,*=stone,"a hexagonal grey stone frame holding a carved face mask in dark green-grey stone: heavy brow, glaring eyes, flat nose, a grim mouth and brown-tinged beard; worn and mossy",,claude
+models/a_mboost.mdl_0,item,skin,skin_metal,,*=silver,"a tall silver goblet: a wide six-sided bowl with black angular runes on its sides, a slim stem, a flared round foot, filled to the brim with violet liquid",,claude
+models/a_poly.mdl_0,item,skin,skin,,"sand,grey=wood;violet=silver","a shepherd's crook staff of pale brown carved wood bent into a question-mark hook, a butterfly-shaped lavender-blue silver collar below the curve, a pointed tip",,claude
+models/a_shbost.mdl_0,item,skin,skin,md-artifacts,"grey,sage=stone;yellow=gold","a tapering coffin-shaped block of dark grey stone with a gold ankh in relief and a thin red gem at its loop, gold bands around the top and foot, green patina in the joints; chipped",,claude
+models/a_summon.mdl_0,item,skin,skin,md-artifacts,"*=stone;sand,yellow=gold","a dark grey stone tablet with worn edges; on one face a gold spearhead over a crossed-bars emblem, on the other a bronze ring around a downward gold triangle topped by an arrow",,claude
+models/a_telprt.mdl_0,item,skin,skin,md-artifacts,grey=stone;red=crystal,"a twelve-sided disc of dark grey stone with a raised rim and a worn rough surface, an eight-pointed star of red crystal inlaid in the centre",,claude
+models/a_tome.mdl_0,item,skin,skin,,"grey,sage=leather;sand=bronze","a thick black leather book with a grey skull on the cover, red studs in the corners, the spine bound with tan leather straps and bronze bands; scuffed",,claude
+models/a_torch.mdl_0,fx,fx,fx,,,"a burning torch pickup: a brown wooden handle with grey iron bands and a spike, a yellow-orange flame",,claude
+models/akarrow.mdl_0,fx,fx,fx,,,a glowing green arrow bolt: a long pointed streak of green light,,claude
+models/akarrow.mdl_1,fx,fx,fx,,,a glowing dark red arrow bolt: a long pointed streak of red light,,claude
+models/akarrow.mdl_2,fx,fx,fx,,,a glowing orange-red arrow bolt: a long pointed streak of fiery light,,claude
+models/akarrow2.mdl_0,fx,fx,fx,,,a glowing blue arrow bolt: a long pointed streak of blue-white light,,claude
+models/anglstat.mdl_0,object,skin,skin,md-statues-keep,*=stone,"a kneeling hooded angel statue of dark grey weathered stone, praying hands, a long robe in vertical folds and folded feathered wings; chipped, with faint moss in the crevices",,claude
+models/archer.mdl_0,creature,skin,skin,md-archer,grey=steel/leather;slate=steel;green=cloth;sage=steel;orange=wood,"an archer in dark steel plate and mail with broad pauldrons and a breastplate, green cloth sleeves and sash, a dark leather skirt, a steel helmet, carrying a wooden bow and a glowing green arrow",,claude
+models/archer.mdl_1,creature,skin,skin,md-archer,"grey=steel/leather;red=cloth;taupe=leather;tan,amber,sand=bronze/cloth;orange=wood;slate=steel","an archer lord in dark steel plate and mail with gold-bronze pauldrons and breastplate, red cloth sleeves and skirt hem, brown leather straps, a steel helmet, carrying a wooden bow and a glowing red arrow",,claude
+models/archer2.mdl_0,creature,skin,skin,md-archer,grey=steel/leather;slate=steel;violet=cloth;sage=steel;orange=wood,"an archer in dark steel plate and mail with broad pauldrons and a breastplate, violet cloth sleeves and sash, a dark leather skirt, a steel helmet, carrying a wooden bow and a glowing blue arrow",,claude
+models/archerhd.mdl_0,creature,skin,skin,md-archer,grey=steel/bone;slate=steel;red=flesh;green=cloth;*=bone,"a severed archer's head: a black iron helmet with two long curved grey horns, a pale grey face, a torn neck stump with a green cloth collar, heavily spattered with red blood",,claude
+models/archerhd.mdl_1,creature,skin,skin,md-archer,"grey=steel/bone;slate=steel;red=flesh;amber,sand,tan=bone;*=bone","a severed archer lord's head: a black iron helmet with two long curved tan horns, a pale face, a torn neck stump, spattered with red blood",,claude
+models/arrow.mdl_0,weapon,skin,skin,md-w-assassin,"grey=steel;red=hair;orange,brown=wood","a crossbow bolt: a slim brown wooden shaft with grey steel binding bands, red feather fletching at the tail and a sharp pointed steel head",,claude
+models/arrowhit.mdl_0,fx,fx,fx,,,an impact flash: a white-hot center with sixteen orange-gold rays,,claude
+models/assassin.mdl_0,player,skin,skin,md-assassin,"grey,taupe,olive=leather;slate=steel;red=cloth;sand=bronze","a female Assassin in tight black studded leather armour with dark steel plates, a deep black hood, red cloth-lined shoulder pauldrons and knee guards, tan leather straps and bronze crescent fittings",,claude
+models/assgren.mdl_0,weapon,skin,skin_metal,md-w-assassin,"grey,slate=steel",an Assassin's spiked grenade: a round segmented shell of dark grey steel with eight long sharp steel spikes and bright red painted bands around its middle,,claude
+models/athena.mdl_0,object,skin,skin,md-statues-septimus,"grey,sage=marble;yellow=bronze","a Roman statue of Athena in grey-white marble, a long draped robe, hair bound up, holding a tall staff topped with a winged bronze ornament and a short bronze sword; cracked and weathered",,claude
+models/axblade.mdl_0,weapon,skin,skin_metal,md-w-paladin,*=steel,"a thrown axe blade: a flat crescent of dark grey steel with curved horned edges, a pierced centre with engraved ridges, scratched and nicked",,claude
+models/axblade.mdl_1,weapon,skin,skin_metal,md-w-paladin,*=steel,"a thrown axe blade of blue-violet enchanted steel: a flat crescent with curved horned edges and a pierced centre with engraved ridges, nicked along the edges",,claude
+models/axe.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey,slate,sage=steel;orange=leather","a Paladin's battle axe held in the hand: a double-bladed dark steel axe head with curved horned blades and a knot-engraved socket, a leather-bound haft, a brown leather glove and a black chain mail sleeve",,claude
+models/axtail.mdl_0,fx,fx,fx,,,a pale lavender-blue comet tail: a tapering cone of violet glow,,claude
+models/bag.mdl_0,item,skin,skin,,*=leather,"a brown leather backpack with a flap and a wide strap, a steel buckle ring on the front, stitched seams and a long side strap; mottled, scuffed and darkened with age",,claude
+models/balbolt.mdl_0,weapon,skin,skin,md-siege,grey=iron;*=wood,a ballista bolt: a long shaft of dark red-brown oak ending in a barbed black iron spearhead with a sharp point; scuffed and worn,,claude
+models/ball.mdl_0~6104,fx,fx,fx,,,a magic ball: a white-lavender glowing core in a spiky violet halo,,claude
+models/ball.mdl_0~7d5c,fx,fx,fx,,,a magic ball: a white-lavender glowing core in a spiky violet halo,,claude
+models/ballista.mdl_0,object,skin,skin,md-siege,grey=iron;*=wood,"a wooden siege ballista: dark red-brown oak frame, a thick bow with a taut rope string, a black iron-plated bolt rail and brackets, a carved wooden stand; scarred and worn",,claude
+models/barrel.mdl_0,object,skin,skin,md-barrels,grey=iron;*=wood,"an oak barrel of vertical red-brown staves bound by two flat black iron hoops, a round plank lid; scuffed, dry and worn",,claude
+models/barrel.mdl_1,object,skin,skin,md-barrels,"grey,sage=iron;*=wood","an oak barrel of vertical red-brown staves bound by three broad black iron bands studded with round rivets, a round plank lid; scuffed and worn",,claude
+models/barrel.mdl_2,object,skin,skin,md-barrels,grey=iron;*=wood,"an oak barrel of orange-brown staves with two dark iron hoops and a carved curling three-armed emblem on its side, a round plank lid; scuffed and worn",,claude
+models/beefslab.mdl_0,object,skin,skin,,*=flesh,"a hanging side of beef: a flayed carcass of dark red-brown meat with pale rib bones and yellowish streaks of fat, dried blood at the top where it hangs from a hook",,claude
+models/bellring.mdl_0,object,skin,skin_metal,,*=bronze,"a large cast bronze bell with two raised bands around its waist, a flared rim and a heavy top mount; tarnished orange-gold with green-brown patina and a dark hollow inside",,claude
+models/bench.mdl_0,object,skin,skin,md-furniture,*=wood,"a rough oak bench: a thick plank seat on two block legs; grey-brown weathered grain, cracked and scuffed",,claude
+models/birdmisl.mdl_0,fx,fx,fx,,,a round dark grey mottled missile with small red glowing patches,,claude
+models/birdmsl2.mdl_0,fx,fx,fx,,,a soft grey glowing orb with a brighter center,,claude
+models/blast.mdl_0,fx,fx,fx,,,"a fireball: a sphere of orange, yellow and red flame",,claude
+models/bonefx.mdl_0,fx,fx,fx,,,"a ring of pale grey bone smoke: a thick, worn grey band",,claude
+models/bonefx.mdl_1,fx,fx,fx,,,"a ring of dark grey bone smoke: an uneven, distorted grey band",,claude
+models/bonefx.mdl_2,fx,fx,fx,,,a broken ring of dark grey bone smoke: two curved wisps and ragged fragments,,claude
+models/bonelump.mdl_0,debris,skin,skin,md-debris-bone,"tan,grey,green,taupe=bone;amber,orange=flesh","a spiky cluster of long bone splinters radiating from a center: yellowed tan-brown bone shafts with sharp pointed tips, dried brown-red blood staining the bases, cracked and weathered",,claude
+models/bonepile.mdl_0,object,skin,skin,md-corpses,*=bone,"a heap of yellowed ivory bones: long leg and arm bones, ribs and two skulls with dark eye sockets piled together; dusty and cracked",,claude
+models/boneshot.mdl_0,debris,skin,skin,md-debris-bone,*=bone,"a small pointed bone shard: a flat diamond-shaped sliver of pale tan bone with a sand-yellow tip, cracked and chipped along its edges",,claude
+models/boneshrd.mdl_0,debris,skin,skin,md-debris-bone,*=bone;red=flesh,"a long thin bone shard: a pale tan bone shaft with a split jagged end, its lower half coated in dark red blood and torn flesh with orange streaks",,claude
+models/booberry.mdl_0,fx,fx,fx,,,a grey ghostly spectre: a screaming wraith with raised arms and a ribbed torso,,claude
+models/bookclos.mdl_0,object,skin,skin,md-books,grey=iron;red=leather;sand=parchment,"a closed book with a dark red leather cover framed by grey iron corner plates and a clasp, a pale page block on the spine side; worn and scuffed",,claude
+models/bookopen.mdl_0,object,skin,skin,md-books,"grey=parchment/iron;orange,brown=leather;sand=parchment","an open book lying flat: two pale grey-white pages covered in illegible handwriting, a tan page block, dark red-brown leather covers edged with grey iron fittings; old and worn",,claude
+models/boss/bigeido.mdl_0,creature,skin,skin,md-eidolon,"*=hide;taupe,tan=bone;amber,orange=gold","Eidolon, a muscular demon with mottled dark red skin and a goat-like head, long curling ram horns of grey-tan bone, a spiked tail, gold bracers, belt and ankle bands, cloven hooves",,claude
+models/boss/boar.mdl_0,creature,skin,skin,md-pestilence,grey=hair/iron;*=hair,"a huge wild boar ridden by Pestilence: coarse dark brown bristly coat, pale tusks, cloven hooves, a black harness and dark iron barding with gold bands; scarred and muddy",,claude
+models/boss/bone1.mdl_0,debris,skin,skin,md-death,*=bone,"a long curved rib bone, pale tan and smooth, tapering to a point with a broken notch on one edge; weathered and chipped",,claude
+models/boss/bone2.mdl_0,debris,skin,skin,md-death,*=bone,"a short thick leg bone, pale tan, with a knobbed joint at one end and a broken shaft at the other; weathered and chipped",,claude
+models/boss/bone3.mdl_0,fx,fx,fx,,,"a flying human skull in pale tan bone with black hollow eye sockets and nose, a lower jaw of worn teeth; a translucent missile",,claude
+models/boss/bone4.mdl_0,debris,skin,skin,md-death,*=bone,"a thin diamond-shaped bone splinter, pale tan and smooth, pointed at both ends; weathered and chipped",,claude
+models/boss/bone5.mdl_0,debris,skin,skin,md-death,*=bone,"a triangular bone shard, pale tan and smooth, with a flat broken top edge and a sharp point; weathered and chipped",,claude
+models/boss/bone6.mdl_0,debris,skin,skin,md-death,*=bone,"a human skull in warm brown-tan bone with black hollow eye sockets and nose, a worn row of teeth and a jaw; cracked and weathered",,claude
+models/boss/chaosorb.mdl_0,object,skin,skin,md-eidolon,"grey,sage=iron;violet=crystal;amber,sand,orange=bone","a chaos orb: a large marbled lavender-grey crystal sphere held on four curved claw legs of dark iron with spiked feet, each topped by a grinning brown skull; cracked and aged",,claude
+models/boss/circle.mdl_0,fx,fx,fx,,,a translucent glowing white disc with a bright center,,claude
+models/boss/circle.mdl_1,fx,fx,fx,,,a translucent glowing red disc with a bright red center,,claude
+models/boss/dthhorse.mdl_0,creature,skin,skin,md-death,*=hair,"Death's horse: a gaunt pale grey-white horse with a short coat, a long flowing white mane and tail, grey hooves, ribs showing, a thin red cord across the barrel",,claude
+models/boss/dthrider.mdl_0,creature,skin,skin,md-death,"slate=cloth/steel;grey,sage=cloth;taupe,tan=bone;orange=wood","Death, a hooded grim reaper in a tattered black robe and ragged cloak with long frayed strips, a pale bone skull face, bony hands, a long wooden scythe with a blood-red steel blade",,claude
+models/boss/famhorse.mdl_0,creature,skin,skin,md-famine,"grey=hair;taupe,tan=leather;orange=bronze","Famine's horse: an emaciated dark brown-grey horse with ribs and hips showing, a thin dark mane and tail, red eyes, a worn tan leather saddle cloth and harness with brass fittings",,claude
+models/boss/famrider.mdl_0,creature,skin,skin,md-famine,"grey=bone/cloth;yellow,amber,sand=bronze","Famine, a gaunt skeletal rider with a skull face and long grey-white hair, brown leathery skin stretched over ribs, tattered dark rags, holding orange bronze balance scales with chains and flat pans",,claude
+models/boss/hive.mdl_0,weapon,skin,skin,md-pestilence,*=foliage,"a beehive skep: a domed basket of woven brown straw in tight horizontal coils, a hexagonal base; weathered and stained",,claude
+models/boss/pstrider.mdl_0,creature,skin,skin,md-pestilence,"grey=cloth;orange,taupe=leather/wood;tan=leather","Pestilence, a hunched rider in a black hooded cloak, a fanged skull face with orange eyes, dirty grey wrappings, a brown leather satchel and straps, and a curved brown wooden bow",,claude
+models/boss/shaft.mdl_0,fx,fx,fx,,,a long tapering spike of translucent grey light: a narrow cone of pale grey beams,,claude
+models/boss/smaleido.mdl_0,creature,skin,skin,md-eidolon,"*=hide;taupe,tan=bone;amber,orange=gold","Eidolon, a muscular demon with mottled dark red skin and a goat-like head, long curling ram horns of grey-tan bone, a spiked tail, gold bracers, belt and ankle bands, cloven hooves",,claude
+models/boss/star.mdl_0,fx,fx,fx,,,a flat white starburst with a dozen long thin spikes,,claude
+models/boss/swarm.mdl_0,fx,fx,fx,,,a swarm of insects: grey speckled wings and small dark green bodies,,claude
+models/boss/waraxe.mdl_0,weapon,skin,skin_metal,md-war,grey=steel;sand=bronze/wood,"War's double-bladed battle axe: swept grey steel upper blades on a steel collar, ridged bronze lower crescents, a long wooden haft; nicked and scratched",,claude
+models/boss/waraxe.mdl_1,weapon,skin,skin_metal,md-war,*=steel,"War's double-bladed battle axe made wholly of blood-red steel: swept upper blades on a collar, ridged lower crescents, a straight haft; nicked and scratched",,claude
+models/boss/warhorse.mdl_0,creature,skin,skin,md-war,"grey,sage=steel;orange,brown,taupe,tan=hair;yellow=gold","War's horse: a chestnut-brown horse with a dark mane and tail, grey feathered fetlocks, red eyes, a steel plate chanfron on the head and steel plate barding on chest and flanks with gold trim",,claude
+models/boss/warrider.mdl_0,creature,skin,skin,md-war,"grey,sage,slate=steel;orange,tan=flesh;amber=bronze;taupe=leather","War, a hulking rider in black plate armour: a horned dark steel helmet with a visor, grey steel pauldrons engraved with knotwork, a bronze belt, bare muscular tanned arms, a huge double-headed war hammer with a knotwork head",,claude
+models/brains.mdl_0,debris,fx,fx,,,a splatter of blood-red gore: a mass of brains with dark red tendrils and drops,,claude
+models/budd_star.mdl_0,fx,fx,fx,,,a spinning three-armed star missile of layered bright blue crystal,,claude
+models/buddal.mdl_0,object,skin,skin,md-praevus,*=stone,"the left half of a seated Buddha statue in warm ochre-brown stone: bare muscular chest, a folded robe with deep drapery folds, hands in the lap, on a stepped square plinth; cracked and weathered",,claude
+models/buddal.mdl_1,object,skip,skip,,,,,claude
+models/buddar.mdl_0,object,skin,skin,md-praevus,*=stone,"the right half of a seated Buddha statue in warm ochre-brown stone: bare muscular chest, a folded robe with deep drapery folds, hands in the lap, on a stepped square plinth; cracked and weathered",,claude
+models/burner.mdl_0,fx,fx,fx,,,a standing brazier: an ornate bronze pillar with a bowl of red fire,,claude
+models/burnerfl.mdl_0,fx,fx,fx,,,a standing brazier: an ornate bronze pillar with a bowl of red fire,,claude
+models/bush1.mdl_0,object,skin,skin,md-plants,*=foliage,"a low dense bush: a rounded mass of dark green and olive pointed leaves overlapping in every direction, with black gaps between them",,claude
+models/caesar.mdl_0,object,skin,skin_metal,md-statues-septimus,*=bronze,"a Roman statue of an emperor in a draped toga with one arm raised, a laurel-crowned head, a bare chest and a folded cloak; dark brown with green patina, weathered",,claude
+models/candle.mdl_0,fx,fx,fx,,,a candle holder: a small bronze cup on a stand with a tall yellow-orange flame,,claude
+models/cart.mdl_0,object,skin,skin,md-furniture,grey=iron;*=wood,"a two-wheeled farm cart: an open box of rough dark oak planks, two long shafts, wheels with black iron rims and hubs; weathered grey-brown wood, mossy in places",,claude
+models/castrch.mdl_0,fx,fx,fx,,,a wall torch without flame: a dark grey iron shaft with iron bands and spikes,,claude
+models/cattest.mdl_0,object,skin,skin,md-siege,"grey,sage=iron;*=wood","a large wooden siege catapult: a dark red-brown oak frame on a wheeled platform, a tall throwing arm with a bucket, black iron straps and fittings, ropes and skulls hung as decoration; weathered",,claude
+models/cauldron.mdl_0,object,skin,skin_metal,md-pots,*=iron,"a large round black cast-iron cauldron with a thick rolled rim, a dark grey-green pitted body and a murky olive-green liquid inside; sooty and old",,claude
+models/cflmtrch.mdl_0,fx,fx,fx,,,a burning wall torch: a dark grey iron shaft with iron bands and spikes and a yellow-orange flame,,claude
+models/ch-hang.mdl_0,object,skin,skin,md-tulku-hangings,"grey,red,orange,amber=wood;yellow,olive,sand=gold","a hanging shop signboard: three square black-lacquered wooden panels with gilded painted symbols, under a curved red-lacquered gabled cap with carved gilded edges, hung from two black chains; worn paint",,claude
+models/ch-kite.mdl_0,object,skin,skin,md-tulku-hangings,"red,olive,slate=cloth;yellow=gold","a hanging kite-shaped Tibetan lantern: a pagoda-style cap of dark red lacquer with gold trim, a body of dark red cloth panels with gold circular emblems and a tail of ragged red cloth strips; faded",,claude
+models/chair.mdl_0,object,skin,skin,md-furniture,*=wood,"a plain wooden chair: a dark red-brown oak seat, four slanted legs and a tall slatted back with a wide top rail; scuffed and worn",,claude
+models/chest1.mdl_0,object,skin,skin,md-chests,"grey,sage=stone;taupe,tan=bronze;red=cloth","a stone chest in dark grey-green weathered stone with carved scrollwork on its front, a red padded band under the lid edge, a brass padlock and a brass ring handle; chipped and mossy",,claude
+models/chest1.mdl_1,object,skin,skin,md-chests,"grey,taupe=iron;*=wood","an oak chest of horizontal planks with a gabled lid, reinforced with dark iron corner brackets and straps; worn brown wood with scuffed edges",,claude
+models/chest2.mdl_0,object,skin,skin,md-chests,*=stone,"a carved sandstone chest on four skull-shaped feet, its front carved with a snarling demon face, a skull on each side, a lid rim of geometric relief bands; brown-tan, worn and chipped",,claude
+models/chest2.mdl_1,object,skin,skin,md-chests,*=stone,"a pale tan sandstone chest on four plain square block feet, its front carved with a winged scarab relief, flat plain sides, a banded lid edge; weathered and chipped",,claude
+models/chest2.mdl_2,object,skin,skin,md-chests,"grey,taupe=iron;*=wood","an oak chest of horizontal planks with riveted black iron straps and a lock plate, standing on four square dark iron feet; worn brown wood, scuffed",,claude
+models/chest3.mdl_0,object,skin,skin,md-chests,"grey,taupe=iron;*=wood","an oak chest with a rounded barrel lid of dark planks, broad black iron bands with rivets and a central iron lock plate; scuffed and worn brown wood",,claude
+models/clshard1.mdl_0,debris,skin,skin,md-debris-clay,*=tile,a broken shard of a terracotta clay pot: a thin triangular piece of dull brown-tan fired clay with darker brown mottling and rough broken edges,,claude
+models/clshard1.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a flat triangular chunk of rough sandy-tan stone speckled with small green moss and blue-grey mineral flecks, darker brown veins and chipped edges",,claude
+models/clshard2.mdl_0,debris,skin,skin,md-debris-clay,*=tile,"a broken shard of a painted terracotta pot: a tapered curved piece of orange-brown fired clay, its outer face with a band of red-brown Greek-key meander pattern, a plain dark brown inner face, chipped edges",,claude
+models/clshard2.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a wedge-shaped chunk of rough tan limestone with darker brown pitting, a few green and blue-grey mineral flecks and chipped edges",,claude
+models/clshard3.mdl_0,debris,skin,skin,md-debris-clay,*=tile,a long curved thin shard of terracotta clay like a broken pot handle: orange-brown fired clay with tan and pale yellow patches and rough broken edges,,claude
+models/clshard3.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a long curved sliver of pale grey-tan stone with darker brown speckles and a few green and blue mineral flecks, weathered, chipped edges",,claude
+models/clshard4.mdl_0,debris,skin,skin,md-debris-clay,*=tile,"a broken shard of a painted terracotta pot: orange-brown fired clay with a band of dark red and maroon paint, brown streaks and rough broken edges",,claude
+models/clshard4.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a folded wedge-shaped chunk of rough tan stone with brown pitting, green and blue mineral flecks and chipped edges",,claude
+models/clthchk1.mdl_0,debris,skin,skin,md-debris-cloth,*=cloth,"a torn flat scrap of crimson cloth: deep red woven fabric with darker wavy folds and fine ripples, jagged ragged edges and frayed ends",,claude
+models/clthchk2.mdl_0,debris,skin,skin,md-debris-cloth,*=cloth,"a large torn piece of crimson cloth: deep red fabric with dark wavy diagonal stripes in the weave, a seam down the middle and ragged frayed edges",,claude
+models/clthchk3.mdl_0,debris,skin,skin,md-debris-cloth,*=cloth,"a ragged strip of crimson cloth: deep red fabric with darker red creases, jagged torn edges and a notched end",,claude
+models/corps1.mdl_0,object,skin,skin,md-corpses,*=flesh,"a mutilated human corpse lying on its back, skinned and bloody: raw deep red flesh with exposed muscle, dark clotted blood, sprawled limbs",,claude
+models/corps1.mdl_1,object,skin,skin,md-corpses,*=flesh,"a shirtless muscular human corpse lying sprawled, tanned brown skin, short dark hair, a small dark loincloth, a dried blood wound on the chest",,claude
+models/corps1.mdl_2,object,skin,skin,md-corpses,*=flesh,"a withered dried-out corpse lying sprawled: leathery dark brown mummified skin stretched over ribs and limbs, ragged strips of dark cloth; cracked and mottled",,claude
+models/corps1.mdl_3,object,skin,skin,md-corpses,"orange=flesh;grey,sage=cloth","a shirtless human corpse lying sprawled in tattered dark grey-green trousers, tanned brown skin, a bloody chest wound and dried blood smears",,claude
+models/corps2.mdl_0,object,skin,skin,md-corpses,"orange,taupe,brown=flesh;grey,slate,tan=cloth","a human corpse lying on its back in a torn blue-grey shirt and dark olive-grey trousers, pale brown skin, bare feet, dried blood across the chest and neck",,claude
+models/corps2.mdl_1,object,skin,skin,md-corpses,orange=flesh;yellow=cloth;*=flesh,"a shirtless human corpse in ragged ochre-brown trousers, brown skin with deep claw slashes across the chest and dried blood",,claude
+models/corps2.mdl_2,object,skin,skin,md-corpses,orange=flesh;sand=cloth;*=flesh,"a shirtless human corpse in pale beige linen trousers, a torn-open belly of raw red flesh and dried blood, brown skin",,claude
+models/corps2.mdl_3,object,skin,skin,md-corpses,"orange=flesh;tan,taupe=cloth","a shirtless human corpse in dark grey-olive trousers, weathered brown skin scraped and bruised, bare feet, a head turned to one side",,claude
+models/corps2.mdl_4,object,skin,skin,md-corpses,*=cloth,a human corpse wrapped in pale grey cobweb-like fibres: tangled white and grey strands over a thin dark body shape with limbs at its sides; dusty,,claude
+models/cross.mdl_0,fx,skin,skin_metal,,*=gold,"a four-armed gold cross with flared pointed arms and a scrolled lattice at the centre, a flat disc of gold at its foot; worn and scratched",,claude
+models/crossbow.mdl_0,weapon,skin,skin,md-w-assassin,"grey,sage=steel;orange,tan,brown=wood","an Assassin's crossbow held in the hand: a dark red-brown wooden stock and curved bow limbs with leather wrapping and grey steel fittings, a steel stirrup and a taut tan string",,claude
+models/crusader.mdl_0,player,skin,skin,md-crusader,"grey,slate=steel;red,green=cloth;orange,sand=leather;yellow=gold","a heavily built Crusader in steel plate pauldrons, a chain mail coif and a dark steel breastplate with a gold belt buckle, green cloth sleeves, dark red cloth leggings, brown leather straps and black boots",,claude
+models/cube.mdl_0,item,skin,skin,md-cube,"sand,grey=wood;yellow=gold;special=crystal","a small cube of carved tan wood: every face a latticed panel with scrollwork around a dark opening, a violet, blue or green gemstone in the centre, orange-gold edge caps; worn and scuffed",,claude
+models/demstat.mdl_0,object,skin,skin,md-statues-keep,"grey,sage,slate,green,olive=stone;tan,amber,sand,orange=bronze","a crouching winged demon statue of dark grey stone with large bat-like wings edged in bronze-gold ribs, a horned snarling head, clawed hands, on a round bronze-brown base; weathered",,claude
+models/draglion.mdl_0,object,skin,skin,md-statues-tulku,"grey,taupe,tan=stone;orange,sand=gold","a Tibetan guardian dragon-lion statue crouched on all fours, weathered brown-grey stone with a curled mane and carved haunches, a snarling face, a gilded gold-orange collar and anklets",,claude
+models/drgnball.mdl_0,fx,fx,fx,,,a streaking fireball: a yellow-orange flame with a long ragged tail,,claude
+models/dthball.mdl_0,fx,fx,fx,,,"a molten rock ball: a dark brown crust with glowing red, orange and yellow cracks and molten spots",,claude
+models/eflmtrch.mdl_0,fx,fx,fx,,,a burning wall torch: a dark brown wooden shaft with a tan bronze collar and bands and a yellow-orange flame,,claude
+models/egtorch.mdl_0,fx,fx,fx,,,a wall torch without flame: a dark brown wooden shaft with a tan bronze collar and bands,,claude
+models/eidoball.mdl_0,fx,fx,fx,,,a streaking fireball: a pale amber flame with a long ragged tail,,claude
+models/escargolon.mdl_0,creature,skin,skin,md-escargolon,"grey,brown,amber=hide;red,maroon=bone;orange,tan=flesh;*=hide","a giant snail monster: a spiral shell of dark blood-red ridges, a ridged brown-tan leathery body, four eye stalks with green eyes, a toothed mouth with a long red tongue; slimy and worn",,claude
+models/fablade.mdl_0,fx,fx,fx,,,a glowing green crystal blade: a pointed spear of green light,,claude
+models/fambeam.mdl_0,fx,fx,fx,,,a twisting beam of bright red energy with darker red veins,,claude
+models/famshot.mdl_0,fx,fx,fx,,,a red flame missile: a flat arrowhead of red fire with ragged trailing tongues,,claude
+models/fangel.mdl_0,creature,skin,skin,md-fangel,"grey=cloth/hide;red=cloth;tan,sand,amber=hide;orange=flesh;yellow,sage=gold;*=hide","a fallen angel: a woman with auburn hair and a gold circlet, pale skin, a long blood-red gown with a gold-trimmed hem and belt, gold bracelets, and bat wings of grey-brown leathery membrane",,claude
+models/fangel.mdl_1,creature,skin,skin,md-fangel,grey=cloth/hide;taupe=cloth;orange=hide/flesh;yellow=gold;maroon=hide;*=hide,"a fallen angel: a woman with golden-blonde hair and a gold circlet, tanned skin, a long grey-brown gown with a gold-trimmed hem and belt, gold bracelets, and bat wings of reddish-brown leathery membrane",,claude
+models/faspell.mdl_0,fx,fx,fx,,,a spinning four-pointed star of fire: a yellow center and orange curved points,,claude
+models/fence.mdl_0,object,skin,skin_metal,,*=iron,"a black wrought-iron fence panel: an arched frame of flat bars with diagonal braces and spiked finials along the top, a small cast emblem in the centre; sooty and rusting",,claude
+models/fether.mdl_0,debris,skin,skin,md-raven,*=hair,"a black raven feather: a thin pale quill shaft with soft grey-black barbed vanes, faintly banded and slightly ragged at the tip",,claude
+models/fireball.mdl_0,fx,fx,fx,,,"a small fireball: a pointed missile of orange, red and yellow flame",,claude
+models/fish.mdl_0,creature,skin,skin,md-fish,*=hide,"a piranha-like fish: an olive-brown scaly body, a pale tan belly, orange-yellow markings along the flanks and fins, a round dark eye with a gold rim and a mouth of small teeth",,claude
+models/flag.mdl_0,object,skin,skin,md-flags,"red,yellow=cloth;grey,sage=iron",a tall steel flagpole with a small round finial flying a swallow-tailed pennant of dark red cloth with gold edge trim and a gold circle-and-cross emblem; faded and ragged,,claude
+models/flag.mdl_1,object,skin,skin,md-flags,"red=cloth;yellow=gold;grey,sage=iron",a tall steel flagpole with a small round finial flying a swallow-tailed pennant of dark crimson cloth with a gold eagle emblem and gold trim; faded and ragged,,claude
+models/flag.mdl_2,object,skin,skin,md-flags,"violet,yellow=cloth;grey,sage=iron",a tall steel flagpole with a small round finial flying a swallow-tailed pennant of dark navy-violet cloth with a gold fleur-de-lis emblem and orange-gold edge trim; faded and ragged,,claude
+models/flame.mdl_0,fx,fx,fx,,,a small wall torch: a dark iron cage holder with an ornate pattern and a white-yellow flame,,claude
+models/flame1.mdl_0,fx,fx,fx,,,a large yellow-orange flame with darker amber tongues,,claude
+models/flame2.mdl_0,fx,fx,fx,,,a small flame: a pale yellow-white core and orange-red tips,,claude
+models/flaming.mdl_0,fx,fx,fx,,,a flaming crossbow bolt: a thin grey shaft with olive fletching and tongues of yellow-orange fire,,claude
+models/flesh1.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,"a chunk of raw bloody flesh: dark red torn muscle with orange fat and yellow tendon streaks, wet, with ragged torn edges",,claude
+models/flesh1.mdl_1,debris,skin,skin,md-debris-flesh,*=flesh,"a chunk of torn brown flesh: leathery amber-brown skin mottled with tan and orange, spotted with dark red blood, a ragged torn edge",,claude
+models/flesh2.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,"a long ragged strip of raw bloody flesh: dark red muscle with orange fat and yellow streaks, wet, with jagged torn edges",,claude
+models/flesh2.mdl_1,debris,skin,skin,md-debris-flesh,*=flesh,"a long strip of torn brown flesh: leathery amber-brown skin mottled with tan, spotted with dark red blood, jagged torn edges",,claude
+models/flesh3.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,"a compact rough lump of raw bloody flesh: dark red muscle with orange fat marbling and a few yellow streaks, wet and torn",,claude
+models/flesh3.mdl_1,debris,skin,skin,md-debris-flesh,*=flesh,a rough lump of torn brown flesh: leathery amber-brown skin with orange-tan streaks and dark red blood patches,,claude
+models/fountain.mdl_0,object,skin,skin,md-statues-septimus,*=marble,"a tiered Roman fountain of dark grey marble: a wide hexagonal basin, a tall tapering column, a smaller hexagonal bowl above, short balusters; stained and chipped",,claude
+models/funnal.mdl_0,fx,fx,fx,,,a tornado funnel: a swirling cone of grey and white dust streaked with dark red debris,,claude
+models/g-head.mdl_0,creature,skin,skin,md-golem,"grey,slate,sage=stone",a stone golem's head: a rough blue-grey carved stone helmet with a pointed crest and a dark slitted face; cracked and worn,,claude
+models/g-head.mdl_1,creature,skin,skin_metal,md-golem,"taupe=iron/rust;grey,tan,sage=iron","an iron golem's head: a rust-brown riveted iron helmet with a pointed crest and a dark slitted face, a red gem set in the forehead; pitted and worn",,claude
+models/g-head.mdl_2,creature,skin,skin_metal,md-golem,*=bronze,"a bronze golem's head: a tarnished brown-gold bronze helmet with a pointed crest and a dark slitted face, a green gem set in the forehead; worn and scuffed",,claude
+models/gauntlet.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey,slate,sage=steel;orange,brown=leather","a Paladin's gauntlets held in the hand: clenched fists in brown leather gloves with studded knuckles, steel cuffs set with a round rune medallion, and sleeves of dark chain mail",,claude
+models/gemlight.mdl_0,fx,fx,fx,,,a wall light: a glowing amber faceted gem in a dark grey stone housing with iron studs,,claude
+models/glowball.mdl_0,fx,fx,fx,,,a glowing orb: a web of jagged bright blue lightning cracks,,claude
+models/glyph.mdl_0,fx,fx,fx,,,a jagged streak of green energy with fine streaked lines,,claude
+models/glyphwir.mdl_0,item,skin,skin_metal,md-glyph,*=iron,"a spiked mine of dark iron: an octagonal riveted shell with long grey conical spikes, four hooded recessed windows filled with red crystal, a round bolted hatch; scratched and sooty",,claude
+models/glyphwir.mdl_1,item,skin,skin_metal,md-glyph,*=iron,"a spiked mine of dark iron: an octagonal riveted shell with long grey conical spikes, four hooded recessed windows filled with orange-yellow molten fire, a round bolted hatch; scratched and sooty",,claude
+models/goarm.mdl_0,creature,skin,skin,md-golem,"grey,slate,sage=stone","a stone golem's severed arm: a blue-grey carved stone forearm with banded cuffs, a clenched fist and a plated upper arm; cracked and worn",,claude
+models/goarm.mdl_1,creature,skin,skin_metal,md-golem,"taupe=iron/rust;grey,tan,sage=iron","an iron golem's severed arm: a rust-brown riveted iron forearm with banded cuffs, a clenched fist and a plated upper arm; pitted and worn",,claude
+models/goarm.mdl_2,creature,skin,skin_metal,md-golem,*=bronze,"a bronze golem's severed arm: a tarnished brown-gold bronze forearm with banded cuffs, a clenched fist and a plated upper arm; worn and scuffed",,claude
+models/golegs.mdl_0,creature,skin,skin,md-golem,"grey,slate,sage=stone","a stone golem's severed legs and hips: blue-grey carved stone thighs under a belted waist, plated shins and heavy pointed boots; cracked and worn",,claude
+models/golegs.mdl_1,creature,skin,skin_metal,md-golem,"taupe=iron/rust;grey,tan=iron","an iron golem's severed legs and hips: rust-brown riveted iron thighs under a belted waist, plated shins and heavy pointed boots; pitted and worn",,claude
+models/golegs.mdl_2,creature,skin,skin_metal,md-golem,*=bronze,"a bronze golem's severed legs and hips: tarnished brown-gold bronze thighs under a belted waist, plated shins and heavy boots; worn and scuffed",,claude
+models/golem_b.mdl_0,creature,skin,skin_metal,md-golem,olive=crystal;*=bronze,"a bronze golem: a massive humanoid in tarnished brown-gold bronze plate with broad pauldrons, a crested helmet with a green gem, banded cuffs, a fringed belt and heavy greaves; worn and scuffed",,claude
+models/golem_i.mdl_0,creature,skin,skin_metal,md-golem,"taupe=iron/rust;grey,tan,sage=iron","an iron golem: a massive humanoid in rust-brown riveted iron plate with broad pauldrons, a crested helmet with a red gem, banded cuffs, a belt and heavy greaves; pitted and worn",,claude
+models/golem_s.mdl_0,creature,skin,skin,md-golem,"grey,slate,sage=stone","a stone golem: a massive humanoid of dark blue-grey carved stone shaped like riveted plate, broad pauldrons, a crested helmet with a dark slit, banded fists and heavy boots; cracked and worn",,claude
+models/golemmis.mdl_0,fx,fx,fx,,,a glowing red crystal shard missile: a long pointed red spike,,claude
+models/goodsphr.mdl_0,fx,fx,fx,,,a translucent golden sphere with a dark center,,claude
+models/goop.mdl_0,fx,fx,fx,,,a streaking blob of red flame with a long ragged tail,,claude
+models/h_ass.mdl_0,player,skin,skin,md-assassin,"grey,olive=leather;taupe=flesh;red=cloth","an Assassin's severed head in a black leather hood patterned with red veins, a shadowed pale human face and red-lined hood edges",,claude
+models/h_cru.mdl_0,player,skin,skin_metal,md-crusader,"grey,slate=steel;orange=flesh;sand=gold","a Crusader's severed head in a dark steel dome helmet with a gold brow band, a long chain mail aventail, a stern tan-brown human face smeared with blood",,claude
+models/h_fangel.mdl_0,creature,skin,skin,md-fangel,"grey=flesh;red=flesh;yellow,orange,brown,amber=hair","a severed fallen angel's head: pale skin, auburn hair swept back into a long point, a torn neck stump spattered with red blood",,claude
+models/h_fangel.mdl_1,creature,skin,skin,md-fangel,"grey=flesh;red=flesh;yellow,orange,brown,amber=hair","a severed fallen angel's head: pale skin, auburn hair swept back into a long point, a torn neck stump spattered with red blood",,claude
+models/h_imp.mdl_0,creature,skin,skin,md-imp,grey=hide;red=flesh,"a severed gargoyle imp's head: charcoal-black leathery hide, pointed ears, white fangs, small red eyes, a torn red neck with a spine hanging from it, spattered with blood",,claude
+models/h_imp.mdl_1,creature,skin,skin,md-imp,"grey,violet=hide;red=flesh","a severed gargoyle imp's head: blue-violet leathery hide, pointed ears, glowing blue eyes, grey fangs, a torn red neck with a spine hanging from it, spattered with blood",,claude
+models/h_imp.mdl_2,creature,skin,skin,md-imp,grey=hide;red=flesh,"a severed gargoyle imp's head: charcoal-black leathery hide, pointed ears, white fangs, small red eyes, a torn red neck with a spine hanging from it, spattered with blood",,claude
+models/h_imp.mdl_3,creature,skin,skin,md-imp,grey=hide;red=flesh,"a severed gargoyle imp's head: charcoal-black leathery hide, pointed ears, white fangs, small red eyes, a torn red neck with a spine hanging from it, spattered with blood",,claude
+models/h_mez.mdl_0,creature,skin,skin,md-werejaguar,"grey,yellow,orange,amber=hair;red=flesh","a severed werejaguar's head: tawny orange-yellow fur with black rosette spots, a snarling mouth with white fangs, a torn red neck spattered with blood",,claude
+models/h_mez.mdl_1,creature,skin,skin,md-werejaguar,"grey,slate,violet=hair;red=flesh","a severed black panther werejaguar's head: blue-black fur with faint dark spots, a snarling mouth with white fangs, a torn red neck spattered with blood",,claude
+models/h_mez2.mdl_0,creature,skin,skin,md-werejaguar,"grey,slate,sage,taupe=hair;red,maroon=flesh","a severed snow leopard's head: pale grey fur spotted with black, a pink nose, a snarling mouth with white fangs, a torn red neck spattered with blood",,claude
+models/h_mez2.mdl_1,creature,skin,skin,md-werejaguar,"grey,yellow,orange,sand=hair;red,maroon=flesh","a severed tiger-like werejaguar's head: tan-brown fur with black stripes, a pink nose, a snarling mouth with white fangs, a torn red neck spattered with blood",,claude
+models/h_nec.mdl_0,player,skin,skin,md-necromancer,"grey,slate,red=cloth;amber,orange,sage=flesh","a Necromancer's severed head in a black hood trimmed with blood-red seams, a gaunt olive-brown human face with dark sunken eyes and a dark red lining",,claude
+models/h_pal.mdl_0,player,skin,skin_metal,md-paladin,grey=steel/flesh;red=flesh;sage=steel,"a Paladin's severed head in a steel helmet with a chain mail coif and two tall swept winged crests, a human face, the steel spattered and streaked with blood",,claude
+models/h_suc.mdl_0,player,skin,skin,md-assassin,"grey,olive=leather;taupe=flesh;red=cloth","an Assassin's severed head in a black leather hood patterned with red veins, a shadowed pale human face and red-lined hood edges",,claude
+models/hamthrow.mdl_0,weapon,skin,skin_metal,md-w-crusader,*=steel,"a Crusader's thrown war hammer: a blunt blue-black steel hammer head with a gold cross emblem on its face, a spike on top, a long dark steel handle with rivets",,claude
+models/handfx.mdl_0,fx,fx,fx,,,a glowing lavender magic ring with four arrow points and four black glyphs,,claude
+models/hay1.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a small bundle of dry hay: thin golden-yellow straw stalks with pale tan strands crossing in a loose fan, brittle and dusty",,claude
+models/hay2.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a loose bundle of dry hay: pale golden-yellow straw stalks of different lengths, some bent, tan and sand-colored strands among them, brittle and dusty",,claude
+models/hay3.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a single long thin stalk of dry straw: golden-yellow with tan knots and faint lengthwise ribbing, brittle",,claude
+models/hedge1.mdl_0,object,skin,skin,md-plants,*=foliage;orange=wood,"a tall conical clipped hedge of dense dark green leaves with darker shadow between the clusters, a short brown stump at its base",,claude
+models/hedge2.mdl_0,object,skin,skin,md-plants,"*=foliage;tan,taupe=wood","a rectangular clipped hedge block of dense dark green and blue-green leaves, with a short brown trunk and roots showing at the base",,claude
+models/hedge3.mdl_0,object,skin,skin,md-plants,*=foliage;orange=wood,"a tall tapered cylindrical hedge of dense olive and yellow-green leaves, a short brown trunk stump with roots at the base",,claude
+models/hydra.mdl_0,creature,skin,skin,md-hydra,"grey,olive,amber,sand=hide;tan=bone/flesh;*=hide","a hydra: a star of six segmented tentacles banded olive-green and brown with pale tips, a central red petalled maw ringed with teeth, and a long pointed tail spike; scaly and scarred",,claude
+models/i_amulet.mdl_0,item,skin,skin_metal,md-armor,"grey,sand=bronze;special=crystal","an amulet on a long looped chain of alternating bronze and grey steel beads, a triangular bronze pendant with scrolled edges and a blue sapphire at its centre; worn",,claude
+models/i_bmana.mdl_0,item,skin,skin,md-mana,*=stone,"an inverted four-sided pyramid of black stone, pointed downward, each face carrying a bright blue angular rune beside a gold-brown ankh-like glyph; smooth, chipped at the edges",,claude
+models/i_bplate.mdl_0,item,skin,skin_metal,md-armor,"slate,grey=steel;sand=bronze","a dark blue-grey steel breastplate sculpted with chest and rib muscles, wide flared shoulder plates, a belt line with a brass buckle, all edged with brass trim; scratched and dented",,claude
+models/i_bracer.mdl_0,item,skin,skin_metal,md-armor,"grey,slate=steel;sand,amber=bronze;orange,brown=leather","a pair of steel arm bracers, hollow cylinders of dark grey plate with riveted brass bands, brown leather straps with brass buckles and brass-rimmed openings; scratched and worn",,claude
+models/i_btmana.mdl_0,item,skin,skin,md-mana,"red,grey=crystal","a dark red hexagonal block of crystal with faintly ridged faces, a bright green angular rune on one end and a bright blue angular rune on the other",,claude
+models/i_gmana.mdl_0,item,skin,skin,md-mana,*=stone,"a dark stone cube tilted on a corner, black-green mottled faces with fine ridged edges, a bright green angular rune on one face and a gold-brown trident glyph on another; chipped",,claude
+models/i_hboost.mdl_0,item,skin,skin,,"grey=glass;yellow,orange=gold;violet=glass","a tall thin glass vial with a rounded bottom, filled with deep blue liquid, capped with a brass-gold stopper with a ribbed collar and a rounded top",,claude
+models/i_helmet.mdl_0,item,skin,skin_metal,md-armor,"slate,grey=steel;sand,amber=bronze;tan=bone","a steel helmet with a rounded dome and a wide dark face opening, a brass strap riveted down the front, two curved pale horns on the sides; scratched and dented",,claude
+models/iceshot1.mdl_0,fx,fx,fx,,,an ice ball missile: faceted pale lavender-blue ice crystal with white facets,,claude
+models/iceshot2.mdl_0,fx,fx,fx,,,an ice shard missile: a white-grey faceted lump of frost,,claude
+models/icestaff.mdl_0,weapon,skin,skin,md-w-crusader,"violet=ice;sand,amber=gold","a Crusader's ice mace held in the hand: a rounded head of dark indigo-blue ice crystal in jagged faceted shards, gripped by ornate gold prongs on a short gold handle with carved relief",,claude
+models/imp.mdl_0,creature,skin,skin,md-imp,*=hide,"a winged gargoyle imp: charcoal-black leathery hide, an orange belly and orange inner wing membranes, white fangs and claws, small red eyes",,claude
+models/imp.mdl_1,creature,skin,skin,md-imp,*=hide,"a winged gargoyle imp: blue-violet leathery hide, a grey belly and grey inner wing membranes, white fangs and claws, glowing blue eyes",,claude
+models/imp.mdl_2,creature,skin,skin,md-imp,*=stone,"a gargoyle imp carved in dark grey stone, a statue that wakes: folded wings with pale grey cracked membranes, a pale grey belly, grey fangs and claws, blank eyes; chipped and weathered",,claude
+models/imp.mdl_3,creature,skin,skin,md-imp,*=hide,"a winged gargoyle imp: deep red leathery hide, an orange-gold belly and inner wing membranes, pale fangs and claws, small green eyes",,claude
+models/king.mdl_0,object,skin,skin,md-statues-keep,"taupe,grey=stone;tan,sand,amber,orange=gold","a standing statue of a crowned king in a long belted coat with broad shoulders and dark boots, holding a long sword point-down with a red jewel on the hilt; dark grey-brown stone, gilded crown, trim and hilt",,claude
+models/lantern.mdl_0,fx,fx,fx,,,a hanging lantern: a dark grey iron cage and arm around a small yellow-orange flame,,claude
+models/larm.mdl_0,creature,skin,skin,md-mummy,grey=cloth/flesh;tan=cloth;taupe=flesh;red=flesh,"a mummy's severed arm: grey-brown and tan linen bandages wrapped tightly around a dried forearm and hand, a torn red stump at the shoulder end; frayed and stained",,claude
+models/lavaball.mdl_0,debris,skin,skin,,*=ice,"a jagged chunk of ice: faceted, pale blue and white-lavender frosted ice with darker blue patches, sharp broken edges",,claude
+models/lavaball.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a jagged chunk of grey rock: faceted, mottled slate-grey and pale grey stone, sharp broken edges, rough and chipped",,claude
+models/lavaball.mdl_2,debris,skin,skin,,*=earth,"a jagged clod of dark brown ash and cinders: faceted, mottled with paler tan and grey-brown flecks, crumbling",,claude
+models/lball.mdl_0,fx,fx,fx,,,a lightning ball: a core of bright blue lightning cracks and white-violet spiked rays,,claude
+models/leafchk1.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a large jagged-edged leaf: deep dark green with a darker midrib and veins, pointed lobes along the edges, torn and slightly curled",,claude
+models/leafchk2.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a pointed oval leaf: deep dark green with a darker central vein and fine side veins, a notched torn edge",,claude
+models/leafchk3.mdl_0,debris,skin,skin,md-debris-plant,*=foliage,"a small pointed leaf: deep dark green with a darker central vein and faint side veins, smooth edges",,claude
+models/leg.mdl_0,creature,skin,skin,md-mummy,"grey,tan,taupe,slate=cloth;orange,brown=leather;red=flesh","a mummy's severed leg: grey-brown linen bandages on the thigh and foot, an orange-brown banded leather wrap on the shin, a dark charred foot block and a red torn stump; frayed and stained",,claude
+models/lion.mdl_0,object,skin,skin,md-statues-septimus,*=marble,"a prowling Roman lion statue of dark grey weathered marble, a thick mane, a tail curving upward, muscular legs mid-stride; cracked, chipped and stained",,claude
+models/mars.mdl_0,object,skin,skin_metal,md-statues-septimus,*=bronze,"a Roman statue of Mars, a muscular nude figure in a crested helmet with a short sword in one hand and a round shield on the other arm; dark brown bronze with green patina, weathered",,claude
+models/medhead.mdl_0,creature,skin,skin,md-medusa,"grey,olive,orange,yellow,sand=hide;red=flesh","a severed medusa's head: olive-green scaly skin with a snarling face, writhing snake hair in dark olive and orange bands, a torn red neck spattered with blood",,claude
+models/medhead.mdl_1,creature,skin,skin,md-medusa,"olive,grey,orange=hide;red=flesh","a severed medusa's head: dark olive-green scaly skin with a snarling face, writhing snake hair banded olive and orange, a torn red neck spattered with blood",,claude
+models/medsnake.mdl_0,creature,skin,skin,md-medusa,"grey,olive,orange,amber,sand=hide;red=flesh",a severed snake from medusa's hair: a short length of olive-green scaly body with orange and red blotched bands and a small red torn end,,claude
+models/medusa.mdl_0,creature,skin,skin,md-medusa,*=hide,"a medusa: a serpent woman with a muscular olive-green torso and a head of writhing snakes, a long snake tail of olive-brown scales banded orange with a pale tan belly, a red mouth and white fangs",,claude
+models/medusa2.mdl_0,creature,skin,skin,md-medusa,*=hide,"a medusa: a serpent woman with a muscular olive-green torso and a head of writhing snakes, a long snake tail of olive-brown scales banded orange with a pale tan belly, a red mouth and white fangs",,claude
+models/megaweb.mdl_0,fx,fx,fx,,,a large spider web: fine pale blue-grey radial and ring strands over a whole panel,,claude
+models/mesotrch.mdl_0,fx,fx,fx,,,a wall torch holder without flame: a tapering carved dark stone block with tan and amber ornaments and round metal studs,,claude
+models/meteor.mdl_0,weapon,skin,skin,md-w-crusader,"grey=iron;sand,amber,orange,yellow=gold;red=stone;violet=crystal","a Crusader's meteor staff held in the hand: a long black iron shaft topped by an ornate gold crown with curved silver horns, holding a jagged black rock cracked with glowing red fissures",,claude
+models/metlchk1.mdl_0,debris,skin,skin_metal,md-debris-metal,*=iron,"a bent fragment of dark iron plate: dark grey, pitted and scaly, with a faint green-grey tarnish, a ragged torn edge and a notch",,claude
+models/metlchk2.mdl_0,debris,skin,skin_metal,md-debris-metal,*=iron,"a long torn strip of dark grey iron plate with a faint green tarnish, pitted and scaly, a few rust-brown spots, jagged edges",,claude
+models/metlchk3.mdl_0,debris,skin,skin_metal,md-debris-metal,"*=iron;tan,taupe=rust","a forked, jagged shard of dark grey iron: pitted and scaly with a faint green-blue tarnish, patches of rust-brown and tan corrosion, sharp torn edges",,claude
+models/metlchk4.mdl_0,debris,skin,skin_metal,md-debris-metal,*=iron,"a long jagged sliver of dark iron with a faint green-blue tarnish: pitted and rough, with a sharp pointed tip and torn edges",,claude
+models/mezzoman.mdl_0,creature,skin,skin,md-werejaguar,orange=hide;yellow=hair/gold;brown=leather;grey=steel;amber=gold;slate=hair,"a werejaguar warrior: a muscular man-beast with tawny brown skin and a jaguar head with a spotted fur mane, a spotted fur kilt and shield, gold bands on wrists and ankles, a thin steel sword",,claude
+models/mezzoman.mdl_1,creature,skin,skin,md-werejaguar,slate=hide;grey=hair;yellow=gold;*=hair,"a werejaguar warrior: a muscular man-beast with blue-black skin and a black panther head with green eyes, a dark spotted fur cape, kilt and shield, gold bands on wrists and ankles, a thin steel sword",,claude
+models/mflmtrch.mdl_0,fx,fx,fx,,,a burning wall torch: a tapering carved dark stone holder with tan and amber ornaments and a yellow-orange flame,,claude
+models/mhdstatu.mdl_0,object,skin,skin,md-statues-thysis,"slate,grey=stone;*=bronze",the head of an Egyptian jackal-headed god statue: a black stone jackal head with tall pointed ears and amber eyes on a broad trapezoid collar of striped orange-bronze bands; chipped,,claude
+models/muhead.mdl_0,creature,skin,skin,md-mummy,"grey,slate=hair;orange,brown=cloth","an Anubis jackal head: a black jackal face with amber eyes and tall pointed ears, a headdress of bronze-brown cloth striped with black bands that falls to the shoulders",,claude
+models/muhead.mdl_1,creature,skin,skin,md-mummy,grey=hair/cloth;slate=hair;*=cloth,"an Anubis jackal head: a black jackal face with violet eyes and tall pointed ears, a black cloth headdress that falls to the shoulders, with thin orange stripes",,claude
+models/mummy.mdl_0,creature,skin,skin,md-mummy,"grey=cloth;taupe,tan=cloth;orange=bronze/cloth;brown=leather","a mummy: a gaunt body wrapped in frayed grey-brown linen bandages, banded bronze cuffs and greaves, a black jackal head in a bronze-brown striped headdress with blue eyes, holding an ornate bronze staff; dusty and stained",,claude
+models/mummy.mdl_1,creature,skin,skin,md-mummy,"grey,orange=cloth;yellow=gold;red=cloth;slate=cloth;brown=leather","a mummy lord: a gaunt body wrapped in dark brown-orange linen bandages, red bandaged shins, gold cuffs, a black jackal head in a black headdress with gold stripes and blue eyes, holding an ornate gold staff; dusty and stained",,claude
+models/mumshot.mdl_0,fx,fx,fx,,,a flame missile: a flat triangle of golden-yellow fire,,claude
+models/mumstatu.mdl_0,object,skin,skin,md-statues-thysis,yellow=gold;*=stone,"a headless Egyptian statue body mid-stride: orange-brown sandstone torso, arms and legs, a broad collar at the neck, gold arm and ankle bands, a short green-ochre kilt with a red apron panel; chipped",,claude
+models/necro.mdl_0,player,skin,skin,md-necromancer,"grey=cloth;slate,sage=steel;red=cloth","a Necromancer in a long black hooded robe with a blood-red hem and sash, huge dark steel pauldrons set with violet stones, black armoured gauntlets and boots, a gaunt pale face under the hood",,claude
+models/neptune.mdl_0,object,skin,skin_metal,md-statues-septimus,*=bronze,"a Roman statue of Neptune seated on a block, curly hair and beard, a cloth draped over his lap, holding a tall trident; very dark green-black bronze with verdigris, on a square plinth",,claude
+models/newfire.mdl_0,fx,fx,fx,,,a tall bonfire: ragged tongues of yellow-orange flame,,claude
+models/nfarrow.mdl_0,weapon,skin,skin,md-w-assassin,grey=steel;olive=hair;maroon=cloth,"a crossbow arrow: a slim grey steel shaft with a pointed steel head, two dark red binding bands near the tail and green feather fletching",,claude
+models/olmec1.mdl_0,object,skin,skin,md-statues-mazaera,*=stone,"a colossal Olmec stone head: a flat-nosed face with thick lips, heavy brows and small glowing orange eyes, a tall block headdress above; rough dark blue-grey basalt with rust-brown stains and cracks",,claude
+models/openbook.mdl_0,object,skin,skin,md-books,"amber,orange,sand=leather;red=cloth;yellow=gold;*=parchment","an ancient open book lying flat: aged beige parchment pages covered in illegible script, dark amber leather covers with gold edging and red square panels bearing gold symbols; worn",,claude
+models/paladin.mdl_0,player,skin,skin,md-paladin,"grey,slate,sage,green=steel;red=cloth;sand,amber=gold;tan=leather","a Paladin in dark steel plate and chain mail over a red tabard with a gold lion, brown leather gloves and belt, a steel helmet with a T-shaped visor and a tall crest",,claude
+models/palight.mdl_0,fx,fx,fx,,,"a palace torch bowl: a dark carved stone bowl with an orange ornamental band, violet-green glyphs and a glowing ember",,claude
+models/pent.mdl_0,creature,skin,skin,md-pentacles,*=stone;red=crystal,"a pentacle monster: a flat star-shaped slab of rough brown-orange rock, cracked and pitted, with a central toothed oval mouth rimmed in red and glowing red points at its tips",,claude
+models/pent.mdl_1,creature,skin,skin,md-pentacles,grey=stone;slate=ice;red=crystal;*=stone,"a pentacle monster: a flat star-shaped slab of rough pale grey rock crusted with snow and ice, with a central toothed oval mouth rimmed in rust-brown and red points at its tips",,claude
+models/pestshot.mdl_0,fx,fx,fx,,,a green venom missile: a flat arrowhead of bright and dull green with ragged trailing tongues,,claude
+models/pew.mdl_0,object,skin,skin,md-furniture,*=wood,"a long dark oak church pew: a carved front panel with a circular emblem and winged scrollwork, a tall plain back board, square legs; stained red-brown wood, worn",,claude
+models/ph_eido.mdl_0,creature,skin,skin,md-eidolon,"*=hide;taupe,tan=bone;amber,orange=gold","Eidolon, a muscular demon with mottled dark red skin and a goat-like head, long curling ram horns of grey-tan bone, a spiked tail, gold bracers, belt and ankle bands, cloven hooves",,claude
+models/plantgen.mdl_0,object,skin,skin,md-plants,*=foliage,"a clump of long narrow pointed leaves fanning out from a small base: olive and dark green blades with darker veins, a few tips dry and yellow",,claude
+models/plantmez.mdl_0,object,skin,skin,md-plants,"olive,green=foliage;*=stone",a leafy plant in a tapered square stone planter: long narrow olive and dark green blades fanning out of a rough brown-grey stone pot with a band of blue-violet painted pattern; weathered,,claude
+models/plantrom.mdl_0,object,skin,skin,md-plants,"green,olive=foliage;amber,taupe=bronze;*=stone","a tall Roman amphora vase of dark grey stone with two upright handles and a bronze-brown band at the shoulder, holding a clump of narrow olive-green grass-like leaves; chipped and stained",,claude
+models/playrbox.mdl_0,fx,skip,skip,,,,,claude
+models/pot1.mdl_0,object,skin,skin,md-pots,*=tile,"a two-handled amphora of glazed orange-brown ceramic with a band of dark red and green zigzag ornament at the belly, orange rim and base; scuffed and chipped",,claude
+models/pot1.mdl_1,object,skin,skin,md-pots,*=tile,a two-handled amphora of dull tan clay with a dark brown scarab beetle emblem on the belly and a red band at the neck; cracked and dusty,,claude
+models/pot1.mdl_2,object,skin,skin,md-pots,*=tile,"a two-handled amphora of red-brown glazed ceramic with a band of blue, yellow and orange zigzag ornament at the belly and a deep red lower body; scuffed",,claude
+models/pot1.mdl_3,object,skin,skin,md-pots,*=tile,a two-handled amphora of pale tan clay with a dark red Greek-key meander band around the belly and narrow red bands at neck and base; dusty and chipped,,claude
+models/pot2.mdl_0,object,skin,skin,md-pots,*=tile,"a tall tapering vase of tan clay with a flared rim and an orange band, a blue spiral swirl with an orange centre on each side; chipped",,claude
+models/pot2.mdl_1,object,skin,skin,md-pots,*=tile,a tall hexagonal vase of orange-brown clay with a raised oval cartouche panel of illegible hieroglyphs on each face and a small round knob at the foot; dusty,,claude
+models/pot2.mdl_2,object,skin,skin,md-pots,*=tile,a tall tapering vase of tan clay with a red-and-orange sun-star medallion on each side and red triangular ornament around it; chipped and worn,,claude
+models/pot2.mdl_3,object,skin,skin,md-pots,*=tile,a tall tapering vase of dark green glazed ceramic with a spiral band of orange-brown stripes winding around it and a flared rim; scuffed,,claude
+models/pot3.mdl_0,object,skin,skin,md-pots,*=tile,"a shouldered vase of brown clay with a narrow neck and a wide band of red and gold scrollwork at the shoulder, dark base; scuffed",,claude
+models/pot3.mdl_1,object,skin,skin,md-pots,*=tile,a shouldered vase of orange-brown clay with a painted dark Eye of Horus on each face and a red band at the base and neck; dusty and cracked,,claude
+models/pot3.mdl_2,object,skin,skin,md-pots,*=tile,a shouldered vase of dark olive-brown glazed clay with a band of orange chevron ornament at the belly and thin blue lines at the shoulder; mossy and dusty,,claude
+models/pot3.mdl_3,object,skin,skin,md-pots,*=tile,a shouldered vase of dark blue-grey glazed ceramic with a narrow neck and a band of tan square meander blocks between green stripes at the belly; scuffed,,claude
+models/powersh.mdl_0,fx,fx,fx,,,a thin streak of blue-grey energy: a narrow shaft of pale light,,claude
+models/pravus.mdl_0,creature,skin,skin,md-praevus,"red=cloth;sand,amber=bone;grey=cloth/bone","Praevus, a demon lord seated cross-legged: crimson pleated robes with gold trim, a pale skull-like face, a tall conical gold-brown headdress, several arms ending in long bony clawed fingers, a red draped base",,claude
+models/punchdgr.mdl_0,weapon,skin,skin_metal,md-w-assassin,"grey,slate,sage=steel;orange=leather","an Assassin's punch dagger held in the hand: a long pointed steel katar blade on an H-shaped grip in a brown leather glove, with a dark steel plated vambrace and black leather sleeve",,claude
+models/purfir1.mdl_0,fx,fx,fx,,,a golden flame missile: a flat arrowhead of yellow-orange fire with ragged trailing tongues,,claude
+models/purifier.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey,sand,amber=bronze","a Paladin's Purifier held in the hand: a flat cross of aged bronze-gold with scrollwork and a round red gem at its centre, a pointed lower spike and a crown-shaped flame in orange, red and yellow",,claude
+models/puzzle/air.mdl_0,item,skin,skin,md-elements,"grey,yellow,sage=stone;amber=crystal","a carved dark grey stone hand with five long splayed fingers like feathers, a faceted orange-amber gem set in the palm and a brown stone wrist cuff at the base; weathered and dusty",,claude
+models/puzzle/amult.mdl_0,item,skin,skin_metal,,grey=steel;sand=gold;taupe=bronze;red=crystal,"an amulet of hunger: two thick segmented steel arms joined at the top by a thin cord, hanging a pointed helmet-shaped pendant of worn gold with a bronze-brown back and a large faceted red gem",,claude
+models/puzzle/ankey.mdl_0,item,skin,skin_metal,,"grey,sage,taupe=stone;yellow=gold","a long ceremonial key of Anubis: a black jackal head with tall pointed ears and a red eye on a gold collar, a straight shaft of worn gold with violet bands and a stepped gold bit; scratched",,claude
+models/puzzle/bell.mdl_0,item,skin,skin_metal,,*=bronze,"a Tibetan ritual handbell of old brass: a slender handle swelling to a pointed finial, a wide flared bell with a ribbed rim and a hexagonal underside; tarnished gold-brown with a darker patina",,claude
+models/puzzle/chalice.mdl_0,item,skin,skin_metal,,*=gold,"a golden chalice: an octagonal bowl with a banded rim and small round studs on each panel, a short knopped stem and a wide flared octagonal foot; old gold with a brown-orange tarnish",,claude
+models/puzzle/clueb.mdl_0,item,skin,skin,,"grey,taupe,slate=leather;tan=parchment;sand,amber,yellow=gold","a thick spellbook bound in black-brown leather: a gold four-lobed medallion with a round boss on the cover, four brass corner studs, brass-banded edges and a pale tan page block; scuffed and worn",,claude
+models/puzzle/cross.mdl_0,item,skin,skin_metal,,"grey,sage=iron;orange,brown=rust;*=iron","a defiled holy cross: a charred black-grey iron cross with diamond-shaped arm ends, streaked with pale grey ash and flaking orange-brown rust, banded along its arms; corroded and pitted",,claude
+models/puzzle/crosskey.mdl_0,item,skin,skin_metal,,"brown,orange,yellow=bronze;taupe,sand,tan=gold;*=crystal","a cross-shaped key of copper-bronze: round banded arms and shaft with orange rings, four diamond-shaped arm ends framed in gold and set with pale blue-violet cabochon stones; aged and tarnished",,claude
+models/puzzle/cskey.mdl_0,item,skin,skin_metal,,"grey,sage,taupe=iron;tan=rust","a large castle key of dark wrought iron: a square bow, a long plain shaft and a stepped bit; pitted, with rust-brown speckles and a thin grey-brown patina",,claude
+models/puzzle/dagger.mdl_0,item,skin,skin_metal,,"grey,slate=steel;sand,tan=gold;orange,amber,brown=leather","a ritual dagger: a double-edged steel blade with a central ridge, an ornate gilt crown-shaped guard, a grip wrapped in brown-orange leather and a pommel tipped with red points; worn",,claude
+models/puzzle/dtongue.mdl_0,item,skin,skin,,"grey,sand=bronze;maroon,orange=flesh","a squat octagonal jar of tan brass with thin blue-violet inlaid lines down its panels and a flared foot, holding a long dark red-maroon forked dragon tongue that curls over the rim",,claude
+models/puzzle/dukeseal.mdl_0,item,skin,skin_metal,,*=gold,"a gold seal: an angular pentagonal plate with a pointed top set with a small red gem, two outward-swept winged flanges and a stepped slotted base; old gold with scratches",,claude
+models/puzzle/e1.mdl_0,item,skin,skin_metal,,"grey=wood;yellow,sand,sage=gold","a shepherd's-crook key of the Pharaoh: a hooked staff of alternating gold and dark brown-black bands, a two-lugged gold bit at the foot and a small violet-purple tip; worn gold, dusty",,claude
+models/puzzle/e2.mdl_0,item,skin,skin,,*=stone;orange=gold,"a tall slab of pale grey stone: a flat front with a raised upper panel, two lower rectangular panels with dark brown handle bars, two small orange-gold brackets at the top, a thin loop at one side; chipped",,claude
+models/puzzle/e3.mdl_0,item,skin,skin,md-canopic,*=stone,"a tall Egyptian canopic jar of limestone with a pointed domed lid: ribbed tan and sand bands, a middle band painted malachite green with zigzag motifs, brown stripes at the foot; chipped, dusty",,claude
+models/puzzle/e4.mdl_0,item,skin,skin,md-canopic,*=stone,"a tall Egyptian canopic jar of limestone with a pointed domed lid: ribbed sand and tan bands, a broad slate-grey band at the middle, orange-rust stripes at the foot; chipped, dusty",,claude
+models/puzzle/e5.mdl_0,item,skin,skin,md-canopic,*=stone,"a tall Egyptian canopic jar of limestone with a pointed domed lid: horizontal ribbed bands alternating tan, sand and dark brown over the whole body, amber stripes at the foot; chipped, dusty",,claude
+models/puzzle/e6.mdl_0,item,skin,skin,md-canopic,*=stone,"a tall Egyptian canopic jar of limestone with a pointed domed lid: a tan upper body, a dark grey-brown middle band with tall panels, a pale tan lower body and dark brown foot bands; chipped, dusty",,claude
+models/puzzle/earth.mdl_0,item,skin,skin,md-elements,"amber,grey=stone;green,olive=stone","a heavy slab of dark brown carved stone showing a coiled serpent with a red inlaid body and a glowing orange eye, framed by jade-green stone blocks at the corners and a mossy green side strip; weathered",,claude
+models/puzzle/eyeh.mdl_0,item,skin,skin_metal,,"yellow,grey=gold;green,olive=crystal","a golden Eye of Horus: an almond-shaped gold frame with a curled spiral tail and a drooping tear line, a black stone pupil, and a mottled blue-green malachite brow band along the top; worn gold",,claude
+models/puzzle/fire.mdl_0,item,skin,skin,md-elements,*=stone,"a carved stone flame: a grey stone cone banded in dark red as the base, rising into dark red petals and orange-brown pointed flame tongues with curled scrollwork; weathered and chipped",,claude
+models/puzzle/glass.mdl_0,item,skin,skin,,*=glass,a bead of glass: a flat rounded octagonal dome of smoky grey-blue glass with violet reflections and a darker banded rim; cloudy inside and scratched,,claude
+models/puzzle/goldgem.mdl_0,item,skin,skin,md-tibetgems,"sand,amber,tan,grey=bronze;yellow=crystal","a large faceted golden-amber gem, tall and hexagonal, held in a carved setting of angular winged bronze claws that ends in a pointed spike below; old bronze, tarnished",,claude
+models/puzzle/greengem.mdl_0,item,skin,skin,md-tibetgems,"sand,amber,tan,grey=bronze;olive=crystal","a large faceted green gem, tall and hexagonal, held in a carved setting of angular winged bronze claws that ends in a pointed spike below; old bronze, tarnished",,claude
+models/puzzle/gsphere.mdl_0,item,skin,skin_metal,,"grey,sage=steel;yellow,orange=gold","a faceted gold sphere with a dark grey steel band around its middle, the band set with studded plates and four glowing orange gems; the gold is orange-brown and dull, scratched",,claude
+models/puzzle/h-book.mdl_0,item,skin,skin,md-scrolls,*=parchment,"a rolled scroll of aged grey-green parchment, unrolling in a curl with a rough edge, rows of faint dark staff lines and marks on the face, small dark rolled ends; stained and creased",,claude
+models/puzzle/headkey.mdl_0,item,skin,skin,,"grey,sand,amber,olive=wood;yellow,orange=gold","a tall ceremonial staff of dark red-brown carved wood: a long plain shaft topped by stacked carved heads with grimacing faces and a pointed conical cap, small gilded and orange accents; worn and scratched",,claude
+models/puzzle/holycrss.mdl_0,item,skin,skin_metal,,"grey,sage=steel;yellow=bronze","a holy cross of grey steel with orange bronze bands at the crossing and the foot, ornate flared arm ends with black tracery set in bronze; polished once, now dull and scratched",,claude
+models/puzzle/incense.mdl_0,item,skin,skin_metal,,*=bronze,"a Tibetan incense burner of orange-copper bronze: a rounded vase-shaped body with a pointed lid and cross-shaped cutouts, a long dark chain rising to a spindle-shaped finial; tarnished and sooty",,claude
+models/puzzle/keep1.mdl_0,object,skin,skin,md-corpses,*=bone,"a heap of yellowed ivory bones: long leg and arm bones, ribs and two skulls with dark eye sockets piled together; dusty and cracked",,claude
+models/puzzle/keep2.mdl_0,item,skin,skin,,*=earth,"a low conical heap of coarse brown-tan dust and grit, flecked with darker grains and tiny stones, loose and dry",,claude
+models/puzzle/keep3.mdl_0,item,skin,skin_metal,,"grey,sage=iron;taupe=rust","a large iron mill key: a pentagonal open bow, a long thin shaft and a blocky double-step bit; dark grey iron pitted and streaked with rust-brown, with traces of green-grey patina",,claude
+models/puzzle/lbudda.mdl_0,item,skin,skin,,*=stone,"a seated Buddha statuette of jade in flowing robes with folded hands and a calm face, standing on a square stepped base: mottled green with darker olive veining in the folds; chipped at the base",,claude
+models/puzzle/lcrwn.mdl_0,item,skin,skin,md-egypt-crowns,grey=cloth;yellow=gold,"a tall white crown of Egypt shaped like a bowling pin: a smooth grey-white linen cap rising to a rounded top, a gold band at the base with a rearing cobra at the front and short gold spikes",,claude
+models/puzzle/lens.mdl_0,item,skin,skin,,*=glass,"a thick octagonal glass lens: smoky clear grey glass with a faint blue tint at the edges, a pale frosted rim and a few small bubbles; scratched and dusty",,claude
+models/puzzle/m1.mdl_0,item,skin,skin,,*=stone,"an ornamental key of carved dark grey stone: a long shaft with a pair of upswept red-painted horns at the top and a heavy jade-green stepped bit at the bottom, speckled with brown stains; weathered",,claude
+models/puzzle/m2.mdl_0,item,skin,skin,md-skulls,*=crystal,"a human skull carved from clear white quartz crystal: a smooth domed cranium, deep black eye sockets, a nasal cavity and a toothed jaw; milky and faintly cloudy with fine surface scratches",,claude
+models/puzzle/m3.mdl_0,item,skin,skin,md-skulls,*=stone,"a human skull carved from dark green jade: a smooth domed cranium, deep black eye sockets, a nasal cavity and a toothed jaw; mottled green with darker veins and fine surface scratches",,claude
+models/puzzle/m4.mdl_0,item,skin,skin,,*=flesh,"a large dark red-maroon heart torn from a giant serpent: a lumpy muscular surface with darker veins, tan-brown severed vessel stumps at the top and the bottom; dried and cracked",,claude
+models/puzzle/m5.mdl_0,item,skin,skin,,*=stone;orange=gold,"a tall slab of pale grey stone: a flat front with a raised upper panel, two lower rectangular panels with dark brown handle bars, two small orange-gold brackets at the top, a thin loop at one side; chipped",,claude
+models/puzzle/mage.mdl_0,item,skin,skin,,"grey,taupe,slate=leather;tan=parchment;sand,amber,yellow=gold","a thick spellbook bound in black-brown leather: a gold four-lobed medallion with a round boss on the cover, four brass corner studs, brass-banded edges and a pale tan page block; scuffed and worn",,claude
+models/puzzle/magekey.mdl_0,item,skin,skin_metal,,*=bronze,"a large key of copper-brown bronze: a square open bow with a banded border, a long shaft with a few ring marks and a stepped bit; orange-brown, tarnished and scratched",,claude
+models/puzzle/mask.mdl_0,item,skin,skin_metal,,"grey,slate=iron;sand,taupe,tan=rust","a burial mask of King Lazarus: a stern angular face of dark grey iron with narrow eye slits, a sharp nose and a grimacing open mouth, rusted orange-brown at the brow, cheeks and rim; pitted and corroded",,claude
+models/puzzle/mithl.mdl_0,item,skin,skin,,*=glass,"a tall long-necked glass flask with a brown cork stopper, a smoky grey-brown glass neck, an orange-amber band at the shoulder and dark red-brown liquid filling the round base; dusty and smudged",,claude
+models/puzzle/music.mdl_0,item,skin,skin,md-scrolls,*=parchment,"a rolled scroll of aged grey-green parchment, unrolling in a curl with a rough edge, rows of faint dark staff lines and marks on the face, small dark rolled ends; stained and creased",,claude
+models/puzzle/orb.mdl_0,item,skin,skin_metal,,*=bronze;violet=crystal,"a pale lavender-violet crystal orb in a tall bronze pedestal with a stepped octagonal foot, flared gold-orange bands, red trim and hanging pointed gold ornaments; tarnished brown-gold metal",,claude
+models/puzzle/orb2.mdl_0,item,skin,skin,,"violet=stone;sand,amber=bronze","a faceted sphere of mottled violet-blue stone with a grainy speckled surface, ringed at the top and the bottom by pointed brass claws that grip it; old brass, scratched",,claude
+models/puzzle/prayer.mdl_0,item,skin,skin_metal,,"grey,taupe=iron;yellow,tan=bronze","a Tibetan prayer wheel: a hexagonal drum of dark grey-brown metal with illegible pale mantra glyphs on each face, hexagonal bronze caps with studded rims and a black iron spindle through the top and bottom",,claude
+models/puzzle/prayer2.mdl_0,item,skin,skin_metal,,"grey,taupe=iron;yellow,tan=bronze","a Tibetan prayer wheel: a hexagonal drum of dark grey-brown metal with illegible pale mantra glyphs on each face, hexagonal bronze caps with studded rims and a black iron spindle through the top and bottom",,claude
+models/puzzle/prybar.mdl_0,item,skin,skin_metal,,"grey,sage=iron;taupe=rust","a long iron prybar: a dark grey-black bar with a slight bend and a flattened, splayed claw end, pitted and speckled with dark green-grey patina and brown rust",,claude
+models/puzzle/r1.mdl_0,item,skin,skin_metal,md-ingots,*=gold,"a rectangular gold bar with a sloped trapezoidal profile, a faint stamped mark on one end, a mottled orange-yellow surface; hammered and scratched",,claude
+models/puzzle/r2.mdl_0,item,skin,skin,md-cutgems,*=crystal,a large brilliant-cut gem with an octagonal flat crown and a pointed pavilion: deep blood-red crystal with darker facets; chipped at the girdle,,claude
+models/puzzle/r3.mdl_0,item,skin,skin_metal,,*=gold,"a golden laurel wreath crown: two curving branches of overlapping leaves forming a horseshoe, tied at the back with a small wrapped band, the leaf tips pointing downward; old gold, dented",,claude
+models/puzzle/r4.mdl_0,item,skin,skin_metal,,"grey=steel;taupe,tan=bronze;violet=crystal","a long scepter topped with a large faceted pale violet diamond held in a flared steel cup, a slim brown-bronze shaft with grey steel collars and rings and a pointed steel pommel; scratched",,claude
+models/puzzle/r5.mdl_0,item,skin,skin,md-cutgems,*=crystal,a large brilliant-cut gem with an octagonal flat crown and a pointed pavilion: golden-yellow crystal with pale cream facet centres each edged by thin red lines; chipped at the girdle,,claude
+models/puzzle/r6.mdl_0,item,skin,skin,md-romeric-stones,*=stone,"a trapezoidal slab of near-black stone with mottled dark green-grey veining, a diamond-shaped void opening framed in deep red stone and two red strips below it; chipped edges and a pale worn rim",,claude
+models/puzzle/r7.mdl_0,item,skin,skin,md-romeric-stones,"grey,slate,sage=stone;tan=bronze","a trapezoidal slab of near-black stone with mottled dark green-grey veining, an eight-rayed sun of brown-tan bronze with pointed rays mounted on its face; chipped edges and a pale worn rim",,claude
+models/puzzle/r8.mdl_0,item,skin,skin,md-romeric-stones,*=stone,"a trapezoidal slab of near-black stone with diagonal green-grey veining, small pale grey and brown triangular and rectangular notches inset in its face; chipped edges and a pale worn rim",,claude
+models/puzzle/ra1.mdl_0,item,skin,skin_metal,,*=gold,"a long golden key of Ra: a fan-shaped sunburst bow of radiating gold ridges, a straight shaft with banded collars and a two-lugged bit at the foot; hammered gold, dusty",,claude
+models/puzzle/rakey.mdl_0,item,skin,skin_metal,,*=gold,"a long golden key of Ra: a fan-shaped sunburst bow of radiating gold ridges, a straight shaft with banded collars and a two-lugged bit at the foot; hammered gold, dusty",,claude
+models/puzzle/rcjem.mdl_0,item,skin,skin,,*=crystal,"a large rough-cut red gem: a tapering prism with uneven flat facets and rounded corners, deep red crystal with darker streaks and chipped edges",,claude
+models/puzzle/redgem.mdl_0,item,skin,skin,md-tibetgems,"sand,amber,tan,grey=bronze;red=crystal","a large faceted red gem, tall and hexagonal, held in a carved setting of angular winged bronze claws that ends in a pointed spike below; old bronze, tarnished",,claude
+models/puzzle/s1.mdl_0,item,skin,skin,,*=stone;orange=gold,"a tall slab of pale grey stone: a flat front with a raised upper panel, two lower rectangular panels with dark brown handle bars, two small orange-gold brackets at the top, a thin loop at one side; chipped",,claude
+models/puzzle/s2.mdl_0,item,skin,skin_metal,,"yellow,grey=gold;violet,red=crystal","a long gold key of the guardian: a rounded rectangular bow set with a column of red stones, a dark lapis-blue shaft between gold collars and a stepped gold bit; worn gold",,claude
+models/puzzle/sand.mdl_0,item,skin,skin,,*=earth,"a low lumpy mound of coarse rust-brown sand and dry clods of earth with darker specks, uneven and crumbling",,claude
+models/puzzle/scept.mdl_0,item,skin,skin_metal,,"grey=wood;yellow,tan=gold;violet,green,olive=crystal","a pharaoh's scepter: a long black shaft with dark violet-blue bands, gold collars and a gold bird-headed finial with a green wing, a gold cap at the foot; worn and dusty",,claude
+models/puzzle/scepter.mdl_0~4107,item,skin,skin,,*=stone;orange=gold,"a tall slab of pale grey stone: a flat front with a raised upper panel, two lower rectangular panels with dark brown handle bars, two small orange-gold brackets at the top, a thin loop at one side; chipped",,claude
+models/puzzle/scepter.mdl_0~8334,item,skin,skin,,"yellow,olive,amber,sand=bronze;grey,sage,slate=wood/steel","a tall Tibetan vajra scepter: a long dark brown wooden shaft with thin orange bronze rings, topped by a fan-shaped bronze head of overlapping petals around a grey steel diamond; tarnished",,claude
+models/puzzle/scrol.mdl_0,item,skin,skin,md-scrolls,*=parchment,"a rolled scroll of aged tan-brown parchment, unrolling in a curl, a red pentagram above rows of dark illegible glyphs, darker stained rolled ends; creased and dirty",,claude
+models/puzzle/scroll.mdl_0,item,skin,skin,md-scrolls,*=parchment,"a tan parchment scroll hanging open from a roller with spiral ends, columns of black illegible runes on its face, orange stains and creases, a folded plain back; aged and brittle",,claude
+models/puzzle/shovl.mdl_0,item,skin,skin,,"grey,sage=iron;orange,brown,taupe=wood","a gravedigger's shovel: a long rust-brown wooden shaft with a T-shaped grip and a dark grey iron spade blade with a pointed tip, streaked with dirt; worn and pitted",,claude
+models/puzzle/silver.mdl_0,item,skin,skin_metal,md-ingots,*=silver,"a rectangular silver bar with a sloped trapezoidal profile, a faint stamped mark on one end, a mottled dull grey surface; scratched and tarnished",,claude
+models/puzzle/soul.mdl_0,item,skin,skin,,"grey,sage,slate=iron;violet=crystal;sand,amber=bone","a long key topped with a brown-tan skull above a faceted violet-blue gem, a slim black iron shaft with banded collars and a heavy blocky iron bit; pitted and dark",,claude
+models/puzzle/speye.mdl_0,item,skin,skin,,*=crystal,a large octagonal step-cut red gem like a serpent's eye: deep red crystal with darker side facets and a flat top; chipped at the edges,,claude
+models/puzzle/staff.mdl_0,item,skin,skin_metal,,"grey=wood;yellow,orange=gold;violet=crystal","a long slender staff of gold and black bands: a tall ornamented head of gold rings holding a dark orb in a gold cradle with violet inlays, a beaded shaft and a pointed foot; worn gold",,claude
+models/puzzle/stime.mdl_0,item,skin,skin_metal,,"amber,orange,grey=bronze;violet=crystal","a scarab of time: a lapis-blue scarab beetle with spread wings holding a red sun-disc gem, set in a brown-bronze octagonal frame with gold banded sides and a small green stone at the base; plain dark back",,claude
+models/puzzle/stkey.mdl_0,item,skin,skin_metal,,grey=iron;taupe=rust,"a large iron stable key: a wide wire ring bow with a small pentagonal collar, a long thin shaft and a stepped bit; grey-black iron, pitted, with rust-brown flecks",,claude
+models/puzzle/stonet.mdl_0,item,skin,skin,md-cutgems,*=crystal,a large brilliant-cut gem with an octagonal flat crown and a pointed pavilion: amber-gold crystal with darker brown lower facets; chipped at the girdle,,claude
+models/puzzle/takey.mdl_0,item,skin,skin,,"grey,sage=iron;orange,taupe=leather","a tailor's key of dark grey iron: a square open bow, a long shaft with ring collars and a small stepped bit, a brown leather tag with a round stud fixed above the bow; worn and pitted",,claude
+models/puzzle/tbtkey.mdl_0,item,skin,skin,,"grey,sage,slate=iron;violet=crystal;sand,amber=bone","a long key topped with a brown-tan skull above a faceted violet-blue gem, a slim black iron shaft with banded collars and a heavy blocky iron bit; pitted and dark",,claude
+models/puzzle/tbtmask.mdl_0,item,skin,skin_metal,,"yellow,taupe=bronze;grey=silver;red=cloth","a gilded wrathful deity mask: a grimacing orange-bronze face with heavy brows, large ears and a fanged mouth, a red cloth crown with a studded silver band and blue gems, and a hexagonal bronze back plate",,claude
+models/puzzle/tienkey.mdl_0,item,skin,skin_metal,,*=bronze,"a large key of copper-brown bronze: a square open bow with a banded border, a long shaft with a few ring marks and a stepped bit; orange-brown, tarnished and scratched",,claude
+models/puzzle/trkey.mdl_0,item,skin,skin_metal,,*=bronze,"a treasury key of verdigris-green bronze: a diamond-shaped open bow with a triangular orange gem at its lower corner, a shaft with orange-gold bands and a stepped bit; heavy green patina",,claude
+models/puzzle/ucrwn.mdl_0,item,skin,skin,md-egypt-crowns,"maroon=cloth;yellow,grey=gold","a red crown of Egypt: a tall deep red-maroon cap with a thin tall spike at the back and a curled wire spiral at the front, a gold band around the base with a rearing cobra and short gold points",,claude
+models/puzzle/vial.mdl_0,item,skin,skin_metal,,*=bronze,"a tall bronze oil ewer: a slender vase-shaped body with a leaf motif, a pointed conical lid, a thin angular handle and a stepped octagonal foot with a meander border; dark brown-gold, tarnished",,claude
+models/puzzle/water.mdl_0,item,skin,skin,md-elements,*=stone,"a carved wave of deep blue-violet stone curling in a hook shape, set within a beaded grey stone border; mottled, with small chips and a damp, weathered surface",,claude
+models/rat.mdl_0,creature,skin,skin,md-rat,"brown,taupe,grey,tan=hair;amber=hide","a brown rat: coarse dark brown-grey fur, a long bare ringed tail in pale tan-pink scaly skin, tiny black eyes, small pale claws and yellow incisors; matted and dirty",,claude
+models/raven.mdl_0,creature,skin,skin,md-raven,*=hair,"a raven: ruffled black-blue feathers on its body, wings and tail, a heavy black beak, thin black legs and claws",,claude
+models/ravenstf.mdl_0,weapon,skin,skin_metal,md-w-necromancer,*=iron;red=leather,"a Necromancer's raven staff held in the hand: a short staff head of black iron shaped as a raven with long swept spiked wings, a glowing orange eye and a dark red wrapped grip",,claude
+models/ravproj.mdl_0,weapon,skin,skin,md-raven,*=hair,"a raven in flight with wings spread wide: glossy blue-black feathers, a small orange beak, tiny red eyes and dark grey talons",,claude
+models/rflmtrch.mdl_0,fx,fx,fx,,,a burning wall torch: a dark grey ribbed stone bowl and a yellow-orange flame,,claude
+models/ring.mdl_0,fx,fx,fx,,,"a ragged ring of dark grey smoke, a missile's puff",,claude
+models/ring.mdl_1,fx,fx,fx,,,"a ragged ring of dark grey smoke, a missile's puff",,claude
+models/ring.mdl_2,fx,fx,fx,,,"a ragged ring of dark grey smoke, a missile's puff",,claude
+models/ring.mdl_3,fx,fx,fx,,,"a ragged ring of dark grey smoke, a missile's puff",,claude
+models/ring.mdl_4,fx,fx,fx,,,"a ragged ring of dark grey smoke with green tinges, a missile's puff",,claude
+models/ringft.mdl_0,item,skin,skin_metal,md-rings,*=iron,"a black iron ring shaped like a bat: overlapping scaled segments for a body, a pointed head with two small red eyes and a pale beak tip, clawed wings curving into the band; scratched",,claude
+models/ringre.mdl_0,item,skin,skin_metal,md-rings,"sand,grey,yellow=gold;special=crystal","a gold ring with an octagonal tan band, a raised ornamented setting with orange-gold scrollwork on top holding a bright green emerald; worn",,claude
+models/ringtn.mdl_0,item,skin,skin_metal,md-rings,grey=iron;yellow=gold,"a heart-shaped ring of alternating black iron and gold segments, two serpent heads at the top with green eyes facing each other and a small gold emblem; the gold worn",,claude
+models/ringwb.mdl_0,item,skin,skin_metal,md-rings,grey=silver;violet=crystal,"a silver ring with a wide faceted band with lattice cutouts on its sides, topped by a rounded violet-blue gemstone in a raised silver setting; tarnished",,claude
+models/rometrch.mdl_0,fx,fx,fx,,,"a Roman wall torch holder: a fluted dark grey stone cup with a carved leaf rim and a black top, flame is the engine's",,claude
+models/samurai.mdl_0,object,skin,skin,md-statues-tulku,"grey,taupe=stone;orange,tan=bronze","a standing statue of an armoured guardian warrior holding a tall spear: grey-brown stone body in a pleated skirt, bronze-orange armour plates on shoulders, chest sash and greaves, a crested helmet; weathered and chipped",,claude
+models/scarabst.mdl_0,weapon,skin,skin_metal,md-w-assassin,"grey=bronze;sand,amber=gold;violet=crystal","an Assassin's scarab staff held in the hand: a winged scarab beetle of aged gold with spread engraved wings, a dark lapis-blue shell with a gold stripe and a carved brown shaft with gold rings",,claude
+models/schunk1.mdl_0,debris,skin,skin,md-debris-stone,*=stone,"a rough blocky chunk of dark grey stone with chipped faces: mottled with taupe-brown and tan patches and a faint green-grey tint, weathered",,claude
+models/schunk1.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a rough blocky chunk of warm ochre-brown sandstone with chipped faces: orange-brown and sand-yellow patches, darker brown speckles, weathered",,claude
+models/schunk2.mdl_0,debris,skin,skin,md-debris-stone,*=stone,"a large rough chunk of dark grey-brown stone with chipped faces: mottled with taupe-brown and tan patches and a faint green-grey tint, weathered",,claude
+models/schunk2.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a large rough chunk of ochre-brown sandstone with chipped faces: sand-yellow, amber and orange-brown patches with darker brown speckles, weathered",,claude
+models/schunk3.mdl_0,debris,skin,skin,md-debris-stone,*=stone,"a rough angular chunk of dark grey stone with chipped faces: mottled with taupe-brown and tan patches and a faint green-grey tint, weathered",,claude
+models/schunk3.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a rough angular chunk of warm brown sandstone with chipped faces: amber-brown with sand-yellow patches and darker brown speckles, weathered",,claude
+models/schunk4.mdl_0,debris,skin,skin,md-debris-stone,*=stone,"a small rough faceted stone fragment: dark grey with taupe-brown and tan patches and a faint green-grey tint, chipped and weathered",,claude
+models/schunk4.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a small rough faceted fragment of amber-brown sandstone with sand-yellow and tan patches and darker brown speckles, chipped and weathered",,claude
+models/scorpion.mdl_0,creature,skin,skin,md-scorpion,*=hide;red=flesh,"a giant scorpion: a segmented orange-brown chitin shell, two large claws, eight jointed legs and a curved tail ending in a stinger, with red blotches at the joints and a red stinger bulb",,claude
+models/scorpion.mdl_1,creature,skin,skin,md-scorpion,*=hide,"a giant scorpion: a segmented black chitin shell, two large claws, eight jointed legs and a curved tail ending in a stinger, with faint orange markings at the joints",,claude
+models/scrbpbdy.mdl_0,weapon,skin,skin,md-w-assassin,*=hide,"a scarab beetle's body: a rounded domed carapace of glossy brown chitin in banded rings of orange-brown and tan, pincer legs folded beneath; hard and smooth",,claude
+models/scrbpwng.mdl_0,weapon,skin,skin,md-w-assassin,*=hide,a pair of thin pale grey-white insect wings with faint fibrous veining: the wings of the scarab on the Assassin's staff chain,,claude
+models/scrbstp1.mdl_0,weapon,skin,skin,md-w-assassin,*=hide,"a scarab beetle's body: a rounded domed carapace of glossy brown chitin in banded rings of orange-brown and tan, pincer legs folded beneath; hard and smooth",,claude
+models/seaweed.mdl_0,object,skin,skin,md-plants,*=foliage,"a tall thin stalk of dark amber-brown seaweed with short side shoots, narrowing to a fine tip; slimy and limp",,claude
+models/sflesh1.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,a chunk of rotting flesh: sickly olive-green torn meat with darker mottled patches and ragged torn edges,,claude
+models/sflesh2.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,a long strip of rotting flesh: sickly olive-green torn meat with darker mottled patches and jagged torn edges,,claude
+models/sflesh3.mdl_0,debris,skin,skin,md-debris-flesh,*=flesh,a rough lump of rotting flesh: sickly olive-green meat with darker mottling and torn edges,,claude
+models/shard.mdl_0,debris,skin,skin,,*=ice,"a jagged chunk of ice: faceted, pale blue and white-lavender frosted ice with darker blue patches, sharp broken edges",,claude
+models/shard.mdl_1,debris,skin,skin,md-debris-stone,*=stone,"a jagged chunk of grey rock: faceted, mottled slate-grey and pale grey stone, sharp broken edges, rough and chipped",,claude
+models/shard.mdl_2,debris,skin,skin,,*=earth,"a jagged clod of dark brown ash and cinders: faceted, mottled with paler tan and grey-brown flecks, crumbling",,claude
+models/shard1.mdl_0,debris,fx,fx,,,"a flat triangular debris shard painted with mottled white, tan and brown chips and a dark edge",,claude
+models/shard1.mdl_1,debris,fx,fx,,,"a flat triangular debris shard in pale grey with diagonal light streaks, like a glass splinter",,claude
+models/shard1.mdl_2,debris,fx,fx,,,a flat triangular debris shard in dark red with a few bright orange flecks,,claude
+models/shard1.mdl_3,debris,fx,fx,,,a flat triangular debris shard in near-black with dark grey mottling,,claude
+models/shard2.mdl_0,debris,fx,fx,,,"a flat triangular debris shard painted with mottled brown, tan and black chips and a white corner",,claude
+models/shard2.mdl_1,debris,fx,fx,,,a flat triangular debris shard in grey with diagonal green-grey streaks,,claude
+models/shard2.mdl_2,debris,fx,fx,,,a flat triangular debris shard in dark red with diagonal streaks,,claude
+models/shard2.mdl_3,debris,fx,fx,,,a flat triangular debris shard in near-black with dark grey mottling,,claude
+models/shard3.mdl_0,debris,fx,fx,,,"a flat winged debris shard painted with mottled grey, brown and black chips",,claude
+models/shard3.mdl_1,debris,fx,fx,,,a flat winged debris shard in mid grey with diagonal light streaks,,claude
+models/shard3.mdl_2,debris,fx,fx,,,a flat winged debris shard in dark red with diagonal streaks,,claude
+models/shard3.mdl_3,debris,fx,fx,,,a flat winged debris shard in near-black with dark grey mottling,,claude
+models/shard4.mdl_0,debris,fx,fx,,,"a flat forked debris shard painted with tan, brown and grey chips and a dark band",,claude
+models/shard4.mdl_1,debris,fx,fx,,,a flat forked debris shard in mid grey with diagonal light streaks,,claude
+models/shard4.mdl_2,debris,fx,fx,,,a flat forked debris shard in dark red with diagonal streaks,,claude
+models/shard4.mdl_3,debris,fx,fx,,,a flat forked debris shard in near-black with dark grey mottling,,claude
+models/shard5.mdl_0,debris,fx,fx,,,"a flat spear-shaped debris shard painted white at the tip, tan and brown below",,claude
+models/shard5.mdl_1,debris,fx,fx,,,a flat spear-shaped debris shard in pale grey,,claude
+models/shard5.mdl_2,debris,fx,fx,,,a flat spear-shaped debris shard in dark red with a few orange flecks,,claude
+models/shard5.mdl_3,debris,fx,fx,,,a flat spear-shaped debris shard in near-black with dark grey mottling,,claude
+models/shardice.mdl_0,fx,fx,fx,,,a crystal bolt missile: a long thin faceted spike in lavender and pale violet with white edges,,claude
+models/sheep.mdl_0,creature,skin,skin,md-sheep,*=hair,"a sheep: a thick coat of curly grey-white wool, a black face and ears, thin black legs and cloven hooves",,claude
+models/sheepmis.mdl_0,creature,skin,skin,md-sheep,*=hair,"a sheep: a thick coat of curly grey-white wool, a black face and ears, thin black legs and cloven hooves",,claude
+models/shield.mdl_0,fx,fx,fx,,,"a pentagonal magical shield of violet crystal with a pale lavender star-pointed rim and an eye-shaped boss in the centre, a plain dark violet back",,claude
+models/sickle.mdl_0,weapon,skin,skin,md-w-necromancer,grey=steel;orange=wood;yellow=gold,"a Necromancer's sickle held in the hand: a long curved steel blade on an ornate gold socket with scrollwork, at the top of a dark red-brown wooden shaft with a spiked steel butt",,claude
+models/sk-throne.mdl_0,object,skin,skin,md-corpses,"grey,slate,taupe=leather;tan,amber=bone","a seated skeleton in a tattered dark grey-brown leather tunic with a studded belt and shoulder guards, yellow-brown bare bones of skull, hands and legs, heavy boots; dusty and cracked",,claude
+models/skeleton.mdl_0,object,skin,skin,md-corpses,*=bone,"a human skeleton lying stretched on its back with arms at its sides: yellowed, brown-stained bones, a skull with dark sockets, a ribcage and long limb bones; dusty, cracked, mossy in places",,claude
+models/skllstk1.mdl_0,object,skin,skin,md-corpses,sand=bone;*=wood,"a tall wooden stake of dark red-brown wood with a sharpened tip, topped by a yellowed human skull with dark sockets; weathered and cracked",,claude
+models/skllstk2.mdl_0,object,skin,skin,md-corpses,sand=bone;*=wood,"a tall wooden stake of dark red-brown wood with a sharpened tip, topped by two stacked yellowed human skulls with dark sockets; weathered and cracked",,claude
+models/skulbook.mdl_0,weapon,skin,skin,md-books,green=leather;sand=parchment;grey=leather,a thrown closed book: a dark green leather cover with a bronze-orange cross clasp design and a tan page block along one side; worn and scuffed,,claude
+models/skulhead.mdl_0,creature,skin,skin,md-skullwiz,*=bone,"a horned ram's skull: yellowed bone with a long snout and empty eye sockets, two large spiral horns ridged in brown and tan; dried and weathered",,claude
+models/skull.mdl_0,object,skin,skin,md-corpses,*=bone,"a human skull: weathered yellow-brown bone with dark eye sockets, a nasal hole and a toothed upper and lower jaw; dusty and cracked",,claude
+models/skullwiz.mdl_0,creature,skin,skin,md-skullwiz,"grey=cloth/bone;red=cloth;tan,taupe=bone;yellow=gold","a skull wizard: a skeletal mage in a long blood-red robe with gold trim and gold embroidered motifs down the front, a horned ram's skull for a face, bone spikes on the shoulders, a spellbook in one hand",,claude
+models/skullwiz.mdl_1,creature,skin,skin,md-skullwiz,"grey,slate,green=cloth;taupe,sage,tan=bone;amber,red=gold","a skull wizard: a skeletal mage in a long black robe with red trim at the hem and cuffs and gold embroidered motifs down the front, a horned ram's skull for a face, bone spikes on the shoulders, a spellbook in one hand",,claude
+models/skulshot.mdl_0,fx,fx,fx,,,a flying skull missile: a brown bone skull with glowing orange eyes and a long flaming orange-yellow horn,,claude
+models/skulshot.mdl_1,fx,fx,fx,,,a flying skull missile in blood red with glowing orange eyes and a long flaming yellow horn,,claude
+models/snake.mdl_0,creature,skin,skin,md-snake,*=hide,"a giant cobra: a coiled body of tan-brown hexagonal scales, a broad hood of darker amber scales with a diamond pattern, red eyes, white fangs and a red forked tongue",,claude
+models/snakearr.mdl_0,fx,fx,fx,,,a snake arrow missile: an olive-green faceted bolt with bright green veins,,claude
+models/snkstatu.mdl_0,object,skin,skin,md-statues-thysis,*=stone,a rearing Egyptian cobra statue with a flared banded hood: tan-brown sandstone with hexagonal scales carved on its coiled body and a small red eye; chipped and worn,,claude
+models/snout.mdl_0,weapon,skin,skin,md-sheep,*=hide;sage=hair,"a sheep's snout and front legs seen from behind its eyes, the view of a polymorphed player: charcoal-black skin, short dark legs, a curl of pale grey wool on the brow",,claude
+models/snowcrnr.mdl_0,object,skin,skin,md-snow,*=ice,a corner drift of packed snow: rough white and pale blue-grey crusted snow in sharp wind-carved ridges,,claude
+models/snowleopard.mdl_0,creature,skin,skin,md-snowleopard,"grey,sage,slate=hair;orange,taupe=leather;red=cloth;tan,sand=bone","a snow leopard warrior: a muscular beast-man with black-spotted grey-white fur, red cloth shoulder wraps and a sash, brown leather bands and a round spiked shield, bone trophies at the belt, a thin steel sword",,claude
+models/snowleopard.mdl_1,creature,skin,skin,md-snowleopard,"yellow,orange,taupe=hair;sand,tan=hair;grey=steel/hair","a tiger warrior: a muscular beast-man with orange fur striped with black, a pale grey belly and hands, a tan fur ruff at the shoulders, a round spiked shield, a thin steel sword",,claude
+models/snowpile.mdl_0,object,skin,skin,md-snow,*=ice,"a low pile of packed snow: rough white and pale blue-grey crusted snow, wind-carved and uneven",,claude
+models/snowwall.mdl_0,object,skin,skin,md-snow,*=ice,a long wall of packed snow: rough white and pale blue-grey crusted snow with wind-carved ridges along its top,,claude
+models/soulball.mdl_0,fx,fx,fx,,,a soul orb: a translucent red sphere fading to dark grey at its center,,claude
+models/soulskul.mdl_0,weapon,skin,skin,md-w-necromancer,*=bone,"a human skull with a toothed open jaw and glowing orange-red eyes: yellowed, cracked bone with brown staining",,claude
+models/spider.mdl_0,creature,skin,skin,md-spider,*=hide,"a giant spider: a dark brown-black hairy body, eight long jointed banded legs, a red hourglass mark, red eyes and dark fangs",,claude
+models/spider.mdl_1,creature,skin,skin,md-spider,*=hide,"a giant spider: a glossy black body, eight long jointed legs banded with orange at the joints, a red mark on the back, red eyes and dark fangs",,claude
+models/spike.mdl_0,fx,fx,fx,,,a small orange spike missile: a four-sided cone in orange-brown streaks,,claude
+models/spit.mdl_0,fx,fx,fx,,,a crystal bolt missile: a long thin faceted spike in lavender and pale violet with white edges,,claude
+models/spllbook.mdl_0,weapon,skin,skin,md-w-necromancer,"grey=leather;orange,amber=flesh/leather;sand,tan=parchment","a Necromancer's spell book held in the hand: an open tome bound in worn dark brown leather with yellowed parchment pages, a red sigil and illegible script, held by a bare tan human hand and forearm",,claude
+models/splnter1.mdl_0,debris,skin,skin,md-debris-wood,*=wood,"a long thin splinter of broken wood: dark orange-brown weathered planking with the grain running lengthwise, a ragged split end and a few olive-green mossy flecks",,claude
+models/splnter2.mdl_0,debris,skin,skin,md-debris-wood,*=wood,"a long narrow splinter of broken wood: dark orange-brown with lengthwise grain, sand-yellow split fibers and a sharp pointed end",,claude
+models/splnter3.mdl_0,debris,skin,skin,md-debris-wood,*=wood,"a broken fragment of wooden planking: several jagged dark orange-brown boards side by side with lengthwise grain, a narrow dark brown band across, sand-yellow split edges, olive-green moss flecks",,claude
+models/splnter4.mdl_0,debris,skin,skin,md-debris-wood,*=wood,"a V-shaped fragment of broken wood: dark orange-brown plank with lengthwise grain, a narrow dark brown band across, sand-yellow split edges and a pointed end",,claude
+models/star.mdl_0,fx,fx,fx,,,"a white and violet eight-pointed star burst, a magic missile spark",,claude
+models/star.mdl_1,fx,fx,fx,,,"a yellow and orange sixteen-pointed star burst with a white core, a lightning ball spark",,claude
+models/stchain.mdl_0,object,skin,skin_metal,,*=iron,"a short length of heavy black iron chain: five thick oval links in a row, pitted and sooty",,claude
+models/stclrbm.mdl_0,fx,skip,skip,,,,,claude
+models/stclrbm.mdl_1,fx,skip,skip,,,,,claude
+models/stclrbm.mdl_2,fx,skip,skip,,,,,claude
+models/stclrbm.mdl_3,fx,skip,skip,,,,,claude
+models/stclrbm.mdl_4,fx,skip,skip,,,,,claude
+models/stice.mdl_0,object,skin,skin,md-ice,*=ice,"a cluster of jagged ice shards: angular plates of marbled blue-violet, grey and white ice, cracked and chipped",,claude
+models/stlghtng.mdl_0,fx,fx,fx,,,a lightning bolt segment: a lavender and white bolt with bright blue electric veins,,claude
+models/stlgmt1.mdl_0,object,skin,skin,md-ice,*=ice,a tall pointed stalagmite of pale blue-grey and violet ice with white streaks and chipped facets,,claude
+models/stlgmt2.mdl_0,object,skin,skin,md-ice,*=ice,"a broad pointed stalagmite of pale blue-grey and violet ice with white streaks, chipped facets and a wide base",,claude
+models/stltng2.mdl_0,fx,fx,fx,,,a lightning bolt segment: a lavender and white bolt with bright blue electric veins,,claude
+models/stmedgaz.mdl_0,fx,fx,fx,,,a medusa's green gaze: a ring-shaped bolt of twisting dark green and olive veins,,claude
+models/stool.mdl_0,object,skin,skin,md-furniture,*=wood,a small round bar stool with a thick dark red-brown plank seat bound by a crossbrace and three splayed tapering legs; scuffed and worn,,claude
+models/stsunsf1.mdl_0,fx,skip,skip,,,,,claude
+models/stsunsf2.mdl_0,fx,fx,fx,,,a sunbeam shaft: swirling gold and orange bands of light with bright cyan flecks,,claude
+models/stsunsf3.mdl_0,fx,skip,skip,,,,,claude
+models/stsunsf4.mdl_0,fx,fx,fx,,,a sun glow disc: an octagonal disc with a white core fading through yellow to deep orange,,claude
+models/stsunsf5.mdl_0,fx,fx,fx,,,a sunbeam shaft: swirling gold and amber marbled bands of light,,claude
+models/succubus.mdl_0,player,skin,skin,md-demoness,"red=hide;slate,grey=leather;sand=bone;amber=gold","a Demoness with smooth red skin and long black hair, black leather armour studded with gold, bat-winged shoulder guards with red membranes, black wrapped legs with pale bands and tan clawed feet",,claude
+models/sucwp1.mdl_0,weapon,skin,skin,md-w-demoness,grey=leather;red=hide;slate=steel,"a Demoness's clawed hand held in the hand: smooth red demon skin with long curved black claws, the forearm wrapped in black leather straps with red bands and dark steel plates",,claude
+models/sucwp1p.mdl_0,fx,fx,fx,,,"a blood missile: a double pyramid with a dark red top half and an orange-yellow bottom half, and a long amber tail streak",,claude
+models/sucwp2.mdl_0,weapon,skin,skin,md-w-demoness,grey=leather;red=hide;orange=bronze;olive=crystal;slate=steel,a Demoness's acid orb weapon held in the hand: a red clawed hand and a black leather and steel bound forearm holding an orb of dark bronze plates inset with olive-green crystal glyphs,,claude
+models/sucwp2p.mdl_0,fx,fx,fx,,,an acid orb missile: a double pyramid in olive green with bright green veins,,claude
+models/sucwp3.mdl_0,weapon,skin,skin,md-w-demoness,grey=leather/iron;red=hide/crystal;slate=steel,a Demoness's flame orb weapon held in the hand: a red clawed hand and a black leather and steel bound forearm holding an orb of dark iron plates set with red crystals and glyphs,,claude
+models/sucwp4.mdl_0,weapon,skin,skin_metal,md-w-demoness,"grey,slate=iron;sand=gold;violet=crystal;sage,green=iron","a Demoness's lightning wand held in the hand: a faceted crystal sphere veined with white-blue, gripped by sweeping black iron horns above a gold ornament, on a dark steel shaft",,claude
+models/sucwp4.mdl_1,weapon,skin,skin_metal,md-w-demoness,"grey,slate=iron;sand=gold;violet=crystal;sage,green=iron","a Demoness's lightning wand held in the hand: a faceted crystal sphere veined with white-blue, gripped by sweeping black iron horns above a gold ornament, on a dark steel shaft",,claude
+models/sunstaff.mdl_0,weapon,skin,skin_metal,md-w-crusader,grey=iron;yellow=gold/bronze,"a Crusader's sun staff held in the hand: a long shaft of aged bronze with iron bands and a spear point, topped by a gold eight-pointed sun starburst around a round gold disc",,claude
+models/sword.mdl_0,object,skin,skin_metal,,grey=steel;yellow=gold;orange=leather,"a long straight steel sword: a narrow double-edged blade, a gold cross-guard with flared tips, a grip wrapped in brown leather bands, a plain round pommel; nicked and tarnished",,claude
+models/teleport.mdl_0,fx,fx,fx,,,a teleporter energy pillar: a cylinder of violet-blue haze with a network of white lightning cracks,,claude
+models/teleport.mdl_1,fx,fx,fx,,,a teleporter energy pillar: a cylinder of dark red haze with a network of white lightning cracks,,claude
+models/tempmetr.mdl_0,fx,fx,fx,,,"a molten rock ball: a dark brown crust with glowing red, orange and yellow cracks and molten spots",,claude
+models/test.mdl_0,fx,skip,skip,,,,,claude
+models/test.mdl_1,fx,skip,skip,,,,,claude
+models/throne.mdl_0,object,skin,skin,md-furniture,grey=bone;*=wood,"a tall throne of dark red-brown timber with a lattice back, a carved horned ox skull on the backrest, rows of small human skulls stacked in the base and under the seat, long bone columns at the sides; scarred",,claude
+models/tombstn1.mdl_0,object,skin,skin,md-tombstones,*=stone,"a Celtic cross gravestone of grey weathered stone with a ring carved at the crossing and a back panel of illegible lettering; moss-stained, cracked and chipped",,claude
+models/tombstn2.mdl_0,object,skin,skin,md-tombstones,*=stone,"a rounded-top slab gravestone of grey weathered stone, a plain cracked front and a back with a framed panel of illegible lettering and a small emblem; moss-stained and chipped",,claude
+models/tornato.mdl_0,fx,fx,fx,,,a swirl of flying meteor rock fragments: dark brown rocks with glowing orange and yellow molten cracks,,claude
+models/tree.mdl_0,object,skin,skin,md-plants,*=wood,a dead bare tree with a thick twisted trunk splitting into crooked leafless branches: dark grey-brown rough bark with pale tan streaks; gnarled and cracked,,claude
+models/tree2.mdl_0,object,skin,skin,md-plants,"orange,brown=wood;*=foliage","a broad flat-topped tree with a thick twisting red-brown trunk and branches and a wide canopy of dense dark green leaves; rough, gnarled bark",,claude
+models/tutstatu.mdl_0,object,skin,skin,md-statues-thysis,yellow=gold;*=stone,"a colossal Egyptian pharaoh statue standing with arms crossed over the chest: tan sandstone, a tall white crown, a pleated striped kilt, a broad collar and bands in gold and blue paint, a dark face; chipped",,claude
+models/twspike.mdl_0,weapon,skin,skin_metal,md-glyph,"grey,sage=iron;red=crystal",a tripwire spike: a dark iron body of riveted plates with four long sharp iron spikes radiating outward and a red capped top; pitted and sooty,,claude
+models/v_assgr.mdl_0,weapon,skin,skin,md-w-assassin,grey=leather;slate=steel;orange=flesh,"an Assassin's arm holding a grenade: a black segmented leather sleeve with dark steel plates, a black fingerless glove with bare tan fingertips gripping a dark steel spiked ball with red bands",,claude
+models/vindsht1.mdl_0,fx,fx,fx,,,"a thrown raven-staff missile: three sharp silver-edged blades joined at a point, with orange glowing centres",,claude
+models/vorpal.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey,slate,sage,green=steel;orange=leather;sand,yellow=gold","a Paladin's vorpal sword held in the hand: a long double-edged steel blade engraved with Celtic knotwork, a gold winged crossguard, a brown leather glove with a studded cuff and a black chain mail sleeve",,claude
+models/vorpshk2.mdl_0,fx,fx,fx,,,a crackle of electric sparks: branching lavender-white lightning arcs on black,,claude
+models/vorpshk2.mdl_1,fx,fx,fx,,,a crackle of electric sparks: branching lavender-white lightning arcs on black,,claude
+models/vorpshok.mdl_0,fx,fx,fx,,,a lightning shock ball: a web of fine violet-white electric arcs around a bright blue-white core,,claude
+models/vorpshok.mdl_1,fx,fx,fx,,,a lightning shock ball: a web of fine violet-white electric arcs around a bright blue-white core,,claude
+models/vorpshot.mdl_0,fx,fx,fx,,,a vorpal lightning missile: branching violet and white electric arcs in a long band,,claude
+models/vorpshot.mdl_1,fx,fx,fx,,,a vorpal lightning missile: branching violet and white electric arcs in a long band,,claude
+models/vorpswip.mdl_0,fx,fx,fx,,,a vorpal sword swipe: a curved flat crescent of pale grey light,,claude
+models/w_l2_c1.mdl_0,weapon,skin,skin_metal,md-w-paladin,grey=steel/leather;sage=steel,"a Paladin's vorpal sword lying as a pickup: a long double-edged dark steel blade with a central ridge, a gold winged crossguard with scrollwork, a black leather-wrapped grip and a gold pommel",,claude
+models/w_l2_c2.mdl_0,weapon,skin,skin,md-w-crusader,*=gold;violet=ice,"a Crusader's ice mace lying as a pickup: a rounded head of dark indigo-blue ice crystal with pale veins, gripped by ornate gold prongs on a slim gold handle with carved bands",,claude
+models/w_l2_c3.mdl_0,weapon,skin,skin,md-w-necromancer,*=crystal,"a Necromancer's pickup: a flat blood-red carved sigil shaped like a cross, a pentagram inside a ring at its top, a downward arrowhead tip and small side barbs",,claude
+models/w_l2_c4.mdl_0,weapon,skin,skin,md-w-assassin,"grey=steel/leather;orange,brown=wood","an Assassin's crossbow lying as a pickup: a dark red-brown wooden stock and curved bow limbs, black leather-covered steel fittings at the stirrup and butt, a thin tan string",,claude
+models/w_l2_c5.mdl_0,weapon,skin,skin,md-w-demoness,"grey=iron;orange,tan=bronze;olive=crystal","a Demoness's acid orb pickup: a bell-shaped casing of dark blackened iron plates with ridged worn bronze edges, each face carrying an olive-green glyph set in crystal",,claude
+models/w_l3_c1.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey,slate,sage=steel;orange=wood",a Paladin's battle axe lying as a pickup: a double-bladed dark steel head with curved horned blades and an engraved socket on a long dark brown wooden haft with steel spikes at each end,,claude
+models/w_l3_c2.mdl_0,weapon,skin,skin,md-w-crusader,"grey,slate,sage=iron;orange=wood;red=stone;sand,yellow=gold","a Crusader's meteor staff lying as a pickup: a long dark iron shaft with a brown wooden grip, an ornate gold collar and curved silver horns, topped by a jagged black rock cracked with red fissures",,claude
+models/w_l3_c3.mdl_0,weapon,skin,skin_metal,md-w-necromancer,"grey,slate=steel;sand=gold","a Necromancer's triangular pickup: a dark steel triangle frame with a smaller bronze-gold triangle inside, crossed by black iron spikes around a round red gem at the centre",,claude
+models/w_l3_c4.mdl_0,weapon,skin,skin,md-w-assassin,"slate,grey=steel;orange=leather","an Assassin's grenade bandolier pickup: a curved brown leather strap with a steel buckle, carrying three round dark steel grenades studded with long spikes and ringed with bright red bands",,claude
+models/w_l3_c5.mdl_0,weapon,skin,skin,md-w-demoness,"grey,slate=iron;taupe,tan,orange=bronze;red=crystal","a Demoness's flame orb pickup: a bell-shaped casing of dark blackened iron plates with worn bronze edges, each face carrying a red glyph set in crystal",,claude
+models/w_l41_c1.mdl_0,weapon,skin,skin_metal,md-w-paladin,"grey=steel;sand,amber=bronze","a Paladin's Purifier head pickup: a shield-shaped plate of aged bronze-gold with scrollwork, a round red gem at its centre and two crossed steel spearheads",,claude
+models/w_l41_c2.mdl_0,weapon,skin,skin_metal,md-w-crusader,*=bronze,"a Crusader's sun staff shaft pickup: a very long slim shaft of aged bronze with ribbed bands and a pointed tip, a ringed round gold boss near the top",,claude
+models/w_l41_c3.mdl_0,weapon,skin,skin_metal,md-w-necromancer,*=iron,"a Necromancer's raven staff wings pickup: a pair of swept black iron wings with curled spiked tips joined by a short bar, with a faint dark green sheen",,claude
+models/w_l41_c4.mdl_0,weapon,skin,skin_metal,md-w-assassin,"grey,amber=bronze;sand,yellow=gold","an Assassin's scarab staff wings pickup: a pair of spread feathered wings in aged bronze-gold with fine engraved feather lines, small blue and red inlays and a round boss at the centre",,claude
+models/w_l41_c5.mdl_0,weapon,skin,skin_metal,md-w-demoness,"grey,slate,sage=iron;sand=gold",a Demoness's lightning wand head pickup: two sweeping crescent horns of black iron with silver edges around a gold ornament set with a violet gem,,claude
+models/w_l42_c1.mdl_0,weapon,skin,skin_metal,md-w-paladin,*=bronze,"a Paladin's Purifier cross lying as a pickup: a tall slim cross of aged bronze-gold with carved scrollwork on its arms, a round red gem at the crossing and a small red jewel at the top",,claude
+models/w_l42_c2.mdl_0,weapon,skin,skin_metal,md-w-crusader,*=gold,"a Crusader's sun staff ornament pickup: a diamond-shaped sunburst of aged bronze-gold with long pointed rays, a ringed round gold boss at the centre and a hexagonal gold plate",,claude
+models/w_l42_c3.mdl_0,weapon,skin,skin_metal,md-w-necromancer,*=iron,"a Necromancer's raven staff shaft pickup: a long slim round rod of black iron with a dark green sheen and engraved bands, ending in a small spiked cap with an orange gem",,claude
+models/w_l42_c4.mdl_0,weapon,skin,skin,md-w-assassin,"grey,amber=wood;sand=gold;violet=crystal","an Assassin's scarab staff shaft pickup: a very long tapering shaft of carved dark brown wood with gold bands and rings, topped by a dark lapis-blue scarab beetle with a gold stripe",,claude
+models/w_l42_c5.mdl_0,weapon,skin,skin_metal,md-w-demoness,"grey=steel/leather;sand,amber=gold;slate=iron","a Demoness's lightning wand shaft pickup: a long polished steel rod below a black leather-wrapped grip, topped by a gold and black iron ornament set with a red gem",,claude
+models/warhamer.mdl_0,weapon,skin,skin_metal,md-w-crusader,*=steel,"a Crusader's war hammer held in the hand: a blunt dark steel hammer head with a spike on its back and a gold cross emblem, a steel-banded haft, a plate steel gauntlet and a dark chain mail sleeve",,claude
+models/webs.mdl_0,fx,fx,fx,,,"cobwebs hanging in dense grey and pale green-grey strands with holes, across a wall opening",,claude
+models/webs.mdl_1,fx,fx,fx,,,a cobweb in a corner: fine pale blue-grey strands spreading from the top corner,,claude
+models/webs.mdl_2,fx,fx,fx,,,a dense tangle of fine pale blue-grey cobweb strands over a whole panel,,claude
+models/webs.mdl_3,fx,fx,fx,,,a large spider web: fine pale blue-grey radial and ring strands over a whole panel,,claude
+models/xhair.mdl_0,fx,fx,fx,,,"a crosshair: a grey ball with four dark grey bars, in sixteen animation steps",,claude
+models/yakball.mdl_0,fx,fx,fx,,,an ice ball missile: faceted pale lavender-blue ice crystal with white facets,,claude
+models/yakman.mdl_0,creature,skin,skin,md-yakman,"grey,sage,slate=hair;sand=bronze;taupe=leather","a yakman: a hulking yeti-like beast with thick white-grey fur and a pale chest, two curved horns, grey cloven hooves, blue eyes, bronze armbands and belt",,claude
+models/yakman.mdl_1,creature,skin,skin,md-yakman,"orange,brown,grey=hair;sand=bronze;slate=bone","a yakman: a hulking yeti-like beast with thick rust-brown fur, two curved tan horns, dark blue-grey cloven hooves, bronze armbands and belt",,claude
+models/yakman.mdl_2,creature,skin,skin,md-yakman,*=hair,"a yakman: a hulking yeti-like beast with shaggy black fur, two curved black horns, black cloven hooves, red eyes, dark armbands and belt",,claude
 mtex402,panel,layout,stone,mz-jade,*=stone,"a square of dark green-grey carved stone, about 2 by 2 m, with a symmetric grotesque mask relief of wide dark eyes and mouth; olive and sage moss in the recesses, worn",,claude
 mtex405,panel,layout,stone,mz-idols,*=stone,"a square carved relief of an idol mask with wide eyes, broad nose and fanged open mouth in tan limestone, set in an olive-brown stone frame, about 1 by 1 m, weathered",,claude
 mtex407,fill,reimagine,foliage,mz-jungle,"green,olive,sage=foliage;*=stone","a wall of rough jade-green stone blocks in dark green, olive and grey-brown thickly covered with moss and hanging vines in the joints, about 2 by 4 m, damp and overgrown",,claude

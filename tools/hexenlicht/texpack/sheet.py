@@ -4,8 +4,9 @@ textures, grouped by map, kind or class, each with its class and description
 the original. "Download edits" saves the changed rows as CSV; `texpack merge`
 puts them into the manifest as human rows. Open the file in a browser; it
 embeds the textures, so keep it local (they are Raven's). With --questions
-(story 9.3) it is the owner's page: the textures asked about, with 9.2's shots,
-the labels editable and an answer each.
+(story 9.3) it is the owner's page: the textures asked about, with 9.2's shots
+(a skin with its model drawn with it, mdlview.py), the labels editable and an
+answer each.
 """
 import base64
 import html
@@ -137,9 +138,34 @@ def _jpeg_uri(path, width=420):
     return 'data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode()
 
 
-def questions(ex, sel, resolved, classes, asked, views, out):
+def _array_uri(arr):
+    b = io.BytesIO()
+    Image.fromarray(arr).save(b, 'PNG', optimize=True)
+    return 'data:image/png;base64,' + base64.b64encode(b.getvalue()).decode()
+
+
+def _skin_imgs(ex, e, models):
+    """A skin's atlas (whole texels where it fits) and its model drawn with it from the front,
+    the left side and the back (mdlview.py)."""
+    import numpy as np
+    rgba = Image.open(os.path.join(ex, e.file)).convert('RGBA')
+    im = Image.alpha_composite(Image.new('RGBA', rgba.size, (60, 60, 60, 255)), rgba).convert('RGB')
+    s = min(420 / im.width, 300 / im.height)
+    s = max(1, int(s)) if s >= 1 else s
+    atlas = im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))),
+                      Image.NEAREST if s >= 1 else Image.LANCZOS)
+    out = f'<img src="{_array_uri(np.asarray(atlas))}" title="atlas {e.w}x{e.h}">'
+    m = models.get(e)
+    for yaw, what in ((0, 'front'), (90, 'left side'), (180, 'back')):
+        if m is not None:
+            out += f'<img src="{_array_uri(models.mv.render(m, np.asarray(im), 0, yaw, 10, 300))}" title="{what}">'
+    return out
+
+
+def questions(ex, sel, resolved, classes, asked, views, out, models=None):
     """The owner's page (story 9.3): per texture with a question, the original and 9.2's close,
-    wide and albedo shots, the question, the labels as editable fields and an answer. "Download
+    wide and albedo shots (a skin: its atlas and its model drawn with it, `models` a
+    labels.Models), the question, the labels as editable fields and an answer. "Download
     answers" saves every row answered or changed (the manifest's columns and `answer`);
     `texpack merge` takes the fields as the owner's (source human), the answers are read by hand."""
     lab = classes.get('labels', {})
@@ -155,11 +181,14 @@ def questions(ex, sel, resolved, classes, asked, views, out):
     cards = []
     for e in sel:
         r = resolved[e.stem]
-        imgs = f'<img class="orig" src="{_data_uri(os.path.join(ex, e.file))}" title="original {e.w}x{e.h}">'
-        for v in ('close', 'wide', 'albedo'):
-            p = os.path.join(views, f'{e.stem}_{v}.png')
-            if os.path.exists(p):
-                imgs += f'<img src="{_jpeg_uri(p)}" title="{v}">'
+        if e.kind == 'skin' and models is not None:
+            imgs = _skin_imgs(ex, e, models)
+        else:
+            imgs = f'<img class="orig" src="{_data_uri(os.path.join(ex, e.file))}" title="original {e.w}x{e.h}">'
+            for v in ('close', 'wide', 'albedo'):
+                p = os.path.join(views, f'{e.stem}_{v}.png')
+                if os.path.exists(p):
+                    imgs += f'<img src="{_jpeg_uri(p)}" title="{v}">'
         cards.append(
             f'<div class="card" data-stem="{html.escape(e.stem)}"><div class="imgs">{imgs}</div>'
             f'<div class="q"><b>{html.escape(e.stem)}</b> {e.w}x{e.h}: {html.escape(asked[e.stem])}</div>'

@@ -39,7 +39,7 @@ readable blackletter); runes and glyphs keep Raven's shapes.
 | `glass`, `liquid`, `lava` | windows; water, slime and other liquids; lava | their own prompts (M51) |
 | `skip` | tool textures (`clip`, `origin`, `trigger`), blank fills, the skies (5.8's rule) | left as they are |
 
-A texture between two tiers takes the stricter one. Skins (`skin`, `fx`) are 9.6's (§9).
+A texture between two tiers takes the stricter one. Skins (`skin`, `fx`, `skip`) are 9.6's (§9).
 Carvings are `layout`; an intricate painted relief (Mazaera's polychrome panels, the sun
 stone) is `faithful`. Windows are tier and class `glass` (see-through: the class writes the
 `.mat`'s `kind glass`) only where 5.8 made them glass (`rtex018`, `rtex083` and its copy
@@ -216,5 +216,43 @@ inlaid stone floors and ceilings), `tk-rugs` (woven rugs and hangings), `tk-redp
 
 ## 9. Models (the skins)
 
-The skins' labels come with 9.3's second half: creatures, players, weapons, items and
-objects, by model.
+The 555 skins of both games' models, which 9.6 redraws. §1 holds for them (Raven's theme,
+real scale, condition, no light, no readable text); a hub's object or puzzle item follows that
+hub's section (Septimus's statues are Roman, Thysis's jars Egyptian). A skin is an atlas: the
+model's pieces laid out flat, often a front half and a back half, on black that the model
+doesn't use.
+
+- **purpose**: `creature` (monsters and bosses, their mounts, heads and limbs), `player` (the
+  five classes and their heads), `weapon` (in the hand, as a pickup, thrown), `item` (pickups:
+  artifacts, armor, mana, the puzzle items), `object` (statues, furniture, chests, pots, books,
+  plants, corpses, flags, snow), `debris` (chunks of broken things and bodies), `fx` (lights,
+  flames, torches, glowing missiles and spells, webs, the crosshair).
+- **tier**: `skin` (redrawn: every solid model), `fx` (upscaled only, M45: its look is glow,
+  flame or a spell's colors, and a torch's or a burner's glow is the engine's), `skip`
+  (placeholders and test models, blank atlases). A solid thing with a small glow (a staff's
+  gem, a creature's eyes) is `skin`: the palette's saturated colors are kept as drawn (M49).
+  Tiny flat slivers of debris (`shard1`–`shard5`) stay `fx`.
+- **class**: `skin_metal` (metallic over the whole atlas) only where metal is at least 60 % of
+  the model's texels by its regions: weapons, keys, rings, the iron and bronze golems; a
+  creature or a player in armour stays `skin` (M45: leather and cloth around the steel).
+- **regions**: as the world's; the atlas's black is `grey` texels, which take the material of
+  the model's grey parts. Chitin and wing membranes are `hide`, fur and feathers `hair`, snow
+  `ice`, fired clay `tile`.
+- **description**: what the model is, then its parts' materials and colors (body, head,
+  clothing, armour, weapon, base) and the condition; not the atlas's layout. 9.6 adds a
+  description per piece of the atlas.
+- **family**: a model group whose skins should read alike (hub `models`, prefix `md-`): a
+  creature's body, head and limbs (`md-imp`, `md-golem`), a boss with its mount (`md-death`),
+  a player class and its head (`md-paladin`), a class's weapons in the hand and as pickups
+  (`md-w-crusader`), a set (`md-canopic`, `md-elements`, `md-armor`), objects of one kind and
+  hub (`md-statues-septimus`, `md-pots`, `md-corpses`), debris of one material
+  (`md-debris-stone`). A one-off object or puzzle item stands alone. The lead is the biggest
+  atlas (`labels leads`).
+- **Copies** carry one label (§1), whatever their models: the Demoness's head is the
+  Assassin's (`h_suc`, `h_ass`), the Bones of Loric are the bone pile (`puzzle/keep1`,
+  `bonepile`), the lava ball is the shard (`lavaball`, `shard`: ice, rock and ashes, as
+  `precache.hc` names them), Eidolon's three models share one skin.
+
+Found in the gamecode: the imp's third skin is the stone gargoyle that wakes (`imp.hc`),
+`snout.mdl` is a polymorphed player's view of the sheep (`sheep.hc`), `scrbp*` the scarab on the
+Assassin's staff chain.

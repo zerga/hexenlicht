@@ -273,6 +273,7 @@ a region is a set of them.
 ```
 & $py tools\hexenlicht\texpack\texpack.py cards --kind world,liquid,sky --hub thysis --data <data copy> --out <dir>\thysis
 & $py tools\hexenlicht\texpack\texpack.py cards --kind world --hub tulku --overview --out <dir>\tulku
+& $py tools\hexenlicht\texpack\texpack.py cards --kind skin --select <list> --data <data copy> --out <dir>\creatures
 & $py tools\hexenlicht\texpack\texpack.py labels check --labels <labels.csv> --kind world,liquid,sky --data <data copy>
 & $py tools\hexenlicht\texpack\texpack.py labels apply --labels <labels.csv> --data <data copy>
 & $py tools\hexenlicht\texpack\texpack.py labels leads --data <data copy>
@@ -286,6 +287,15 @@ a region is a set of them.
   entities, size in metres, tiles, light, neighbours, animation, ramps, the earlier label, the
   related textures). One card per animation (its frames are labeled alike). `--overview`: the
   originals only, 60 to a page; `--family`: a family's members side by side (the review).
+  **Skins** have pages of their own (`--kind skin`, 4 a page): the atlas, its ramp map and the
+  model drawn with it from the front, its left side and the back (`mdlview.py`), and a .txt with
+  the model's facts: which game's, the skin's number of the model's skins, triangles, frames,
+  flags (rotates, holey, translucent, a trail), its size in metres, what the gamecode does with
+  it (the spawn classes whose `/*QUAKED*/` comment heads the function that sets it, or the up to
+  four whose spawn functions call such a helper, `init_imp`; the other functions that name it;
+  comments left out), the maps whose entities place those, a puzzle item's name; `related` is
+  only `texels` for skins, of the texels not black in both (any two atlases share their unused
+  black, and their ramp shares are mostly it).
 - **`families`** lists each texture's related ones: `texels` (the same color at the same place
   in a texture of its size: Raven's variants), `beside` (long shared edges on one plane, from the
   census), `colors` (the same ramp shares in its home hub). Candidates for a labeler, not
@@ -300,9 +310,21 @@ a region is a set of them.
   as literal rows: the class and overrides the texture had are folded in, an animation's other
   frames get a copy, and the old rows that matched a labeled texture and match no unlabeled one
   are dropped. A labeled row of the owner's stays unless the CSV's row is `human` too.
-- **`labels leads`** gives each family without a lead its member with the most area in the maps.
+- **`labels leads`** gives each family without a lead its member with the most area in the maps
+  (a skin family: its biggest atlas).
 - **`sheet --questions`** is the owner's page: the textures a labels CSV's `question` column asks
-  about, with 9.2's shots, the labels editable and an answer each; "Download answers" saves the
+  about, with 9.2's shots (a skin: its atlas and three views of its model; `--data` for the
+  paks), the labels editable and an answer each; "Download answers" saves the
   answered or edited rows, `merge` takes their fields as the owner's (`human`) and copies them to
   an animation's other frames (the `answer` column is read by hand). It embeds Raven's textures:
   keep it local.
+
+**`mdlview.py`** reads an alias model from the paks (Hexen II's IDPO and the mission pack's
+RAPO, whose texture coordinates are their own; where both games have a model under one name,
+the export's version: its game, then its skins' size) and draws it with a skin in its first frame,
+unlit, from given sides (yaw 0 its front), each side at one scale: the skin cards' views, and
+9.6's turntables to compare skins exactly (9.1's prototype; a row per skin):
+
+```
+& $py tools\hexenlicht\texpack\mdlview.py models/archer.mdl --png orig=<export png> klein=<pack png> --views 0,45,90,180 --out archer.png --data <data copy>
+```

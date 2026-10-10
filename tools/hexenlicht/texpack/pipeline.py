@@ -30,6 +30,7 @@ class Entry:
         self.kind = row['kind']
         self.alpha = row['alpha']
         self.used_in = row['used in'].split()
+        self.paks = (row.get('from') or '').split()     # data1/pak0.pak ...: the paks with this version
 
 
 def load_export(export_dir):

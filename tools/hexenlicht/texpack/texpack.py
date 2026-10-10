@@ -202,8 +202,12 @@ def cmd_sheet(a):
         if missing:
             raise SystemExit(f"not in the export: {', '.join(missing)}")
         sel = [entries[s] for s in asked]
+        models = None
+        if any(e.kind == 'skin' for e in sel):
+            import labels
+            models = labels.Models(a.data or default_data())
         return sheet.questions(ex, sel, resolve_all(sel, rows, classes), classes, asked,
-                               a.views or os.path.join(texpack_home(), 'views'), a.out)
+                               a.views or os.path.join(texpack_home(), 'views'), a.out, models)
     return sheet.run(ex, sel, resolve_all(sel, rows, classes), classes, a.out, pack=a.pack, group=a.group)
 
 
@@ -233,7 +237,11 @@ def cmd_cards(a):
                 ok = [s for s in anim if cen.get(s, {}).get('view') == 'ok'] or anim
                 shown.add(ok[0])
         sel = [e for e in sel if not cen.get(e.stem, {}).get('anim') or e.stem in shown]
-    rel = labels.candidates(ex, [e for e in entries.values() if e.kind in ('world', 'liquid', 'sky')], palette, cen)
+    skins = bool(sel) and all(e.kind == 'skin' for e in sel)
+    if not skins and any(e.kind == 'skin' for e in sel):
+        raise SystemExit('cards: skins have pages of their own (the model drawn with them): select them apart (--kind skin)')
+    kinds = ('skin',) if skins else ('world', 'liquid', 'sky')
+    rel = labels.candidates(ex, [e for e in entries.values() if e.kind in kinds], palette, cen, skins=skins)
     # related textures next to each other: by the first of their chain of shared texels
     root = {e.stem: e.stem for e in sel}
     for e in sel:
@@ -262,15 +270,19 @@ def cmd_cards(a):
         n = labels.overview(ex, sel, rows, classes, a.out)
         print(f"texpack cards: {len(sel)} textures on {n} overview pages -> {a.out}_NN.png")
         return 0
-    n = labels.cards(ex, sel, rows, classes, palette, cen, a.views or os.path.join(texpack_home(), 'views'), a.out,
-                     per_page=a.per_page, related=rel)
+    if skins:
+        n = labels.skin_cards(ex, sel, rows, classes, palette, labels.Models(a.data or default_data()), a.out,
+                              per_page=a.per_page or 4, related=rel)
+    else:
+        n = labels.cards(ex, sel, rows, classes, palette, cen, a.views or os.path.join(texpack_home(), 'views'), a.out,
+                         per_page=a.per_page or 6, related=rel)
     print(f"texpack cards: {len(sel)} textures on {n} pages -> {a.out}_NN.png and .txt")
     return 0
 
 
 def cmd_families(a):
     labels, ex, entries, sel, palette, cen = label_inputs(a)
-    rel = labels.candidates(ex, sel, palette, cen)
+    rel = labels.candidates(ex, sel, palette, cen, skins=bool(sel) and all(e.kind == 'skin' for e in sel))
     for e in sel:
         if e.stem in rel:
             print(f"{e.stem}: {labels.related_text(rel[e.stem])}")
@@ -290,8 +302,8 @@ def cmd_labels(a):
         return 0
     rows = manifest.load_manifest(a.manifest)
     if a.action == 'leads':
-        done = labels.set_leads(a.families, rows, cen)
-        print(f"texpack labels: {len(done)} families given a lead (the member with the most area) in {a.families}")
+        done = labels.set_leads(a.families, rows, cen, entries)
+        print(f"texpack labels: {len(done)} families given a lead (the member with the most area, or the biggest skin) in {a.families}")
         return 0
     if a.labels:
         # a labels CSV checked as if applied, the manifest untouched
@@ -387,6 +399,7 @@ def main():
     p.add_argument('--group', choices=['map', 'kind', 'class'], default='map')
     p.add_argument('--questions', help='the owner\'s page: a labels CSV whose `question` column asks about its rows')
     p.add_argument('--views', help='--questions: 9.2\'s shots (default: $TEXPACK_HOME\\views)')
+    p.add_argument('--data', help='--questions about skins: the game data folder whose paks have the models')
     p.add_argument('--out', required=True)
     p.set_defaults(f=cmd_sheet)
     for name, f, hlp in (('cards', cmd_cards, 'the pages a labeler reads: original, ramp map, the three shots, census facts'),
@@ -405,7 +418,7 @@ def main():
         if name == 'cards':
             p.add_argument('--out', required=True, help='path prefix: <out>_01.png and .txt, ...')
             p.add_argument('--views', help='9.2\'s shots (default: $TEXPACK_HOME\\views)')
-            p.add_argument('--per-page', type=int, default=6)
+            p.add_argument('--per-page', type=int, help='textures a page (default: 6; skins 4)')
             p.add_argument('--frames', action='store_true', help='a card for every frame of an animation')
             p.add_argument('--overview', action='store_true', help='the originals only, 60 to a page, with their stems and labels')
             p.add_argument('--family', help='only these families (comma-separated), members side by side')

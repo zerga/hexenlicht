@@ -14,7 +14,9 @@ the owner's answers. The manifest's columns `purpose`, `tier`, `family` and `reg
 Run through texpack.py:
 
   texpack.py cards      the pages a labeler reads: per texture the original, its ramp map,
-                        9.2's close, wide and albedo shots, and its census facts as text
+                        9.2's close, wide and albedo shots, and its census facts as text;
+                        per skin the atlas, its ramp map, its model drawn with it from three
+                        sides (mdlview.py) and what the game does with the model
   texpack.py families   candidate families: textures that share texels (Raven's variants of
                         one texture), meet at long edges, or have the same ramps in one hub
   texpack.py labels     `check` the labels, `apply` a labels CSV to the manifest
@@ -25,6 +27,7 @@ import fnmatch
 import io
 import math
 import os
+import struct
 import sys
 
 import numpy as np
@@ -389,14 +392,117 @@ def cards(ex, sel, rows, classes, palette, census, views_dir, out_prefix, per_pa
     return pages
 
 
+def skin_model(stem):
+    """A skin's model and index: models/imp.mdl_2 -> ('models/imp.mdl', 2); the export's `~crc`
+    (a name with two versions: models/puzzle/scepter.mdl_0~4107) dropped."""
+    name, _, i = stem.split('~')[0].rpartition('_')
+    return name, int(i)
+
+
+class Models:
+    """The alias models behind the skins (mdlview.py): read from the paks once each, and what the
+    game does with them (the gamecode's spawn classes and functions, the maps, puzzle names)."""
+    def __init__(self, data):
+        import mdlview
+        self.mv = mdlview
+        self.files = mdlview.model_files(data)
+        self.users = mdlview.gamecode_users()
+        self.ents = mdlview.map_entities(data)
+        self.cache = {}
+
+    def get(self, e):
+        name, _ = skin_model(e.stem)
+        game = e.paks[0].split('/')[0] if getattr(e, 'paks', None) else None
+        key = (name, e.w, e.h, game)
+        if key not in self.cache:
+            try:
+                self.cache[key] = self.mv.load(self.files, name, (e.w, e.h), game)
+            except (KeyError, ValueError, struct.error):
+                self.cache[key] = None
+        return self.cache[key]
+
+    def facts(self, e, sh, res, related):
+        name, i = skin_model(e.stem)
+        m = self.get(e)
+        if m is None:
+            return f"{e.stem} {e.w}x{e.h} skin | model {name} not read | ramps {shares_text(sh)} | was {res.cls}: {res.description}"
+        L, W, H = self.mv.size_m(m)
+        fl = ', '.join(self.mv.flag_names(m['flags']))
+        rel = f" | related {related_text(related)}" if related else ''
+        game = m['game']
+        if game == 'data1' and any(v[0] == 'portals' for v in self.files.get(name, ())):
+            game = "data1's, which the mission pack's replaces"
+        return (f"{e.stem} {e.w}x{e.h} skin | model {name} ({game}), skin {i + 1} of {len(m['skins'])},"
+                f" {len(m['tris'])} triangles, {m['numframes']} frames{', flags ' + fl if fl else ''}"
+                f" | about {L:.1f} x {W:.1f} x {H:.1f} m (front to back, side to side, high)"
+                f" | {self.mv.users_text(name, self.users, self.ents)}"
+                f" | ramps {shares_text(sh)} | was {res.cls}: {res.description}{rel}")
+
+
+def skin_cards(ex, sel, rows, classes, palette, models, out_prefix, per_page=4, related=None):
+    """Label pages for skins: per skin its stem, the atlas (whole texels where it fits), the ramp
+    map with each ramp's share, and the model drawn with it from the front, its left side and the
+    back (mdlview.py: frame 0, unlit); a text file per page with the model's facts. Writes
+    <out_prefix>_NN.png and .txt (Raven's pixels: keep them local)."""
+    related = related or {}
+    AW, AH, R = 300, 200, 200
+    CW, CH = 2 * AW + 3 * R + 4 * 8, 22 + AH + 20
+    font, small = _font(15), _font(13)
+    pages = (len(sel) + per_page - 1) // per_page
+    for p in range(pages):
+        batch = sel[p * per_page:(p + 1) * per_page]
+        img = Image.new('RGB', (CW, len(batch) * (CH + 6)), (16, 16, 16))
+        d = ImageDraw.Draw(img)
+        lines = []
+        for i, e in enumerate(batch):
+            y = i * (CH + 6)
+            rgba = np.asarray(Image.open(os.path.join(ex, e.file)).convert('RGBA'))
+            rr = texel_ramps(rgba, palette)
+            sh = shares(rr)
+            orig = Image.alpha_composite(Image.new('RGBA', (rgba.shape[1], rgba.shape[0]), (70, 70, 70, 255)),
+                                         Image.fromarray(rgba)).convert('RGB')
+            img.paste(_fit(orig, AW, AH, True), (0, y + 22))
+            img.paste(_fit(Image.fromarray(ramp_map(rr)), AW, AH, True), (AW + 8, y + 22))
+            m = models.get(e)
+            x = 2 * AW + 16
+            for yaw, what in ((0, 'front'), (90, 'left side'), (180, 'back')):
+                if m is not None:
+                    img.paste(Image.fromarray(models.mv.render(m, np.asarray(orig), 0, yaw, 10, R)), (x, y + 22))
+                    d.text((x + 4, y + 24), what, fill=(150, 150, 150), font=small)
+                else:
+                    d.text((x + 8, y + 90), 'no model', fill=(120, 120, 120), font=small)
+                x += R + 8
+            res = manifest.resolve(e.stem, e.kind, rows, classes)
+            d.text((0, y + 2), f'{p * per_page + i + 1}. {e.stem}', fill=(255, 235, 60), font=font)
+            d.text((AW + 8 + 200, y + 3), f'{e.w}x{e.h}', fill=(170, 170, 170), font=small)
+            lx = AW + 8
+            for n, v in sorted(sh.items(), key=lambda kv: -kv[1]):
+                if v < 0.03:
+                    continue
+                t = f'{n} {round(v * 100)}'
+                tw = d.textlength(t, font=small)
+                if lx + 14 + tw > CW:
+                    break
+                d.rectangle((lx, y + 24 + AH, lx + 10, y + 34 + AH), fill=FALSE[RAMP_NAMES.index(n)])
+                d.text((lx + 13, y + 22 + AH), t, fill=(220, 220, 220), font=small)
+                lx += 13 + tw + 12
+            lines.append(f'{p * per_page + i + 1}. ' + models.facts(e, sh, res, related.get(e.stem)))
+        img.save(f'{out_prefix}_{p + 1:02d}.png')
+        with open(f'{out_prefix}_{p + 1:02d}.txt', 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\n'.join(lines) + '\n')
+    return pages
+
+
 # --- candidate families ---------------------------------------------------------------------
 
-def candidates(ex, sel, palette, census, shared_min=0.2, beside_min=0.15, similar_min=0.97):
+def candidates(ex, sel, palette, census, shared_min=0.2, beside_min=0.15, similar_min=0.97, skins=False):
     """Textures that may read as one material, per texture the strongest links: `texels` (the
     same palette index at the same place in a texture of the same size: Raven's variants of one
-    texture), `beside` (their shared edges on one plane, as a fraction of the texture's own
-    shared edges), `colors` (their ramp shares' cosine, same home hub). Returns {stem: [(other,
-    kind, value)]}, the strongest first."""
+    texture; for skins, of the texels not black in both: any two atlases share their unused
+    black), `beside` (their shared edges on one plane, as a fraction of the texture's own
+    shared edges), `colors` (their ramp shares' cosine, same home hub; not for skins, which have
+    no hub and whose shares are mostly the atlas's black). Returns {stem: [(other, kind,
+    value)]}, the strongest first."""
     idx = {}
     sh = {}
     for e in sel:
@@ -414,7 +520,11 @@ def candidates(ex, sel, palette, census, shared_min=0.2, beside_min=0.15, simila
             continue
         A = np.stack([idx[s] for s in stems])
         for i, s in enumerate(stems):
-            eq = (A == A[i]).mean(axis=1)
+            if skins:
+                live = (A != 0) | (A[i] != 0)            # 0: black
+                eq = ((A == A[i]) & live).sum(axis=1) / np.maximum(live.sum(axis=1), 1)
+            else:
+                eq = (A == A[i]).mean(axis=1)
             for j in np.nonzero(eq >= shared_min)[0]:
                 if j != i:
                     links[s][stems[j]] = ('texels', float(eq[j]))
@@ -432,7 +542,7 @@ def candidates(ex, sel, palette, census, shared_min=0.2, beside_min=0.15, simila
     by_home = collections.defaultdict(list)
     for s in idx:
         by_home[home[s]].append(s)
-    for stems in by_home.values():
+    for stems in (by_home.values() if not skins else ()):
         V = np.stack([vec[s] / max(1e-9, np.linalg.norm(vec[s])) for s in stems])
         C = V @ V.T
         for i, s in enumerate(stems):
@@ -478,9 +588,11 @@ def overview(ex, sel, rows, classes, out_prefix, cols=10, rows_per_page=6, cell=
     return pages
 
 
-def set_leads(path, rows, census):
-    """Each family without a lead gets the labeled member with the most area in the maps (its
-    comments and order kept). Returns the families given a lead."""
+def set_leads(path, rows, census, entries=None):
+    """Each family without a lead gets the labeled member with the most area in the maps, or for
+    skins (in no map) the biggest atlas (its comments and order kept). Returns the families
+    given a lead."""
+    entries = entries or {}
     with open(path, newline='', encoding='utf-8') as f:
         text = f.read()
     members = collections.defaultdict(list)
@@ -492,7 +604,8 @@ def set_leads(path, rows, census):
     for ln in text.splitlines():
         cells = next(csv.reader([ln]), []) if ln and not ln.startswith('# ') else []
         if len(cells) >= 4 and cells[0] != 'family' and not cells[2] and members.get(cells[0]):
-            cells[2] = max(members[cells[0]], key=lambda s: int((census.get(s) or {}).get('area') or 0))
+            cells[2] = max(members[cells[0]], key=lambda s: (int((census.get(s) or {}).get('area') or 0),
+                                                            entries[s].w * entries[s].h if s in entries else 0))
             done.append(cells[0])
             buf = io.StringIO()
             csv.writer(buf, lineterminator='').writerow(cells)
