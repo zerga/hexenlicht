@@ -56,7 +56,7 @@ tk-deities,tulku,ttex080,the wrathful deities' and guardians' reliefs
 tk-gates,tulku,ttex096,carved doors
 tk-switches,tulku,+0rtex5,the switches' symbol discs
 bm-drapes,blackmarsh,rtex152,curtains and hangings
-mz-webs,mazaera,mtex484,cobwebs over dark rock
+mz-webs,mazaera,mtex484,cobwebs over darkness (Septimus has the same image)
 mz-darkstone,mazaera,rtex099,dark rough speckled stone
 th-granite,thysis,rtex028,dark grey granite beams and slabs and frames
 th-tiles,thysis,rtex390~5c9c,patterned small-tile floors
@@ -69,9 +69,9 @@ ot-brick,other,rtex430~6995,dark weathered brick and cobble paving of the missio
 ot-mottled,other,rtex452~6404,cloudy brown-grey mottled stone of the mission pack's test map
 kp-redstone,keep,rtex122,speckled deep red stone
 kp-demons,keep,rtex491,carved demonic reliefs
-tk-carpets,tulku,rpal311,patterned carpets or inlaid floors
+tk-inlay,tulku,rpal311,patterned inlaid stone floors and ceilings
 tk-marble,tulku,rpal317,veined dark marble
-tk-redcloth,tulku,ttex005,plain red cloth and lacquer
+tk-redplaster,tulku,ttex005,red-painted plaster walls
 tk-greystone,tulku,ttex059,dark grey rough wall stone with gold lines and glyph panels
 tk-bandwall,tulku,ttex054,banded walls of grey-green stone with red strips and a gold meander
 tk-clay,tulku,ttex248,ochre clay plaster and its grooved panels

@@ -42,9 +42,9 @@ readable blackletter); runes and glyphs keep Raven's shapes.
 A texture between two tiers takes the stricter one. Skins (`skin`, `fx`) are 9.6's (§9).
 Carvings are `layout`; an intricate painted relief (Mazaera's polychrome panels, the sun
 stone) is `faithful`. Windows are tier and class `glass` (see-through: the class writes the
-`.mat`'s `kind glass`) only where 5.8 made them glass (`rtex018`, `rtex083` and its copy `rtex467`); a painted window found in 9.3 stays
-opaque (`layout`, class `prop`) until the owner decides; 6.20's reflective `rtex199` stays as
-it is (`skip`).
+`.mat`'s `kind glass`) only where 5.8 made them glass (`rtex018`, `rtex083` and its copy
+`rtex467`); the painted windows found in 9.3 stay opaque (`layout`, class `prop`; owner,
+2026-10-10); 6.20's reflective `rtex199` stays as it is (`skip`).
 
 ### The labels
 
@@ -111,7 +111,8 @@ Families: `mz-limestone` (the ochre blocks and slabs), `mz-frets` (carved step-f
 meanders and glyph panels), `mz-idols` (masks, faces and totem figures), `mz-sun` (the sun
 stars and calendar stones), `mz-jade` (green carved stone), `mz-redrock` (red-brown rock
 and cracked earth, Tulku's earth floors too), `mz-jungle` (foliage, vines, moss),
-`mz-darkstone` (dark rough speckled stone), `mz-webs` (cobwebs over dark rock).
+`mz-darkstone` (dark rough speckled stone), `mz-webs` (cobwebs over darkness; Septimus uses
+the same image, which may be drawn translucent).
 
 ## 4. Thysis (egypt1–7)
 
@@ -209,9 +210,9 @@ carvings), `tk-planks` (plain planks), `tk-ornament` (carved stone and gilded or
 `tk-deities` (the wrathful deities' and guardians' reliefs), `tk-gates` (carved doors),
 `tk-switches` (the symbol discs), `tk-greystone` (dark grey wall stone with gold lines and
 glyph panels), `tk-bandwall` (grey-green stone walls with red strips and a gold meander),
-`tk-clay` (ochre clay plaster), `tk-marble` (veined dark marble), `tk-carpets` (patterned
-carpets or inlaid floors), `tk-rugs` (woven rugs and hangings), `tk-redcloth` (plain red
-cloth and lacquer).
+`tk-clay` (ochre clay plaster), `tk-marble` (veined dark marble), `tk-inlay` (patterned
+inlaid stone floors and ceilings), `tk-rugs` (woven rugs and hangings), `tk-redplaster`
+(red-painted plaster walls).
 
 ## 9. Models (the skins)
 
