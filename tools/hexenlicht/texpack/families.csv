@@ -1,0 +1,158 @@
+# The art direction's families (story 9.3; docs/hexenlicht/STYLE.md): textures that should
+# read as one material, each to get one hero in 9.5 (its redraw the others' reference, 9.4).
+# lead: the texture redrawn as the hero (empty: `texpack.py labels leads` takes the member
+# with the most area in the maps). Columns: family, hub, lead, what.
+family,hub,lead,what
+bm-fieldstone,blackmarsh,rtex005,dark grey rounded fieldstone walls in black mortar and their root and vine variants
+bm-ashlar,blackmarsh,rtex022,the castle's brown-tan rough-hewn ashlar and its cracked and carved variants
+bm-oak,blackmarsh,rtex041,dark oak planks and boards and crates
+bm-doors,blackmarsh,rtex251,oak doors and shutters with wrought-iron straps and studs
+bm-timber,blackmarsh,rtex175,half-timbered frames
+bm-celtic,blackmarsh,celt2,Celtic knotwork slabs and inlays
+bm-horsemen,blackmarsh,rtex063,the Four Horsemen's grey stone reliefs
+bm-rugs,blackmarsh,rtex124,woven rugs and tapestries
+bm-banners,blackmarsh,rtex147~7c03,heraldic banners
+bm-ground,blackmarsh,rtex388~6280,mud and earth and grass and thatch
+bm-shelves,blackmarsh,rtex087,the shops' painted props
+mz-limestone,mazaera,rtex274,ochre and tan limestone blocks and slabs
+mz-frets,mazaera,mtex458,carved step-frets and meanders and glyph panels
+mz-idols,mazaera,mtex443,idol masks and faces and totem figures
+mz-sun,mazaera,mtex472,red-painted sun stars and the calendar stones
+mz-jade,mazaera,rtex333,jade-green carved stone
+mz-redrock,mazaera,ttex016,red-brown cracked rock and earth
+mz-jungle,mazaera,rtex100,jungle foliage and vines and moss
+th-sandstone,thysis,rtex337,tan sandstone blocks and their cracked and bloody variants
+th-glyphs,thysis,rtex361~70aa,carved hieroglyph reliefs and panels
+th-murals,thysis,rtex382~d2b1,painted plaster: its plaster and paint alike
+th-lapis,thysis,rtex350,blue-painted stone and starry ceilings and stripes
+th-winged,thysis,rtex347,winged scarabs and falcons
+th-statues,thysis,rtex360~cf6b,the colossi's parts
+sp-marble,septimus,marbleseam,veined marble
+sp-greystone,septimus,rtex441~3aaf,grey dressed blocks and bricks
+sp-moldings,septimus,rtex306,classical trims and cornices
+sp-reliefs,septimus,rtex511,figurative reliefs and statues
+sp-masks,septimus,rtex454~d848,lion and gorgon masks and rosettes
+sp-terracotta,septimus,rtex456~b509,terracotta tiles
+sp-drapes,septimus,rtex158,curtains and banners
+sp-elements,septimus,+0tria,the elements' rune switches
+ef-blackstone,cathedral,rtex006,the finale's dark castle blocks and their variants
+ef-gothic,cathedral,rtex348,Gothic ribs and columns and tracery
+ef-crates,cathedral,rtex235,crates and boards
+kp-ashlar,keep,rtex040,the keep's big rough-cut limestone blocks
+kp-greystone,keep,rtex001,grey castle stone and bricks
+kp-beams,keep,rtex440~c299,timber frames and beams
+kp-bones,keep,rtex444~e23c,bone piles
+kp-snow,keep,rtex502~77eb,snow and ice over rock
+kp-ground,keep,rtex066,earth and stony ground
+tk-flagstone,tulku,rpal308,square stone flagstones
+tk-cobbles,tulku,ttex100,cobbles and fieldstone
+tk-brick,tulku,ttex126,ochre brick and blocks
+tk-rock,tulku,ttex024,rough mountain rock
+tk-snow,tulku,ttex098,snow and ice and the walls under it
+tk-timber,tulku,ttex107,red-brown painted beams and friezes and lattices
+tk-planks,tulku,ttex068,plain planks
+tk-ornament,tulku,ttex264,carved and gilded ornament
+tk-deities,tulku,ttex080,the wrathful deities' and guardians' reliefs
+tk-gates,tulku,ttex096,carved doors
+tk-switches,tulku,+0rtex5,the switches' symbol discs
+bm-drapes,blackmarsh,rtex152,curtains and hangings
+mz-webs,mazaera,mtex484,cobwebs over darkness (Septimus has the same image)
+mz-darkstone,mazaera,rtex099,dark rough speckled stone
+th-granite,thysis,rtex028,dark grey granite beams and slabs and frames
+th-tiles,thysis,rtex390~5c9c,patterned small-tile floors
+sp-brownstone,septimus,rtex422~cba5,warm brown-taupe dressed blocks and slabs
+sp-ground,septimus,rtex473,grass and soil and meadow and hedge
+sp-painted,septimus,rtex406,painted Pompeian wall plaster and its panels
+ef-iron,cathedral,rtex054,riveted and perforated rusted iron plates and sheets
+ef-organ,cathedral,rtex363~5e61,organ pipes
+ot-brick,other,rtex430~6995,dark weathered brick and cobble paving of the mission pack's test map
+ot-mottled,other,rtex452~6404,cloudy brown-grey mottled stone of the mission pack's test map
+kp-redstone,keep,rtex122,speckled deep red stone
+kp-demons,keep,rtex491,carved demonic reliefs
+tk-inlay,tulku,rpal311,patterned inlaid stone floors and ceilings
+tk-marble,tulku,rpal317,veined dark marble
+tk-redplaster,tulku,ttex005,red-painted plaster walls
+tk-greystone,tulku,ttex059,dark grey rough wall stone with gold lines and glyph panels
+tk-bandwall,tulku,ttex054,banded walls of grey-green stone with red strips and a gold meander
+tk-clay,tulku,ttex248,ochre clay plaster and its grooved panels
+tk-rugs,tulku,ttex039,woven rugs and cloth hangings
+# The skins' families (9.3's second half; STYLE.md section 9): a model group, whose skins should
+# read alike (a creature's body, head and limbs; a player class and its head; a class's weapons
+# in the hand and as pickups); hub `models`; the lead (9.6's reference) the biggest atlas.
+md-imp,models,models/imp.mdl_0,the imps (fire, ice, lord): winged gargoyles, their bodies and heads
+md-archer,models,models/archer.mdl_0,the archers and archer lords in plate and mail, their heads
+md-golem,models,models/golem_b.mdl_0,the bronze, iron, stone and crystal golems and their head, arm and leg chunks
+md-mummy,models,models/mummy.mdl_0,the mummies and mummy lords, their heads, arms and legs
+md-medusa,models,models/medusa.mdl_0,the medusas, their heads and snakes
+md-werejaguar,models,models/mezzoman.mdl_0,the werejaguars (mezzoman) and their heads
+md-skullwiz,models,models/skullwiz.mdl_0,the skull wizards and their heads
+md-spider,models,models/spider.mdl_0,the spiders
+md-scorpion,models,models/scorpion.mdl_0,the scorpions
+md-fangel,models,models/fangel.mdl_0,the fallen angels and their heads
+md-hydra,models,models/hydra.mdl_0,the hydra
+md-snake,models,models/snake.mdl_0,the great snake
+md-rat,models,models/rat.mdl_0,the rats
+md-raven,models,models/ravproj.mdl_0,the ravens
+md-fish,models,models/fish.mdl_0,the fish
+md-sheep,models,models/sheep.mdl_0,the sheep (the polymorph's too)
+md-yakman,models,models/yakman.mdl_0,the yakmen (the mission pack's yeti)
+md-snowleopard,models,models/snowleopard.mdl_0,the snow leopards
+md-pentacles,models,models/pent.mdl_0,the pentacles
+md-escargolon,models,models/escargolon.mdl_0,the escargolon
+md-death,models,models/boss/dthhorse.mdl_0,Death, the horse and the thrown bones
+md-famine,models,models/boss/famrider.mdl_0,Famine and the horse
+md-pestilence,models,models/boss/boar.mdl_0,Pestilence, the boar and the hive
+md-war,models,models/boss/warrider.mdl_0,War, the war horse and the axe
+md-eidolon,models,models/boss/bigeido.mdl_0,Eidolon in both forms, the chaos orb
+md-praevus,models,models/pravus.mdl_0,Praevus and the Buddha statues in the arena
+md-paladin,models,models/paladin.mdl_0,the Paladin's body and head
+md-crusader,models,models/crusader.mdl_0,the Crusader's body and head
+md-necromancer,models,models/necro.mdl_0,the Necromancer's body and head
+md-assassin,models,models/assassin.mdl_0,the Assassin's body and head
+md-demoness,models,models/succubus.mdl_0,the Demoness's body and head
+md-w-paladin,models,models/gauntlet.mdl_0,the Paladin's weapons in the hand and as pickups
+md-w-crusader,models,models/sunstaff.mdl_0,the Crusader's weapons in the hand and as pickups
+md-w-necromancer,models,models/spllbook.mdl_0,the Necromancer's weapons in the hand and as pickups
+md-w-assassin,models,models/scarabst.mdl_0,the Assassin's weapons in the hand and as pickups, the bolts and grenades
+md-w-demoness,models,models/sucwp1.mdl_0,the Demoness's weapons in the hand and as pickups
+md-cube,models,models/a_cube.mdl_0,the Cube of Force, its pickup and the cube itself
+md-glyph,models,models/a_glyph.mdl_0,the glyph bombs and the tripwire's spike
+md-artifacts,models,models/a_invis.mdl_0,the dark carved-stone artifacts with gold or red symbols
+md-armor,models,models/i_bplate.mdl_0,the armor pickups: amulet, breastplate, bracers, helmet
+md-mana,models,models/i_btmana.mdl_0,the mana pickups
+md-rings,models,models/ringtn.mdl_0,the ring pickups
+md-elements,models,models/puzzle/earth.mdl_0,the four carved Elements of Mazaera (air, earth, fire, water)
+md-canopic,models,models/puzzle/e3.mdl_0,the four canopic jars of Thysis
+md-tibetgems,models,models/puzzle/goldgem.mdl_0,Tulku's three gems in their bronze claw settings
+md-scrolls,models,models/puzzle/h-book.mdl_0,the parchment scrolls among the puzzle items
+md-egypt-crowns,models,models/puzzle/ucrwn.mdl_0,the Lower and Upper Crowns of Egypt
+md-skulls,models,models/puzzle/m2.mdl_0,the Crystal and Jade Skulls
+md-ingots,models,models/puzzle/r1.mdl_0,the gold and silver bars
+md-cutgems,models,models/puzzle/r2.mdl_0,the large cut gems of Septimus and Tulku
+md-romeric-stones,models,models/puzzle/r7.mdl_0,Septimus's Voidstone, Sunstone and Shadowstone slabs
+md-statues-septimus,models,models/neptune.mdl_0,Septimus's Roman statues, the lion and the fountain
+md-statues-thysis,models,models/snkstatu.mdl_0,Thysis's Egyptian statues
+md-statues-tulku,models,models/4arm.mdl_0,Tulku's deity and guardian statues
+md-statues-keep,models,models/anglstat.mdl_0,the statues of Blackmarsh, the finale and the Keep: the angel, the king, the demon
+md-statues-mazaera,models,models/olmec1.mdl_0,Mazaera's colossal Olmec head
+md-furniture,models,models/throne.mdl_0,chairs, benches, pews, stools, the cart and the throne
+md-chests,models,models/chest2.mdl_0,the chests of oak, iron and carved stone
+md-barrels,models,models/barrel.mdl_0,the oak barrels
+md-pots,models,models/cauldron.mdl_0,the clay pots and vases and the iron cauldron
+md-books,models,models/skulbook.mdl_0,the books lying about and the skull wizard's thrown book
+md-plants,models,models/tree2.mdl_0,bushes, hedges, trees, potted plants and seaweed
+md-corpses,models,models/skeleton.mdl_0,the corpses, skeletons, bone piles and skull stakes
+md-snow,models,models/snowcrnr.mdl_0,the snow drifts and walls
+md-ice,models,models/stice.mdl_0,the ice formations and stalagmites
+md-flags,models,models/flag.mdl_0,flag.mdl's three banners
+md-siege,models,models/cattest.mdl_0,the ballista, its bolt and the catapult
+md-tulku-hangings,models,models/ch-kite.mdl_0,Tulku's hanging signboard and kite lantern
+md-tombstones,models,models/tombstn1.mdl_0,the gravestones
+md-debris-stone,models,models/lavaball.mdl_1,chunks of broken stone and rock
+md-debris-clay,models,models/clshard3.mdl_0,shards of broken clay pots
+md-debris-wood,models,models/splnter4.mdl_0,splinters of broken wood
+md-debris-metal,models,models/metlchk4.mdl_0,fragments of broken iron
+md-debris-cloth,models,models/clthchk2.mdl_0,torn scraps of cloth
+md-debris-flesh,models,models/flesh3.mdl_0,chunks of flesh: raw, brown and rotting
+md-debris-plant,models,models/hay1.mdl_0,hay and leaves
+md-debris-bone,models,models/bonelump.mdl_0,bone shards and lumps

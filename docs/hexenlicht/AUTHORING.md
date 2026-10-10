@@ -237,7 +237,10 @@ under 5.1's names. What it does, in the order of this guide:
   roughness range and metallic of the maps, and `.mat` values; rows name a
   texture or a glob (`models/imp.mdl_*`). A vision-language model drafts
   the rows from the export; `texpack.py sheet` is the page to correct them
-  on.
+  on. E9's art-directed pack (story 9.3) labels every texture one by one
+  instead (Claude, from 9.2's census and shots): its purpose, how far a redraw may depart (the tier), its family
+  and which of the palette's ramps is which material, by the rules and
+  hub styles of [STYLE.md](STYLE.md).
 - **Seamless.** A world texture is padded with its own opposite edges
   before the model sees it and cropped after, so what repeats in the game
   repeats in the file (skins and sprites are padded mirrored).
