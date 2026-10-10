@@ -214,12 +214,17 @@ def finish_roughness(r, rmin, rmax):
     return rmin + (rmax - rmin) * t
 
 
-def make_orm(rough, metallic):
+def make_orm(rough, metallic, occlusion=None):
+    """glTF's packed map: occlusion (R; 1 where none is given), roughness (G), metallic (B: a
+    class's 0 or 1, or per texel since 9.4's materials per region)."""
     h, w = rough.shape
     orm = np.empty((h, w, 3), np.uint8)
-    orm[..., 0] = 255
+    orm[..., 0] = 255 if occlusion is None else np.clip(np.round(occlusion * 255.0), 0, 255).astype(np.uint8)
     orm[..., 1] = np.clip(np.round(rough * 255.0), 0, 255).astype(np.uint8)
-    orm[..., 2] = 255 if metallic >= 0.5 else 0
+    if np.ndim(metallic) == 0:
+        orm[..., 2] = 255 if metallic >= 0.5 else 0
+    else:
+        orm[..., 2] = np.clip(np.round(metallic * 255.0), 0, 255).astype(np.uint8)
     return orm
 
 

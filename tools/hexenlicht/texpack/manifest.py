@@ -12,7 +12,8 @@ overrides, source.
   family       the textures that should read as one material (families.csv)
   regions      which palette ramps are which material (labels.py)
   description  what it is, for the prompt ("worn grey castle stone blocks")
-  overrides    key=value pairs separated by ; that change the class's keys
+  overrides    key=value pairs separated by ; that change the class's keys (and
+               `seed`, the redraw's seed: story 9.4)
   source       draft (a vision model's), claude (9.3's labels) or human: `draft`
                never overwrites another row
 Blank lines and lines starting with '# ' (a hash and a space: the liquids' names
@@ -139,6 +140,9 @@ def resolve(stem, kind, rows, classes):
     params = dict(classes['defaults'])
     params.update(classes['class'][cls])
     for k, v in over.items():
+        if k == 'seed':     # the redraw's seed (9.4): an override only, so 5.8's keys of other rows stay
+            params[k] = int(v)
+            continue
         if k not in params:
             raise ValueError(f"{stem}: unknown override key '{k}'")
         params[k] = _cast(v, params[k], k)

@@ -1,0 +1,49 @@
+# The redraw's test selection (story 9.4; TESTING.md "Texpack pipeline v2 (9.4)"): 9.1's pilot
+# world textures and what 9.4 adds. `texpack.py run --select redrawset.txt` also draws what these
+# need: their sets whole, their copies' sources, their families' heroes.
+# 9.1's pilot by tier
+rtex022             # reimagine: the hero of bm-ashlar (ashlar)
+rtex005             # reimagine: fieldstone in black mortar (black joints: roughness 1, occluded)
+rtex429~0a31
+rtex043~79b8        # reimagine: oak planks with a dark gap
+rtex148
+rtex034
+mtex466
+mtex501
+rtex388~6280
+rtex338
+rtex032             # reimagine: marble
+ttex004
+rtex011             # layout: riveted iron
+rtex054
+rtex367~2533        # layout: an oak door with iron straps (wood and iron per region)
+rtex251             # layout: an iron lattice over a door (bronze and iron)
+mtex488
+rtex287
+rtex013             # layout: a Four Horsemen panel (a set of four)
+ttex043             # layout: a carved frieze (wood, gold and stone)
+mtex443
++0rune1             # faithful: an animation, its five frames
++1rune1
++2rune1
++3rune1
++4rune1
+rtex106
+rtex432~994d        # faithful: a notice (a copy group of four)
+rtex324             # faithful: an Egyptian painting
+rtex252
+rtex018             # glass
+#lava000            # lava
+#rtex078            # liquid (a copy of #lowlight~ab4c)
+# 9.4: sets, families, copies
+rtex222             # a set of seven black castle walls with and without chains
++0swit1             # the switches' discs: a set by shared texels
+rtex021             # bm-ashlar members: the hero as a reference (a trim, a panel)
+trimtex
+rtex065
+rtex042             # bm-oak members (rtex041 the hero)
+rtex236
+rtex420~c65d
+rtex113
+rtex083             # glass, a copy of rtex467
+ttex022             # a copy of rtex041

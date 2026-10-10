@@ -549,7 +549,9 @@ textures: step 5 runs in a data folder of its own.
 `tools/hexenlicht/texpack/redraw.py` and `bspviews.py` (its README, "Redraw";
 DECISIONS M46–M52). The pilot set is `pilot.csv` (33 world textures by tier, the
 rune's five frames among them, and three skins). About 15 minutes with klein once the models are
-in place; the game runs in a data folder of its own, never yours.
+in place; the game runs in a data folder of its own, never yours. *Since 9.4 the redraw is
+`texpack.py run` ("Texpack pipeline v2 (9.4)" below): `redraw.py run`, its `--gen` and
+`pilot.csv` are gone (the pilot's world textures are in `redrawset.txt`, their labels 9.3's).*
 
 1. **The pure functions:** `selftest.py`: 47 checks, the redraw's stages among them
    (a seam blended away 4.8 -> 1.0, a light from a side taken out of a synthetic
@@ -621,6 +623,42 @@ configs): a copy of the original's `data1` (`pak0.pak`, `pak1.pak`, `PROGS.DAT`,
 - **Not covered:** a texture's views in the other hubs it is used in (the census has one,
   in the map where it covers the most; `views --hub` selects by that map), brush entities
   in their moved states (doors open, a button pressed: the `+a` frames), the sky.
+
+## Texpack pipeline v2 (9.4)
+
+`texpack.py run` with the redraw (`tools/hexenlicht/texpack`: `redraw.py`, `materials.py`,
+`groups.py`; its README, "Redraw"; DECISIONS M66–M71). Needs the README's setup with klein's
+models, both games' export (`r_exporttextures` with `-portals`) and a data copy for the
+palette and the game (as 9.2's: never your own folder). `$py` is ComfyUI's Python.
+
+1. **The pure functions:** `selftest.py`: the materials per region (the ramps' materials, the
+   weights and the guided filter, one material equal to 5.8's brightness match, each
+   material's own target, roughness and metallic per material, the cavities and the
+   occlusion), the groups (copies, sets by shared texels and animations, heroes, the closure
+   with a hero's set holding another family's member, unify), and the driver end to end with
+   a stand-in for ComfyUI and PBRify: what is drawn and written, the hero as a reference and a
+   set's one seed, a copy's files, a set's shared texels, metallic per material, a black
+   joint at roughness 1 and occluded, a second run that makes nothing, a hero's new seed that
+   redraws its family's member, a missing `.mat` and a stale map, `verify` passing the pack
+   and failing a set whose shared texels differ. No GPU, no models.
+2. **The test run:** `texpack.py run --export <export> --data <data copy> --select
+   redrawset.txt --out <pack>` (`redrawset.txt`: 9.1's pilot and 9.4's sets, families and
+   copies; the run adds their sets, copies' sources and heroes). The log has per texture its
+   tier, class, set and seed, hero, materials and their gains, the layout kept and the seam
+   (with the original's where over 2). A second run makes nothing; `--reuse` redoes the
+   stages from the kept model images.
+3. **The check:** `texpack.py verify --select redrawset.txt --data <data copy> --pack <pack>`
+   (`--export` as the run's): failures for missing or wrong files, a material's roughness or
+   metallic, near-black cavities not at roughness 1 or not occluded, a seam where the
+   original tiles, a layout or faithful texture whose shapes moved, a set's shared texels or a
+   copy's files; notes for the brightness and 9.1's numbers (`--families` as the run's). The
+   test run: 104 of 108 pass, the 4 failures what klein drew (two seams, two shapes moved). `redraw.py sheet --packs v2=<pack> --stems <list> --out <dir> --lift 4` shows each
+   texture's model image, albedo, normal, `_orm` and tiling.
+4. **In the game:** as 9.1's step 4 (`proof_run.ps1 -Pack <pack> -Data <data copy> -ViewFile
+   views.txt`), `vk_materials here` naming each texture; the Debug run ends with `Vulkan
+   validation: 0 errors, 0 warnings`.
+- **Not covered:** the whole export (9.5), skins (9.6: they take 5.8's upscale until then),
+  the occlusion in the renderer (9.7).
 
 ## Effects (6.1)
 

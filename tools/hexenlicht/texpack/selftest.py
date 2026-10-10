@@ -595,4 +595,254 @@ with tempfile.TemporaryDirectory() as tmp:
     check('merge: an empty overrides cell keeps the row\'s; the animation\'s other frames follow',
           got['+0rune1']['overrides'] == 'bump=2' and got['+0rune1']['source'] == 'human'
           and got['+1rune1']['description'] == 'the owner\'s rune, red' and got['+1rune1']['source'] == 'human', str(got))
+
+# -- story 9.4: materials per region, groups, the redraw's driver --------------------------
+import groups as G  # noqa: E402
+import imaging as IM  # noqa: E402
+import materials as MT  # noqa: E402
+pal9 = np.stack([np.arange(256), 255 - np.arange(256), (np.arange(256) * 7) % 256], axis=1).astype(np.uint8)
+pal9[:32] = (np.arange(32) * 4)[:, None]    # a grey ramp from black, as the game's; all 256 distinct
+tex9 = pal9[np.full((16, 16), 10)]          # grey ramp (0-31): stone
+tex9[4:12, 4:12] = pal9[165]                # yellow ramp (160-175): gold
+mtab = MT.table(classes)
+sg = M.resolve('t', 'world', [dict(lrow('t', 'layout', 'stone', 'claude'), regions='*=stone;yellow=gold')], classes)
+idx9, names9, vals9 = MT.texel_materials(tex9, None, pal9, sg.regions, sg.params, mtab)
+check('texel_materials: a ramp\'s material, `*` the rest', names9 == ['(class)', 'stone', 'gold'] and idx9[5, 5] == 2 and idx9[0, 0] == 1
+      and vals9[2]['metallic'] == 1.0 and vals9[1]['contrast'] == 1.5, f'{names9} {idx9[5, 5]} {idx9[0, 0]}')
+idx0, _, _ = MT.texel_materials(tex9, None, pal9, 'yellow=gold', sg.params, mtab)
+hole9 = np.full((16, 16), 255, np.uint8)
+hole9[0] = 0
+idxh, _, _ = MT.texel_materials(tex9, hole9, pal9, sg.regions, sg.params, mtab)
+check('texel_materials: ramps no region names take the class\'s values, holes none', idx0[0, 0] == 0 and idx0[5, 5] == 1 and idxh[0, 3] == -1)
+W9 = MT.weights(idx9, 3, 4, True)
+check('weights sum to 1 and follow the materials', float(np.abs(W9.sum(0) - 1).max()) < 1e-9 and W9[2][32, 32] > 0.99 and W9[1][2, 2] > 0.99)
+guide9 = np.zeros((64, 64))
+guide9[14:50, 14:50] = 1.0                  # the redraw drew the square 2 px larger than 4x its texels
+Wg9 = MT.weights(idx9, 3, 4, True, guide=guide9)
+check('weights: the guided filter moves a material\'s edge towards the drawing\'s', Wg9[2][32, 15] > W9[2][32, 15] + 0.1
+      and Wg9[2][32, 14] > W9[2][32, 14] and Wg9[2][32, 40] > 0.99, f'{W9[2][32, 15]:.2f} -> {Wg9[2][32, 15]:.2f}')
+rng9 = np.random.default_rng(9)
+alb9 = rng9.integers(10, 200, (64, 64, 3), dtype=np.uint8)
+orig9 = rng9.integers(10, 120, (16, 16, 3), dtype=np.uint8)
+one9 = np.zeros((16, 16), np.int32)
+v1 = [MT.class_values(sg.params)]
+t1, whole1 = MT.targets(orig9, None, one9, v1)
+a1, _ = MT.match(alb9, None, MT.weights(one9, 1, 4, True), v1, t1, whole1)
+a2, _ = P.match_luminance(alb9, None, P.mean_linear_luminance(orig9) * v1[0]['albedo_ratio'], v1[0]['contrast'])
+check('match: one material is 5.8\'s brightness match', int(np.abs(a1.astype(int) - a2.astype(int)).max()) <= 1)
+t2, whole2 = MT.targets(tex9, None, idx9, vals9)
+a3, _ = MT.match(rng9.integers(20, 220, (64, 64, 3), dtype=np.uint8), None, W9, vals9, t2, whole2)
+y3 = IM._luma(a3)
+cg, cs = W9[2] >= 0.99, W9[1] >= 0.99
+check('match: each material\'s mean reaches its own target', abs(y3[cg].mean() / t2[2] - 1) < 0.1 and abs(y3[cs].mean() / t2[1] - 1) < 0.1,
+      f'gold x{y3[cg].mean() / t2[2]:.3f}, stone x{y3[cs].mean() / t2[1]:.3f}')
+r9 = MT.roughness(rng9.random((64, 64, 3)), W9, vals9)
+check('roughness: each material inside its range', vals9[2]['rough_min'] - 1e-9 <= r9[cg].min() and r9[cg].max() <= vals9[2]['rough_max'] + 1e-9
+      and vals9[1]['rough_min'] - 1e-9 <= r9[cs].min() and r9[cs].max() <= vals9[1]['rough_max'] + 1e-9)
+m9 = MT.metallic(W9, vals9)
+check('metallic per texel: the gold 1, the stone 0', m9[cg].min() > 0.99 and m9[cs].max() < 0.01)
+gap9 = np.full((64, 64, 3), 120, np.uint8)
+gap9[:, 30:34] = 3
+sf9 = MT.surface(gap9, np.ones((1, 64, 64)))
+check('surface: a near-black gap 0, the face 1', sf9[:, 31].max() < 0.01 and sf9[:, 10].min() > 0.99)
+nrm9 = np.zeros((64, 64, 3), np.uint8)
+nrm9[...] = (128, 128, 255)
+nrm9[:, 28:30] = (200, 128, 220)            # a slope
+oc9 = MT.occlusion(nrm9, 4.0, sf9)
+check('occlusion: 1 on a face, less on a slope, 0 in the gap', oc9[0, 10] > 0.99 and oc9[0, 28] < 0.9 and oc9[0, 31] < 0.01, f'{oc9[0, 28]:.2f}')
+flat9 = np.uint8(np.clip(field(64, 64, 3, 21) * 300 - 30, 10, 255))
+lit9 = R._enc(R._lin(flat9) * np.linspace(0.5, 1.5, 64)[:, None, None])      # a light falling off down the drawing
+lg9 = R.light_guard(flat9[1::4, 1::4], lit9)
+check('light_guard takes a light across the whole drawing out, the detail stays',
+      R.broad_step(lit9) > 0.6 and R.broad_step(lg9) < 0.25 and R._corr(R._highpass(ly(lit9), 4), R._highpass(ly(lg9), 4)) > 0.9,
+      f'broad step {R.broad_step(flat9):.2f} -> lit {R.broad_step(lit9):.2f} -> {R.broad_step(lg9):.2f}')
+o9 = P.make_orm(np.full((4, 4), 0.5), np.array([[0, 1, 0.5, 0]] * 4, float), np.full((4, 4), 0.25))
+check('make_orm: the occlusion in R, a metallic map in B; without them 5.8\'s', o9[0, 0, 0] == 64 and o9[0, 1, 2] == 255 and o9[0, 2, 2] == 128
+      and (P.make_orm(np.zeros((2, 2)), 1)[..., 0] == 255).all() and (P.make_orm(np.zeros((2, 2)), 1)[..., 2] == 255).all())
+# 5.8's state key, pinned: the upscaled textures of a pack (the 5.9 skins: 2.3 hours) must not be
+# redone because the redraw added something to the tables they hash (9.4's code review: [models])
+imp9 = M.resolve('models/imp.mdl_0', 'skin', [row('models/imp.mdl_0', 'skin', 'an imp')], classes)
+k58 = P.state_key(b'\x89PNG fixed bytes', imp9, classes['models'], P.seed_for('models/imp.mdl_0', 5800))
+check('5.8\'s state key is the one before 9.4 (bump TOOL_VERSION to change it on purpose)', k58 == '8d3636e677564fe38521cdd7e939de917f8ec403', k58)
+fh = MT.fill_holes(np.array([[1, -1, -1, 2], [1, -1, 2, 2]]), False)
+check('fill_holes: a hole takes its nearest opaque texel\'s material, not the class\'s', (fh >= 1).all() and fh[0, 1] == 1 and fh[0, 2] == 2, str(fh))
+rs9 = M.resolve('x', 'world', [row('x', 'stone', '', 'seed=1234')], classes)
+check('a seed= override is an int; without one no seed key (5.8\'s state keys stay)',
+      rs9.params['seed'] == 1234 and 'seed' not in M.resolve('x', 'world', [row('x', 'stone')], classes).params)
+
+# the groups: copies, sets (shared texels, animations), heroes, the closure, unify
+g9 = np.random.default_rng(3)
+
+
+def rnd(seed, n=16):
+    return pal9[np.random.default_rng(seed).integers(0, 32, (n, n))]
+
+
+def variant(base, frac, seed):
+    v = rnd(seed, base.shape[0])
+    k = int(base.shape[0] * base.shape[1] * frac)
+    v.reshape(-1, 3)[:k] = base.reshape(-1, 3)[:k]
+    return v
+
+
+fr = lambda tier='layout', fam='', d='x': types.SimpleNamespace(tier=tier, cls='stone', description=d, regions='*=stone',  # noqa: E731
+                                                                 family=fam, params={'maps': True})
+base9, h9 = rnd(100), rnd(101)
+pix9 = {'a1': rnd(1), 'w1': variant(base9, 0.6, 2), 'w2': variant(base9, 0.6, 3), 'w3': variant(base9, 0.1, 4),
+        '+0rn': rnd(5), '+1rn': rnd(6), 'h': h9, 'm3': variant(h9, 0.5, 7), 'm1': rnd(8), 'm2': rnd(9),
+        'm4': variant(h9, 0.5, 10), 'h2': rnd(11)}
+pix9['a2'] = pix9['a1'].copy()
+res9 = {s: fr() for s in pix9}
+res9.update({'w1': fr('layout', 'f'), 'w2': fr('reimagine', 'f'), 'h': fr('layout', 'f'), 'm1': fr('layout', 'f'),
+             'm2': fr('faithful', 'f'), 'm3': fr('layout', 'f'), '+0rn': fr('faithful'), '+1rn': fr('faithful'),
+             'm4': fr('layout', 'g'), 'h2': fr('layout', 'g')})
+cen9 = {'a2': {'area': '100'}, 'a1': {'area': '10'}, 'w1': {'area': '50'}, 'w2': {'area': '40'}, 'h': {'area': '1000'},
+        '+0rn': {'anim': '+0rn +1rn'}, '+1rn': {'anim': '+0rn +1rn'}}
+plan9 = G.Plan(sorted(pix9), res9, pix9, cen9, {'f': 'h', 'g': 'h2'})
+check('groups: a copy is drawn as its twin with the most area', plan9.rep['a1'] == 'a2' and plan9.rep['a2'] == 'a2')
+check('groups: a set by shared texels (a fifth or more), the most area first; an animation\'s frames joined',
+      plan9.group['w2'] == ['w1', 'w2'] and plan9.group['w3'] == ['w3'] and plan9.group['+1rn'] == ['+0rn', '+1rn'], str(plan9.group['w2']))
+check('groups: the hero for layout members, not reimagine nor faithful ones nor its own set',
+      plan9.hero.get('m1') == 'h' and plan9.hero.get('w1') == 'h' and 'w2' not in plan9.hero and 'm2' not in plan9.hero
+      and 'm3' not in plan9.hero and 'h' not in plan9.hero)
+holes9 = {}
+for i, s in enumerate(('g1', 'g2')):        # three quarters holes, black under them in both
+    a = np.zeros((16, 16), np.uint8)
+    a[:4] = 255
+    holes9[s] = np.dstack([np.where(a[..., None] > 0, rnd(30 + i), 0).astype(np.uint8), a])
+holes9.update({'L': rnd(32), 'M': rnd(33)})
+res_h = {'g1': fr('layout'), 'g2': fr('layout'), 'L': fr('layout', 'f'), 'M': fr('layout', 'f')}
+plan_h = G.Plan(sorted(holes9), res_h, holes9, {}, {'f': 'L', 'g': 'M'})     # M leads g but is labeled into f
+check('groups: holes are no shared texels; a lead never takes another family\'s hero',
+      plan_h.group['g2'] == ['g2'] and 'M' not in plan_h.hero and 'L' not in plan_h.hero, f"{plan_h.group['g2']} {plan_h.hero}")
+d9, w9 = plan9.closure(['w2', 'a1'])
+check('closure: every hero first (its set holds another family\'s member, whose hero comes too), sets whole, copies written',
+      d9[:2] == ['h', 'h2'] and set(d9) == {'h', 'h2', 'm3', 'm4', 'w1', 'w2', 'a2'} and plan9.hero.get('m4') == 'h2'
+      and set(w9) == {'h', 'h2', 'm3', 'm4', 'w1', 'w2', 'a1', 'a2'}, f'{d9} {w9}')
+o1, o2 = pix9['w1'], pix9['w2']
+n1 = np.zeros((64, 64, 3), np.uint8)
+n1[...] = (128, 128, 255)
+n2 = np.zeros((64, 64, 3), np.uint8)
+n2[...] = (204, 128, 229)                   # (0.6, 0, 0.8)
+u9, _ = G.unify(['w1', 'w2'], {'w1': o1, 'w2': o2}, {'w1': [np.full((64, 64, 3), 50, np.uint8), n1], 'w2': [np.full((64, 64, 3), 200, np.uint8), n2]},
+             4, True, normal_at=1)
+inner9 = G.shared_interior(o2, o1, 4)
+far9 = G.feather((o1 == o2).all(-1), 4, True) == 0
+vec9 = u9['w2'][1].astype(float) / 127.5 - 1
+check('unify: the shared texels take the earlier member\'s, the others stay, blended normals unit length',
+      inner9.any() and (u9['w2'][0][inner9] == 50).all() and far9.any() and (u9['w2'][0][far9] == 200).all()
+      and (u9['w2'][1][inner9] == n1[inner9]).all() and abs(np.linalg.norm(vec9, axis=2) - 1).max() < 0.02 and (u9['w1'][0] == 50).all())
+
+
+class FakeComfy9:
+    """The edit hands back its image scaled to the workflow's size; it notes the seed and a reference."""
+    home = ''
+
+    def __init__(self):
+        self.ims, self.calls = {}, []
+
+    def start(self, log=None):
+        pass
+
+    def stop(self):
+        pass
+
+    def upload(self, name, data):
+        self.ims[name] = data
+        return name
+
+    def run(self, wf):
+        import io
+        im = Image.open(io.BytesIO(self.ims[wf['4']['inputs']['image']])).convert('RGB')
+        seed = wf['19']['inputs']['noise_seed']
+        self.calls.append((seed, '40' in wf))
+        b = io.BytesIO()
+        im = np.asarray(im.resize((wf['9']['inputs']['width'], wf['9']['inputs']['height']), Image.BICUBIC)).astype(int)
+        Image.fromarray(np.clip(im + seed % 5, 0, 255).astype(np.uint8)).save(b, 'PNG')     # another seed, another image
+        return b.getvalue()
+
+
+class FakeMaps9:
+    def run(self, which, rgb, wrap):
+        g = np.random.default_rng(rgb.shape[0])
+        if which == 'normal':       # PBRify's DirectX green: finish_normal flips it
+            n = np.dstack([R._smooth(g.random(rgb.shape[:2]), 3) * 0.3 + 0.35, R._smooth(g.random(rgb.shape[:2]), 3) * 0.3 + 0.35,
+                           np.full(rgb.shape[:2], 0.95)])
+            return n
+        return g.random(rgb.shape)
+
+
+import redraw as RD  # noqa: E402
+import verify as V  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    ex, out = os.path.join(tmp, 'ex'), os.path.join(tmp, 'pack')
+    os.makedirs(os.path.join(ex, 'textures'))
+    smooth = lambda seed: pal9[np.clip(np.round(R._smooth(np.random.default_rng(seed).random((32, 32)), 4) * 60 - 14), 4, 31).astype(int)]  # noqa: E731
+    t9 = {'h': smooth(11), 'm1': smooth(12), 'w1': smooth(13), 'c1': smooth(14)}
+    t9['w2'] = t9['w1'].copy()
+    t9['w2'][:12] = smooth(15)[:12]           # a variant: two thirds of w1's texels
+    t9['c2'] = t9['c1'].copy()
+    t9['h'][10:13, :] = pal9[0]                 # a black joint
+    t9['m1'][8:16, 8:16] = pal9[166]            # gold
+    lines = ['file,name,crc,width,height,kind,alpha,variants,used in,from']
+    for s, im in t9.items():
+        Image.fromarray(im).save(os.path.join(ex, 'textures', s + '.png'))
+        lines.append(f'textures/{s}.png,{s},0000,32,32,world,none,1,m1,data1/pak0.pak')
+    with open(os.path.join(ex, 'textures.csv'), 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    lab9 = lambda s, tier, fam='', reg='*=stone', o='': dict(lrow(s, tier, 'stone', 'claude', 'a wall', o), family=fam, regions=reg)  # noqa: E731
+    rows9 = [lab9('h', 'layout', 'f'), lab9('m1', 'layout', 'f', '*=stone;yellow=gold'), lab9('w1', 'reimagine'), lab9('w2', 'reimagine'),
+             lab9('c1', 'faithful'), lab9('c2', 'faithful')]
+    cen9 = {'h': {'area': '900'}, 'w1': {'area': '50'}, 'c1': {'area': '5'}, 'c2': {'area': '7'}}
+    ents9 = P.load_export(ex)
+
+    def run9(rows, stems):
+        fc = FakeComfy9()
+        rd = RD.Redraw(ex, out, classes, fc, ents9, rows, cen9, {'f': 'h'}, pal9, restart_every=0, log=lambda m: None)
+        rd.maps = FakeMaps9()
+        return rd, fc, rd.run(stems)
+    rd9, fc9, (made9, same9, wrote9) = run9(rows9, ['m1', 'w2', 'c1'])
+    tx = lambda s, suf='.png': os.path.join(out, 'textures', s + suf)  # noqa: E731
+    check('redraw run: the hero, the set and a copy\'s source drawn, every file written',
+          made9 == 5 and wrote9 == 6 and all(os.path.exists(tx(s, f)) for s in t9 for f in ('.png', '_n.png', '_orm.png', '.mat')), f'{made9} {wrote9}')
+    seeds = dict(zip([s for s in rd9.plan.closure(['m1', 'w2', 'c1'])[0]], fc9.calls))
+    check('redraw run: the member gets the hero as a reference, the hero none; a set one seed',
+          seeds['m1'][1] and not seeds['h'][1] and seeds['w1'][0] == seeds['w2'][0] != seeds['h'][0], str(seeds))
+    check('redraw run: a copy\'s files are its source\'s', all(open(tx('c1', f), 'rb').read() == open(tx('c2', f), 'rb').read() for f in ('.png', '_n.png', '_orm.png')))
+    ia, ib = (np.asarray(Image.open(tx(s))) for s in ('w1', 'w2'))
+    inner = G.shared_interior(t9['w1'], t9['w2'], 4)
+    check('redraw run: a set\'s shared texels identical', inner.any() and (ia[inner] == ib[inner]).all() and not (ia[~inner] == ib[~inner]).all())
+    orm_m1 = np.asarray(Image.open(tx('m1', '_orm.png')))
+    check('redraw run: metallic per material (m1\'s gold 1, its stone 0)', orm_m1[48, 48, 2] == 255 and orm_m1[4, 4, 2] == 0, str(orm_m1[48, 48]))
+    orm_h = np.asarray(Image.open(tx('h', '_orm.png')))
+    check('redraw run: the black joint at roughness 1 and occluded', orm_h[46, 60, 1] >= 250 and orm_h[46, 60, 0] <= 10, str(orm_h[46, 60]))
+    _, _, (made_b, same_b, wrote_b) = run9(rows9, ['m1', 'w2', 'c1'])
+    check('redraw run: a second run makes nothing', made_b == 0 and same_b == 5 and wrote_b == 0, f'{made_b} {same_b} {wrote_b}')
+    rows9b = [dict(r, overrides='seed=77') if r['pattern'] == 'h' else r for r in rows9]
+    rd_c, fc_c, (made_c, _, wrote_c) = run9(rows9b, ['m1'])
+    check('redraw run: a new seed for the hero redraws it and its family\'s member, nothing else', made_c == 2 and fc_c.calls[0][0] == 77, f'{made_c} {fc_c.calls}')
+    open(tx('m1', '_r.png'), 'wb').write(b'stale')
+    os.remove(tx('m1', '.mat'))
+    _, _, (made_d, _, wrote_d) = run9(rows9b, ['m1'])
+    check('redraw run: a missing file is written again, a stale map removed', made_d == 0 and wrote_d == 1 and os.path.exists(tx('m1', '.mat'))
+          and not os.path.exists(tx('m1', '_r.png')), f'{made_d} {wrote_d}')
+    rows9e = [dict(r, regions='*=stone;orange=gold') if r['pattern'] == 'm1' else r for r in rows9b]
+    _, fc_e, (made_e, _, _) = run9(rows9e, ['m1'])
+    check('redraw run: the gold named on another ramp redoes the stages, not the model\'s image', made_e == 1 and not fc_e.calls, f'{made_e} {fc_e.calls}')
+    a_h = os.path.join(out, 'work', 'h_A.png')
+    os.remove(a_h)
+    _, fc_f, (made_f, _, _) = run9([dict(r, overrides='seed=0') if r['pattern'] == 'h' else r for r in rows9e], ['m1'])
+    check('redraw run: a hero without its model image is drawn again; seed=0 is a seed', os.path.exists(a_h) and fc_f.calls and fc_f.calls[0][0] == 0,
+          f'{made_f} {fc_f.calls}')
+    rows9b = [dict(r, overrides='seed=0') if r['pattern'] == 'h' else r for r in rows9e]
+    res_v = {s: M.resolve(s, 'world', rows9b, classes) for s in t9}
+    sel_v = [ents9[s] for s in sorted(t9)]
+    import contextlib
+    import io as _io
+    with contextlib.redirect_stdout(_io.StringIO()) as buf:
+        rc = V.run(ex, out, sel_v, res_v, pal9, classes, rd_c.plan, rd_c.orig)
+    check('verify passes the redrawn pack', rc == 0, buf.getvalue()[-600:])
+    Image.fromarray(np.where(inner[..., None], 0, ib).astype(np.uint8)).save(tx('w2'))
+    errs = V.groups_check(out, rd_c.plan, ['w2'], rd_c.orig)
+    check('verify: a set\'s differing shared texels fail', bool(errs.get('w2')), str(errs))
 sys.exit(1 if fails else 0)
