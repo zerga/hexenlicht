@@ -150,15 +150,15 @@ def _skin_imgs(ex, e, models):
     import numpy as np
     rgba = Image.open(os.path.join(ex, e.file)).convert('RGBA')
     im = Image.alpha_composite(Image.new('RGBA', rgba.size, (60, 60, 60, 255)), rgba).convert('RGB')
-    s = min(420 / im.width, 300 / im.height)
+    s = min(330 / im.width, 220 / im.height)
     s = max(1, int(s)) if s >= 1 else s
     atlas = im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))),
                       Image.NEAREST if s >= 1 else Image.LANCZOS)
-    out = f'<img src="{_array_uri(np.asarray(atlas))}" title="atlas {e.w}x{e.h}">'
+    out = f'<img class="atlas" src="{_array_uri(np.asarray(atlas))}" title="atlas {e.w}x{e.h}">'
     m = models.get(e)
     for yaw, what in ((0, 'front'), (90, 'left side'), (180, 'back')):
         if m is not None:
-            out += f'<img src="{_array_uri(models.mv.render(m, np.asarray(im), 0, yaw, 10, 300))}" title="{what}">'
+            out += f'<img src="{_array_uri(models.mv.render(m, np.asarray(im), 0, yaw, 10, 220))}" title="{what}">'
     return out
 
 
@@ -179,7 +179,7 @@ def questions(ex, sel, resolved, classes, asked, views, out, models=None):
         return f'<label>{field}<select data-f="{field}">{o}</select></label>'
 
     cards = []
-    for e in sel:
+    for i, e in enumerate(sel, 1):
         r = resolved[e.stem]
         if e.kind == 'skin' and models is not None:
             imgs = _skin_imgs(ex, e, models)
@@ -189,9 +189,11 @@ def questions(ex, sel, resolved, classes, asked, views, out, models=None):
                 p = os.path.join(views, f'{e.stem}_{v}.png')
                 if os.path.exists(p):
                     imgs += f'<img src="{_jpeg_uri(p)}" title="{v}">'
+        # the question first: under a skin's four pictures it was easy to miss
         cards.append(
-            f'<div class="card" data-stem="{html.escape(e.stem)}"><div class="imgs">{imgs}</div>'
-            f'<div class="q"><b>{html.escape(e.stem)}</b> {e.w}x{e.h}: {html.escape(asked[e.stem])}</div>'
+            f'<div class="card" data-stem="{html.escape(e.stem)}">'
+            f'<div class="q"><span class="n">{i}.</span> {html.escape(asked[e.stem])}'
+            f'<div class="stem">{html.escape(e.stem)} {e.w}x{e.h}</div></div><div class="imgs">{imgs}</div>'
             f'<div class="fields">{sel_html("purpose", r.purpose, purposes)}{sel_html("tier", r.tier, tiers)}'
             f'{sel_html("class", r.cls, names)}'
             f'<label>family<input data-f="family" value="{html.escape(r.family)}"></label>'
@@ -210,9 +212,10 @@ body{font:14px system-ui,sans-serif;margin:0;background:#1b1b1d;color:#ddd}
 header{position:sticky;top:0;background:#111;padding:8px 14px;z-index:5;display:flex;gap:14px;align-items:center}
 .card{background:#26262a;border-radius:6px;padding:10px;margin:12px 14px}
 .card.changed{outline:2px solid #e0a030}
-.imgs{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}.imgs img{max-width:420px;height:auto}
-.imgs img.orig{image-rendering:pixelated;width:192px}
-.q{margin:8px 0;color:#f0d070}.q b{color:#fff}
+.imgs{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}.imgs img{max-width:min(420px,100%);height:auto}
+.imgs img.orig{image-rendering:pixelated;width:192px}.imgs img.atlas{image-rendering:pixelated}
+.q{margin:0 0 10px;color:#f0d070;font-size:17px;line-height:1.35}.q .n{color:#fff;font-weight:bold}
+.q .stem{font-size:12px;color:#999;margin-top:2px}
 .fields{display:flex;gap:8px;flex-wrap:wrap}
 label{display:flex;flex-direction:column;font-size:12px;color:#999;margin-top:4px;flex:1;min-width:140px}
 select,input,textarea{background:#1b1b1d;color:#ddd;border:1px solid #444;border-radius:3px;padding:4px;font:13px system-ui,sans-serif}
