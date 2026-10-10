@@ -228,8 +228,9 @@ doesn't use.
   plants, corpses, flags, snow), `debris` (chunks of broken things and bodies), `fx` (lights,
   flames, torches, glowing missiles and spells, webs, the crosshair).
 - **tier**: `skin` (redrawn: every solid model), `fx` (upscaled only, M45: its look is glow,
-  flame or a spell's colors, and a torch's or a burner's glow is the engine's), `skip`
-  (placeholders and test models, blank atlases). A solid thing with a small glow (a staff's
+  flame or a spell's colors; the torches and burners drawn with their flame, whose glow is the
+  engine's), `skip` (placeholders and test models, blank atlases). The torch holders without
+  their flame are redrawn (`castrch`, `egtorch`, `mesotrch`, `rometrch`: owner, M65). A solid thing with a small glow (a staff's
   gem, a creature's eyes) is `skin`: the palette's saturated colors are kept as drawn (M49).
   Tiny flat slivers of debris (`shard1`–`shard5`) stay `fx`.
 - **class**: `skin_metal` (metallic over the whole atlas) only where metal is at least 60 % of
@@ -255,4 +256,6 @@ doesn't use.
 
 Found in the gamecode: the imp's third skin is the stone gargoyle that wakes (`imp.hc`),
 `snout.mdl` is a polymorphed player's view of the sheep (`sheep.hc`), `scrbp*` the scarab on the
-Assassin's staff chain.
+Assassin's staff chain. The owner's answers (M65): Septimus's statues of Caesar, Mars and Neptune
+are dark stone, not bronze; the Cube of Force is brass; the grey skin that `puzzle/e2`, `m5`,
+`s1` and data1's scepter share is a cloth backpack.
