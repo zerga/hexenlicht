@@ -67,6 +67,15 @@ def cmd_check_env(a):
             (os.path.join(comfy, 'checkpoints', classes['models']['checkpoint']), 'checkpoint'),
             (os.path.join(comfy, 'controlnet', classes['models']['controlnet']), 'controlnet')]
     need += [(os.path.join(home, 'models', 'pbrify', classes['models'][k]), k) for k in ('normal', 'roughness', 'height')]
+    # the redraw's (9.1, 9.4): in ComfyUI's folders or a base_path of extra_model_paths.yaml
+    extra = []
+    yaml = os.path.join(home, 'extra_model_paths.yaml')
+    if os.path.exists(yaml):
+        with open(yaml, encoding='utf-8') as f:
+            extra = [ln.split(':', 1)[1].strip() for ln in f if ln.strip().startswith('base_path:')]
+    for k, sub in (('generator', 'diffusion_models'), ('text_encoder', 'text_encoders'), ('vae', 'vae')):
+        cands = [os.path.join(b, sub, classes['redraw'][k]) for b in [comfy] + extra]
+        need.append((next((c for c in cands if os.path.exists(c)), cands[0]), k))
     vlm = os.path.join(home, 'models', classes['models']['vlm'])
     for path, what in need:
         print(f"{'ok     ' if os.path.exists(path) else 'MISSING'} {what}: {path}")
@@ -80,19 +89,59 @@ def cmd_check_env(a):
     return 0 if ok else 1
 
 
+def add_label_filters(p):
+    p.add_argument('--tier', help='only textures of these tiers (comma-separated)')
+    p.add_argument('--family', help='only these families\' textures (comma-separated)')
+    p.add_argument('--hub', help='only textures whose home (the hub where they cover the most) is one of these')
+
+
+def label_filter(a, sel, res):
+    """--tier, --family, --hub on the resolved labels (a hub: the texture's home in the census)."""
+    if a.tier:
+        sel = [e for e in sel if res[e.stem].tier in a.tier.split(',')]
+    if a.family:
+        sel = [e for e in sel if res[e.stem].family in a.family.split(',')]
+    if a.hub:
+        import census
+        cen = census.load(census.default_census())
+        want = set(a.hub.split(','))
+        sel = [e for e in sel if ((cen.get(e.stem, {}).get('hubs') or 'none').split() or ['none'])[0] in want]
+    return sel
+
+
 def cmd_run(a):
+    """The world and liquid textures of the redrawn tiers through redraw.py (9.1's pipeline, since
+    9.4), the rest (skins until 9.6, fx, sprites, anything unlabeled) through 5.8's."""
     from comfy import Comfy
+    import redraw
     ex, entries, sel = selection(a)
     classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
     rows = manifest.load_manifest(a.manifest)
     res = resolve_all(sel, rows, classes)
+    sel = label_filter(a, sel, res)
+    v2 = [e for e in sel if e.kind in ('world', 'liquid') and res[e.stem].tier in redraw.TIERS]
+    sel = [e for e in sel if e not in v2]
     out = os.path.abspath(a.out)
-    print(f"texpack run: {len(sel)} textures from {ex} into {out}")
+    print(f"texpack run: {len(v2) + len(sel)} textures from {ex} into {out}" + (f" ({len(v2)} redrawn)" if v2 else ''))
     done = skipped = since = 0
     t0 = time.time()
     with Comfy(texpack_home(), attach=a.attach, deterministic=not a.nondeterministic) as c:
-        c.start()
-        r = pipeline.Runner(ex, out, classes, c, seed=a.seed, flip_y=FLIP_Y)
+        if v2:
+            import census
+            import labels
+            data = a.data or default_data()
+            palette = redraw.load_palette(data)
+            if palette is None:
+                raise SystemExit(f"no data1\\pak0.pak in {data} (--data): the redraw's materials and special colors need the palette")
+            leads = {f: r['lead'] for f, r in labels.load_families(a.families).items() if r.get('lead')}
+            rd = redraw.Redraw(ex, out, classes, c, entries, rows, census.load(census.default_census()), leads, palette,
+                               seed=9100 if a.seed is None else a.seed, front=a.front, restart_every=a.restart_every)
+            made, unchanged, written = rd.run([e.stem for e in v2], force=a.force, reuse=a.reuse)
+            done, skipped = done + made, skipped + unchanged
+            print(f"redraw: {made} drawn, {unchanged} unchanged, {written} written to textures\\")
+        if sel:
+            c.start()
+        r = pipeline.Runner(ex, out, classes, c, seed=5800 if a.seed is None else a.seed, flip_y=FLIP_Y)
         for i, e in enumerate(sel, 1):
             info = r.process(e, res[e.stem], force=a.force)
             if info is None:
@@ -139,10 +188,23 @@ def cmd_calibrate(a):
 
 def cmd_verify(a):
     import verify
+    import redraw
     ex, entries, sel = selection(a)
     classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
     rows = manifest.load_manifest(a.manifest)
-    return verify.run(ex, os.path.abspath(a.pack), sel, resolve_all(sel, rows, classes))
+    res = resolve_all(sel, rows, classes)
+    sel = label_filter(a, sel, res)
+    palette = plan = orig = None
+    if any(e.kind in ('world', 'liquid') and res[e.stem].tier in redraw.TIERS for e in sel):
+        import census
+        import labels
+        data = a.data or default_data()
+        palette = redraw.load_palette(data)
+        if palette is None:
+            raise SystemExit(f"no data1\\pak0.pak in {data} (--data): the redraw's materials per region need the palette")
+        leads = {f: r['lead'] for f, r in labels.load_families(a.families).items() if r.get('lead')}
+        _, orig, plan = redraw.export_plan(ex, entries, rows, classes, census.load(census.default_census()), leads)
+    return verify.run(ex, os.path.abspath(a.pack), sel, res, palette, classes, plan, orig)
 
 
 def cmd_draft(a):
@@ -359,11 +421,16 @@ def main():
     p = sub.add_parser('check-env', help='the models, torch and the export are in place')
     p.add_argument('--export')
     p.set_defaults(f=cmd_check_env)
-    p = sub.add_parser('run', help='upscale the selected textures into a pack folder')
+    p = sub.add_parser('run', help='redraw or upscale the selected textures into a pack folder')
     add_select(p)
+    add_label_filters(p)
     p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--families', default=os.path.join(HERE, 'families.csv'))
+    p.add_argument('--data', help='the game data folder (the palette from data1\\pak0.pak; default: Hexenlicht-data beside the repository)')
     p.add_argument('--out', required=True, help='the pack folder (its textures\\ is what goes into data1)')
-    p.add_argument('--seed', type=int, default=5800)
+    p.add_argument('--seed', type=int, help='the seeds\' base (default: 9100 for the redraw, 5800 for 5.8\'s upscale)')
+    p.add_argument('--front', type=float, default=0.5, help='the redraw: how much of the frontal (cavity) shading stays in the albedo (0..1)')
+    p.add_argument('--reuse', action='store_true', help='the redraw: keep the model images of an earlier run, redo the stages after them')
     p.add_argument('--force', action='store_true', help='redo textures that are unchanged')
     p.add_argument('--restart-every', type=int, default=80, help='restart ComfyUI after this many textures made (0: never)')
     p.add_argument('--attach', action='store_true', help='use a ComfyUI already running on port 8199')
@@ -371,7 +438,10 @@ def main():
     p.set_defaults(f=cmd_run)
     p = sub.add_parser('verify', help='check a pack against the spec and the originals')
     add_select(p)
+    add_label_filters(p)
     p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--data', help='the game data folder (the palette: the redraw\'s materials per region)')
+    p.add_argument('--families', default=os.path.join(HERE, 'families.csv'), help='as the run\'s (its sets and heroes)')
     p.add_argument('--pack', required=True)
     p.set_defaults(f=cmd_verify)
     p = sub.add_parser('calibrate', help='measure the normal maps\' convention against the height model')

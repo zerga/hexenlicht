@@ -280,6 +280,22 @@ under 5.1's names. What it does, in the order of this guide:
   test textures were byte-identical), unchanged textures are skipped:
   correcting a label redoes that texture only. About 5 s a wall texture,
   50 s the largest skins on an RTX 4070 Ti.
+- **Redrawn, not upscaled (E9, since story 9.4).** A world texture labeled with a
+  redrawn tier is drawn anew by an image-editing model (FLUX.2 klein 4B) within its
+  original's arrangement and colors (the README's "Redraw"). The light the model draws is
+  taken out by numbers, its soft falloff across the drawing too (a tiled wall would band),
+  the brightness and Raven's broad colors put back. **Materials
+  come per region:** 9.3's labels say which of the palette's ramps is which material, so
+  a door's iron straps are metallic and its oak isn't, each with its own roughness range
+  and brightness (`classes.toml`'s `[materials]`). A ramp Raven used for two materials
+  (dark wood painted in the grey of the iron) gets one: correct the regions where it
+  shows. **Black joints and gaps** get roughness 1 and an occlusion in `_orm`'s red
+  (used from story 9.7), so a gap between planks doesn't shine. **Textures that belong
+  together are drawn alike:** a copy once, the variants of one texture (a wall with and
+  without its chains, the Four Horsemen's frame) with one seed and their shared texels
+  made identical, a family's trims, panels and other layout members with its hero's
+  drawing as a reference for the material (fills keep their own arrangement: the hero's
+  leaked into them). Change a hero and its layout members are redrawn.
 - **Not in the repository.** The pack is derived from Raven's textures
   (PLAN §4): the repository has the pipeline and the manifest, a pack is
   shared (if at all) on its own.

@@ -26,9 +26,12 @@
 #                 (AUTHORING.md section 5: 1 to 1.5 keeps Hexen II's look)
 #   kind          the .mat's kind (regular, chrome, glass); regular is not written
 #   emissive      the .mat's emissive (0: not written)
+#   seed          an override only (seed=1234): the redraw's seed instead of one from the name (story 9.4;
+#                 9.5 keeps a hero's pick here)
 
 # The models: names of files in ComfyUI's models folders (the upscaler, the
 # checkpoint, the ControlNet), PBRify's map models in $TEXPACK_HOME\models\pbrify.
+# 5.8's state keys hash this table: a key added here redoes every upscaled texture.
 [models]
 upscaler = "4x-PBRify-UpscalerV4.safetensors"
 checkpoint = "v1-5-pruned-emaonly.safetensors"
@@ -37,6 +40,13 @@ normal = "1x-PBRify_NormalV3.pth"
 roughness = "1x-PBRify_RoughnessV2.pth"
 height = "1x-PBRify_Height.pth"
 vlm = "qwen3-vl-4b"
+
+# The redraw's model (story 9.4: FLUX.2 klein 4B, M50): the generator, its text encoder and
+# VAE, in ComfyUI's folders or one named by $TEXPACK_HOME\extra_model_paths.yaml.
+[redraw]
+generator = "flux-2-klein-4b-fp8.safetensors"
+text_encoder = "qwen_3_4b.safetensors"
+vae = "flux2-vae.safetensors"
 
 [defaults]
 mode = "diffuse"
@@ -254,30 +264,38 @@ purposes_world = ["fill", "trim", "pillar", "panel", "door", "window", "grate", 
 purposes_skin = ["creature", "player", "weapon", "item", "object", "debris", "fx"]
 tiers = ["reimagine", "layout", "faithful", "glass", "liquid", "lava", "skin", "fx", "skip"]
 
-# The materials a region can be (9.4 gives each its values: roughness, metallic).
+# The materials a region can be (9.3's regions name them) and, since 9.4, their values texel by
+# texel (materials.py; DECISIONS M67): the roughness range the roughness model's output is
+# stretched over in the material's texels, metallic, the contrast and the albedo's ratio to the
+# original's ([defaults]' where left out: a dielectric with M43's contrast 1.5 and ratio 1.2).
+# The ranges are the classes' where a class of the material exists; the rest set by judgment
+# from published PBR material tables (polished stone, glazed tile, leather and skin smoother
+# than rough stone, cloth and earth). Metals are metallic 1, contrast 1 and ratio 1 (their
+# albedo is their reflectance), rust is not a metal (the oxide is a dielectric). Specular is
+# the texture's (.mat), not a material's.
 [materials]
-stone = "rock: rough-hewn, dressed or carved"
-marble = "polished veined stone"
-brick = "fired clay bricks"
-tile = "glazed or fired tiles, mosaic"
-plaster = "plaster, stucco, painted wall"
-wood = "timber, planks, carved or painted wood"
-iron = "wrought or cast iron, dark and dull"
-steel = "bright worked steel: blades, plate armour"
-bronze = "bronze or brass"
-gold = "gold and gilding"
-silver = "silver"
-rust = "corroded iron"
-cloth = "woven fabric: robes, banners, tapestries"
-leather = "tanned leather: straps, bindings, boots"
-hide = "a creature's scaly or furless skin"
-flesh = "exposed flesh, gore, a face's skin"
-bone = "bone, skulls, horn, teeth"
-hair = "hair, fur, feathers"
-earth = "soil, mud, sand, gravel"
-foliage = "grass, leaves, moss, thatch, vines"
-ice = "ice, frost"
-glass = "glass panes"
-crystal = "crystal, gems, glowing stones"
-parchment = "paper, parchment, scrolls"
-wax = "candle wax"
+stone = { what = "rock: rough-hewn, dressed or carved", rough_min = 0.7, rough_max = 0.95 }
+marble = { what = "polished veined stone", rough_min = 0.25, rough_max = 0.55 }
+brick = { what = "fired clay bricks", rough_min = 0.7, rough_max = 0.95 }
+tile = { what = "glazed or fired tiles, mosaic", rough_min = 0.35, rough_max = 0.7 }
+plaster = { what = "plaster, stucco, painted wall", rough_min = 0.8, rough_max = 0.98 }
+wood = { what = "timber, planks, carved or painted wood", rough_min = 0.55, rough_max = 0.85 }
+iron = { what = "wrought or cast iron, dark and dull", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.45, rough_max = 0.8 }
+steel = { what = "bright worked steel: blades, plate armour", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.25, rough_max = 0.55 }
+bronze = { what = "bronze or brass", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.3, rough_max = 0.65 }
+gold = { what = "gold and gilding", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.2, rough_max = 0.5 }
+silver = { what = "silver", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.2, rough_max = 0.5 }
+rust = { what = "corroded iron", rough_min = 0.6, rough_max = 0.9 }
+cloth = { what = "woven fabric: robes, banners, tapestries", rough_min = 0.8, rough_max = 0.98 }
+leather = { what = "tanned leather: straps, bindings, boots", rough_min = 0.5, rough_max = 0.8 }
+hide = { what = "a creature's scaly or furless skin", rough_min = 0.45, rough_max = 0.75 }
+flesh = { what = "exposed flesh, gore, a face's skin", rough_min = 0.4, rough_max = 0.7 }
+bone = { what = "bone, skulls, horn, teeth", rough_min = 0.5, rough_max = 0.8 }
+hair = { what = "hair, fur, feathers", rough_min = 0.6, rough_max = 0.9 }
+earth = { what = "soil, mud, sand, gravel", rough_min = 0.85, rough_max = 1.0 }
+foliage = { what = "grass, leaves, moss, thatch, vines", rough_min = 0.6, rough_max = 0.85 }
+ice = { what = "ice, frost", rough_min = 0.15, rough_max = 0.5 }
+glass = { what = "glass panes", rough_min = 0.05, rough_max = 0.2 }
+crystal = { what = "crystal, gems, glowing stones", rough_min = 0.1, rough_max = 0.35 }
+parchment = { what = "paper, parchment, scrolls", rough_min = 0.75, rough_max = 0.95 }
+wax = { what = "candle wax", rough_min = 0.4, rough_max = 0.65 }

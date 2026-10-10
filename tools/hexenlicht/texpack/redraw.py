@@ -1,40 +1,44 @@
-"""texpack's redraw stage (story 9.1, the pilot of E9; docs/hexenlicht/PLAN.md section 8):
-a texture's surface redrawn by an image-editing model, not only upscaled.
+"""texpack's redraw (story 9.1, E9's pilot; in `texpack.py run` since 9.4; docs/hexenlicht/PLAN.md
+section 8): a texture's surface redrawn by an image-editing model, not only upscaled.
 
-One pass through ComfyUI's core nodes, with FLUX.2 klein 4B (`klein`, `klein-base`) or
-Qwen-Image-Edit-2511 with its 8-step Lightning LoRA (`qwen`): the 4x upscale of the padded
-original is redrawn as a detailed material under a soft frontal light (`work\\<stem>_A.png`);
-how far it may depart from the original is the texture's tier. Then, in this process:
-  seams    the redrawn padding is blended into the tile's opposite edges (world textures);
+One pass through ComfyUI's core nodes with FLUX.2 klein 4B (DECISIONS M50): the 4x upscale of the
+padded original is redrawn as a detailed material under a soft frontal light (`work\\<stem>_A.png`);
+how far it may depart from the original is the texture's tier (9.3's labels); a family's layout
+member gets its hero's drawing as a second image, a reference for the material (groups.py). Then,
+in this process:
+  broad    the drawing's soft falloff of light (bands on a tiled wall) out: its broad lightness
+           replaced by the original's, on the whole padded drawing (light_guard);
+  seams    the redrawn padding is blended into the tile's opposite edges;
   maps     normal and roughness from the redrawn image (PBRify, as 5.8), so the relief is
            where the drawn light shows it;
   light    the part of the image's brightness that the normal map's directions explain is
            divided out: the directional part (light from a side) fully, the frontal part
            (faces towards the viewer brighter, slopes and joints darker: a cavity term) by
-           1 - `front`, so `front` of it stays (DECISIONS: a second edit "to an albedo"
+           1 - `front`, so `front` of it stays (DECISIONS M47: a second edit "to an albedo"
            flattened the material away);
-  bright   5.8's brightness match (M37, M43);
+  bright   5.8's brightness match (M37, M43) per material (materials.py: 9.3's regions);
   colors   the original's broad colors put back (Oklab's a and b blurred at a tenth to a
-           32nd of the texture, by tier): the models draw real-world colors, Hexen II's
-           palette is the theme.
-measure.json gets numbers for what the pilot judges: seams, light left in, color drift, layout
-kept, brightness. Liquids and lava keep their light and colors as drawn (nothing to take out:
-the engine warps a liquid, lava emits), but get the colors back too.
+           24th of the texture, by tier): the models draw real-world colors, Hexen II's
+           palette is the theme;
+  orm      roughness and metallic per material, roughness 1 in near-black cavities, the
+           occlusion from the cavity term (materials.py; 9.7 uses it).
+Liquids and lava keep their light as drawn (nothing to take out: the engine warps a liquid, lava
+emits), but get the colors back too. Copies are drawn once, a set's members with one seed and
+their shared texels made identical, their own rebalanced (groups.py). The stages write `work\\`, a last step
+`textures\\` (MATERIALS.md's names); `.texpack\\redraw.json` keeps what each was made from and
+9.1's numbers: seams, light left in, color drift, layout kept, brightness.
 
-  python redraw.py run --pilot pilot.csv --gen klein --out <pack> [--stems a,b] [--export <export>]
-  python redraw.py sheet --pilot pilot.csv --packs klein=<pack>,qwen=<pack> --base <5.8 pack> --out <dir>
-
-A pack's textures\\ holds the files in MATERIALS.md's names (as texpack.py run's), work\\ the
-model's image, measure.json the numbers.
+  python redraw.py sheet --packs klein=<pack>,other=<pack> --base <5.8 pack> --out <dir>
 """
 import argparse
-import csv
 import hashlib
 import io
 import json
 import os
+import shutil
 import sys
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -42,12 +46,18 @@ sys.path.insert(0, HERE)
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
+import groups  # noqa: E402
 import manifest  # noqa: E402
+import materials  # noqa: E402
 import pipeline  # noqa: E402
-from pipeline import GAMMA, LUM  # noqa: E402
+from imaging import _blur, _box, _corr, _enc, _from_oklab, _highpass, _lin, _oklab, _smooth  # noqa: E402,F401
+from pipeline import LUM  # noqa: E402
 
-GEN_PIXELS = 1024 * 1024        # the models' native size: the padded image is scaled to about this
+GEN_PIXELS = 1024 * 1024        # the model's native size: the padded image is scaled to about this
+REF_PIXELS = 512 * 512          # the hero's drawing as a reference: no slower than without (9.4's spike)
+GEN = {'steps': 4, 'cfg': 1.0}  # klein, distilled
 
+TIERS = ('reimagine', 'layout', 'faithful', 'glass', 'liquid', 'lava')     # what texpack.py run redraws
 PROMPT_A = {
     'reimagine': (
         "Turn this low-resolution game texture into a high-resolution photorealistic material texture of {desc}. "
@@ -66,11 +76,6 @@ PROMPT_A = {
         "Keep every figure, symbol, letter, line and color exactly as it is; do not add, remove or change any content. "
         "Only make the edges crisp and add fine natural texture of the material. "
         "Soft even frontal light. A flat orthographic view filling the whole image edge to edge."),
-    'skin': (
-        "This is the texture atlas of a 3D game character's skin, laid out flat: {desc}. "
-        "Repaint it at high resolution with realistic material detail: scratches and dents in metal, grain in leather and wood, "
-        "weave in cloth, pores and scales in hide. Keep every part, outline and color exactly where it is, "
-        "keep the black background black, and keep the same layout of the pieces. Soft even light."),
 }
 PROMPT_A['glass'] = (
     "Turn this low-resolution game texture into a high-resolution texture of {desc}, seen flat against a uniform white "
@@ -79,149 +84,66 @@ PROMPT_A['glass'] = (
     "objects visible through them. A flat orthographic view filling the whole image edge to edge, no text.")
 PROMPT_A['liquid'] = PROMPT_A['faithful']
 PROMPT_A['lava'] = PROMPT_A['faithful']
+# the hero as image 2 (9.4's spike: the material followed it, the layout stayed image 1's)
+PROMPT_REF = (" Image 2 is only a reference for the material: draw the surfaces of image 1 as the same {noun}, "
+              "with the same kind of detail, grain, wear and finish as image 2, but keep image 1's own layout, shapes and colors.")
 AS_DRAWN = ('liquid', 'lava')       # no light taken out (a liquid is warped, lava emits); colors put back as for all
 FRONT = 0.5                         # how much of the frontal (cavity) shading stays
 # the color guard: how much of the original's broad colors comes back, and at what scale (a
 # fraction of the texture's short side): coarse where the shapes may move, fine where they stay
 COLOR_GUARD = {'reimagine': (0.8, 1 / 10), 'layout': (1.0, 1 / 24), 'faithful': (1.0, 1 / 24),
-               'glass': (1.0, 1 / 24), 'skin': (1.0, 1 / 32), 'liquid': (1.0, 1 / 24), 'lava': (1.0, 1 / 24)}
+               'glass': (1.0, 1 / 24), 'liquid': (1.0, 1 / 24), 'lava': (1.0, 1 / 24)}
 SPECIAL = range(240, 255)           # the palette's saturated row (the archer's green eyes are 243-246): kept as Raven drew it
-
-GENS = {
-    'klein': {'family': 'flux2', 'unet': 'flux-2-klein-4b-fp8.safetensors', 'steps': 4, 'cfg': 1.0},
-    'klein-base': {'family': 'flux2', 'unet': 'flux-2-klein-base-4b-fp8.safetensors', 'steps': 20, 'cfg': 4.0},
-    'qwen': {'family': 'qwen', 'unet': 'qwen_image_edit_2511_fp8mixed.safetensors', 'steps': 8, 'cfg': 1.0,
-             'lora': 'Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors'},
-}
-NEGATIVE = "blurry, low resolution, pixelated, perspective, vignette, frame, border, text, watermark, strong shadows, harsh highlights"
+LIGHT_GUARD = 1 / 4                 # light_guard's scale: the original's broad lightness, coarser than the parts
 
 
-# -- the workflows -------------------------------------------------------------
+# -- the workflow ----------------------------------------------------------------
 
-def _front(wf, image_name, upscaler, w, h):
-    """LoadImage, the 4x model (when upscaler), scaled to w x h: node '9' is the image."""
-    wf['4'] = {'class_type': 'LoadImage', 'inputs': {'image': image_name}}
+def workflow(models, image_name, prompt, seed, w, h, upscaler=None, ref_name=None, ref_size=None):
+    """The edit as ComfyUI's template for klein (image_flux2_klein_image_edit_4b_distilled), the
+    image scaled to w x h by us rather than to a megapixel; a reference image (ref_name, scaled to
+    ref_size) is a second ReferenceLatent on both conditionings. models: classes.toml's [redraw]."""
+    wf = {'4': {'class_type': 'LoadImage', 'inputs': {'image': image_name}}}
     src = ['4', 0]
     if upscaler:
         wf['5'] = {'class_type': 'UpscaleModelLoader', 'inputs': {'model_name': upscaler}}
         wf['6'] = {'class_type': 'ImageUpscaleWithModel', 'inputs': {'upscale_model': ['5', 0], 'image': src}}
         src = ['6', 0]
-    wf['9'] = {'class_type': 'ImageScale', 'inputs': {'image': src, 'upscale_method': 'lanczos', 'width': w, 'height': h, 'crop': 'disabled'}}
-
-
-def workflow(gen, image_name, prompt, seed, w, h, upscaler=None):
-    """The edit, as ComfyUI's templates for the two models (image_flux2_klein_image_edit_4b_*,
-    image_qwen_image_edit_2511), with the image scaled to w x h by us rather than to a megapixel."""
-    g = GENS[gen]
-    wf = {}
-    _front(wf, image_name, upscaler, w, h)
-    if g['family'] == 'flux2':
-        wf.update({
-            '1': {'class_type': 'UNETLoader', 'inputs': {'unet_name': g['unet'], 'weight_dtype': 'default'}},
-            '2': {'class_type': 'CLIPLoader', 'inputs': {'clip_name': 'qwen_3_4b.safetensors', 'type': 'flux2', 'device': 'default'}},
-            '3': {'class_type': 'VAELoader', 'inputs': {'vae_name': 'flux2-vae.safetensors'}},
-            '10': {'class_type': 'VAEEncode', 'inputs': {'pixels': ['9', 0], 'vae': ['3', 0]}},
-            '11': {'class_type': 'CLIPTextEncode', 'inputs': {'text': prompt, 'clip': ['2', 0]}},
-            '13': {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['11', 0], 'latent': ['10', 0]}},
-            '15': {'class_type': 'EmptyFlux2LatentImage', 'inputs': {'width': w, 'height': h, 'batch_size': 1}},
-            '16': {'class_type': 'Flux2Scheduler', 'inputs': {'steps': g['steps'], 'width': w, 'height': h}},
-            '17': {'class_type': 'KSamplerSelect', 'inputs': {'sampler_name': 'euler'}},
-            '18': {'class_type': 'CFGGuider', 'inputs': {'model': ['1', 0], 'positive': ['13', 0], 'negative': ['14', 0], 'cfg': g['cfg']}},
-            '19': {'class_type': 'RandomNoise', 'inputs': {'noise_seed': seed}},
-            '20': {'class_type': 'SamplerCustomAdvanced', 'inputs': {'noise': ['19', 0], 'guider': ['18', 0], 'sampler': ['17', 0],
-                                                                     'sigmas': ['16', 0], 'latent_image': ['15', 0]}},
-            '21': {'class_type': 'VAEDecode', 'inputs': {'samples': ['20', 0], 'vae': ['3', 0]}},
-        })
-        if g['cfg'] > 1.0:     # the base model: a real negative, with the reference too
-            wf['12'] = {'class_type': 'CLIPTextEncode', 'inputs': {'text': NEGATIVE, 'clip': ['2', 0]}}
-        else:                  # the distilled one ignores it: the template's zeroed positive
-            wf['12'] = {'class_type': 'ConditioningZeroOut', 'inputs': {'conditioning': ['11', 0]}}
-        wf['14'] = {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['12', 0], 'latent': ['10', 0]}}
-    else:
-        wf.update({
-            '1': {'class_type': 'UNETLoader', 'inputs': {'unet_name': g['unet'], 'weight_dtype': 'default'}},
-            '30': {'class_type': 'CFGNorm', 'inputs': {'model': ['1', 0], 'strength': 1.0}},
-            '31': {'class_type': 'LoraLoaderModelOnly', 'inputs': {'model': ['30', 0], 'lora_name': g['lora'], 'strength_model': 1.0}},
-            '32': {'class_type': 'ModelSamplingAuraFlow', 'inputs': {'model': ['31', 0], 'shift': 3.1}},
-            '2': {'class_type': 'CLIPLoader', 'inputs': {'clip_name': 'qwen_2.5_vl_7b_fp8_scaled.safetensors', 'type': 'qwen_image', 'device': 'default'}},
-            '3': {'class_type': 'VAELoader', 'inputs': {'vae_name': 'qwen_image_vae.safetensors'}},
-            '11': {'class_type': 'TextEncodeQwenImageEditPlus', 'inputs': {'clip': ['2', 0], 'prompt': prompt, 'vae': ['3', 0], 'image1': ['9', 0]}},
-            '12': {'class_type': 'TextEncodeQwenImageEditPlus', 'inputs': {'clip': ['2', 0], 'prompt': '', 'vae': ['3', 0], 'image1': ['9', 0]}},
-            '13': {'class_type': 'FluxKontextMultiReferenceLatentMethod', 'inputs': {'conditioning': ['11', 0], 'reference_latents_method': 'index_timestep_zero'}},
-            '14': {'class_type': 'FluxKontextMultiReferenceLatentMethod', 'inputs': {'conditioning': ['12', 0], 'reference_latents_method': 'index_timestep_zero'}},
-            '10': {'class_type': 'VAEEncode', 'inputs': {'pixels': ['9', 0], 'vae': ['3', 0]}},
-            '20': {'class_type': 'KSampler', 'inputs': {'model': ['32', 0], 'seed': seed, 'steps': g['steps'], 'cfg': g['cfg'],
-                                                        'sampler_name': 'euler', 'scheduler': 'simple', 'positive': ['13', 0],
-                                                        'negative': ['14', 0], 'latent_image': ['10', 0], 'denoise': 1.0}},
-            '21': {'class_type': 'VAEDecode', 'inputs': {'samples': ['20', 0], 'vae': ['3', 0]}},
-        })
-    wf['22'] = {'class_type': 'PreviewImage', 'inputs': {'images': ['21', 0]}}
+    wf.update({
+        '1': {'class_type': 'UNETLoader', 'inputs': {'unet_name': models['generator'], 'weight_dtype': 'default'}},
+        '2': {'class_type': 'CLIPLoader', 'inputs': {'clip_name': models['text_encoder'], 'type': 'flux2', 'device': 'default'}},
+        '3': {'class_type': 'VAELoader', 'inputs': {'vae_name': models['vae']}},
+        '9': {'class_type': 'ImageScale', 'inputs': {'image': src, 'upscale_method': 'lanczos', 'width': w, 'height': h, 'crop': 'disabled'}},
+        '10': {'class_type': 'VAEEncode', 'inputs': {'pixels': ['9', 0], 'vae': ['3', 0]}},
+        '11': {'class_type': 'CLIPTextEncode', 'inputs': {'text': prompt, 'clip': ['2', 0]}},
+        '12': {'class_type': 'ConditioningZeroOut', 'inputs': {'conditioning': ['11', 0]}},    # the distilled model ignores a negative
+        '13': {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['11', 0], 'latent': ['10', 0]}},
+        '14': {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['12', 0], 'latent': ['10', 0]}},
+        '15': {'class_type': 'EmptyFlux2LatentImage', 'inputs': {'width': w, 'height': h, 'batch_size': 1}},
+        '16': {'class_type': 'Flux2Scheduler', 'inputs': {'steps': GEN['steps'], 'width': w, 'height': h}},
+        '17': {'class_type': 'KSamplerSelect', 'inputs': {'sampler_name': 'euler'}},
+        '18': {'class_type': 'CFGGuider', 'inputs': {'model': ['1', 0], 'positive': ['13', 0], 'negative': ['14', 0], 'cfg': GEN['cfg']}},
+        '19': {'class_type': 'RandomNoise', 'inputs': {'noise_seed': seed}},
+        '20': {'class_type': 'SamplerCustomAdvanced', 'inputs': {'noise': ['19', 0], 'guider': ['18', 0], 'sampler': ['17', 0],
+                                                                 'sigmas': ['16', 0], 'latent_image': ['15', 0]}},
+        '21': {'class_type': 'VAEDecode', 'inputs': {'samples': ['20', 0], 'vae': ['3', 0]}},
+        '22': {'class_type': 'PreviewImage', 'inputs': {'images': ['21', 0]}},
+    })
+    if ref_name:
+        rw, rh = ref_size
+        wf['40'] = {'class_type': 'LoadImage', 'inputs': {'image': ref_name}}
+        wf['41'] = {'class_type': 'ImageScale', 'inputs': {'image': ['40', 0], 'upscale_method': 'lanczos', 'width': rw, 'height': rh, 'crop': 'disabled'}}
+        wf['42'] = {'class_type': 'VAEEncode', 'inputs': {'pixels': ['41', 0], 'vae': ['3', 0]}}
+        wf['43'] = {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['13', 0], 'latent': ['42', 0]}}
+        wf['44'] = {'class_type': 'ReferenceLatent', 'inputs': {'conditioning': ['14', 0], 'latent': ['42', 0]}}
+        wf['18']['inputs']['positive'] = ['43', 0]
+        wf['18']['inputs']['negative'] = ['44', 0]
     return wf
 
 
-def gen_size(pw, ph, mult=16):
-    s = (GEN_PIXELS / (pw * ph)) ** 0.5
+def gen_size(pw, ph, mult=16, pixels=GEN_PIXELS):
+    s = (pixels / (pw * ph)) ** 0.5
     return max(mult, int(round(pw * s / mult)) * mult), max(mult, int(round(ph * s / mult)) * mult)
-
-
-# -- image helpers -------------------------------------------------------------
-
-def _lin(rgb):
-    return (rgb.astype(np.float64) / 255.0) ** GAMMA
-
-
-def _enc(lin):
-    return np.clip(np.round(np.clip(lin, 0.0, 1.0) ** (1.0 / GAMMA) * 255.0), 0, 255).astype(np.uint8)
-
-
-def _box(a, f):
-    """a downsampled by an integer factor f (mean of f x f blocks; the rest cut off)."""
-    h, w = a.shape[0] // f * f, a.shape[1] // f * f
-    a = a[:h, :w]
-    return a.reshape(h // f, f, w // f, f, *a.shape[2:]).mean(axis=(1, 3))
-
-
-def _blur(y, r, wrap=False):
-    """A (2r+1)-wide box blur of a 2-D array, the edges wrapped or mirrored."""
-    k = 2 * r + 1
-    p = np.pad(y, r, mode='wrap' if wrap else 'symmetric')
-    c = np.vstack([np.zeros((1, p.shape[1])), np.cumsum(p, axis=0)])
-    p = (c[k:] - c[:-k]) / k
-    c = np.hstack([np.zeros((p.shape[0], 1)), np.cumsum(p, axis=1)])
-    return (c[:, k:] - c[:, :-k]) / k
-
-
-def _smooth(y, r, wrap=False):
-    """Three box blurs of radius r // 2: close to a Gaussian of sigma about r / 2."""
-    for _ in range(3):
-        y = _blur(y, max(1, r // 2), wrap)
-    return y
-
-
-def _highpass(y, r, wrap=False):
-    return y - _blur(y, r, wrap)
-
-
-def _corr(a, b, mask=None):
-    if mask is not None:
-        a, b = a[mask], b[mask]
-    a, b = a - a.mean(), b - b.mean()
-    d = np.sqrt((a * a).sum() * (b * b).sum())
-    return float((a * b).sum() / d) if d > 0 else 0.0
-
-
-_M1 = np.array([[0.4122214708, 0.5363325363, 0.0514459929], [0.2119034982, 0.6806995451, 0.1073969566],
-                [0.0883024619, 0.2817188376, 0.6299787005]])
-_M2 = np.array([[0.2104542553, 0.7936177850, -0.0040720468], [1.9779984951, -2.4285922050, 0.4505937099],
-                [0.0259040371, 0.7827717662, -0.8086757660]])
-
-
-def _oklab(lin):
-    return np.cbrt(np.maximum(lin @ _M1.T, 0)) @ _M2.T
-
-
-def _from_oklab(lab):
-    return np.maximum((lab @ np.linalg.inv(_M2).T) ** 3, 0) @ np.linalg.inv(_M1).T
 
 
 # -- the stages ----------------------------------------------------------------
@@ -292,6 +214,30 @@ def color_guard(orig, rgb, strength, frac, wrap=False, mask=None):
     return res
 
 
+def light_guard(orig, rgb, frac=None, mask=None):
+    """Takes out the light take_light_out can't see: a soft gradient across the whole drawing (the
+    model's frontal light falling off; 9.4's oak planks came out a third darker at one end), which
+    the normal map doesn't explain, so a tiled wall bands. The result's log luminance blurred at
+    frac of the texture's short side is replaced by the original's (upscaled smoothly), its mean
+    kept: Raven's broad light and dark pattern, at a scale coarser than the parts. Hue kept; the
+    brightness match follows. The blur mirrors the edges even where the texture tiles: the
+    falloff doesn't wrap round, and a wrapped blur averages the dark end with the light one right
+    where the band is (a synthetic falloff kept 0.75 of its step that way)."""
+    frac = LIGHT_GUARD if frac is None else frac
+    h, w = rgb.shape[:2]
+    o = np.asarray(Image.fromarray(orig).resize((w, h), Image.BICUBIC))
+    r = max(2, int(min(h, w) * frac))
+    lin = _lin(rgb)
+    lo = np.log(np.maximum(_lin(o) @ LUM, 1e-4))
+    ly = np.log(np.maximum(lin @ LUM, 1e-4))
+    d = _smooth(lo, r, False) - _smooth(ly, r, False)
+    d -= d[mask].mean() if mask is not None and mask.any() else d.mean()
+    res = _enc(lin * np.exp(d)[..., None])
+    if mask is not None:
+        res = np.where(mask[..., None], res, rgb)
+    return res
+
+
 def load_palette(data_dir):
     """The game's palette (gfx/palette.lmp in data1's pak0.pak), 256 x 3, or None."""
     import struct
@@ -341,6 +287,15 @@ def seam_score(rgb):
     return float(edge / inner) if inner > 0 else 0.0
 
 
+def broad_step(rgb):
+    """A band when tiled that seam_score's texel steps don't see: the mean luminance of the first
+    eighth of the rows (columns) against the last eighth's, the larger, against the mean (9.4)."""
+    y = _lin(rgb) @ LUM
+    kh, kw = max(1, y.shape[0] // 8), max(1, y.shape[1] // 8)
+    mu = float(y.mean())
+    return max(abs(y[:kh].mean() - y[-kh:].mean()), abs(y[:, :kw].mean() - y[:, -kw:].mean())) / mu if mu > 0 else 0.0
+
+
 def color_drift(orig, out):
     """The broad colors' change: both averaged in blocks of an eighth of the original's short
     side, in Oklab, the mean distance of their a, b (hue and chroma; the brightness is matched apart)."""
@@ -370,10 +325,15 @@ def dark_fraction(rgb, q=0.2, mask=None):
     return float(y[: max(1, int(len(y) * q))].mean())
 
 
+
+
 # -- the driver ----------------------------------------------------------------
 
-REDRAW_VERSION = '9.1.2'    # bump when a stage's output changes: a run then redoes what an older one made
+REDRAW_VERSION = '9.4.4'    # bump when a stage's output changes: a run then redoes what an older one made
+FINISH_VERSION = '9.4.3'    # bump when the last step's changes (unify): a run then rewrites textures only
 SPECIAL_MAX = 0.05          # a texture mostly in the special row (rtex465, the water) is redrawn, not kept
+MAPS = ('.png', '_n.png', '_orm.png')
+STALE = ('_n.png', '_orm.png', '_r.png', '_m.png', '_e.png', '.mat')    # what an earlier run or class may have left
 
 
 def anim_base(stem):
@@ -384,182 +344,351 @@ def anim_base(stem):
     return stem[2:] if len(stem) > 2 and stem[0] == '+' and stem[1].isalnum() else stem
 
 
-def load_pilot(path):
-    with open(path, newline='', encoding='utf-8') as f:
-        lines = [ln for ln in f if ln.strip() and not ln.startswith('# ')]
-    rows = {}
-    for r in csv.DictReader(lines):
-        if None in r or None in r.values():     # a field too many (a comma outside quotes) or too few
-            raise SystemExit(f"{path}: the row of {r.get('stem')} hasn't 5 fields: quote a description with commas")
-        rows[r['stem']] = r
-    return rows
-
-
 def _key(data, fields):
     return hashlib.sha1(data + json.dumps(fields, sort_keys=True).encode()).hexdigest()
 
 
-def resolve_row(entry, row, classes):
-    """A pilot row through the manifest's resolution: an unknown class or override key is refused
-    as texpack.py run refuses it."""
-    r = {'pattern': entry.stem, 'class': row['class'], 'description': row['description'],
-         'overrides': row.get('overrides') or '', 'source': 'human'}
-    return manifest.resolve(entry.stem, entry.kind, [r], classes)
+def _rgba(path):
+    rgb, a = pipeline.read_png(path)
+    return np.dstack([rgb, a]) if a is not None else rgb
+
+
+def export_plan(ex, entries, rows, classes, census, leads):
+    """Every redrawn texture of the export (world and liquid textures of TIERS): their resolved
+    rows, their originals' pixels and the plan of their copies, sets and heroes (groups.py)."""
+    res = {}
+    for s, e in entries.items():
+        if e.kind in ('world', 'liquid'):
+            r = manifest.resolve(s, e.kind, rows, classes)
+            if r.tier in TIERS:
+                res[s] = r
+    pix = {s: _rgba(os.path.join(ex, entries[s].file)) for s in res}
+    return res, pix, groups.Plan(sorted(res), res, pix, census, leads)
 
 
 class Redraw:
-    def __init__(self, export_dir, out_dir, classes, comfy, gen, seed=9100, front=FRONT, palette=None):
-        self.export_dir, self.out, self.classes, self.comfy, self.gen, self.seed, self.front, self.palette = \
-            export_dir, out_dir, classes, comfy, gen, seed, front, palette
-        self.maps = None
-        self.started = False
-        self.measure_path = os.path.join(out_dir, 'measure.json')
-        self.measures = {}
-        if os.path.exists(self.measure_path):
-            with open(self.measure_path) as f:
-                self.measures = json.load(f)
+    """Redraws a selection into a pack: plans the copies, sets and heroes over every redrawn
+    texture of the export (groups.py), draws in that order into work\\, then writes textures\\."""
 
-    def _write(self, rel, data):
-        path = os.path.join(self.out, rel)
+    def __init__(self, export_dir, out_dir, classes, comfy, entries, rows, census, leads, palette,
+                 seed=9100, front=FRONT, restart_every=80, log=print):
+        self.ex, self.out, self.classes, self.comfy = export_dir, out_dir, classes, comfy
+        self.entries, self.palette, self.seed, self.front, self.log = entries, palette, seed, front, log
+        self.restart_every, self.edits, self.started, self.maps = restart_every, 0, False, None
+        self.mtab = materials.table(classes)
+        if not census:
+            # the census orders a set (the most area first: its seed) and picks a copy's source
+            log("redraw: no census.csv: sets and copies ordered by name, their seeds differ from a run with it")
+        self.res, self.orig, self.plan = export_plan(export_dir, entries, rows, classes, census, leads)
+        self.state_path = os.path.join(out_dir, '.texpack', 'redraw.json')
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        self.state = {}
+        if os.path.exists(self.state_path):
+            with open(self.state_path) as f:
+                self.state = json.load(f)
+
+    def _save(self):
+        tmp = self.state_path + '.tmp'      # written whole, then put in place: a stopped run leaves the last state
+        with open(tmp, 'w') as f:
+            json.dump(self.state, f, indent=1, sort_keys=True)
+        os.replace(tmp, self.state_path)
+
+    def _path(self, where, stem, suffix):
+        return os.path.join(self.out, where, stem + suffix)
+
+    def _write(self, where, stem, suffix, data):
+        path = self._path(where, stem, suffix)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb' if isinstance(data, bytes) else 'w', **({} if isinstance(data, bytes) else {'newline': '\n'})) as f:
             f.write(data)
 
-    def _edit(self, rgb, prompt, seed, w, h, upscaler):
+    @staticmethod
+    def _copy(src, dst):
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(src, dst)
+
+    def _edit(self, rgb, prompt, seed, w, h, ref=None):
         if not self.started:            # only when a texture needs the model (--reuse may never)
             self.comfy.start()
             self.started = True
+        elif self.restart_every and self.edits and self.edits % self.restart_every == 0:
+            # ComfyUI's caches grow over a long run until a texture takes four times as long (5.8)
+            self.comfy.stop()
+            self.comfy.start(log=lambda m: None)
         name = self.comfy.upload('redraw_in.png', pipeline.png_bytes(rgb))
+        ref_name = ref_size = None
+        if ref is not None:
+            ref_name = self.comfy.upload('redraw_ref.png', pipeline.png_bytes(ref))
+            ref_size = gen_size(ref.shape[1], ref.shape[0], pixels=REF_PIXELS)
         t0 = time.time()
-        out = self.comfy.run(workflow(self.gen, name, prompt, seed, w, h, upscaler))
+        out = self.comfy.run(workflow(self.classes['redraw'], name, prompt, seed, w, h,
+                                      self.classes['models']['upscaler'], ref_name, ref_size))
+        self.edits += 1
         return np.asarray(Image.open(io.BytesIO(out)).convert('RGB')).copy(), time.time() - t0
 
-    def process(self, entry, row, force=False, reuse=False):
-        """Redraws one texture unless the pack's files were made from the same model image and
-        stages: two keys, the model image's (the source, the prompt, the generator, the seed, the
-        size) and the stages' (the class's values, the models, --front, the palette, this tool's
-        version). reuse: the model's image from an earlier run (work\\<stem>_A.png, its key,
-        generator and time kept), the stages after it redone."""
-        stem, tier = entry.stem, row['tier']
-        res = resolve_row(entry, row, self.classes)
-        params = res.params
-        src = os.path.join(self.export_dir, entry.file)
+    def _geometry(self, stem):
+        e = self.entries[stem]
+        m = pipeline.margin_for(e.w, e.h)
+        ph, pw = e.h + 2 * m + (e.h + 2 * m) % 2, e.w + 2 * m + (e.w + 2 * m) % 2      # pipeline.pad(..., even=True)'s
+        return m, ph, pw
+
+    def _hero_tile(self, hero):
+        """The hero's drawing, its tile without the padding: the reference image."""
+        a = np.asarray(Image.open(self._path('work', hero, '_A.png')).convert('RGB'))
+        e = self.entries[hero]
+        m, ph, pw = self._geometry(hero)
+        H, W = a.shape[:2]
+        return a[round(m * H / ph):round((m + e.h) * H / ph), round(m * W / pw):round((m + e.w) * W / pw)].copy()
+
+    def seed_of(self, stem):
+        """A set's seed: the first `seed=` override among its members (in the set's order), else
+        from its first member's name."""
+        g = self.plan.group[stem]
+        for s in g:
+            if 'seed' in self.res[s].params:
+                return int(self.res[s].params['seed'])
+        return pipeline.seed_for(anim_base(g[0]), self.seed)
+
+    def draw(self, stem, force=False, reuse=False):
+        """Draws one texture into work\\ unless it was made from the same model image and stages:
+        two keys, the model image's (the source, the prompt, the seed, the size, the hero's
+        drawing) and the stages' (the class's and the materials' values, the models, --front, this
+        tool's version). reuse: the model's image from an earlier run (work\\<stem>_A.png, its
+        key and time kept), the stages after it redone."""
+        e, res = self.entries[stem], self.res[stem]
+        p, tier = res.params, res.tier
+        src = os.path.join(self.ex, e.file)
         with open(src, 'rb') as f:
             png = f.read()
         rgb, alpha = pipeline.read_png(src)
         h, w = rgb.shape[:2]
-        skin = tier == 'skin'
-        wrap = not skin
-        m = pipeline.margin_for(w, h)
-        ph, pw = h + 2 * m + (h + 2 * m) % 2, w + 2 * m + (w + 2 * m) % 2      # pipeline.pad(..., even=True)'s
+        wrap = True                     # world and liquid textures tile
+        m, ph, pw = self._geometry(stem)
         gw, gh = gen_size(pw, ph)
-        seed = pipeline.seed_for(anim_base(stem), self.seed)
-        prompt = PROMPT_A[tier].format(desc=row['description'], noun=params['noun'])
-        a_key = _key(png, {'prompt': prompt, 'gen': GENS[self.gen], 'seed': seed, 'size': [gw, gh],
-                           'upscaler': self.classes['models']['upscaler'], 'wrap': wrap})
-        stage_key = _key(b'', {'v': REDRAW_VERSION, 'tier': tier, 'params': params, 'models': self.classes['models'],
-                               'front': self.front, 'palette': self.palette is not None})
-        maps = params['maps'] and tier not in AS_DRAWN
-        mat = pipeline.mat_text(res)
-        want = ['.png'] + (['_n.png', '_orm.png'] if maps else []) + (['.mat'] if mat else [])
-        have = all(os.path.exists(os.path.join(self.out, 'textures', stem + s)) for s in want)
-        old = self.measures.get(stem, {})
+        seed = self.seed_of(stem)
+        hero = self.plan.hero.get(stem)
+        prompt = PROMPT_A[tier].format(desc=res.description or p['noun'], noun=p['noun'])
+        ref, ref_hash = None, None
+        if hero:
+            prompt += PROMPT_REF.format(noun=p['noun'])
+            with open(self._path('work', hero, '_A.png'), 'rb') as f:
+                ref_hash = hashlib.sha1(f.read()).hexdigest()
+        models = self.classes['models']
+        a_key = _key(png, {'prompt': prompt, 'gen': [self.classes['redraw'][k] for k in ('generator', 'text_encoder', 'vae')] + [GEN],
+                           'seed': seed, 'size': [gw, gh], 'upscaler': models['upscaler'], 'wrap': wrap, 'ref': ref_hash})
+        idx, names, values = materials.texel_materials(rgb, alpha, self.palette, res.regions, p, self.mtab)
+        # which texel is which material, not only the materials' names: moving gold from one ramp
+        # to another must redo the stages (the code review's)
+        stage_key = _key(b'', {'v': REDRAW_VERSION, 'tier': tier, 'params': p, 'maps': [models['normal'], models['roughness']],
+                               'front': self.front, 'palette': self.palette is not None, 'materials': [names, values],
+                               'texels': hashlib.sha1(idx.tobytes()).hexdigest(), 'alpha': e.alpha, 'cavity': materials.CAVITY})
+        maps = p['maps'] and tier not in AS_DRAWN
+        want = list(MAPS if maps else MAPS[:1])
+        old = self.state.get(stem, {})
+        # the model's image too: a hero's is its members' reference
+        have = all(os.path.exists(self._path('work', stem, s)) for s in want + ['_A.png'])
         if not force and not reuse and have and old.get('a_key') == a_key and old.get('stage_key') == stage_key:
             return dict(old, skipped=True)
         bled = pipeline.bleed(rgb, alpha, m)        # what the model saw: no black under the holes
         padded = pipeline.pad(bled, m, wrap, even=True)
         assert padded.shape[:2] == (ph, pw)
-        apath = os.path.join(self.out, 'work', stem + '_A.png')
-        if os.path.exists(apath) and (reuse or old.get('a_key') == a_key):
-            # an earlier run's image (--reuse, or only the stages changed): its key, generator and
-            # time are what it was made from, not what the row says now
+        apath = self._path('work', stem, '_A.png')
+        if os.path.exists(apath) and (reuse or (old.get('a_key') == a_key and not force)):
+            # an earlier run's image (--reuse, or only the stages changed): its key and time are
+            # what it was made from, not what the row says now
             a_img = np.asarray(Image.open(apath).convert('RGB'))
-            gen, seconds, a_key = old.get('gen', self.gen), old.get('seconds'), old.get('a_key')
+            seconds, a_key = old.get('seconds'), old.get('a_key', a_key)
         else:
-            a_img, ta = self._edit(padded, prompt, seed, gw, gh, self.classes['models']['upscaler'])
-            self._write(f'work/{stem}_A.png', pipeline.png_bytes(a_img))
-            gen, seconds = self.gen, round(ta, 1)
+            if hero:
+                ref = self._hero_tile(hero)
+            a_img, ta = self._edit(padded, prompt, seed, gw, gh, ref)
+            self._write('work', stem, '_A.png', pipeline.png_bytes(a_img))
+            seconds = round(ta, 1)
         big = np.asarray(Image.fromarray(a_img).resize((pw * 4, ph * 4), Image.LANCZOS))
         h4, w4, m4 = 4 * h, 4 * w, 4 * m
-        lit = blend_seams(big, m4, h4, w4) if wrap else big[m4:m4 + h4, m4:m4 + w4].copy()
-        a4 = pipeline.upscale_alpha(alpha, w4, h4, entry.alpha) if alpha is not None else None
+        broad_drawn = broad_step(blend_seams(big, m4, h4, w4))
+        # the broad light out on the whole padded drawing, where the falloff is smooth and doesn't
+        # wrap; the seams are blended after it (on the tile alone it doubled the seams, M68)
+        big = light_guard(padded, big)
+        lit = blend_seams(big, m4, h4, w4)
+        a4 = pipeline.upscale_alpha(alpha, w4, h4, e.alpha) if alpha is not None else None
         mask = (a4 > 0) if a4 is not None else None
-        info = {'a_key': a_key, 'stage_key': stage_key, 'tier': tier, 'class': row['class'], 'gen': gen, 'size': [w4, h4], 'gen_size': [gw, gh],
-                'seconds': seconds}
+        W = materials.weights(idx, len(values), 4, wrap, guide=(lit.astype(np.float64) @ LUM) / 255.0)
+        info = {'a_key': a_key, 'stage_key': stage_key, 'tier': tier, 'class': res.cls, 'size': [w4, h4], 'gen_size': [gw, gh],
+                'seconds': seconds, 'seed': seed, 'hero': hero, 'materials': [n for i, n in enumerate(names) if W[i].any()]}
         r = max(4, min(h4, w4) // 12)
-        for suf in ('_n.png', '_orm.png', '.mat'):      # what an earlier tier or class made and this one doesn't
-            p = os.path.join(self.out, 'textures', stem + suf)
-            if suf not in want and os.path.exists(p):
-                os.remove(p)
-        alb = lit
+        alb, normal, rough_raw, cz = lit, None, None, 0.0
         if maps:
             if self.maps is None:
-                self.maps = pipeline.Maps(os.path.join(self.comfy.home, 'models', 'pbrify'), self.classes['models'])
+                self.maps = pipeline.Maps(os.path.join(self.comfy.home, 'models', 'pbrify'), models)
             normal = pipeline.finish_normal(self.maps.run('normal', lit, wrap), True)   # PBRify's are DirectX (M38)
-            rough = self.maps.run('roughness', lit, wrap)
-            self._write(f'textures/{stem}_n.png', pipeline.png_bytes(normal))
-            self._write(f'textures/{stem}_orm.png', pipeline.png_bytes(
-                pipeline.make_orm(pipeline.finish_roughness(rough, params['rough_min'], params['rough_max']), params['metallic'])))
+            rough_raw = self.maps.run('roughness', lit, wrap)
             _, info['light_dir_before'], info['light_all_before'] = shading_fit(lit, normal, r, mask, wrap)
             alb, c = take_light_out(lit, normal, r, self.front, mask, wrap)
+            cz = float(c[2])
             info['shade_fit'] = [round(float(v), 2) for v in c]
             _, info['light_dir_after'], info['light_all_after'] = shading_fit(alb, normal, r, mask, wrap)
-        target = pipeline.mean_linear_luminance(rgb, alpha) * params['albedo_ratio']
-        alb, gain = pipeline.match_luminance(alb, a4, target, params['contrast'])
+        info['broad_drawn'] = broad_drawn
+        target, whole = materials.targets(rgb, alpha, idx, values)
+        alb, gains = materials.match(alb, a4, W, values, target, whole, contrast=True)
+        info['gains'] = [round(g, 3) for i, g in enumerate(gains) if W[i].any()]
+        info['target'] = whole          # the albedo's mean linear luminance wanted (finish's _rebalance)
         # the colors after the brightness: darkening scales Oklab's a and b with the lightness, so a
         # guard before it would hand the original's chroma to a lighter color (rtex324's robe lost a
         # third of it); every tier: lava's average color lights its room. The guard moves the
-        # luminance a little (a and b at a fixed L): a plain gain puts it back on the target.
+        # luminance a little (a and b at a fixed L): the materials' gains put it back on the targets.
         info['drift_before'] = color_drift(bled, alb)
-        alb = color_guard(bled, alb, *COLOR_GUARD.get(tier, (1.0, 1 / 24)), wrap, mask)
-        alb, _ = pipeline.match_luminance(alb, a4, target, 1.0)
+        alb = color_guard(bled, alb, *COLOR_GUARD[tier], wrap, mask)
+        alb, _ = materials.match(alb, a4, W, values, target, whole, contrast=False)
         special = special_mask(rgb, self.palette) if tier not in AS_DRAWN else None
         if special is not None:
             if special.mean() <= SPECIAL_MAX:
                 alb = keep_special(alb, bled, special, wrap)
             info['special_texels'] = int(special.sum())
-        self._write(f'textures/{stem}.png', pipeline.png_bytes(np.dstack([alb, a4]) if a4 is not None else alb))
-        if mat:
-            self._write(f'textures/{stem}.mat', mat.replace('(story 5.8)', f'(story 9.1, {gen}, {tier})'))
+        self._write('work', stem, '.png', pipeline.png_bytes(np.dstack([alb, a4]) if a4 is not None else alb))
+        if maps:
+            rough = materials.roughness(rough_raw, W, values, mask)
+            surf = materials.surface(alb, W, mask) if tier in materials.CAVITY_TIERS else np.ones(rough.shape)
+            rough = 1.0 - surf * (1.0 - rough)
+            occ = materials.occlusion(normal, cz, surf)
+            met = materials.metallic(W, values)
+            self._write('work', stem, '_n.png', pipeline.png_bytes(normal))
+            self._write('work', stem, '_orm.png', pipeline.png_bytes(pipeline.make_orm(rough, met, occ)))
+            info['cavity_share'] = float((surf < 0.5).mean())
+            info['occlusion_mean'] = float(occ.mean())
+        # the .mat: a metal class with parts that aren't metal takes the dielectric specular (metals
+        # ignore it, M43's 0.04 keeps the rest from a grey veil)
+        pm = dict(p)
+        present = [values[i] for i in range(len(values)) if W[i].any()]
+        if pm['metallic'] >= 0.5 and any(v['metallic'] < 0.5 for v in present):
+            pm['specular'] = self.classes['defaults']['specular']
+        mat = pipeline.mat_text(types.SimpleNamespace(params=pm, cls=res.cls, description=res.description))
+        info['mat'] = mat.replace('(story 5.8)', f'(story 9.4, {tier})') if mat else None
         info.update({
-            'gain': gain,
             'lum_ratio': pipeline.mean_linear_luminance(alb, a4) / max(pipeline.mean_linear_luminance(rgb, alpha), 1e-9),
-            'seam_orig': seam_score(rgb) if wrap else None,
-            'seam': seam_score(alb) if wrap else None,
+            'seam_orig': seam_score(rgb),
+            'seam': seam_score(alb),
+            'broad_orig': broad_step(rgb),
+            'broad': broad_step(alb),
             'drift': color_drift(bled, alb),
             'layout': layout_kept(bled, alb),
             'dark20_ratio': dark_fraction(alb, mask=mask) / max(dark_fraction(np.asarray(Image.fromarray(rgb).resize((w4, h4), Image.NEAREST)), mask=mask), 1e-6),
+            'files': want,
         })
-        info = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in info.items()}
-        self.measures[stem] = info
-        with open(self.measure_path, 'w') as f:
-            json.dump(self.measures, f, indent=1, sort_keys=True)
+        info = {k: (round(v, 4) if isinstance(v, float) and k != 'target' else v) for k, v in info.items()}
+        self.state[stem] = info
+        self._save()
         return info
 
+    def finish(self, draw, write):
+        """textures\\ from work\\: a set's members unified (its order: the shared texels take the
+        earlier member's), a copy its source's files; each with its .mat. Redone where what a
+        texture's files come from changed (out_key) or a file is missing."""
+        made = 0
+        out_key = {}
+        for s in draw:
+            g = self.plan.group[s]
+            j = g.index(s)
+            out_key[s] = _key(b'', {'v': FINISH_VERSION, 'from': [[self.state[t]['a_key'], self.state[t]['stage_key']] for t in g[:j + 1]]})
+        for s in write:
+            r = self.plan.rep[s]
+            out_key.setdefault(s, _key(b'', {'v': FINISH_VERSION, 'copy': out_key[r]}))
 
-def cmd_run(a):
-    from comfy import Comfy
-    import texpack
-    ex = a.export or texpack.default_export()
-    entries = pipeline.load_export(ex)
-    rows = load_pilot(a.pilot)
-    stems = a.stems.split(',') if a.stems else list(rows)
-    missing = [s for s in stems if s not in entries or s not in rows]
-    if missing:
-        raise SystemExit(f"not in the export ({ex}; the pilot needs both games': r_exporttextures with -portals) "
-                         f"or the pilot file: {', '.join(missing)}")
-    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
-    data = a.data or os.environ.get('HEXENLICHT_DATA') or os.path.join(os.path.dirname(texpack.REPO), 'Hexenlicht-data')
-    palette = load_palette(data)
-    if palette is None:
-        print(f"redraw: no data1\\pak0.pak in {data}: the palette's special colors are not kept (--data)")
-    os.makedirs(a.out, exist_ok=True)
-    with Comfy(texpack.texpack_home()) as comfy:      # started by the first texture that needs the model
-        r = Redraw(ex, a.out, classes, comfy, a.gen, a.seed, a.front, palette)
-        for i, s in enumerate(stems, 1):
-            info = r.process(entries[s], rows[s], a.force, a.reuse)
-            print(f"[{i}/{len(stems)}] {s}: " + ' '.join(f"{k}={v}" for k, v in info.items() if k not in ('gen', 'class', 'a_key', 'stage_key')), flush=True)
-    return 0
+        def current(s):
+            st, src = self.state.get(s, {}), self.state[self.plan.rep[s]]
+            want = src['files'] + (['.mat'] if src.get('mat') else [])
+            return (st.get('out_key') == out_key[s] and all(os.path.exists(self._path('textures', s, f)) for f in want)
+                    and not any(os.path.exists(self._path('textures', s, f)) for f in STALE if f not in want))
+        done = set()
+        for s in draw:
+            g = self.plan.group[s]
+            if g[0] in done:
+                continue
+            done.add(g[0])
+            if all(current(t) for t in g):
+                continue
+            files = [f for f in MAPS if all(f in self.state[t]['files'] for t in g)]
+            if len(g) == 1:
+                for f in files:
+                    self._copy(self._path('work', s, f), self._path('textures', s, f))
+            else:
+                # the albedo first in each list: unify's scale() rebalances it
+                files = ['.png'] + [f for f in files if f != '.png'] if '.png' in files else files
+                ims = {t: [_rgba(self._path('work', t, f)) for f in files] for t in g}
+                uni, factors = groups.unify(g, {t: self.orig[t] for t in g}, ims, 4, True,
+                                            files.index('_n.png') if '_n.png' in files else None,
+                                            (lambda j, own, comp: self._rebalance(g[j], own, comp)) if '.png' in files else None)
+                for t in g:
+                    self.state[t]['rebalance'] = round(factors.get(t, 1.0), 3)
+                for t in g:
+                    for f, im in zip(files, uni[t]):
+                        if f == '.png' and im.shape[-1] == 4 and self.entries[t].alpha == 'coverage':
+                            im[..., 3] = np.where(im[..., 3] >= 128, 255, 0)
+                        self._write('textures', t, f, pipeline.png_bytes(im))
+                    for f in self.state[t]['files']:
+                        if f not in files:      # a map only some members have: as it is
+                            self._copy(self._path('work', t, f), self._path('textures', t, f))
+            for t in g:
+                self._finish_one(t, t, out_key[t])
+                made += 1
+        for s in write:
+            r = self.plan.rep[s]
+            if r != s and not current(s):
+                for f in self.state[r]['files']:
+                    self._copy(self._path('textures', r, f), self._path('textures', s, f))
+                self._finish_one(s, r, out_key[s])
+                made += 1
+        self._save()
+        return made
+
+    def _rebalance(self, t, own, comp):
+        """A set member's brightness after unify (groups.unify's scale): the factor for its own
+        drawing that brings the whole, its own texels and those it takes from earlier members, to
+        its brightness target again. Its gain was for its whole drawing, and the texels it shares
+        now carry another member's: without this the brightest frame of a rune's pulse came out
+        at 0.66 of its target. own: its own texels' weight; comp: the albedo so far."""
+        y = _lin(comp[..., :3]) @ LUM
+        op = (comp[..., 3] > 0) if comp.shape[-1] == 4 else np.ones(y.shape, bool)
+        mine = float((own * y)[op].mean())
+        if mine <= 0:
+            return 1.0
+        return float(np.clip(1.0 + (self.state[t]['target'] - float(y[op].mean())) / mine, 0.25, 4.0))
+
+    def _finish_one(self, s, r, key):
+        """The .mat (the source's: a copy has its label) and no file an earlier run made that this one doesn't."""
+        st = self.state[r]
+        want = st['files'] + (['.mat'] if st.get('mat') else [])
+        if st.get('mat'):
+            self._write('textures', s, '.mat', st['mat'])
+        for suf in STALE:
+            p = self._path('textures', s, suf)
+            if suf not in want and os.path.exists(p):
+                os.remove(p)
+        if s != r:
+            self.state[s] = {'copy_of': r, 'files': st['files'], 'mat': st.get('mat')}
+        self.state[s]['out_key'] = key
+
+    def run(self, stems, force=False, reuse=False):
+        draw, write = self.plan.closure(stems)
+        extra = len(set(write) - set(stems))
+        self.log(f"redraw: {len(stems)} selected" + (f", {extra} more for their sets, copies and heroes" if extra else '')
+                 + f": {len(draw)} to draw, {len(write)} to write")
+        made = skipped = 0
+        for i, s in enumerate(draw, 1):
+            info = self.draw(s, force, reuse)
+            if info.get('skipped'):
+                skipped += 1
+                self.log(f"[{i}/{len(draw)}] {s}: unchanged")
+                continue
+            made += 1
+            g = self.plan.group[s]
+            self.log(f"[{i}/{len(draw)}] {s}: {info['tier']}, {info['class']}"
+                     + (f", set of {len(g)} ({g[0]}'s seed)" if len(g) > 1 else '') + (f", hero {info['hero']}" if info['hero'] else '')
+                     + f", {'+'.join(info['materials'])}, gains {info['gains']}, layout {info['layout']}, seam {info['seam']}"
+                     + (f" (original {info['seam_orig']})" if info['seam'] > 2 else '')
+                     + (f", {info['seconds']} s" if info['seconds'] is not None else ', model image reused'), )
+        written = self.finish(draw, write)
+        return made, skipped, written
 
 
 # -- the sheet -----------------------------------------------------------------
@@ -573,7 +702,8 @@ def cmd_sheet(a):
     import texpack
     ex = a.export or texpack.default_export()
     entries = pipeline.load_export(ex)
-    rows = load_pilot(a.pilot)
+    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+    rows = manifest.load_manifest(a.manifest)
     packs = [p.split('=', 1) for p in a.packs.split(',')]
     os.makedirs(a.out, exist_ok=True)
     H = a.height
@@ -584,25 +714,28 @@ def cmd_sheet(a):
         if lift and a.lift != 1.0:
             img = Image.fromarray(_enc(_lin(np.asarray(img)) * a.lift))
         return img
-    for stem in (a.stems.split(',') if a.stems else rows):
+    for stem in a.stems.split(','):
         e = entries[stem]
+        res = manifest.resolve(stem, e.kind, rows, classes)
         cols = [('original', show(Image.open(os.path.join(ex, e.file)).convert('RGB'), True, True), '')]
         if a.base and os.path.exists(os.path.join(a.base, 'textures', stem + '.png')):
             cols.append(('5.8 pack', show(Image.open(os.path.join(a.base, 'textures', stem + '.png')).convert('RGB'), lift=True), ''))
         for name, path in packs:
-            mp = os.path.join(path, 'measure.json')
             meas = {}
-            if os.path.exists(mp):
-                with open(mp) as f:
-                    meas = json.load(f).get(stem, {})
+            for mp in (os.path.join(path, '.texpack', 'redraw.json'), os.path.join(path, 'measure.json')):    # 9.4's, 9.1's
+                if os.path.exists(mp):
+                    with open(mp) as f:
+                        meas = json.load(f).get(stem, {})
+                    break
             note = ' '.join(f"{k.replace('_ratio', '')}={meas[k]}" for k in ('light_dir_after', 'seam', 'drift', 'layout', 'dark20_ratio') if meas.get(k) is not None)
             for p, label, lift in ((os.path.join(path, 'work', stem + '_A.png'), 'model', False),
                                    (os.path.join(path, 'textures', stem + '.png'), 'albedo', True),
-                                   (os.path.join(path, 'textures', stem + '_n.png'), 'normal', False)):
+                                   (os.path.join(path, 'textures', stem + '_n.png'), 'normal', False),
+                                   (os.path.join(path, 'textures', stem + '_orm.png'), 'orm', False)):
                 if os.path.exists(p):
                     cols.append((f'{name} {label}', show(Image.open(p).convert('RGB'), lift=lift), note if label == 'albedo' else ''))
             p = os.path.join(path, 'textures', stem + '.png')
-            if os.path.exists(p) and rows[stem]['tier'] != 'skin':
+            if os.path.exists(p) and e.kind != 'skin':
                 im = Image.open(p).convert('RGB')
                 t = Image.new('RGB', (im.width * 2, im.height * 2))
                 for dx in (0, 1):
@@ -612,7 +745,7 @@ def cmd_sheet(a):
         W = sum(c[1].width + 6 for c in cols) + 6
         img = Image.new('RGB', (W, H + 52), (32, 32, 32))
         d = ImageDraw.Draw(img)
-        d.text((6, 4), f"{stem}  [{rows[stem]['tier']}, {rows[stem]['class']}]  {rows[stem]['description'][:150]}"
+        d.text((6, 4), f"{stem}  [{res.tier}, {res.cls}, {res.regions}]  {res.description[:150]}"
                + (f"   (albedos and originals shown x{a.lift:g} brighter)" if a.lift != 1.0 else ''), fill=(255, 255, 0))
         x = 6
         for label, im, note in cols:
@@ -629,25 +762,13 @@ def cmd_sheet(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
-    p = sub.add_parser('run', help='redraw the pilot\'s textures into a pack folder')
-    p.add_argument('--pilot', default=os.path.join(HERE, 'pilot.csv'))
-    p.add_argument('--gen', choices=sorted(GENS), default='klein')
-    p.add_argument('--out', required=True)
-    p.add_argument('--stems')
-    p.add_argument('--export')
-    p.add_argument('--seed', type=int, default=9100)
-    p.add_argument('--front', type=float, default=FRONT, help='how much of the frontal (cavity) shading stays (0..1)')
-    p.add_argument('--data', help='the game data folder (for the palette; default: as texpack.py\'s)')
-    p.add_argument('--force', action='store_true')
-    p.add_argument('--reuse', action='store_true', help='keep the model images of an earlier run, redo the stages after them')
-    p.set_defaults(fn=cmd_run)
-    p = sub.add_parser('sheet', help='a comparison PNG per texture')
-    p.add_argument('--pilot', default=os.path.join(HERE, 'pilot.csv'))
+    p = sub.add_parser('sheet', help='a comparison PNG per texture (texpack.py run makes the packs)')
     p.add_argument('--packs', required=True, help='name=folder,name=folder')
+    p.add_argument('--stems', required=True)
     p.add_argument('--base', help='the 5.8 pack to show beside them')
     p.add_argument('--out', required=True)
-    p.add_argument('--stems')
     p.add_argument('--export')
+    p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
     p.add_argument('--height', type=int, default=320)
     p.add_argument('--lift', type=float, default=1.0, help='brighten the albedos and originals on the sheet (linear factor)')
     p.set_defaults(fn=cmd_sheet)

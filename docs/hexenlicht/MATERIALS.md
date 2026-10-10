@@ -29,7 +29,7 @@ map alone is a valid material).
 | `<name>_n.png` | normal | tangent space, XYZ as RGB × 0.5 + 0.5, OpenGL's convention (+Y up: green points to the image's top; glTF's, Blender's) | data |
 | `<name>_r.png` | roughness | grey (R read), perceptual roughness as glTF's (the shader squares it) | data |
 | `<name>_m.png` | metallic | grey (R read), 0 dielectric, 1 metal | data |
-| `<name>_orm.png` | occlusion, roughness, metallic | R occlusion (read, unused: the path tracer makes its own), G roughness, B metallic (glTF's layout); instead of `_r` and `_m` | data |
+| `<name>_orm.png` | occlusion, roughness, metallic | R occlusion (read, unused: the path tracer makes its own; texpack's redraw writes a cavity term there since 9.4, for 9.7), G roughness, B metallic (glTF's layout); instead of `_r` and `_m` | data |
 | `<name>_e.png` | emissive | RGB | color |
 | `<name>.mat` | settings | [below](#settings-mat) | — |
 

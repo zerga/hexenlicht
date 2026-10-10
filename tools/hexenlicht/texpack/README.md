@@ -7,6 +7,9 @@ albedo, a normal map, an `_orm` and a `.mat` per texture. Everything runs
 locally. The pack is derived from Raven's textures, so **it never goes into
 this repository or a release** (PLAN §4): this folder is the pipeline and the
 manifest, not images. Workflow and values: [AUTHORING.md](../../../docs/hexenlicht/AUTHORING.md).
+Since story 9.4 `texpack.py run` **redraws** the world and liquid textures that E9's labels
+give a redrawn tier ("Redraw" below); skins (until 9.6), effects, sprites and anything
+unlabeled still take 5.8's upscale:
 
 ```
 export PNGs ──► [draft: a vision-language model proposes class + description]
@@ -58,12 +61,14 @@ spot a bottle labelled stone. `texpack.py sheet --out sheet.html` makes a page o
    merge texpack_edits.csv` puts them into `materials.csv` as `source=human`
    (a later `draft` never touches those). Or edit the CSV by hand: a row can
    name a glob (`rtex02*`, `models/imp.mdl_*`) to label many textures at once.
-4. **Run**: `texpack.py run --out <pack> [--select list.txt | --stems a,b | --map demo1 | --kind skin | --glob 'mtex4*']`.
+4. **Run**: `texpack.py run --out <pack> [--select list.txt | --stems a,b | --map demo1 | --kind skin | --glob 'mtex4*']
+   [--tier layout | --family bm-ashlar | --hub blackmarsh] [--data <game data>]`.
    `<pack>\textures\` is what goes into `data1\textures\`. Unchanged textures
    (same pixels, class, description, seed, tool version) are skipped, so
-   correcting one label redoes one texture (`--force` redoes all).
-5. **Check**: `texpack.py verify --pack <pack>` (sizes, luminance, alpha, map
-   encodings, `.mat` keys), `texpack.py sheet --pack <pack>` (the result beside
+   correcting one label redoes one texture (`--force` redoes all). The redraw needs the
+   game's palette (`--data`: a folder with `data1\pak0.pak`).
+5. **Check**: `texpack.py verify --pack <pack> [--data <game data>]` (sizes, luminance, alpha, map
+   encodings, `.mat` keys; the redraw's materials, cavities, seams, sets and copies), `texpack.py sheet --pack <pack>` (the result beside
    each original), then in the game `r_materials 0/1`, `vk_materials here` and
    `vk_materials problems`: `proof_run.ps1 -Pack <pack> -Data <a copy of the
    original's data1 without textures> -Out <folder>` does it at demo1's and
@@ -156,57 +161,107 @@ Model licenses: the PBRify models are CC0, ControlNet and Stable Diffusion
 1.5 are OpenRAIL(-M) (use restrictions, none that touch this), ComfyUI is GPL.
 None is vendored here; see THIRD_PARTY.md.
 
-## Redraw (story 9.1, E9's pilot)
+## Redraw (stories 9.1, 9.4)
 
-`redraw.py` redraws a texture instead of upscaling it (DECISIONS M46–M52; PLAN E9):
-an image-editing model gets the 4x upscale of the padded original and a prompt for the
-texture's **tier** (reimagine: a new surface at the same arrangement; layout: every shape
-in place; faithful: restored, no new content; glass; liquid; lava; skin) and draws it as a
-real material under a soft frontal light. What follows is this process, not a model:
+`texpack.py run` redraws a world or liquid texture instead of upscaling it when its label
+(9.3: "Labels" below) gives it a redrawn **tier** (DECISIONS M46–M53, M66–M71; PLAN E9):
+reimagine (a new surface at the same arrangement), layout (every shape in place), faithful
+(restored, no new content), glass, liquid, lava. `redraw.py` has the stages. FLUX.2 klein 4B
+(distilled, 4 steps, M50) gets the 4x upscale of the padded original and the tier's prompt with
+the texture's description, and draws it as a real material under a soft frontal light. What
+follows is this process, not a model:
 
+- **The broad light out** (M68): klein's soft light often falls off across the whole drawing,
+  which the normal map can't explain and a tiled wall shows as bands (9.4's oak planks a third
+  darker at one end). On the whole padded drawing, before the seams, its log luminance blurred
+  at a quarter of the short side is replaced by the original's: Raven's broad light and dark
+  pattern, coarser than the parts (the oak hero's step across the tile 0.32, its original's
+  0.27, without it 1.08).
 - **Seams:** the redrawn padding is faded into the tile's opposite edges.
-- **Maps:** PBRify's normal and roughness of the redraw, as `texpack.py run`'s.
+- **Maps:** PBRify's normal and roughness of the redraw, as 5.8's.
 - **The light out:** the part of the redraw's brightness that the normal map's directions
   explain is divided out: the light from a side fully, the frontal part (faces brighter,
   joints darker) by half (`--front`, how much of it stays). A second edit "to an albedo"
   flattens the material away (M46).
-- **Brightness, then colors:** 5.8's match (M37, M43), then the original's broad colors
-  put back (Oklab; the models draw real-world colors, Hexen II's palette is the theme),
-  then the brightness again.
+- **Materials per region** (`materials.py`, M67): 9.3's regions name the material of each of
+  the palette's ramps (`*=stone;yellow=gold`), so every texel of the original has one; at 4x
+  the materials are weights, the texels' upscaled and snapped to the redraw's edges (a guided
+  filter). Each material's values are `classes.toml`'s `[materials]`: the roughness range the
+  roughness model's output is stretched over in its texels, metallic (per texel in `_orm`'s
+  blue), the contrast and the brightness ratio. A ramp the regions don't name takes the
+  class's values, and so do a row's overrides of `rough_min`, `rough_max`, `metallic`,
+  `contrast` and `albedo_ratio`: with regions that name every ramp (`*=stone`) they change
+  nothing; change the regions or a material's values instead. A hole takes the material of the
+  nearest opaque texel. The materials are only as good as the ramps: where Raven painted two
+  materials in one ramp (rtex367's dark wood in the grey of its iron straps) the regions decide.
+- **Brightness, then colors:** 5.8's match (M37, M43) per material (each material's mean to the
+  original's there times its ratio: gold stays as bright against the stone as Raven painted
+  it), then the original's broad colors put back (Oklab; the models draw real-world colors,
+  Hexen II's palette is the theme), then the brightness again.
+- **Cavities** (M68): where the albedo is near black against its material's median (a gap
+  between planks, a joint the redraw drew black; reimagine and layout, not a picture's black
+  paint) the roughness is 1. `_orm`'s red is an occlusion: the redraw's own frontal shading term
+  against a face turned to the viewer (`exp(c_z (n_z − 1))`), times that near-black factor, so a
+  gap is fully occluded. The renderer reads it from 9.7 (not physically based: geometry the
+  normal map lacks); until then it changes nothing in the game.
 - **Special colors:** texels in the palette's saturated row (240–254: glowing eyes, the
   archer's arrow) keep the original's color, unless more than 5 % of the texture is in the
   row (rtex465, the water); the palette comes from the game's `pak0.pak` (`--data`).
-- **Animations:** the frames of `+0…` to `+9…`, `+a…` share one seed; a pack needs them all.
+- **Copies, sets, animations** (`groups.py`, M69): a texture with the same pixels as another
+  (36 groups in both games, mostly the mission pack's renames) is drawn once, as the one with
+  the most area, and its files copied. Textures of one size whose originals share a fifth or
+  more of their texels at the same places (120 sets of 359 textures: the Four Horsemen's frame,
+  a wall with and without its chains, the switches' discs) and an animation's frames are a
+  **set**: each member is drawn alone with one seed, its first member's (the most area; or the
+  first `seed=` override among the members), and
+  then each texel takes the drawing of the first member whose original has the same color there,
+  in every map (a ramp of a texel where that member changes), and each member's own texels are
+  scaled to its brightness target again (a rune's brightest frame had come out at 0.66 of it). A
+  canvas of the set side by side broke beyond four framed panels, and a member as another's
+  reference copied its rune (9.4's spike).
+- **Heroes** (M70): a family's lead (`families.csv`) is drawn first; the family's layout
+  members get its drawing as a second image, a reference for the material ("the same stone,
+  its detail and wear, image 1's layout": an ashlar trim's layout kept 0.63 with it, 0.22
+  without). Not reimagine members (the hero's arrangement leaked into them: a rock face 0.86 ->
+  0.18, planks 0.65 -> 0.34), faithful ones (their content must not change) nor members of the
+  hero's set. A new hero (9.5 picks one by `seed=`) redraws its layout members.
+
+A run draws what a selection needs: its sets whole, its copies' sources, its heroes. It is
+incremental as 5.8's (M41): a texture is skipped when its model image (the source, the prompt,
+the seed, the size, the hero's drawing) and its stages (the class's and materials' values, the
+models, `--front`, the tool's version) are unchanged, and only the stages are redone from
+`work\<stem>_A.png` when only they changed (`--reuse` keeps every earlier model image). The
+stages write `work\<stem>.png`, `_n.png`, `_orm.png`; a last step writes `textures\` (a set's
+members unified, the copies, the `.mat`) where what they come from changed or a file is
+missing. `<pack>\.texpack\redraw.json` has per texture what it was made from and 9.1's
+numbers: the light left in (`light_dir_before`/`after`), the seam against the original's, the
+color drift, the layout kept, the brightness ratio, each material's gain, the share of
+cavities, the occlusion's mean. A row's `seed=1234` override replaces the seed from the name.
 
 ```
-& $py tools\hexenlicht\texpack\redraw.py run --gen klein --export <both games' export> --out <pack>
-& $py tools\hexenlicht\texpack\redraw.py sheet --packs klein=D:/...pack --base <5.8 pack> --out <dir> --lift 4
+& $py tools\hexenlicht\texpack\texpack.py run --select redrawset.txt --data <game data> --out <pack>
+& $py tools\hexenlicht\texpack\texpack.py verify --select redrawset.txt --data <game data> --pack <pack>
+& $py tools\hexenlicht\texpack\redraw.py sheet --packs v2=D:/...pack --stems rtex022,rtex013 --out <dir> --lift 4
 & $py tools\hexenlicht\texpack\bspviews.py --export <export> --maps demo1,meso9 --stems rtex022,mtex466 > views.txt
 ```
 
-`--gen`: `klein` (FLUX.2 klein 4B, distilled: the generator since M50, about 6.5 s a
-texture), `klein-base`, `qwen` (Qwen-Image-Edit-2511 with the 8-step Lightning LoRA, 37 s).
-The rows are `pilot.csv`'s (stem, tier, class, description, overrides: the manifest's
-classes and keys); 9.4 brings the stage into `texpack.py run`. A run skips a texture whose
-model image (the source, the prompt, the generator, the seed) and stages (the class's values,
-the models, `--front`, the tool's version) are unchanged and redoes only the stages from
-`work\<stem>_A.png` when only they changed; `--reuse` does that for every texture, keeping
-what each image was made from; `measure.json` has the numbers
-(the light left in, the seam, the color drift, the layout kept, the brightness ratio).
+`redrawset.txt` is the test selection (9.1's pilot and 9.4's sets, families and copies). About
+6.5 s an edit on an RTX 4070 Ti (the hero as a reference costs nothing measurable at a quarter
+of a megapixel); a run restarts ComfyUI every 80 edits (`--restart-every`). `redraw.py sheet`
+writes a PNG per texture: the original, the 5.8 pack (`--base`), per pack the model's image,
+the albedo, the normal, the `_orm` and a 2x2 tiling.
 
-The models (Apache-2.0), in ComfyUI's folders or any folder named in
-`$TEXPACK_HOME\extra_model_paths.yaml` (`comfy.py` passes it to ComfyUI; the owner's are on
-C:): `flux-2-klein-4b-fp8.safetensors` (and `-base-`) from black-forest-labs/FLUX.2-klein-4b-fp8
-in `diffusion_models`, `qwen_3_4b.safetensors` in `text_encoders` and `flux2-vae.safetensors`
-in `vae` (Comfy-Org/vae-text-encorder-for-flux-klein-4b); for `qwen`
-`qwen_image_edit_2511_fp8mixed.safetensors` (Comfy-Org/Qwen-Image-Edit_ComfyUI),
-`qwen_2.5_vl_7b_fp8_scaled.safetensors` and `qwen_image_vae.safetensors`
-(Comfy-Org/Qwen-Image_ComfyUI), `Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors`
-in `loras` (lightx2v/Qwen-Image-Edit-2511-Lightning). About 16 GB and 31 GB.
+The models (Apache-2.0; `classes.toml`'s `[redraw]`), in ComfyUI's folders or any folder named
+in `$TEXPACK_HOME\extra_model_paths.yaml` (`comfy.py` passes it to ComfyUI; the owner's are on
+C:): `flux-2-klein-4b-fp8.safetensors` from black-forest-labs/FLUX.2-klein-4b-fp8 in
+`diffusion_models`, `qwen_3_4b.safetensors` in `text_encoders` and `flux2-vae.safetensors` in
+`vae` (Comfy-Org/vae-text-encorder-for-flux-klein-4b), about 16 GB; `check-env` finds them.
+9.1 compared klein's base model and Qwen-Image-Edit-2511 (M46, M50); 9.4 left them out of the
+tool.
 
 `bspviews.py` finds a view of each texture in the maps (`vk_setpos` lines; since 9.2 the
 census's picker, below) for `proof_run.ps1 -ViewFile` (`-Portals` for the mission pack's maps).
-TESTING.md, "Art-directed pack pilot (9.1)".
+TESTING.md, "Art-directed pack pilot (9.1)" and "Texpack pipeline v2 (9.4)".
 
 ## Census and views (story 9.2)
 
