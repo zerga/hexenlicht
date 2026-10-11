@@ -22,6 +22,7 @@ see [Tracking](#tracking).
 | Toolchain | CMake + MSVC, developed in CLion. Existing Makefiles stay untouched |
 | Target hardware | RTX 4070 Ti, 1440p, 60+ fps with upscaling |
 | Game scope | Hexen II + Portal of Praevus: single-player and LAN co-op. **HexenWorld is out of scope** |
+| Gameplay additions | One: an optional guide to the next objective (E10), client-side, read from the server's state, so in a single-player game or by the co-op host; no `progs.dat` changes. Otherwise the game plays as the original |
 | Lighting | Fully dynamic path-traced lighting from the maps' own light entities; baked lightmaps unused. The original mood is a sanity reference (overall brightness, gameplay darkness), not a target (R107). By default a light's first arrival is GL's (its shape and sum, "Original"), everything after it path traced (shadows, bounce light), the lava emissive; "Physically based" (inverse square) is an option (R108) |
 | Sky | Two modes per map: *faithful* (sky visible, not emissive) and *sky light* (dome + optional sun). Default chosen per map during calibration |
 | Materials | Own file-based PBR format ([MATERIALS.md](MATERIALS.md), §6), looked up by Hexen II texture name |
@@ -361,6 +362,17 @@ Goal: a high-resolution texture pack that is art-directed, not only upscaled: ea
 | 9.6 | Skins v2: the UV islands from the `.mdl` triangles with their borders protected, materials per region, the light taken out as 9.1 decided, a turntable in a local viewer, then the game. Since 9.1 (owner, 2026-10-09, M53): every skin's seams blended (an edge of the model whose two sides lie in different places of the atlas) and its islands' colors bled outward; mirroring an opt-in per model (a piece's halves and mirror-image pieces, found in the atlas), applied to the corrected original before the redraw and again after it, the side picked by the owner on turntable sheets of the klein skins (the archer: −y, provisional); a description per piece of the atlas; the offline turntable (one pose, unlit) for comparisons; a 3D redraw (views redrawn and projected back) only if these fall short. The meshes' own asymmetry stays (§1) | L | Every skin run; the owner has looked at them on their models; no break at the UV seams; `verify` passes |
 | 9.7 | Cavities absorb light (planned since 9.1: owner, 2026-10-09, M53): `_orm`'s occlusion (red channel; read since 5.3, unused), written by 9.4 from the cavity term, darkens the light a surface returns, diffuse and specular, direct (with micro-shadows: a crevice dark under grazing light, lit head-on) and indirect, so a deep cavity such as the black gap between planks absorbs all light at every angle; the albedos may then drop the kept cavity term (`front` 0). An approximation for geometry a normal map doesn't have, not physically based | S | Applied and switchable, compared in the game by the owner; validation 0/0; both presets build |
 
+### E10 — Guide to the next objective
+Goal: an optional, on-demand guide that shows the player how to progress. Hexen II's puzzles span a hub (switches in one map open things in another through `trigger_crosslevel`, counters, puzzle-item locks), and the search for the way forward was what reviewers at the time found confusing (the owner). One key, three levels per press so the player chooses how much is spoiled: a nudge (a line of text, for Hexen II also the objectives screen, `+infoplaque`, which only Portal of Praevus fills), a direction (a wisp toward the next step, across the hub's maps), a trail (the wisp leads along the route, leaving fading motes); the wisp and motes are path-traced lights. The steps and routes are recorded by playing, not computed (an automatic "next objective" can't follow crosslevel flags or hidden switches; BSP pathfinding fails on jumps, swimming and secret walls); two helpers need no data (a switch that opens something out of view, a held puzzle item's lock once its message was seen). Client-side in local games, read from the server's state (the current level's edicts, the hub's saved `.gip` levels, `serverflags`' crosslevel bits): no `progs.dat` changes. Off unless bound, never in deathmatch, the co-op host only at first; the hint text, positions and routes our own, recorded in the game; Raven's strings (`message`, `no_puzzle_msg`, `infolist.txt`) are not committed (in the spirit of §4, which names no rule for facts about the maps). Found in the owner's question (2026-10-11: the confusing search for the way forward); the direction approved the same day.
+
+| # | Story | Size | Done when |
+|---|---|---|---|
+| 10.1 | Guide data and recording by playing (a spike): a file per map of ordered steps (own text, where, what completes it: an item picked up, an entity used or gone, a crosslevel bit, a level entered; the route taken), recorded with a dev command during a playthrough (`guide_mark "<text>"`: the condition from what just happened, the route since the last mark); a draft of steps from the BSP entities to check against; counts of the maps that depend on crosslevel flags and of locks needing items from another map. The crosslevel bits are never cleared between hubs (the gamecode's clearing is commented out in `client.hc`, the engine resets `serverflags` only for a new game): a step tied to a bit belongs to its hub | M | Hexen II's first hub recorded; each step's completion condition right when loading a save made at that step; the format a DECISIONS line; the owner has decided whether the routes are good enough to lead along |
+| 10.2 | The guide in the game: a bound key gives the next unfinished step's nudge, then its direction (toward the step, or the changelevel on the route), then its trail (from the nearest point on the route); the steps' texts on Hexen II's objectives screen (`+infoplaque`; `gl_screen.c` builds it only from the mission pack's `infolist.txt`, so an `#if defined(HEXENLICHT)` hook there, an UPSTREAM.md hot spot, or the text drawn by Hexenlicht's own code), the mission pack's own unchanged; simple markers here, the wisp is 10.3 | M | The recorded hub followed by the guide across levels and after a save and load; off unless bound, nothing in deathmatch; validation 0/0 |
+| 10.3 | The guide light: 10.2's markers as a wisp that flies the direction or leads the trail and motes that fade along the route, lights in the path tracer (they light the walls, cast shadows, show in reflections); the look chosen with the owner in the game | S | The owner has looked at it in the game; the cost measured; validation 0/0 |
+| 10.4 | Automatic helpers, without 10.1's data (unrecorded maps and mods too): a switch the player used that set something moving out of view (doors, plats, trains, walls removed; a crosslevel target firing on entering a level) is remembered and pointed at until seen; a held puzzle item is marked with its lock (`puzzle_piece_1..4` by `puzzle_id`) once the lock's `no_puzzle_msg` has been seen | M | Checked in maps of both games; validation 0/0 |
+| 10.5 | Guide data for every hub of both games, recorded alongside 7.1's playthrough where it fits | L | Every hub reached to its end following only the guide; the data in the repository |
+
 ### Recurring
 - Upstream merge from `sezero/uhexen2` when upstream changes — procedure in
   [UPSTREAM.md](UPSTREAM.md).
@@ -398,13 +410,13 @@ GitHub Issues + a GitHub Project board:
 [issues](https://github.com/zerga/hexenlicht/issues),
 [project board](https://github.com/users/zerga/projects/1).
 
-- **Epics** = one issue per epic (E0–E7, issues #1–#8; E8 #202, 2026-10-08; E9 #209, 2026-10-09), label `epic`.
+- **Epics** = one issue per epic (E0–E7, issues #1–#8; E8 #202, 2026-10-08; E9 #209, 2026-10-09; E10 #221, 2026-10-11), label `epic`.
 - **Stories** = sub-issues of their epic, label `story` (or `spike`), titled
   with their plan number (e.g. `3.9 Spike: ...`). The epic shows a progress
   bar from its sub-issues.
 - **Milestones**: `0.1 Boots on Vulkan` (E0, E1), `0.2 First path-traced
   frame` (E2, E3), `0.3 Lit and textured` (E4, E5), `0.4 Complete game` (E6),
-  `1.0` (E7); E8 and E9 have none.
+  `1.0` (E7); E8–E10 have none.
 - New work found along the way becomes a new story under the right epic;
   this plan is updated only when a decision or the scope changes.
 - **Labels**: `area:build`, `area:vid`, `area:2d`, `area:geometry`,
