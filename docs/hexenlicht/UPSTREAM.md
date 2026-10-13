@@ -102,7 +102,10 @@ changes one, with a line on what we changed:
   falling back to `config.cfg`. `Host_FilterTime` (story 3.11): before its
   72 fps check, an `#if defined(HEXENLICHT)` `if (VK_Benchmark ()) { } else`
   skips the check (`vk_benchmark 1`, `vk_profiler.c`), with the prototype
-  above the function.
+  above the function. `_Host_Frame` (story 10.1): after the server and
+  client frames, before `SCR_UpdateScreen`, an `#if defined(HEXENLICHT)`
+  call of `HL_GuideFrame ()` (`hl_guide.c`: `guide_record`'s route), its
+  prototype next to `VK_Benchmark`'s.
 - `engine/hexen2/sys_win.c` — in `WinMain`'s loop, before the sleep for a
   paused, minimized or unfocused window, an `#if defined(HEXENLICHT)`
   `if (VK_Benchmark () && !Minimized && !block_drawing) { } else` skips it,

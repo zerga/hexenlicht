@@ -306,6 +306,13 @@ animation) the view is `ok` and its shots become `$TEXPACK_HOME\views\<stem>_clo
 face (after a change to the picker). The shots are derived from Raven's textures: they stay
 outside the repository.
 
+**`guidedraft.py`** (story 10.1, E10's guide, not the pack; here for `bspviews.py`'s reader and
+`census.py`'s hubs): per hub the puzzle pieces, the locks (by `hl_guide.c`'s key), the
+crosslevel bits and the level changes, the counts of maps waiting on a bit set elsewhere and of
+locks needing a piece from another map, and with `--check <file>.hlguide` which locks and bits a
+recording covers. Positions sit next to Raven's strings in the entity data: its output stays
+outside the repository (TESTING.md "Guide (10.1)").
+
 ## Labels (story 9.3)
 
 E9's art direction per texture (DECISIONS M57–; the rules and the hubs' styles in

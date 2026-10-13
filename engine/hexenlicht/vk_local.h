@@ -300,6 +300,11 @@ void VK_InitCalib (void);
  * material file names (5.4) */
 void VK_InitExport (void);
 
+/* hl_guide.c: the guide's steps recorded by playing and checked (10.1):
+ * guide_record, guide_mark, guide_cond, guide_undo, guide_check; not a
+ * renderer module, registered with them; HL_GuideFrame is host.c's */
+void HL_InitGuide (void);
+
 /* vk_menu.c: the Options menu's Renderer Settings page (6.10, in place of
  * menu.c's OpenGL Features), its settings saved when changed, menu_renderer */
 void VK_InitMenu (void);		/* from R_Init: after the settings are registered */

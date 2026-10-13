@@ -4083,6 +4083,44 @@ overlay, and a measuring mode.
 - Left out: dynamic resolution (7.2), CPU timings (upstream's `showfps`),
   graphs.
 
+## Guide recording (`hl_guide.c`)
+
+Story 10.1 (E10, a spike; not a renderer module, registered with them in
+`vk_core.c`'s table): a hub's guide steps recorded by playing and checked
+against the game's state, `maps\<hub>.hlguide` (the format is the file's
+header comment; DECISIONS N1–N4). The guide shown to the player is 10.2.
+
+- **The state** is read, never kept: the player's `puzzle_inv1-8`,
+  `serverflags`' crosslevel bits, and per map its entities, live
+  (`sv.edicts`) for the server's map, else from `<map>.gip` in the user
+  folder (written at `changelevel2`, copied with saves; a small parser of
+  `SaveGamestate`'s text: after the `-1` line, `<edict>` `{` pairs `}`).
+  Entities a save leaves out (`FL_ARCHIVE_OVERRIDE`) are left out live too.
+  An entity's key: its brush model `*N`; else `classname@x,y,z` (its
+  origin; a picked-up piece keeps its edict, the model cleared) or, without
+  a model, `classname:x,y,z` (the middle of its box: `InitTrigger` clears a
+  trigger's model), matched within 16 units.
+- **Recording** (`guide_record start <hub>` in a local game): `HL_GuideFrame`
+  (`host.c`, every frame after the server's; silent) adds the player's
+  origin every 32 units, a new part at a level change, a load and a jump
+  over 160 units (a teleport; a load in the same map also retakes the
+  snapshots, `guide_record resync` after one into another map, which can't
+  be told from a level change), flagged `w` under water and `j` in the air;
+  not before the client is spawned or while paused. A map's first snapshot
+  is taken 1 s of server time after it is entered. `guide_mark "<text>"`
+  compares every snapshot map's state now with its snapshot and lists the
+  changes as candidates: pieces gained (rank 0), crosslevel bits set (1), a
+  brush entity or a lock (`puzzle_piece_1`) gone (2), a brush entity
+  moved and at rest (3), another entity gone (5; monsters and point
+  entities that move themselves, not `MOVETYPE_NONE`/`TOSS`/`PUSH`, left
+  out), maps entered (6), a brush entity still moving (7), `none` (8); the
+  step takes the first, its place that entity's (else the player's), its
+  route the parts since the last mark thinned (Douglas–Peucker within 16
+  units, the flags' changes kept). Then every snapshot is retaken.
+- **Checking** (`guide_check [hub]`): each step's condition now; the next
+  step is the one after the last one done (a used piece leaves the
+  inventory: earlier steps show "passed").
+
 ## Other
 
 - **Settings:** `hexenlicht.exe` saves to `hexenlicht.cfg` instead of
@@ -4172,3 +4210,4 @@ overlay, and a measuring mode.
 | `r_dlights 0/1`, `gl_colored_dynamic_lights 0/1`, `gl_extra_dynamic_lights 0/1` | the game's dynamic lights off/on (1); their colors (HoT's option, 1 since 6.8, 0 as in HoT from 4.9) and the client's extra projectile lights (0 as in HoT: they count for gameplay; the renderer makes its own; see [Lights](#lights-vk_lightc)) |
 | `r_darklights 0/1`, `vk_darkplaces [n] [threshold]` | GL's dark lights (the invincible Necromancer) darken the world (1; 4.10, see [Darkness](#darkness-shadersdarknessglsl)); the map's dark places where an item or monster stands, with a point to go to (a local game; see [Calibration](#calibration-vk_calibc)) |
 | `vk_reload_shaders` | rebuild pipelines from the SPIR-V on disk |
+| `guide_record start <hub>\|continue <hub>\|save\|resync\|stop`, `guide_mark "<text>"`, `guide_cond <n>`, `guide_undo`, `guide_check [hub]` | 10.1: record a hub's guide steps (a local game; `save` writes `maps\<hub>.hlguide` into the game folder); a step from what changed since the last mark, its candidates numbered; the last step's condition from them; drop the last step; each step done or open and the next (see [Guide recording](#guide-recording-hl_guidec)) |

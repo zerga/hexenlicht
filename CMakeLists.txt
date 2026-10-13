@@ -266,6 +266,27 @@ if(HEXENLICHT_MAP_FILES)
 endif()
 add_custom_target(hexenlicht_map_files ALL DEPENDS ${HEXENLICHT_MAP_FILES_OUT})
 
+# The shipped guide files (data/hexenlicht/guide/*.hlguide, story 10.1) next
+# to the executable, in guide\, where hl_guide.c looks after the game's user
+# folder; there may be none.
+file(GLOB HEXENLICHT_GUIDE_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/data/hexenlicht/guide/*.hlguide)
+set(HEXENLICHT_GUIDE_FILES_OUT)
+foreach(f IN LISTS HEXENLICHT_GUIDE_FILES)
+	get_filename_component(name ${f} NAME)
+	list(APPEND HEXENLICHT_GUIDE_FILES_OUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/guide/${name})
+endforeach()
+if(HEXENLICHT_GUIDE_FILES)
+	add_custom_command(
+		OUTPUT ${HEXENLICHT_GUIDE_FILES_OUT}
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/guide
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HEXENLICHT_GUIDE_FILES} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/guide
+		DEPENDS ${HEXENLICHT_GUIDE_FILES}
+		COMMENT "Copying the guide files"
+		VERBATIM
+	)
+endif()
+add_custom_target(hexenlicht_guide_files ALL DEPENDS ${HEXENLICHT_GUIDE_FILES_OUT})
+
 add_executable(hexenlicht WIN32
 	${H2_COMMON_SOURCES}
 	${H2_HEXENLICHT_REUSED_SOURCES}
@@ -318,6 +339,7 @@ add_executable(hexenlicht WIN32
 	${HEXENLICHT_DIR}/r_scene.c
 	${HEXENLICHT_DIR}/r_light.c
 	${HEXENLICHT_DIR}/cl_demoangles.c
+	${HEXENLICHT_DIR}/hl_guide.c
 	${HEXENLICHT_DIR}/hexenlicht.manifest	# per-monitor DPI awareness
 	${H2_WIN32_RC}
 )
@@ -326,7 +348,7 @@ target_compile_features(hexenlicht PRIVATE cxx_std_17)	# vk_streamline.cpp
 target_compile_definitions(hexenlicht PRIVATE GLQUAKE HEXENLICHT)
 target_link_libraries(hexenlicht PRIVATE h2_client_settings volk vma stb_image stb_image_write
 	dxgi dxguid)	# vk_hdr.c: the display's HDR state and peak (DXGI)
-add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise hexenlicht_map_files)	# building the exe also builds its shaders and data
+add_dependencies(hexenlicht hexenlicht_shaders hexenlicht_blue_noise hexenlicht_map_files hexenlicht_guide_files)	# building the exe also builds its shaders and data
 add_custom_command(TARGET hexenlicht POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${H2_CODEC_DLLS} $<TARGET_FILE_DIR:hexenlicht>
 	COMMAND_EXPAND_LISTS

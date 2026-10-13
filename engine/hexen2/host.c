@@ -667,6 +667,7 @@ void Host_ClearMemory (void)
 
 #if defined(HEXENLICHT)
 qboolean VK_Benchmark (void);	/* engine/hexenlicht/vk_profiler.c */
+void HL_GuideFrame (void);	/* engine/hexenlicht/hl_guide.c */
 #endif
 
 /*
@@ -936,6 +937,11 @@ static void _Host_Frame (float time)
 	} while (total_host_frametime > 0);
 
 	host_frametime = save_host_frametime;
+#endif
+
+#if defined(HEXENLICHT)
+	/* guide_record: the player's route, after the server frame */
+	HL_GuideFrame ();
 #endif
 
 // update video

@@ -1156,6 +1156,37 @@ restores the configs. About 5 minutes in Debug.
   1280x720 with `vid_uiscale 3` (240 lines) the status lines touch the
   status bar.
 
+## Guide (10.1)
+
+`hl_guide.c`'s commands ([RENDERER.md](RENDERER.md#guide-recording-hl_guidec),
+DECISIONS N1–N4). Debug runs end with validation 0/0 as always.
+
+- **Recording a hub** (by hand, a new game, single player): `god` (a death
+  restarts the map from its `.gip`), then `guide_record start <hub>` in the
+  hub's first map; play; after each step (a piece picked up, a lock opened,
+  a switch thrown, a level reached) `guide_mark "<text>"` and read the
+  candidates it prints: `guide_cond <n>` if the first isn't the step,
+  `guide_undo` to take it back. `save <hub>_<n>` after each mark (for the
+  check below), `guide_record save` now and then (into
+  `<game folder>\maps\<hub>.hlguide`); `guide_record continue <hub>` after a
+  restart. No `noclip` (the route is the way walked). A load in the same
+  map starts a new route part and the next mark compares with the state
+  loaded; after a load into another map, `guide_record resync`.
+- **The check from saves:** `load <hub>_<n>`, `guide_check`: steps 1 to n
+  done (or passed), n + 1 next. A script: `load`, ~200 waits,
+  `guide_check`, per save.
+- **Live and saved read alike** (the condition keys, N3): a hand-made guide
+  of demo1's lock trigger (`gone`/`field` on
+  `trigger_once:-1536,2416,-552`), `gone *1`, a missing piece, `item`,
+  `flag` and `enter demo2`, checked in demo1, then after `changelevel2 demo2`
+  (demo1 from its `.gip`): the same answers (2026-10-12). A mark after the
+  level change listed only `enter demo2` (no entity of demo1 "gone": the
+  crosslevel triggers aren't saved, the sheep walk).
+- **The draft:** `python -I tools\hexenlicht\texpack\guidedraft.py --data
+  <game data> [--hub blackmarsh] [--check <file>.hlguide]` (ComfyUI's
+  Python, [texpack/README.md](../../tools/hexenlicht/texpack/README.md));
+  its output stays outside the repository.
+
 ## HDR output (7.3)
 
 Needs a display Windows runs in HDR (Settings > Display > HDR; `vk_hdr`
