@@ -256,13 +256,14 @@ mode = "skip"
 #   purpose (skin)   creature, player, weapon, item (pickups, artifacts), object (props,
 #                    statues, furniture), debris (gibs, chunks), fx (lights, flames, missiles)
 #   tier             reimagine: a new surface at the same arrangement; layout: every shape
-#                    stays; faithful: restored, no new content; glass; liquid; lava; skin;
+#                    stays; faithful: restored, no new content; painting: as faithful, painted
+#                    or cut flat and weathered, never modelled in relief (9.5); glass; liquid; lava; skin;
 #                    fx: upscaled only; skip: left as it is
 [labels]
 purposes_world = ["fill", "trim", "pillar", "panel", "door", "window", "grate", "picture", "sign",
                   "symbol", "prop", "liquid", "sky", "tool"]
 purposes_skin = ["creature", "player", "weapon", "item", "object", "debris", "fx"]
-tiers = ["reimagine", "layout", "faithful", "glass", "liquid", "lava", "skin", "fx", "skip"]
+tiers = ["reimagine", "layout", "faithful", "painting", "glass", "liquid", "lava", "skin", "fx", "skip"]
 
 # The materials a region can be (9.3's regions name them) and, since 9.4, their values texel by
 # texel (materials.py; DECISIONS M67): the roughness range the roughness model's output is
@@ -270,9 +271,14 @@ tiers = ["reimagine", "layout", "faithful", "glass", "liquid", "lava", "skin", "
 # original's ([defaults]' where left out: a dielectric with M43's contrast 1.5 and ratio 1.2).
 # The ranges are the classes' where a class of the material exists; the rest set by judgment
 # from published PBR material tables (polished stone, glazed tile, leather and skin smoother
-# than rough stone, cloth and earth). Metals are metallic 1, contrast 1 and ratio 1 (their
-# albedo is their reflectance), rust is not a metal (the oxide is a dielectric). Specular is
-# the texture's (.mat), not a material's.
+# than rough stone, cloth and earth). Metals are metallic 1 and contrast 1; their albedo is their
+# reflectance, and Raven painted metals 20 to 50 times darker than any real metal reflects (his
+# iron's linear luminance 0.011, real iron's about 0.57), so their ratio is 5 (9.5, DECISIONS
+# M75: in the game the darkest metal views were 0.23-0.69 times the originals at 1, about 1 at 5),
+# at most `reflectance`, a clean real metal's (the luminance of published linear F0 values: iron
+# and steel 0.57, bronze about 0.62, gold 0.74, silver 0.93; old tarnished metal is darker, which
+# the ratio keeps), and no colour channel clipped. Rust is not a metal (the oxide is a
+# dielectric). Specular is the texture's (.mat), not a material's.
 [materials]
 stone = { what = "rock: rough-hewn, dressed or carved", rough_min = 0.7, rough_max = 0.95 }
 marble = { what = "polished veined stone", rough_min = 0.25, rough_max = 0.55 }
@@ -280,11 +286,11 @@ brick = { what = "fired clay bricks", rough_min = 0.7, rough_max = 0.95 }
 tile = { what = "glazed or fired tiles, mosaic", rough_min = 0.35, rough_max = 0.7 }
 plaster = { what = "plaster, stucco, painted wall", rough_min = 0.8, rough_max = 0.98 }
 wood = { what = "timber, planks, carved or painted wood", rough_min = 0.55, rough_max = 0.85 }
-iron = { what = "wrought or cast iron, dark and dull", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.45, rough_max = 0.8 }
-steel = { what = "bright worked steel: blades, plate armour", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.25, rough_max = 0.55 }
-bronze = { what = "bronze or brass", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.3, rough_max = 0.65 }
-gold = { what = "gold and gilding", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.2, rough_max = 0.5 }
-silver = { what = "silver", metallic = 1, contrast = 1.0, albedo_ratio = 1.0, rough_min = 0.2, rough_max = 0.5 }
+iron = { what = "wrought or cast iron, dark and dull", metallic = 1, contrast = 1.0, albedo_ratio = 5.0, reflectance = 0.57, rough_min = 0.45, rough_max = 0.8 }
+steel = { what = "bright worked steel: blades, plate armour", metallic = 1, contrast = 1.0, albedo_ratio = 5.0, reflectance = 0.57, rough_min = 0.25, rough_max = 0.55 }
+bronze = { what = "bronze or brass", metallic = 1, contrast = 1.0, albedo_ratio = 5.0, reflectance = 0.62, rough_min = 0.3, rough_max = 0.65 }
+gold = { what = "gold and gilding", metallic = 1, contrast = 1.0, albedo_ratio = 5.0, reflectance = 0.74, rough_min = 0.2, rough_max = 0.5 }
+silver = { what = "silver", metallic = 1, contrast = 1.0, albedo_ratio = 5.0, reflectance = 0.93, rough_min = 0.2, rough_max = 0.5 }
 rust = { what = "corroded iron", rough_min = 0.6, rough_max = 0.9 }
 cloth = { what = "woven fabric: robes, banners, tapestries", rough_min = 0.8, rough_max = 0.98 }
 leather = { what = "tanned leather: straps, bindings, boots", rough_min = 0.5, rough_max = 0.8 }

@@ -128,9 +128,14 @@ def margin_for(w, h):
 
 def pad(rgb, m, wrap, even=False):
     """Pads m texels on every side; with even, one more at the bottom and right where
-    the padded size would be odd (the VAE trims to multiples of 8: 4x an odd size isn't)."""
+    the padded size would be odd (the VAE trims to multiples of 8: 4x an odd size isn't).
+    wrap: True wraps, False mirrors, 'y' wraps top to bottom and mirrors at the sides (a strip
+    that repeats only that way, `tile=y`)."""
     h, w = rgb.shape[:2]
     eh, ew = ((h + 2 * m) % 2, (w + 2 * m) % 2) if even else (0, 0)
+    if wrap == 'y':
+        rgb = np.pad(rgb, ((m, m + eh), (0, 0), (0, 0)), mode='wrap')
+        return np.pad(rgb, ((0, 0), (m, m + ew), (0, 0)), mode='symmetric')
     return np.pad(rgb, ((m, m + eh), (m, m + ew), (0, 0)), mode='wrap' if wrap else 'symmetric')
 
 

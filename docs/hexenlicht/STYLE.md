@@ -36,6 +36,7 @@ readable blackletter); runes and glyphs keep Raven's shapes.
 | `reimagine` | fill: a wall's, floor's or ceiling's surface of one material and its plain variants | a new surface at the same arrangement |
 | `layout` | trims, pillars, panels, doors, grates, carvings and reliefs (ornament and figures) | every shape stays where it is |
 | `faithful` | painted pictures, signs and inscriptions, symbols (runes, switch faces), painted props (books, bottles) | restored, no new content |
+| `painting` | pictures the model would carve into relief: Thysis's tomb paintings, the Ra emblems, the glyph reliefs the owner wants flat and worn | as `faithful`, painted or cut as shallow outlines and weathered (9.5, M78) |
 | `glass`, `liquid`, `lava` | windows; water, slime and other liquids; lava | their own prompts (M51) |
 | `skip` | tool textures (`clip`, `origin`, `trigger`), blank fills, the skies (5.8's rule) | left as they are |
 
@@ -56,15 +57,19 @@ the words in `classes.toml`'s `[labels]` and `[materials]`):
   a material over several ramps (an oak door's planks in orange, amber, brown and tan, its
   iron in grey and taupe), so a region is a set of ramps; `*` is the rest (`*=stone` for a
   texture of one material, `*=stone;yellow=gold`). A ramp that carries two materials takes
-  `a/b`, the larger first. The saturated row (`special`: glowing eyes, gems) is kept as drawn.
+  `a/b`, the larger first; `black` is the grey ramp's near-black apart from the rest of grey
+  (a door's black plank gaps wood, its grey iron iron). The saturated row (`special`: glowing
+  eyes, gems) is kept as drawn.
 - **description**: 15–40 words: the material and its arrangement (how many blocks, planks,
   panels and their size in metres), the colors, the motif, the condition; every part of a
   texture of several materials named (M51: a part the description leaves out is reinvented).
 - **family**: textures that should read as one material in the hub, typically a wall's
   stone with its trims, cracked, mossy and bloody variants and the same stone in other
-  shapes; each gets one hero in 9.5, whose redraw is the others' reference (9.4). Pictures,
-  signs and one-off panels stand alone (no family). A family belongs to the hub of its lead;
-  a texture of another hub joins it when it is that material.
+  shapes; its lead is its hero, whose redraw is the layout members' reference (9.4), and its
+  `finish` (9.5: the owner's pick of the label as it is, a rougher or a finer condition,
+  `finishes.csv`) is added to every reimagine and layout member's description, so that the
+  family is drawn alike. Pictures, signs and one-off panels stand alone (no family). A family
+  belongs to the hub of its lead; a texture of another hub joins it when it is that material.
 - **Copies** (the same pixels under two names: about 30, mostly the mission pack's renames of
   the original game's textures, `ttex022` is `rtex041`) carry one label, the one of the copy
   that covers the most area; `labels check` holds them to it. Animations aside: two can share
@@ -144,7 +149,8 @@ Pompeian red and ochre in the frescoes.
 - **Carvings:** reliefs of figures and processions, lion and gorgon masks, an equestrian
   statue, garlands.
 - **Pictures:** Pompeian frescoes (`rtex407`, `rtex408`, `rtex498~be8a`), Latin
-  inscriptions (illegible).
+  inscriptions: the carved tablet `rtex470` keeps Raven's legible words (owner, 9.5); painted
+  notices stay illegible.
 - **Other:** terracotta roof tiles and floor tiles, bronze-studded doors, drapes and banners,
   the elements' rune switches (air, fire, steam, water).
 - **Condition:** aged, cracked marble, stains, ivy and grass in places.

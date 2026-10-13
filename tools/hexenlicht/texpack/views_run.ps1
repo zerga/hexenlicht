@@ -16,14 +16,25 @@
 # log go to -Out\<Tag>; `texpack.py checkviews` reads them. Run it with PowerShell 7 (the
 # pwsh tool), Debug unless -Release; -Bin another build; -Only a regex on the texture names;
 # -Settle the frames waited before and after the pause at each view (40; rounded to 20s).
+# -Pack (story 9.5) shoots a pack instead: its textures\ copied into the data copy's
+# data1\textures for the run (refused if that has files; deleted after, only the files this
+# script wrote), the same three shots with r_materials 1, and with -Before the originals too at
+# the same paused frame (`<name>_close_orig`, `_wide_orig`: r_materials 0, then 1); `texpack.py
+# packviews` reads such runs. -CloseOnly: the close view alone (9.5's hero candidates).
 param([Parameter(Mandatory)][string]$Views, [Parameter(Mandatory)][string]$Out, [Parameter(Mandatory)][string]$Data,
       [string]$Tag = 'views', [switch]$Portals, [switch]$Release, [string]$Only = '', [int]$Settle = 40,
-      [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '', [int]$Timeout = 14400)
+      [int]$Width = 1280, [int]$Height = 720, [string]$Bin = '', [int]$Timeout = 14400,
+      [string]$Pack = '', [switch]$Before, [switch]$CloseOnly)
 $ErrorActionPreference = 'Stop'
 $Data = (Resolve-Path -LiteralPath $Data).ProviderPath
 $game = Join-Path $Data 'data1'
 $gdir = if ($Portals) { Join-Path $Data 'portals' } else { $game }	# where the game writes its configs and shots
 $run = Join-Path (Split-Path $PSScriptRoot) 'hl_run.ps1'
+if ($Before -and -not $Pack) { throw "-Before is for a -Pack run (the originals are 9.2's run)" }
+if ($Pack) {
+	$Pack = (Resolve-Path -LiteralPath $Pack).ProviderPath
+	if (-not (Test-Path (Join-Path $Pack 'textures'))) { throw "$Pack has no textures\" }
+}
 
 # the views; a shot's name keeps a texture name's letters, digits, _ and - (vk_screenshot's rule)
 $list = @()
@@ -47,7 +58,7 @@ if ($viewsFor -and (($viewsFor -eq 'portals') -ne [bool]$Portals)) { throw "$Vie
 # file when one would grow past 7000 bytes
 $start = @('alias w5 "wait;wait;wait;wait;wait"', 'alias w20 "w5;w5;w5;w5"', 'w5', 'vid_vsync 0', 'vk_benchmark 1',
 	   'host_framerate 0.02', 'sensitivity 0', 'viewsize 130', 'showpause 0', 'crosshair 0', 'con_notifytime 0',
-	   'r_drawviewmodel 0', 'r_materials 0', 'color 0 0', 'skill 1')
+	   'r_drawviewmodel 0', "r_materials $(if ($Pack) { 1 } else { 0 })", 'color 0 0', 'skill 1')
 $end = @('echo T92_END', 'vk_benchmark 0', 'toggleconsole', 'w5', 'vid_vsync 1', 'quit')
 $settleWaits = (@('w20') * [Math]::Max(1, [int][Math]::Round($Settle / 20))) -join ';'
 $blocks = @(); $lastMap = ''
@@ -57,8 +68,13 @@ foreach ($v in $list) {
 		$b += @('playerclass 1', "map $($v.map)", 'w20;w20;w20;w20;w20;w20;w20', 'god', 'notarget', 'noclip'); $lastMap = $v.map
 	}
 	# the lit shots: moved, -Settle frames for the client and the denoiser, paused, -Settle more, 8 averaged
-	foreach ($w in @(@('close', $v.close), @('wide', $v.wide))) {
-		$b += @("vk_setpos $($w[1])", $settleWaits, 'pause', $settleWaits, "vk_screenshot $($v.name)_$($w[0]) 8", 'w5;w5;wait;wait',
+	$ws = @(, @('close', $v.close))
+	if (-not $CloseOnly) { $ws += , @('wide', $v.wide) }
+	foreach ($w in $ws) {
+		$b += @("vk_setpos $($w[1])", $settleWaits, 'pause', $settleWaits)
+		# -Before: the originals at the same paused frame, then the pack again (proof_run.ps1's way)
+		if ($Before) { $b += @('r_materials 0', $settleWaits, "vk_screenshot $($v.name)_$($w[0])_orig 8", 'w5;w5', 'r_materials 1', $settleWaits) }
+		$b += @("vk_screenshot $($v.name)_$($w[0]) 8", 'w5;w5;wait;wait',
 			"echo T92_VIEW $($v.name) $($w[0])", 'vk_materials here')
 		if ($w[0] -eq 'wide') { $b += @('r_debugview 1', 'w5;w5', "vk_screenshot $($v.name)_albedo 1", 'w5', 'r_debugview 0') }
 		$b += @('pause', 'wait')
@@ -81,6 +97,13 @@ for ($i = 0; $i -lt $texts.Count; $i++) {
 	$files += $text
 }
 
+$texDir = Join-Path $game 'textures'
+if ($Pack) {
+	# with -portals the game reads portals\ first: files there would hide the pack's
+	foreach ($t in @($texDir) + @(if ($Portals) { Join-Path $Data 'portals\textures' })) {
+		if ((Test-Path $t) -and (Get-ChildItem $t -Recurse -File -Force)) { throw "$t has files: remove them first (a pack, or a test set's -Remove)" }
+	}
+}
 $dst = Join-Path $Out $Tag
 if (Test-Path $dst) { throw "$dst exists: a fresh -Tag keeps an old run's config backups from being restored" }
 $bk = Join-Path $dst 'configs'; New-Item -ItemType Directory -Force $bk | Out-Null
@@ -90,10 +113,22 @@ $made = @('config.cfg', 'hexenlicht.cfg' | Where-Object { -not (Test-Path (Join-
 $shots = Join-Path $gdir 'shots'; New-Item -ItemType Directory -Force $shots | Out-Null
 $aside = Join-Path $dst 'aside'; New-Item -ItemType Directory -Force $aside | Out-Null
 $written = New-Object System.Collections.Generic.List[string]
+$dirs = New-Object System.Collections.Generic.List[string]	# the folders this script made (the pack's)
 $t0 = Get-Date
 try {
 	Get-ChildItem $shots -File | Move-Item -Destination $aside
 	for ($i = 0; $i -lt $files.Count; $i++) { $f = Join-Path $game "hl92_$i.cfg"; $written.Add($f); [IO.File]::WriteAllText($f, $files[$i]) }
+	if ($Pack) {
+		$src = Join-Path $Pack 'textures'
+		foreach ($f in Get-ChildItem -LiteralPath $src -Recurse -File) {
+			$to = Join-Path $texDir $f.FullName.Substring($src.Length).TrimStart('\')
+			for ($d = Split-Path $to; -not (Test-Path -LiteralPath $d); $d = Split-Path $d) { $dirs.Add($d) }
+			New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+			$written.Add($to)	# before the copy: a partly copied file is removed too (the folder had none, checked above)
+			Copy-Item -LiteralPath $f.FullName -Destination $to
+		}
+		"the pack: $($written.Count - $files.Count) files from $src"
+	}
 	"$($list.Count) views in $(@($list | ForEach-Object map | Select-Object -Unique).Count) maps, $($files.Count) scripts"
 	$a = @{ Exe = 'hexenlicht'; Cfg = 'hl92_0.cfg'; Timeout = $Timeout; Width = $Width; Height = $Height; Data = $Data }
 	if ($Portals) { $a.Portals = $true }
@@ -108,6 +143,10 @@ try {
 	foreach ($c in 'config.cfg', 'hexenlicht.cfg') { if (Test-Path (Join-Path $bk $c)) { Copy-Item (Join-Path $bk $c) $gdir -Force } }
 	foreach ($c in $made) { $p = Join-Path $gdir $c; if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p } }
 	foreach ($f in $written) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f } }
+	# the folders this script made, deepest first, only if empty (a textures\ that was there stays)
+	foreach ($d in ($dirs | Select-Object -Unique | Sort-Object { $_.Length } -Descending)) {
+		if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d }
+	}
 	Get-ChildItem $shots -File -Filter '*.tga' | Where-Object { $_.LastWriteTime -ge $t0 } | Move-Item -Destination $dst -Force
 	$lg = Get-Item -LiteralPath (Join-Path $Data 'debug_h2.log') -ErrorAction SilentlyContinue
 	if ($lg -and $lg.LastWriteTime -ge $t0) { Copy-Item -LiteralPath $lg.FullName (Join-Path $dst 'debug_h2.log') -Force }

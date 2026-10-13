@@ -660,6 +660,35 @@ palette and the game (as 9.2's: never your own folder). `$py` is ComfyUI's Pytho
 - **Not covered:** the whole export (9.5), skins (9.6: they take 5.8's upscale until then),
   the occlusion in the renderer (9.7).
 
+## The world pack (9.5)
+
+The steps are the README's "The world pack" (`tools/hexenlicht/texpack`; DECISIONS M72–M76).
+What checks them:
+
+1. **The pure functions:** `selftest.py` adds the hero candidates (a family's lead and the
+   layout member that takes it as its reference; the label, a rougher and a finer finish, two
+   seeds each, the first the run's; the member drawn with the candidate's lead and finish; the
+   rows' seeds, finishes and pack as they were after; a single texture's candidates with its
+   hero's drawing from the pack), their page and `--apply` (the finish into `families.csv` with
+   its comments and line ends, the lead's seed as the owner's, another member's seed in its set
+   taken off), a seed onto a texture's copies and animation frames (`twins`), the finish in a
+   family's reimagine and layout members' prompts only, `reseed` (a failure fixed by the first
+   seed that passes, written into the set's seed row; the owner's seed, other failures and a
+   stale `verify.csv` row left; the next try after its own earlier seed; a set drawn whole and
+   unified before its check), the review (a texture's page, the order of a page, parts,
+   "another seed" in turn, `--apply` and its label edit through `merge` keeping the tier and
+   regions), `packviews` (a run's shots, its hits and the brightness against the same run's
+   originals) and the liquids' caustic notes. No GPU, no models.
+2. **`views_run.ps1 -Pack`** (PowerShell, not in the selftest): a small run first (a candidate
+   pack of a few textures, `-CloseOnly`); the log names each texture (`vk_materials here`), the
+   data copy's `data1\textures` is empty again after the run, and a Debug run ends with
+   `Vulkan validation: 0 errors, 0 warnings`.
+3. **The pack:** `verify` over every world and liquid texture passes (after `reseed` and the
+   reviews' redraws); in the game every hub's views before and after (`-Before`), each still
+   naming its texture.
+4. **Shipped:** the DDS pack (`pack_dds.ps1`) in a data copy: `vk_materials problems` lists
+   nothing, a liquid's caustic shows (its full mip chain), a Debug run's validation 0/0.
+
 ## Effects (6.1)
 
 E6's checklist ([EFFECTS.md](EFFECTS.md), DECISIONS X1) names each effect's

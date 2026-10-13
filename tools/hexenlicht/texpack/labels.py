@@ -52,6 +52,11 @@ FALSE = ((150, 150, 150), (70, 110, 230), (140, 95, 70), (130, 200, 150), (235, 
          (95, 50, 15), (255, 225, 190), (205, 120, 70), (255, 0, 255), (0, 255, 255))
 LABELED = ('claude', 'human')
 UNIT_M = 0.031          # a world unit in metres (the player, 56 units, is about 1.75 m)
+# `black` in a texture's regions (9.5): the palette's near-black, the grey ramp's indices below
+# this (0, 0 and 8 of 255). Named, it takes those texels from `grey` and `*`, so a door's black
+# plank gaps can be wood while its grey iron stays iron (rtex509: its gaps are index 2, the iron's
+# greys 3-16). Not a ramp: the ramp map and the shares keep it in grey
+BLACK = 3
 
 
 def ramp_of_index():
@@ -62,17 +67,23 @@ def ramp_of_index():
     return t
 
 
-def texel_ramps(rgba, palette):
-    """The ramp of every texel (RAMPS' index), -1 where it is transparent or off the palette (a
-    duplicate color counts as its first index, as the engine's own lookups)."""
-    rgb = rgba[..., :3]
+def texel_index(rgb, palette):
+    """The palette index of every texel, -1 where it is off the palette (a duplicate color counts
+    as its first index, as the engine's own lookups)."""
+    rgb = rgb[..., :3]
     key = rgb[..., 0].astype(np.int64) << 16 | rgb[..., 1].astype(np.int64) << 8 | rgb[..., 2]
     pk = palette[:, 0].astype(np.int64) << 16 | palette[:, 1].astype(np.int64) << 8 | palette[:, 2]
     first = {}
     for i, k in enumerate(pk.tolist()):
         first.setdefault(k, i)
     u, inv = np.unique(key, return_inverse=True)
-    idx = np.array([first.get(k, -1) for k in u.tolist()], np.int64)[inv].reshape(key.shape)
+    return np.array([first.get(k, -1) for k in u.tolist()], np.int64)[inv].reshape(key.shape)
+
+
+def texel_ramps(rgba, palette):
+    """The ramp of every texel (RAMPS' index), -1 where it is transparent or off the palette (a
+    duplicate color counts as its first index, as the engine's own lookups)."""
+    idx = texel_index(rgba, palette)
     r = np.where(idx >= 0, ramp_of_index()[np.clip(idx, 0, 255)], -1)
     if rgba.shape[-1] == 4:
         r = np.where(rgba[..., 3] > 0, r, -1)
@@ -120,7 +131,7 @@ def vocab(classes):
 TIER_CLASS = {'glass': {'glass'}, 'liquid': {'liquid'}, 'lava': {'lava'}, 'skip': {'skip'}, 'fx': {'fx'},
               'skin': {'skin', 'skin_metal'}}
 CLASS_TIER = {c: t for t, cs in TIER_CLASS.items() for c in cs}
-REGIONS_NEEDED = ('reimagine', 'layout', 'faithful', 'skin')
+REGIONS_NEEDED = ('reimagine', 'layout', 'faithful', 'painting', 'skin')
 
 
 def check_row(stem, kind, r, sh, classes, families):
@@ -167,11 +178,11 @@ def check_row(stem, kind, r, sh, classes, families):
                     elif '*' in seen:
                         p.append("'*' named twice")
                     seen.add('*')
-                elif rn not in RAMP_NAMES:
+                elif rn not in RAMP_NAMES and rn != 'black':
                     p.append(f"'{rn}' is not a ramp")
                 elif rn in seen:
                     p.append(f"ramp {rn} named twice")
-                elif sh.get(rn, 0) < 0.01:
+                elif rn != 'black' and sh.get(rn, 0) < 0.01:
                     p.append(f"ramp {rn} is {sh.get(rn, 0) * 100:.1f} % of the texture")
                 seen.add(rn)
         left = [f'{n} {v * 100:.0f} %' for n, v in sh.items() if v >= 0.05 and n not in seen and n != 'special' and '*' not in seen]
@@ -186,6 +197,42 @@ def load_families(path):
     if not os.path.exists(path):
         return {}
     return {r['family']: r for r in manifest.read_rows(path)[1] if r.get('family')}
+
+
+def finishes(fams):
+    """family -> its finish (9.5: words the redraw adds to its reimagine and layout members'
+    descriptions), the families that have one."""
+    return {f: (r.get('finish') or '').strip() for f, r in fams.items() if (r.get('finish') or '').strip()}
+
+
+def set_finishes(path, picks):
+    """families.csv's `finish` of these families (family -> words; '' clears it), its comments,
+    order and line ends kept; the header gets the column where it lacks it. Returns the families
+    changed."""
+    import re
+    with open(path, newline='', encoding='utf-8-sig') as f:
+        text = f.read()
+    nl = '\r\n' if '\r\n' in text else '\n'
+    out, done, col = [], [], None
+    for ln in re.split(r'\r?\n', text.rstrip('\r\n')):     # not str.splitlines: it splits on \x0b, \x85 too
+        cells = next(csv.reader([ln]), []) if ln and not ln.startswith('# ') else []
+        if col is None and cells[:1] == ['family']:     # the header: where the column is, or a new one
+            if 'finish' not in cells:
+                cells.append('finish')
+            col = cells.index('finish')
+        elif col is not None and cells and cells[0] in picks and (cells[col] if len(cells) > col else '') != picks[cells[0]]:
+            cells += [''] * (col + 1 - len(cells))
+            cells[col] = picks[cells[0]]
+            done.append(cells[0])
+        else:       # unchanged: the line as it was
+            out.append(ln)
+            continue
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator='').writerow(cells)
+        out.append(buf.getvalue())
+    with open(path, 'w', newline='', encoding='utf-8') as f:
+        f.write(nl.join(out) + nl)
+    return done
 
 
 def labeled_row(stem, rows):

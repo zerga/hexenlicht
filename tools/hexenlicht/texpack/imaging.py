@@ -27,9 +27,13 @@ def _box(a, f):
 
 
 def _blur(y, r, wrap=False):
-    """A (2r+1)-wide box blur of a 2-D array, the edges wrapped or mirrored."""
+    """A (2r+1)-wide box blur of a 2-D array, the edges wrapped or mirrored; wrap 'y': wrapped top
+    to bottom, mirrored at the sides (a set with a `tile=y` strip)."""
     k = 2 * r + 1
-    p = np.pad(y, r, mode='wrap' if wrap else 'symmetric')
+    if wrap == 'y':
+        p = np.pad(np.pad(y, ((r, r), (0, 0)), mode='wrap'), ((0, 0), (r, r)), mode='symmetric')
+    else:
+        p = np.pad(y, r, mode='wrap' if wrap else 'symmetric')
     c = np.vstack([np.zeros((1, p.shape[1])), np.cumsum(p, axis=0)])
     p = (c[k:] - c[:-k]) / k
     c = np.hstack([np.zeros((p.shape[0], 1)), np.cumsum(p, axis=1)])

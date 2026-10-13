@@ -55,9 +55,10 @@ from pipeline import LUM  # noqa: E402
 
 GEN_PIXELS = 1024 * 1024        # the model's native size: the padded image is scaled to about this
 REF_PIXELS = 512 * 512          # the hero's drawing as a reference: no slower than without (9.4's spike)
+WHOLE_SCALE = 2.0               # a whole's model image at most this many times GEN_PIXELS (9.5, M87)
 GEN = {'steps': 4, 'cfg': 1.0}  # klein, distilled
 
-TIERS = ('reimagine', 'layout', 'faithful', 'glass', 'liquid', 'lava')     # what texpack.py run redraws
+TIERS = ('reimagine', 'layout', 'faithful', 'painting', 'glass', 'liquid', 'lava')     # what texpack.py run redraws
 PROMPT_A = {
     'reimagine': (
         "Turn this low-resolution game texture into a high-resolution photorealistic material texture of {desc}. "
@@ -82,17 +83,33 @@ PROMPT_A['glass'] = (
     "backlight. Keep the window's shape, the tracery, the frame and every lead line exactly where they are. Replace whatever "
     "is painted behind the lead with translucent glass panes of even tints, slightly mottled, with no scene, landscape or "
     "objects visible through them. A flat orthographic view filling the whole image edge to edge, no text.")
+# painting (9.5, the owner's Thysis review): a faithful picture the model must not model in 3D. The
+# faithful prompt drew Egyptian murals as embossed reliefs with realistic anatomy whatever the
+# description said; "flat areas of even colour inside crisp outlines" made them comic books; this
+# keeps them painted (or cut as outlines) and old
+PROMPT_A['painting'] = (
+    "Restore this low-resolution game texture as a sharp high-resolution photograph of {desc}. "
+    "It is ancient decoration on an old wall: the figures are painted on the surface or cut as shallow outlines, "
+    "not modelled in 3D, with no raised relief. Show its age: chalky, faded and uneven mineral pigments, colour worn "
+    "thin and patchy so the stone or plaster shows through, fine cracks, flaking, stains and grime. "
+    "Keep every figure, symbol, line and color exactly where it is; do not add, remove or change any content. "
+    "Soft even frontal light. A flat orthographic view filling the whole image edge to edge.")
 PROMPT_A['liquid'] = PROMPT_A['faithful']
 PROMPT_A['lava'] = PROMPT_A['faithful']
 # the hero as image 2 (9.4's spike: the material followed it, the layout stayed image 1's)
 PROMPT_REF = (" Image 2 is only a reference for the material: draw the surfaces of image 1 as the same {noun}, "
               "with the same kind of detail, grain, wear and finish as image 2, but keep image 1's own layout, shapes and colors.")
 AS_DRAWN = ('liquid', 'lava')       # no light taken out (a liquid is warped, lava emits); colors put back as for all
+FINISH_TIERS = ('reimagine', 'layout')  # the tiers a family's finish reaches (9.5)
 FRONT = 0.5                         # how much of the frontal (cavity) shading stays
 # the color guard: how much of the original's broad colors comes back, and at what scale (a
 # fraction of the texture's short side): coarse where the shapes may move, fine where they stay
-COLOR_GUARD = {'reimagine': (0.8, 1 / 10), 'layout': (1.0, 1 / 24), 'faithful': (1.0, 1 / 24),
-               'glass': (1.0, 1 / 24), 'liquid': (1.0, 1 / 24), 'lava': (1.0, 1 / 24)}
+COLOR_GUARD = {'reimagine': (0.8, 1 / 10), 'layout': (1.0, 1 / 24), 'faithful': (1.0, 1 / 24), 'painting': (1.0, 1 / 24),
+               'glass': (1.0, 1 / 2), 'liquid': (1.0, 1 / 24), 'lava': (1.0, 1 / 24)}
+# glass: only the window's overall tint comes back, and not the original's broad lightness
+# (light_guard): Raven painted a scene behind the lead, and at a 24th the guards put it back
+# as grey bands across the new panes (9.5's review of rtex018)
+NO_LIGHT_GUARD = ('glass',)
 SPECIAL = range(240, 255)           # the palette's saturated row (the archer's green eyes are 243-246): kept as Raven drew it
 LIGHT_GUARD = 1 / 4                 # light_guard's scale: the original's broad lightness, coarser than the parts
 
@@ -148,15 +165,49 @@ def gen_size(pw, ph, mult=16, pixels=GEN_PIXELS):
 
 # -- the stages ----------------------------------------------------------------
 
-def blend_seams(big, m4, h4, w4):
+def join_texels(stem, orig, ramps, palette):
+    """A join's texels of a texture (groups.unify's joins; 9.5, M85): None where they go by equal
+    originals (`join=<stem>`), else the texels of its original in those ramps, closed and the
+    specks dropped (`join=<stem>@<ramp>,...`; groups.join_mask)."""
+    if not ramps:
+        return None
+    import labels
+    bad = [r for r in ramps if r not in labels.RAMP_NAMES]
+    if bad:
+        raise ValueError(f"{stem}: join=...@{','.join(ramps)}: {', '.join(bad)} not a ramp ({', '.join(labels.RAMP_NAMES)})")
+    rr = labels.texel_ramps(orig, palette)
+    return groups.join_mask(np.isin(rr, [labels.RAMP_NAMES.index(r) for r in ramps]))
+
+
+def plan_joins(plan, g, orig, palette):
+    """The joins of a set's members, as groups.unify and groups.sources take them."""
+    return {t: (j, join_texels(t, orig[t], r, palette)) for t in g if t in plan.join for j, r in [plan.join[t]]}
+
+
+def mirror_x(big, m4, w4):
+    """`mirror=x` (9.5): a symmetrical ornament drawn symmetrical (the model doesn't keep Raven's
+    symmetry: rtex258's capital 0.92 left against right, its six drawings 0.57-0.81). The model's
+    image at 4x: its left half, mirrored about the tile's middle, over its right half (the padding
+    is even on both sides but for pad's one extra column, which stays as drawn), before every
+    stage, so the maps follow."""
+    out = big.copy()
+    c = m4 + w4 // 2
+    n = min(c, big.shape[1] - c)
+    out[:, c:c + n] = big[:, c - n:c][:, ::-1]
+    return out
+
+
+def blend_seams(big, m4, h4, w4, x=True):
     """big: the model's image at 4x the padded size; m4 the padding at 4x, (h4, w4) the tile.
     The padding right of the tile is the model's drawing of what follows the right edge, the
     tile's left edge wrapped round: the tile's left band is faded from it into the tile's own
-    (and the top band from the bottom padding), so the right edge meets the left without a step."""
+    (and the top band from the bottom padding), so the right edge meets the left without a step.
+    x=False: only the top band (`tile=y`, a strip that doesn't repeat across)."""
     k = max(2, m4 // 2)
     e = big[m4:m4 + h4 + k, m4:m4 + w4 + k].astype(np.float64)     # the tile, a band of the padding right and below
     ax = (0.5 - 0.5 * np.cos(np.linspace(0, np.pi, k)))[None, :, None]     # 0 at the edge, 1 inside
-    e[:, :k] = e[:, w4:w4 + k] * (1 - ax) + e[:, :k] * ax                  # the band below too: the corners meet
+    if x:
+        e[:, :k] = e[:, w4:w4 + k] * (1 - ax) + e[:, :k] * ax              # the band below too: the corners meet
     ay = ax.transpose(1, 0, 2)
     e[:k] = e[h4:h4 + k] * (1 - ay) + e[:k] * ay
     return np.clip(np.round(e[:h4, :w4]), 0, 255).astype(np.uint8)
@@ -278,10 +329,14 @@ def keep_special(alb, orig, special, wrap=False):
 
 # -- the numbers ---------------------------------------------------------------
 
-def seam_score(rgb):
+def seam_score(rgb, axes='xy'):
     """The step across the wrap (last column to first, last row to first) against the mean
-    step between neighbours inside: about 1 when the texture tiles without a seam."""
+    step between neighbours inside: about 1 when the texture tiles without a seam. axes='y':
+    the rows' wrap only (`tile=y`)."""
     a = _lin(rgb) @ LUM
+    if axes == 'y':
+        inner = np.abs(np.diff(a, axis=0)).mean()
+        return float(np.abs(a[0, :] - a[-1, :]).mean() / inner) if inner > 0 else 0.0
     inner = (np.abs(np.diff(a, axis=1)).mean() + np.abs(np.diff(a, axis=0)).mean()) / 2
     edge = (np.abs(a[:, 0] - a[:, -1]).mean() + np.abs(a[0, :] - a[-1, :]).mean()) / 2
     return float(edge / inner) if inner > 0 else 0.0
@@ -307,11 +362,15 @@ def color_drift(orig, out):
     return float(np.sqrt(((a[:h, :w, 1:] - b[:h, :w, 1:]) ** 2).sum(axis=2)).mean())
 
 
-def layout_kept(orig, out):
+def layout_kept(orig, out, ratio=None):
     """The original's shapes in the result: the correlation of their luminance detail, the
-    result scaled down to the original's size."""
+    result scaled down to the original's size. ratio: per texel of the original its material's
+    albedo ratio (materials.ratio_map: metals 5 times brighter than the stone around them would
+    read as moved shapes)."""
     k = out.shape[0] // orig.shape[0]
     a = _lin(orig) @ LUM
+    if ratio is not None:
+        a = a * ratio[:a.shape[0], :a.shape[1]]
     b = _box(_lin(out) @ LUM, k)
     h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
     r = max(2, min(h, w) // 8)
@@ -329,8 +388,8 @@ def dark_fraction(rgb, q=0.2, mask=None):
 
 # -- the driver ----------------------------------------------------------------
 
-REDRAW_VERSION = '9.4.4'    # bump when a stage's output changes: a run then redoes what an older one made
-FINISH_VERSION = '9.4.3'    # bump when the last step's changes (unify): a run then rewrites textures only
+REDRAW_VERSION = '9.5.2'    # bump when a stage's output changes: a run then redoes what an older one made
+FINISH_VERSION = '9.5.4'    # bump when the last step's changes (unify): a run then rewrites textures only
 SPECIAL_MAX = 0.05          # a texture mostly in the special row (rtex465, the water) is redrawn, not kept
 MAPS = ('.png', '_n.png', '_orm.png')
 STALE = ('_n.png', '_orm.png', '_r.png', '_m.png', '_e.png', '.mat')    # what an earlier run or class may have left
@@ -371,23 +430,78 @@ class Redraw:
     texture of the export (groups.py), draws in that order into work\\, then writes textures\\."""
 
     def __init__(self, export_dir, out_dir, classes, comfy, entries, rows, census, leads, palette,
-                 seed=9100, front=FRONT, restart_every=80, log=print):
-        self.ex, self.out, self.classes, self.comfy = export_dir, out_dir, classes, comfy
+                 seed=9100, front=FRONT, restart_every=80, log=print, finishes=None):
+        self.ex, self.classes, self.comfy = export_dir, classes, comfy
         self.entries, self.palette, self.seed, self.front, self.log = entries, palette, seed, front, log
         self.restart_every, self.edits, self.started, self.maps = restart_every, 0, False, None
+        self.seeds = {}                 # stem -> seed, over the rows' (9.5's hero candidates)
+        self.census = census or {}
+        self.finishes = dict(finishes or {})    # family -> its finish (families.csv; 9.5)
         self.mtab = materials.table(classes)
         if not census:
             # the census orders a set (the most area first: its seed) and picks a copy's source
             log("redraw: no census.csv: sets and copies ordered by name, their seeds differ from a run with it")
         self.res, self.orig, self.plan = export_plan(export_dir, entries, rows, classes, census, leads)
+        self.entries = dict(entries)        # and the wholes' (groups.py), not the caller's
+        self.wholes = {}
+        for name, pieces in sorted(self.plan.pieces.items()):
+            self._add_whole(name, pieces, rows, classes)
+        self.open(out_dir)
+
+    def _add_whole(self, name, pieces, rows, classes):
+        """A picture its pieces' rows name (`whole=<name>@<y>,<x>`): their originals put together
+        (where they overlap, the piece further down, then right: M86; its row's `mirror=xy` adds
+        them mirrored to the right and below: M87), labeled by the row of its own name, drawn like
+        a texture (it has no file of its own)."""
+        at = [(s,) + tuple(self.plan.whole[s][1:]) for s in pieces]
+        img, cover = groups.compose(at, self.orig)
+        if (cover == 0).any():
+            raise ValueError(f"{name}: its pieces {', '.join(pieces)} leave a gap in it")
+        r = manifest.resolve(name, 'world', rows, classes)
+        if r.tier not in TIERS:
+            raise ValueError(f"{name}: the pieces' picture needs a labeled row of its own with a redrawn tier")
+        if r.params.get('mirror') == 'xy':
+            img = groups.mirror_xy(img)
+        H, W = img.shape[:2]
+        self.res[name], self.orig[name], self.wholes[name] = r, img, at
+        self.entries[name] = types.SimpleNamespace(stem=name, file=None, name=name, w=W, h=H, kind='world',
+                                                   alpha=self.entries[pieces[0]].alpha, used_in=[], paks=[])
+
+    def _gen_scale(self, stem):
+        """The model image's size against a texture's: a whole is drawn as finely as its largest
+        piece would be alone (the sundial at 2 MP; at 1 MP it came out softer), at most twice
+        (WHOLE_SCALE: at 4 MP the model drew tibet5's hexagonal slab a third larger than Raven's
+        in all six seeds, at 2 MP on its outline)."""
+        if stem not in self.wholes:
+            return 1.0
+        e = self.entries[stem]
+        return float(min(WHOLE_SCALE, e.w * e.h / max(self.entries[s].w * self.entries[s].h for s, _, _ in self.wholes[stem])))
+
+    def _part_of(self, stem):
+        """(the drawing it is cut from, y, x) for a crop or a whole's piece, else None."""
+        return self.plan.whole.get(stem) or self.plan.crop.get(stem)
+
+    def root_of(self, stem):
+        """The texture or whole a part's drawing comes from (the stem itself if it is no part)."""
+        part = self._part_of(stem)
+        return self.root_of(part[0]) if part else stem
+
+    def _a_file(self, stem):
+        """The model image a texture's drawing comes from (a part's: its source's)."""
+        return self._path('work', self.root_of(stem), '_A.png')
+
+    def open(self, out_dir):
+        """Draw into this pack from now on (its own work\\, textures\\ and state)."""
+        self.out = out_dir
+        self.memo = {}          # what draw() returned in this pack since: a whole and a crop's source drawn once
         self.state_path = os.path.join(out_dir, '.texpack', 'redraw.json')
-        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
-        self.state = {}
+        self.state = {}         # its folder made when there is something to save (a review of a mistyped --pack makes none)
         if os.path.exists(self.state_path):
             with open(self.state_path) as f:
                 self.state = json.load(f)
 
     def _save(self):
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
         tmp = self.state_path + '.tmp'      # written whole, then put in place: a stopped run leaves the last state
         with open(tmp, 'w') as f:
             json.dump(self.state, f, indent=1, sort_keys=True)
@@ -433,17 +547,42 @@ class Redraw:
         return m, ph, pw
 
     def _hero_tile(self, hero):
-        """The hero's drawing, its tile without the padding: the reference image."""
+        """The hero's drawing, its tile without the padding: the reference image (a part's: cut
+        from its source's)."""
+        part = self._part_of(hero)
+        if part:
+            src, y, x = part
+            t, es, e = self._hero_tile(src), self.entries[src], self.entries[hero]
+            ky, kx = t.shape[0] / es.h, t.shape[1] / es.w
+            return t[round(y * ky):round((y + e.h) * ky), round(x * kx):round((x + e.w) * kx)].copy()
         a = np.asarray(Image.open(self._path('work', hero, '_A.png')).convert('RGB'))
         e = self.entries[hero]
         m, ph, pw = self._geometry(hero)
         H, W = a.shape[:2]
         return a[round(m * H / ph):round((m + e.h) * H / ph), round(m * W / pw):round((m + e.w) * W / pw)].copy()
 
+    def description(self, stem):
+        """The prompt's description: the label's, and for a reimagine or layout member its
+        family's finish (9.5: the owner's pick of how worn the family is; faithful members keep
+        theirs, their content must not change)."""
+        res = self.res[stem]
+        desc = res.description or res.params['noun']
+        fin = self.finishes.get(res.family) if res.tier in FINISH_TIERS else None
+        return f"{desc.rstrip('. ')}; {fin}" if fin else desc
+
     def seed_of(self, stem):
-        """A set's seed: the first `seed=` override among its members (in the set's order), else
-        from its first member's name."""
+        """A set's seed: one given for a member (`seeds`: a hero candidate's), else the first
+        `seed=` override among its members (in the set's order), else from its first member's
+        name. A whole: one given for it or a piece, else its row's, else from its name."""
+        if stem in self.wholes:
+            for s in [stem] + [p for p, _, _ in self.wholes[stem]]:
+                if s in self.seeds:
+                    return self.seeds[s]
+            return int(self.res[stem].params['seed']) if 'seed' in self.res[stem].params else pipeline.seed_for(stem, self.seed)
         g = self.plan.group[stem]
+        for s in g:
+            if s in self.seeds:
+                return self.seeds[s]
         for s in g:
             if 'seed' in self.res[s].params:
                 return int(self.res[s].params['seed'])
@@ -454,28 +593,46 @@ class Redraw:
         two keys, the model image's (the source, the prompt, the seed, the size, the hero's
         drawing) and the stages' (the class's and the materials' values, the models, --front, this
         tool's version). reuse: the model's image from an earlier run (work\\<stem>_A.png, its
-        key and time kept), the stages after it redone."""
+        key and time kept), the stages after it redone. A crop or a whole's piece is cut from its
+        source's drawing (_cut); each is drawn once in a pack (memo: a whole for all its pieces)."""
+        if stem not in self.memo:
+            self.memo[stem] = self._cut(stem, force, reuse) if self._part_of(stem) else self._draw(stem, force, reuse)
+        return self.memo[stem]
+
+    def _draw(self, stem, force=False, reuse=False):
         e, res = self.entries[stem], self.res[stem]
         p, tier = res.params, res.tier
-        src = os.path.join(self.ex, e.file)
-        with open(src, 'rb') as f:
-            png = f.read()
-        rgb, alpha = pipeline.read_png(src)
+        if p.get('mirror') == 'xy' and stem not in self.wholes:
+            raise ValueError(f"{stem}: mirror=xy is a whole's (its pieces mirrored right and down): this row is no picture's")
+        if e.file is None:              # a whole: its pieces' originals put together
+            png = pipeline.png_bytes(self.orig[stem])
+            rgb = self.orig[stem][..., :3].copy()
+            alpha = self.orig[stem][..., 3].copy() if self.orig[stem].shape[-1] == 4 else None
+        else:
+            src = os.path.join(self.ex, e.file)
+            with open(src, 'rb') as f:
+                png = f.read()
+            rgb, alpha = pipeline.read_png(src)
         h, w = rgb.shape[:2]
-        wrap = True                     # world and liquid textures tile
+        # world and liquid textures tile; a picture that doesn't (`tile=0`: a quarter of a floor
+        # medallion) is padded mirrored, and its edges aren't blended into each other. A strip that
+        # repeats only top to bottom (`tile=y`, M89) is padded mirrored at its sides and only its
+        # top and bottom are blended; the later stages' small blurs still wrap
+        wrap = p.get('tile', 1) != 0
+        pad_wrap = 'y' if p.get('tile') == 'y' else wrap
         m, ph, pw = self._geometry(stem)
-        gw, gh = gen_size(pw, ph)
+        gw, gh = gen_size(pw, ph, pixels=GEN_PIXELS * self._gen_scale(stem))
         seed = self.seed_of(stem)
         hero = self.plan.hero.get(stem)
-        prompt = PROMPT_A[tier].format(desc=res.description or p['noun'], noun=p['noun'])
+        prompt = PROMPT_A[tier].format(desc=self.description(stem), noun=p['noun'])
         ref, ref_hash = None, None
         if hero:
             prompt += PROMPT_REF.format(noun=p['noun'])
-            with open(self._path('work', hero, '_A.png'), 'rb') as f:
-                ref_hash = hashlib.sha1(f.read()).hexdigest()
+            with open(self._a_file(hero), 'rb') as f:     # a part's: its source's, and which part
+                ref_hash = hashlib.sha1(f.read() + (hero.encode() if self._part_of(hero) else b'')).hexdigest()
         models = self.classes['models']
         a_key = _key(png, {'prompt': prompt, 'gen': [self.classes['redraw'][k] for k in ('generator', 'text_encoder', 'vae')] + [GEN],
-                           'seed': seed, 'size': [gw, gh], 'upscaler': models['upscaler'], 'wrap': wrap, 'ref': ref_hash})
+                           'seed': seed, 'size': [gw, gh], 'upscaler': models['upscaler'], 'wrap': pad_wrap, 'ref': ref_hash})
         idx, names, values = materials.texel_materials(rgb, alpha, self.palette, res.regions, p, self.mtab)
         # which texel is which material, not only the materials' names: moving gold from one ramp
         # to another must redo the stages (the code review's)
@@ -490,7 +647,7 @@ class Redraw:
         if not force and not reuse and have and old.get('a_key') == a_key and old.get('stage_key') == stage_key:
             return dict(old, skipped=True)
         bled = pipeline.bleed(rgb, alpha, m)        # what the model saw: no black under the holes
-        padded = pipeline.pad(bled, m, wrap, even=True)
+        padded = pipeline.pad(bled, m, pad_wrap, even=True)
         assert padded.shape[:2] == (ph, pw)
         apath = self._path('work', stem, '_A.png')
         if os.path.exists(apath) and (reuse or (old.get('a_key') == a_key and not force)):
@@ -506,11 +663,16 @@ class Redraw:
             seconds = round(ta, 1)
         big = np.asarray(Image.fromarray(a_img).resize((pw * 4, ph * 4), Image.LANCZOS))
         h4, w4, m4 = 4 * h, 4 * w, 4 * m
-        broad_drawn = broad_step(blend_seams(big, m4, h4, w4))
+        if p.get('mirror') == 'x':
+            big = mirror_x(big, m4, w4)
+        tile_of = ((lambda b: blend_seams(b, m4, h4, w4, x=pad_wrap is True)) if wrap
+                   else (lambda b: np.ascontiguousarray(b[m4:m4 + h4, m4:m4 + w4])))
+        broad_drawn = broad_step(tile_of(big))
         # the broad light out on the whole padded drawing, where the falloff is smooth and doesn't
         # wrap; the seams are blended after it (on the tile alone it doubled the seams, M68)
-        big = light_guard(padded, big)
-        lit = blend_seams(big, m4, h4, w4)
+        if tier not in NO_LIGHT_GUARD:
+            big = light_guard(padded, big)
+        lit = tile_of(big)
         a4 = pipeline.upscale_alpha(alpha, w4, h4, e.alpha) if alpha is not None else None
         mask = (a4 > 0) if a4 is not None else None
         W = materials.weights(idx, len(values), 4, wrap, guide=(lit.astype(np.float64) @ LUM) / 255.0)
@@ -521,8 +683,8 @@ class Redraw:
         if maps:
             if self.maps is None:
                 self.maps = pipeline.Maps(os.path.join(self.comfy.home, 'models', 'pbrify'), models)
-            normal = pipeline.finish_normal(self.maps.run('normal', lit, wrap), True)   # PBRify's are DirectX (M38)
-            rough_raw = self.maps.run('roughness', lit, wrap)
+            normal = pipeline.finish_normal(self.maps.run('normal', lit, pad_wrap), True)   # PBRify's are DirectX (M38)
+            rough_raw = self.maps.run('roughness', lit, pad_wrap)
             _, info['light_dir_before'], info['light_all_before'] = shading_fit(lit, normal, r, mask, wrap)
             alb, c = take_light_out(lit, normal, r, self.front, mask, wrap)
             cz = float(c[2])
@@ -530,7 +692,8 @@ class Redraw:
             _, info['light_dir_after'], info['light_all_after'] = shading_fit(alb, normal, r, mask, wrap)
         info['broad_drawn'] = broad_drawn
         target, whole = materials.targets(rgb, alpha, idx, values)
-        alb, gains = materials.match(alb, a4, W, values, target, whole, contrast=True)
+        floor, _ = materials.targets(rgb, alpha, idx, values, plain=True)     # a metal's no-clip cap stops here at the lowest
+        alb, gains = materials.match(alb, a4, W, values, target, whole, contrast=True, floor=floor)
         info['gains'] = [round(g, 3) for i, g in enumerate(gains) if W[i].any()]
         info['target'] = whole          # the albedo's mean linear luminance wanted (finish's _rebalance)
         # the colors after the brightness: darkening scales Oklab's a and b with the lightness, so a
@@ -539,8 +702,8 @@ class Redraw:
         # luminance a little (a and b at a fixed L): the materials' gains put it back on the targets.
         info['drift_before'] = color_drift(bled, alb)
         alb = color_guard(bled, alb, *COLOR_GUARD[tier], wrap, mask)
-        alb, _ = materials.match(alb, a4, W, values, target, whole, contrast=False)
-        special = special_mask(rgb, self.palette) if tier not in AS_DRAWN else None
+        alb, _ = materials.match(alb, a4, W, values, target, whole, contrast=False, floor=floor)
+        special =special_mask(rgb, self.palette) if tier not in AS_DRAWN else None
         if special is not None:
             if special.mean() <= SPECIAL_MAX:
                 alb = keep_special(alb, bled, special, wrap)
@@ -566,16 +729,51 @@ class Redraw:
         info['mat'] = mat.replace('(story 5.8)', f'(story 9.4, {tier})') if mat else None
         info.update({
             'lum_ratio': pipeline.mean_linear_luminance(alb, a4) / max(pipeline.mean_linear_luminance(rgb, alpha), 1e-9),
-            'seam_orig': seam_score(rgb),
-            'seam': seam_score(alb),
+            'seam_orig': seam_score(rgb, 'y' if pad_wrap == 'y' else 'xy'),
+            'seam': seam_score(alb, 'y' if pad_wrap == 'y' else 'xy'),
+            'repeats': bool(wrap) and stem not in self.wholes,     # verify's seam check (the heroes page's red)
             'broad_orig': broad_step(rgb),
             'broad': broad_step(alb),
             'drift': color_drift(bled, alb),
-            'layout': layout_kept(bled, alb),
+            'layout': layout_kept(bled, alb, materials.ratio_map(rgb, idx, values)),
             'dark20_ratio': dark_fraction(alb, mask=mask) / max(dark_fraction(np.asarray(Image.fromarray(rgb).resize((w4, h4), Image.NEAREST)), mask=mask), 1e-6),
             'files': want,
         })
         info = {k: (round(v, 4) if isinstance(v, float) and k != 'target' else v) for k, v in info.items()}
+        self.state[stem] = info
+        self._save()
+        return info
+
+    def _cut(self, stem, force=False, reuse=False):
+        """A crop's or a whole's piece's work\\ files: its region of its source's drawing (groups.py,
+        M81), its .mat the source's; skipped where the source's drawing and the place are as before."""
+        src, y, x = self._part_of(stem)
+        self.draw(src, force, reuse)
+        st, e, k = self.state[src], self.entries[stem], 4
+        a_key = _key(b'', {'part_of': src, 'at': [y, x], 'from': st['a_key']})
+        stage_key = _key(b'', {'part_of': src, 'at': [y, x], 'from': st['stage_key']})
+        old = self.state.get(stem, {})
+        if (not force and old.get('a_key') == a_key and old.get('stage_key') == stage_key
+                and all(os.path.exists(self._path('work', stem, f)) for f in st['files'])):
+            return dict(old, skipped=True)
+        cut = {}
+        for f in st['files']:
+            im = _rgba(self._path('work', src, f))
+            cut[f] = np.ascontiguousarray(im[k * y:k * (y + e.h), k * x:k * (x + e.w)])
+            self._write('work', stem, f, pipeline.png_bytes(cut[f]))
+        res = self.res[stem]
+        # measured against what it was drawn as: a whole's piece, its region of the picture (where
+        # it overlaps another piece the other's, M86)
+        o = self.orig[src][y:y + e.h, x:x + e.w] if src in self.wholes else self.orig[stem]
+        rgb, alpha = (o[..., :3], o[..., 3]) if o.shape[-1] == 4 else (o, None)
+        idx, _, values = materials.texel_materials(rgb, alpha, self.palette, res.regions, res.params, self.mtab)
+        alb = cut['.png'][..., :3]
+        bled = pipeline.bleed(rgb, alpha, pipeline.margin_for(e.w, e.h))
+        info = {'a_key': a_key, 'stage_key': stage_key, 'part_of': src, 'at': [y, x], 'tier': res.tier, 'class': res.cls,
+                'hero': None, 'seed': st.get('seed'), 'seconds': None, 'materials': st.get('materials', []), 'gains': st.get('gains', []),
+                'mat': st.get('mat'), 'files': st['files'], 'size': [k * e.w, k * e.h], 'target': st.get('target'),
+                'seam_orig': round(seam_score(rgb), 4), 'seam': round(seam_score(alb), 4), 'repeats': False,
+                'layout': round(layout_kept(bled, alb, materials.ratio_map(rgb, idx, values)), 4)}
         self.state[stem] = info
         self._save()
         return info
@@ -590,6 +788,14 @@ class Redraw:
             g = self.plan.group[s]
             j = g.index(s)
             out_key[s] = _key(b'', {'v': FINISH_VERSION, 'from': [[self.state[t]['a_key'], self.state[t]['stage_key']] for t in g[:j + 1]]})
+        # a set with a join (9.5): every member's files follow the joined texture's finished ones
+        # (the joining member's rebalance reaches the members that take its texels)
+        joined = lambda g: [(t, self.plan.join[t]) for t in g if t in self.plan.join]
+        for s in draw:
+            js = joined(self.plan.group[s])
+            if js:
+                out_key[s] = _key(b'', {'v': FINISH_VERSION, 'own': out_key[s], 'join': [
+                    [t, j, list(r), out_key.get(j) or self.state.get(j, {}).get('out_key')] for t, (j, r) in js]})
         for s in write:
             r = self.plan.rep[s]
             out_key.setdefault(s, _key(b'', {'v': FINISH_VERSION, 'copy': out_key[r]}))
@@ -600,24 +806,30 @@ class Redraw:
             return (st.get('out_key') == out_key[s] and all(os.path.exists(self._path('textures', s, f)) for f in want)
                     and not any(os.path.exists(self._path('textures', s, f)) for f in STALE if f not in want))
         done = set()
-        for s in draw:
+        # sets with a join last: the joined textures' files first (9.5)
+        for s in sorted(draw, key=lambda s: bool(joined(self.plan.group[s]))):
             g = self.plan.group[s]
             if g[0] in done:
                 continue
             done.add(g[0])
             if all(current(t) for t in g):
                 continue
-            files = [f for f in MAPS if all(f in self.state[t]['files'] for t in g)]
-            if len(g) == 1:
+            js = dict(joined(g))
+            targets = sorted({j for j, _ in js.values()})
+            files = [f for f in MAPS if all(f in self.state[t]['files'] for t in g + targets)]
+            if len(g) == 1 and not js:
                 for f in files:
                     self._copy(self._path('work', s, f), self._path('textures', s, f))
             else:
                 # the albedo first in each list: unify's scale() rebalances it
                 files = ['.png'] + [f for f in files if f != '.png'] if '.png' in files else files
                 ims = {t: [_rgba(self._path('work', t, f)) for f in files] for t in g}
-                uni, factors = groups.unify(g, {t: self.orig[t] for t in g}, ims, 4, True,
+                ims.update({t: [_rgba(self._path('textures', t, f)) for f in files] for t in targets})
+                origs = {t: self.orig[t] for t in g + targets}
+                uni, factors = groups.unify(g, origs, ims, 4, groups.tiles(self.res, g),
                                             files.index('_n.png') if '_n.png' in files else None,
-                                            (lambda j, own, comp: self._rebalance(g[j], own, comp)) if '.png' in files else None)
+                                            (lambda j, own, comp: self._rebalance(g[j], own, comp)) if '.png' in files else None,
+                                            plan_joins(self.plan, g, self.orig, self.palette))
                 for t in g:
                     self.state[t]['rebalance'] = round(factors.get(t, 1.0), 3)
                 for t in g:
@@ -668,7 +880,17 @@ class Redraw:
             self.state[s] = {'copy_of': r, 'files': st['files'], 'mat': st.get('mat')}
         self.state[s]['out_key'] = key
 
+    def write_alone(self, stem):
+        """textures\\ from work\\ for one texture as it drew itself, without its set (a hero
+        candidate: unify would need every member's drawing)."""
+        st = self.state[stem]
+        for f in st['files']:
+            self._copy(self._path('work', stem, f), self._path('textures', stem, f))
+        self._finish_one(stem, stem, 'alone')
+        self._save()
+
     def run(self, stems, force=False, reuse=False):
+        self.memo = {}
         draw, write = self.plan.closure(stems)
         extra = len(set(write) - set(stems))
         self.log(f"redraw: {len(stems)} selected" + (f", {extra} more for their sets, copies and heroes" if extra else '')
@@ -682,6 +904,11 @@ class Redraw:
                 continue
             made += 1
             g = self.plan.group[s]
+            if info.get('part_of'):
+                src = info['part_of']
+                self.log(f"[{i}/{len(draw)}] {s}: cut from {src} at {info['at'][0]},{info['at'][1]} (seed {info['seed']}"
+                         + (', drawn now' if not self.memo.get(src, {}).get('skipped') else '') + f"), layout {info['layout']}, seam {info['seam']}")
+                continue
             self.log(f"[{i}/{len(draw)}] {s}: {info['tier']}, {info['class']}"
                      + (f", set of {len(g)} ({g[0]}'s seed)" if len(g) > 1 else '') + (f", hero {info['hero']}" if info['hero'] else '')
                      + f", {'+'.join(info['materials'])}, gains {info['gains']}, layout {info['layout']}, seam {info['seam']}"
