@@ -289,13 +289,21 @@ under 5.1's names. What it does, in the order of this guide:
   a door's iron straps are metallic and its oak isn't, each with its own roughness range
   and brightness (`classes.toml`'s `[materials]`). A ramp Raven used for two materials
   (dark wood painted in the grey of the iron) gets one: correct the regions where it
-  shows. **Black joints and gaps** get roughness 1 and an occlusion in `_orm`'s red
+  shows (`black=wood` for black gaps between planks beside grey iron). **Black joints and gaps** get roughness 1 and an occlusion in `_orm`'s red
   (used from story 9.7), so a gap between planks doesn't shine. **Textures that belong
   together are drawn alike:** a copy once, the variants of one texture (a wall with and
   without its chains, the Four Horsemen's frame) with one seed and their shared texels
   made identical, a family's trims, panels and other layout members with its hero's
   drawing as a reference for the material (fills keep their own arrangement: the hero's
   leaked into them). Change a hero and its layout members are redrawn.
+- **A family's look is its finish (E9, since story 9.5).** Another seed only moves a
+  drawing's detail (cracks, specks, rust spots); words about the condition in the
+  description change its character ("heavily corroded iron, flaking rust" against "dark
+  oiled iron with an even patina"). A family's `finish` in `families.csv` is added to every
+  reimagine and layout member's description, so the family is drawn alike; `texpack.py
+  heroes` draws its hero with the label's, a rougher and a finer finish for the owner to pick
+  from (the README's "The world pack"). Faithful textures keep their descriptions: a picture's
+  content must not change.
 - **Not in the repository.** The pack is derived from Raven's textures
   (PLAN §4): the repository has the pipeline and the manifest, a pack is
   shared (if at all) on its own.

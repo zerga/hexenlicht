@@ -8,6 +8,7 @@ checkviews (story 9.2: census.py); cards, families, labels (story 9.3: labels.py
 """
 import argparse
 import collections
+import json
 import os
 import sys
 import time
@@ -133,9 +134,11 @@ def cmd_run(a):
             palette = redraw.load_palette(data)
             if palette is None:
                 raise SystemExit(f"no data1\\pak0.pak in {data} (--data): the redraw's materials and special colors need the palette")
-            leads = {f: r['lead'] for f, r in labels.load_families(a.families).items() if r.get('lead')}
+            fams = labels.load_families(a.families)
+            leads = {f: r['lead'] for f, r in fams.items() if r.get('lead')}
             rd = redraw.Redraw(ex, out, classes, c, entries, rows, census.load(census.default_census()), leads, palette,
-                               seed=9100 if a.seed is None else a.seed, front=a.front, restart_every=a.restart_every)
+                               seed=9100 if a.seed is None else a.seed, front=a.front, restart_every=a.restart_every,
+                               finishes=labels.finishes(fams))
             made, unchanged, written = rd.run([e.stem for e in v2], force=a.force, reuse=a.reuse)
             done, skipped = done + made, skipped + unchanged
             print(f"redraw: {made} drawn, {unchanged} unchanged, {written} written to textures\\")
@@ -166,6 +169,145 @@ def cmd_run(a):
 
 # PBRify's NormalV3 against its Height model: `calibrate` measures the sign.
 FLIP_Y = True
+
+
+def redraw_setup(a, entries, ex, comfy=None, out=None):
+    """A redraw.Redraw over the export (its plan of copies, sets and heroes), and the manifest's rows."""
+    import census
+    import labels
+    import redraw
+    classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+    rows = manifest.load_manifest(a.manifest)
+    data = a.data or default_data()
+    palette = redraw.load_palette(data)
+    if palette is None:
+        raise SystemExit(f"no data1\\pak0.pak in {data} (--data): the redraw's materials and special colors need the palette")
+    fams = labels.load_families(a.families)
+    leads = {f: r['lead'] for f, r in fams.items() if r.get('lead')}
+    cen = census.load(census.default_census())
+    rd = redraw.Redraw(ex, out or os.path.abspath(a.out), classes, comfy, entries, rows, cen, leads, palette,
+                       seed=9100 if getattr(a, 'seed', None) is None else a.seed, front=getattr(a, 'front', redraw.FRONT),
+                       finishes=labels.finishes(fams))
+    return rd, cen, rows
+
+
+def cmd_heroes(a):
+    """9.5's hero candidates (heroes.py): each family's lead with the label's and --finishes'
+    finishes, two seeds each, and its largest layout member with each; --page: the owner's page
+    from them; --apply: its picks into families.csv and the manifest."""
+    import heroes
+    import labels
+    ex = a.export or default_export()
+    entries = pipeline.load_export(ex)
+    if a.apply:
+        # the plan: the lead's set, whose other members' seeds would hide the pick
+        import census
+        import redraw
+        rows = manifest.load_manifest(a.manifest)
+        leads = {f: r['lead'] for f, r in labels.load_families(a.families).items() if r.get('lead')}
+        cen = census.load(census.default_census())
+        _, _, plan = redraw.export_plan(ex, entries, rows, manifest.load_classes(os.path.join(HERE, 'classes.toml')), cen, leads)
+        if heroes.apply(a.apply, a.families, rows, plan, census=cen):
+            manifest.write_manifest(a.manifest, rows)
+        return 0
+    if not a.out:
+        raise SystemExit('heroes: --out (or --apply)')
+    out = os.path.abspath(a.out)
+    if a.page:
+        with open(os.path.join(out, 'heroes.json')) as f:
+            info = json.load(f)
+        classes = manifest.load_classes(os.path.join(HERE, 'classes.toml'))
+        rows = manifest.load_manifest(a.manifest)
+        res = {d['lead']: manifest.resolve(d['lead'], entries[d['lead']].kind, rows, classes) for d in info.values()}
+        return heroes.page(ex, entries, res, info, out, a.page, a.views or os.path.join(texpack_home(), 'views'), a.shots)
+    from comfy import Comfy
+    with Comfy(texpack_home(), attach=a.attach) as c:
+        rd, cen, _ = redraw_setup(a, entries, ex, c, os.path.join(out, 'c1'))
+        if a.stems:
+            stems = a.stems.split(',') if not a.stems.startswith('@') else [
+                ln.split('#')[0].strip() for ln in open(a.stems[1:], encoding='utf-8') if ln.split('#')[0].strip()]
+            items = heroes.textures(rd.plan, rd.res, cen, stems)
+        else:
+            fams = labels.load_families(a.families)
+            items = heroes.families(rd.plan, rd.res, fams, cen, set(a.family.split(',')) if a.family else None,
+                                    set(a.hub.split(',')) if a.hub else None)
+        fins = heroes.load_finishes(a.finishes)
+        print(f"texpack heroes: {len(items)} families ({sum(1 for i in items if i[0] in fins)} with finishes), "
+              f"{sum(1 for i in items if i[3])} with a layout member, into {out}")
+        t0 = time.time()
+        heroes.draw(rd, out, items, fins, force=a.force, pack=os.path.abspath(a.pack) if a.pack else None)
+    print(f"{time.time() - t0:.0f} s")
+    return 0
+
+
+def cmd_reseed(a):
+    """9.5: the next seeds for what `verify` failed on a seam or moved shapes (reseed.py)."""
+    import reseed
+    from comfy import Comfy
+    ex = a.export or default_export()
+    entries = pipeline.load_export(ex)
+    pack = os.path.abspath(a.pack)
+    with Comfy(texpack_home(), attach=a.attach) as c:
+        rd, _, rows = redraw_setup(a, entries, ex, c, pack)
+        reseed.run(rd, ex, pack, rows, a.manifest, set(a.stems.split(',')) if a.stems else None, a.tries)
+    return 0
+
+
+def cmd_review(a):
+    """The owner's page of a hub (review.py), or --apply the verdicts it downloaded."""
+    import labels
+    import review
+    import redraw
+    import verify
+    ex = a.export or default_export()
+    entries = pipeline.load_export(ex)
+    pack = os.path.abspath(a.pack)
+    rd, cen, rows = redraw_setup(a, entries, ex, None, pack)
+    if a.apply:
+        lab, changed = review.apply(rd, rows, a.apply, pack)
+        if changed:
+            manifest.write_manifest(a.manifest, rows)
+        if lab:
+            path = os.path.join(pack, '.texpack', 'review_labels.csv')
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                import csv
+                w = csv.DictWriter(f, ['pattern', 'tier', 'regions', 'description', 'source'], lineterminator='\n')
+                w.writeheader()
+                for r in lab:
+                    w.writerow(dict(r, source='human'))
+            cmd_merge(argparse.Namespace(edits=path, manifest=a.manifest))
+        return 0
+    if not a.hub or not a.out:
+        raise SystemExit('review: --hub and --out (or --apply)')
+    # the export's textures: a whole (M81) has a row but no file, and its pieces are on the page
+    stems = [s for s in rd.res if s in entries and review.page_hub(cen, s) == a.hub]
+    fams = labels.load_families(a.families)
+    part, parts = (int(x) for x in a.part.split('/')) if a.part else (1, 1)
+    cards = review.split(review.cards(stems, rd.res, cen, fams, a.hub), part, parts)
+    flags = {}
+    if a.flags:
+        import csv
+        with open(a.flags, newline='', encoding='utf-8') as f:
+            flags = {r['stem']: r['flag'] for r in csv.DictReader(f) if r.get('flag')}
+    views = a.views or os.path.join(texpack_home(), 'views')
+    if a.png:
+        pages = review.png_pages(ex, entries, rd.res, cen, fams, cards, pack, a.shots, views, a.out,
+                                 verify.load_report(pack))
+        print(f"texpack review: {len(cards)} textures on {len(pages)} pages, {a.out}_01.png ...")
+        return 0
+    title = a.hub + (f' {part}/{parts}' if parts > 1 else '')
+    review.page(ex, entries, rd.res, cen, fams, cards, pack, a.shots, views, a.out, title,
+                verify.load_report(pack), flags)
+    return 0
+
+
+def cmd_packviews(a):
+    import census
+    import review
+    review.read_runs(a.runs, a.shots, census.load(census.default_census()),
+                     a.views or os.path.join(texpack_home(), 'views'))
+    return 0
 
 
 def cmd_calibrate(a):
@@ -436,6 +578,56 @@ def main():
     p.add_argument('--attach', action='store_true', help='use a ComfyUI already running on port 8199')
     p.add_argument('--nondeterministic', action='store_true', help='without ComfyUI\'s --deterministic')
     p.set_defaults(f=cmd_run)
+    p = sub.add_parser('heroes', help='candidates for each family\'s hero (9.5), or the owner\'s page of them')
+    p.add_argument('--export')
+    p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--families', default=os.path.join(HERE, 'families.csv'))
+    p.add_argument('--data', help='the game data folder (the palette from data1\\pak0.pak)')
+    p.add_argument('--out', help='the candidates\' folder: c1 .. c<n>, each a pack, and heroes.json')
+    p.add_argument('--family', help='only these families (comma-separated)')
+    p.add_argument('--hub', help='only families of these hubs (families.csv\'s)')
+    p.add_argument('--stems', help='candidates for these textures instead, seeds only (comma-separated, or @file: the review\'s `candidates`)')
+    p.add_argument('--finishes', help='the candidates\' finishes: a CSV of family, rougher, finer (without: seeds only)')
+    p.add_argument('--pack', help='--stems: the pack whose heroes\' drawings are the layout members\' references')
+    p.add_argument('--apply', help='the picks the page downloaded (texpack_heroes.csv): finishes and the leads\' seeds')
+    p.add_argument('--force', action='store_true')
+    p.add_argument('--attach', action='store_true', help='use a ComfyUI already running on port 8199')
+    p.add_argument('--page', help='write the owner\'s page (HTML) from the candidates drawn')
+    p.add_argument('--views', help='--page: 9.2\'s shots of the originals (default: $TEXPACK_HOME\\views)')
+    p.add_argument('--shots', help='--page: the candidates in the game (`packviews` of views_run.ps1 -Pack runs: <shots>\\c<k>)')
+    p.set_defaults(f=cmd_heroes)
+    p = sub.add_parser('reseed', help='the next seeds for what verify failed on a seam or moved shapes (9.5), into the manifest')
+    p.add_argument('--export')
+    p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--families', default=os.path.join(HERE, 'families.csv'))
+    p.add_argument('--data', help='the game data folder (the palette from data1\\pak0.pak)')
+    p.add_argument('--pack', required=True, help='the pack whose .texpack\\verify.csv names the failures (verify writes it)')
+    p.add_argument('--stems', help='only these failures (comma-separated)')
+    p.add_argument('--tries', type=int, default=4)
+    p.add_argument('--seed', type=int, help='the seeds\' base, as the run\'s (default 9100)')
+    p.add_argument('--front', type=float, default=0.5, help='as the run\'s')
+    p.add_argument('--attach', action='store_true', help='use a ComfyUI already running on port 8199')
+    p.set_defaults(f=cmd_reseed)
+    p = sub.add_parser('review', help='the owner\'s page of a hub with the pack at 9.2\'s views (9.5), or --apply its verdicts')
+    p.add_argument('--export')
+    p.add_argument('--manifest', default=os.path.join(HERE, 'materials.csv'))
+    p.add_argument('--families', default=os.path.join(HERE, 'families.csv'))
+    p.add_argument('--data', help='the game data folder (the palette from data1\\pak0.pak)')
+    p.add_argument('--pack', required=True)
+    p.add_argument('--hub', help='blackmarsh, mazaera, thysis, septimus, cathedral, keep, tulku or other (the deathmatch maps, the test map, the unseen)')
+    p.add_argument('--part', help='i/n: a part of the hub\'s page (families kept whole)')
+    p.add_argument('--shots', help='packviews\' folder (the pack in the game)')
+    p.add_argument('--views', help='9.2\'s shots of the originals (default: $TEXPACK_HOME\\views)')
+    p.add_argument('--flags', help='Claude\'s flags: a CSV of stem, flag')
+    p.add_argument('--out', help='the page (HTML), or with --png a path prefix')
+    p.add_argument('--png', action='store_true', help='PNG pages and their .txt for Claude\'s pre-review instead (5 textures a page)')
+    p.add_argument('--apply', help='the verdicts the page downloaded (texpack_review.csv)')
+    p.set_defaults(f=cmd_review)
+    p = sub.add_parser('packviews', help='read views_run.ps1 -Pack runs: the shots as PNGs, the hits, the brightness against the originals')
+    p.add_argument('runs', nargs='+', help='views_run.ps1\'s output folders (-Out\\<Tag>)')
+    p.add_argument('--shots', required=True, help='where the PNGs and packviews.csv go')
+    p.add_argument('--views', help='9.2\'s shots of the originals, for runs without -Before (default: $TEXPACK_HOME\\views)')
+    p.set_defaults(f=cmd_packviews)
     p = sub.add_parser('verify', help='check a pack against the spec and the originals')
     add_select(p)
     add_label_filters(p)

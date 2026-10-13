@@ -71,7 +71,16 @@ r2 = M.resolve('+0swit0', 'world', rows2, classes)
 check('a human glob beats a draft row of the exact name', r2.cls == 'rune' and r2.description == 'symbol panel', f'{r2.cls} {r2.description}')
 check('the prompt takes the description', 'imp, main skin' in r.prompt())
 check('no row: the export kind decides', M.resolve('mtex1', 'world', [], classes).cls == 'world' and M.resolve('s', 'sky', [], classes).params['mode'] == 'skip')
-for what, rr in (('an unknown class', row('x', 'nope')), ('an unknown override key', row('x', 'stone', '', 'denoize=1'))):
+check('hero=none (9.5): an override of its own', M.resolve('x', 'world', [row('x', 'stone', '', 'hero=none')], classes).params.get('hero') == 'none')
+check('mirror=x and mirror=xy (9.5): overrides of their own', M.resolve('x', 'world', [row('x', 'stone', '', 'mirror=x')], classes).params.get('mirror') == 'x'
+      and M.resolve('x', 'world', [row('x', 'stone', '', 'mirror=xy')], classes).params.get('mirror') == 'xy')
+check('join (9.5): a stem, or a stem and its ramps',
+      M.resolve('x', 'world', [row('x', 'stone', '', 'join=rtex388~6280')], classes).params['join'] == ('rtex388~6280', ())
+      and M.resolve('x', 'world', [row('x', 'stone', '', 'join=y@green,olive;tile=0')], classes).params['join'] == ('y', ('green', 'olive')))
+for what, rr in (('an unknown class', row('x', 'nope')), ('an unknown override key', row('x', 'stone', '', 'denoize=1')),
+                 ('a hero other than none', row('x', 'stone', '', 'hero=rtex251')), ('tile other than 0 or 1', row('x', 'stone', '', 'tile=2')),
+                 ('a mirror other than x or xy', row('x', 'stone', '', 'mirror=y')), ('a join without its stem', row('x', 'stone', '', 'join=@green')),
+                 ('a join with an empty ramp', row('x', 'stone', '', 'join=y@green,'))):
     try:
         M.resolve('x', 'world', [rr], classes)
         check(what + ' is refused', False)
@@ -210,6 +219,12 @@ plain = big[m4:m4 + h4, m4:m4 + w4]
 blended = R.blend_seams(big, m4, h4, w4)
 check('blend_seams: a crop of a random field has a seam, the blend none',
       R.seam_score(plain) > 2 and R.seam_score(blended) < 1.5, f'{R.seam_score(plain):.2f} -> {R.seam_score(blended):.2f}')
+bigx = np.concatenate([big, big[:, -4:]], 1)     # pad's one extra column at the right
+mx = R.mirror_x(bigx, m4, w4)
+tx = mx[m4:m4 + h4, m4:m4 + w4]
+check('mirror_x (9.5): the tile left-right symmetric, its left half and the padding beside it as drawn, the extra column too',
+      np.array_equal(tx, tx[:, ::-1]) and np.array_equal(mx[:, :m4 + w4 // 2], bigx[:, :m4 + w4 // 2])
+      and np.array_equal(mx[:, m4 + w4 // 2:2 * m4 + w4], bigx[:, :m4 + w4 // 2][:, ::-1]) and np.array_equal(mx[:, -4:], bigx[:, -4:]))
 
 # shading: an albedo times the light of a height field's normals from the top left; taking the
 # directional part out leaves (almost) no correlation with the normals' x and y
@@ -431,6 +446,9 @@ PREFIX = {'blackmarsh': 'bm', 'mazaera': 'mz', 'thysis': 'th', 'septimus': 'sp',
 check('families.csv: hubs are census hubs (or other, or models for the skins), names carry their hub\'s prefix',
       fam_file and all(PREFIX.get(f['hub']) == f['family'].split('-')[0] for f in fam_file.values()),
       str([f['family'] for f in fam_file.values() if PREFIX.get(f['hub']) != f['family'].split('-')[0]]))
+check('families.csv: no row has more cells than the header (a `what` with commas is quoted); finishes only for world families (9.5)',
+      all(None not in f for f in fam_file.values()) and not any(f['hub'] == 'models' and (f.get('finish') or '').strip() for f in fam_file.values()),
+      str([f['family'] for f in fam_file.values() if None in f or (f['hub'] == 'models' and f.get('finish'))]))
 
 
 class _F(_E):
@@ -614,6 +632,14 @@ hole9 = np.full((16, 16), 255, np.uint8)
 hole9[0] = 0
 idxh, _, _ = MT.texel_materials(tex9, hole9, pal9, sg.regions, sg.params, mtab)
 check('texel_materials: ramps no region names take the class\'s values, holes none', idx0[0, 0] == 0 and idx0[5, 5] == 1 and idxh[0, 3] == -1)
+texb = tex9.copy()
+texb[0, :4] = pal9[[0, 1, 2, 3]]            # the grey ramp's darkest: three near-black, one grey
+idxb, namesb, _ = MT.texel_materials(texb, None, pal9, 'grey=iron;black=wood;*=stone', sg.params, mtab)
+idxg, _, _ = MT.texel_materials(texb, None, pal9, 'grey=iron;*=stone', sg.params, mtab)
+check('texel_materials: `black` takes the near-black (indices 0-2) from grey; without it they stay grey\'s',
+      [namesb[i] for i in idxb[0, :4]] == ['wood', 'wood', 'wood', 'iron'] and namesb[idxb[5, 5]] == 'stone'
+      and len(set(idxg[0, :4].tolist())) == 1, f'{namesb} {idxb[0, :4]} {idxg[0, :4]}')
+check('check_row: `black` names no ramp but passes', not [p for p in L.check_row('x', 'world', dict(good, regions='grey=iron;black,amber,slate=wood'), sh, classes, fams) if 'black' in p])
 W9 = MT.weights(idx9, 3, 4, True)
 check('weights sum to 1 and follow the materials', float(np.abs(W9.sum(0) - 1).max()) < 1e-9 and W9[2][32, 32] > 0.99 and W9[1][2, 2] > 0.99)
 guide9 = np.zeros((64, 64))
@@ -634,8 +660,20 @@ t2, whole2 = MT.targets(tex9, None, idx9, vals9)
 a3, _ = MT.match(rng9.integers(20, 220, (64, 64, 3), dtype=np.uint8), None, W9, vals9, t2, whole2)
 y3 = IM._luma(a3)
 cg, cs = W9[2] >= 0.99, W9[1] >= 0.99
-check('match: each material\'s mean reaches its own target', abs(y3[cg].mean() / t2[2] - 1) < 0.1 and abs(y3[cs].mean() / t2[1] - 1) < 0.1,
-      f'gold x{y3[cg].mean() / t2[2]:.3f}, stone x{y3[cs].mean() / t2[1]:.3f}')
+p99g = float(np.percentile(IM._lin(a3)[cg].max(axis=-1), 99))
+check('match: each material\'s mean reaches its own target (a metal, or stops before a channel clips)',
+      (abs(y3[cg].mean() / t2[2] - 1) < 0.1 or abs(p99g - MT.NO_CLIP) < 0.03) and abs(y3[cs].mean() / t2[1] - 1) < 0.1,
+      f'gold x{y3[cg].mean() / t2[2]:.3f} (p99 channel {p99g:.3f}), stone x{y3[cs].mean() / t2[1]:.3f}')
+# 9.5 (M75): a metal's ratio 5, at most a real metal's reflectance; a dark gold region reaches its target
+check('metals (9.5): Raven\'s dark iron 5 times as bright, a bright gilding at most real gold\'s reflectance, a dielectric as it was',
+      MT.effective_ratio(0.011, mtab['iron']) == 5.0 and abs(MT.effective_ratio(0.5, mtab['gold']) - 0.74 / 0.5) < 1e-9
+      and MT.effective_ratio(0.05, mtab['stone']) == 1.2 and 'reflectance' not in mtab['stone'])
+dark_gold = np.full((64, 64, 3), 12, np.uint8)
+dark_gold[..., 2] = 4                       # a dark yellow
+a4g, _ = MT.match(dark_gold, None, W9, vals9, t2, whole2, contrast=False)
+wg = (W9[2] * IM._luma(a4g)).sum() / W9[2].sum()
+check('metals (9.5): a dark gilding reaches its target (capped at real gold\'s reflectance), no channel clipped',
+      abs(wg / t2[2] - 1) < 0.1 and t2[2] == 0.74 and IM._lin(a4g)[cg].max() < 0.96, f'gold x{wg / t2[2]:.3f}, max {IM._lin(a4g)[cg].max():.3f}')
 r9 = MT.roughness(rng9.random((64, 64, 3)), W9, vals9)
 check('roughness: each material inside its range', vals9[2]['rough_min'] - 1e-9 <= r9[cg].min() and r9[cg].max() <= vals9[2]['rough_max'] + 1e-9
       and vals9[1]['rough_min'] - 1e-9 <= r9[cs].min() and r9[cs].max() <= vals9[1]['rough_max'] + 1e-9)
@@ -656,6 +694,18 @@ lg9 = R.light_guard(flat9[1::4, 1::4], lit9)
 check('light_guard takes a light across the whole drawing out, the detail stays',
       R.broad_step(lit9) > 0.6 and R.broad_step(lg9) < 0.25 and R._corr(R._highpass(ly(lit9), 4), R._highpass(ly(lg9), 4)) > 0.9,
       f'broad step {R.broad_step(flat9):.2f} -> lit {R.broad_step(lit9):.2f} -> {R.broad_step(lg9):.2f}')
+# tile=y (M89): a strip that repeats only top to bottom
+ty9 = np.arange(4 * 6 * 3, dtype=np.uint8).reshape(4, 6, 3)
+py9 = P.pad(ty9, 2, 'y')
+big_y9 = np.random.default_rng(24).integers(0, 255, (48, 56, 3)).astype(np.uint8)
+by9, bx9 = R.blend_seams(big_y9, 8, 32, 40, x=False), R.blend_seams(big_y9, 8, 32, 40)
+step9 = np.zeros((16, 16, 3), np.uint8)
+step9[:, 8:] = 200
+check('tile=y (9.5): padded wrapped top to bottom, mirrored at the sides; only the top band blended; its seam score the rows\'',
+      M.resolve('x', 'world', [row('x', 'stone', '', 'tile=y')], classes).params['tile'] == 'y'
+      and (py9[:2, 2:8] == ty9[-2:]).all() and (py9[2:6, :2] == ty9[:, 1::-1]).all() and (py9[2:6, -2:] == ty9[:, :-3:-1]).all()
+      and (by9[8:, :4] == big_y9[16:40, 8:12]).all() and not (bx9[8:, :4] == big_y9[16:40, 8:12]).all()
+      and R.seam_score(step9, 'y') == 0.0 and R.seam_score(step9) > 1.0)
 o9 = P.make_orm(np.full((4, 4), 0.5), np.array([[0, 1, 0.5, 0]] * 4, float), np.full((4, 4), 0.25))
 check('make_orm: the occlusion in R, a metallic map in B; without them 5.8\'s', o9[0, 0, 0] == 64 and o9[0, 1, 2] == 255 and o9[0, 2, 2] == 128
       and (P.make_orm(np.zeros((2, 2)), 1)[..., 0] == 255).all() and (P.make_orm(np.zeros((2, 2)), 1)[..., 2] == 255).all())
@@ -705,6 +755,9 @@ check('groups: a set by shared texels (a fifth or more), the most area first; an
 check('groups: the hero for layout members, not reimagine nor faithful ones nor its own set',
       plan9.hero.get('m1') == 'h' and plan9.hero.get('w1') == 'h' and 'w2' not in plan9.hero and 'm2' not in plan9.hero
       and 'm3' not in plan9.hero and 'h' not in plan9.hero)
+res9n = dict(res9, m1=types.SimpleNamespace(**dict(vars(res9['m1']), params={'maps': True, 'hero': 'none'})))
+check('groups (9.5): a row with hero=none gets no hero', 'm1' not in G.Plan(sorted(pix9), res9n, pix9, cen9, {'f': 'h', 'g': 'h2'}).hero
+      and plan9.hero.get('m1') == 'h')
 holes9 = {}
 for i, s in enumerate(('g1', 'g2')):        # three quarters holes, black under them in both
     a = np.zeros((16, 16), np.uint8)
@@ -719,6 +772,12 @@ d9, w9 = plan9.closure(['w2', 'a1'])
 check('closure: every hero first (its set holds another family\'s member, whose hero comes too), sets whole, copies written',
       d9[:2] == ['h', 'h2'] and set(d9) == {'h', 'h2', 'm3', 'm4', 'w1', 'w2', 'a2'} and plan9.hero.get('m4') == 'h2'
       and set(w9) == {'h', 'h2', 'm3', 'm4', 'w1', 'w2', 'a1', 'a2'}, f'{d9} {w9}')
+import reseed as RS9  # noqa: E402
+res9b = dict(res9, a1=types.SimpleNamespace(**dict(vars(res9['a1']), params={'maps': True, 'seed': 5})))
+plan9b = G.Plan(sorted(pix9), res9b, pix9, cen9, {'f': 'h', 'g': 'h2'})
+check('twins (9.5): a seed goes onto the copies (the same pixels, even labeled apart now) and the animation\'s frames',
+      RS9.twins(plan9b, cen9, 'a1') == ['a1', 'a2'] and plan9b.rep['a1'] != plan9b.rep['a2']
+      and RS9.twins(plan9, cen9, '+0rn') == ['+0rn', '+1rn'] and RS9.twins(plan9, cen9, 'w1') == ['w1'])
 o1, o2 = pix9['w1'], pix9['w2']
 n1 = np.zeros((64, 64, 3), np.uint8)
 n1[...] = (128, 128, 255)
@@ -732,6 +791,106 @@ vec9 = u9['w2'][1].astype(float) / 127.5 - 1
 check('unify: the shared texels take the earlier member\'s, the others stay, blended normals unit length',
       inner9.any() and (u9['w2'][0][inner9] == 50).all() and far9.any() and (u9['w2'][0][far9] == 200).all()
       and (u9['w2'][1][inner9] == n1[inner9]).all() and abs(np.linalg.norm(vec9, axis=2) - 1).max() < 0.02 and (u9['w1'][0] == 50).all())
+# the margin (9.5): q differs from p in columns 7-8 and 0 (the edge, wrapped onto column 15)
+p9 = rnd(40)
+q9 = p9.copy()
+q9[:, 7:9] = rnd(41)[:, 7:9]
+q9[:, 0] = rnd(42)[:, 0]
+eqw, eqn = G.equal(q9, p9), G.equal(q9, p9, wrap=False)
+check('equal (9.5): a texel beside a difference is not shared, around the wrap too (not without it)',
+      not eqw[:, [0, 1, 6, 7, 8, 9, 15]].any() and eqw[:, [2, 5, 10, 14]].all() and eqn[:, 15].all() and not eqn[:, 1].any()
+      and G.equal(q9, p9, margin=0)[:, 6].all())
+um, _ = G.unify(['p', 'q'], {'p': p9, 'q': q9}, {'p': [np.full((64, 64, 3), 50, np.uint8)], 'q': [np.full((64, 64, 3), 200, np.uint8)]}, 4)
+inner_m = G.shared_interior(q9, p9, 4)
+check('unify (9.5): beside a difference the later member keeps its own drawing; shared_interior agrees',
+      (um['q'][0][:, 26:38] == 200).all() and (um['q'][0][:, 12:18] == 50).all() and not inner_m[:, 22:42].any()
+      and inner_m[:, 12:18].all() and (um['q'][0][inner_m] == 50).all())
+# joins (9.5, M85): a texture takes its neighbour's finished drawing where it shares its texels
+res9j = dict(res9, m2=types.SimpleNamespace(**dict(vars(res9['m2']), params={'maps': True, 'join': ('h2', ())})))
+plan9j = G.Plan(sorted(pix9), res9j, pix9, cen9, {'f': 'h', 'g': 'h2'})
+dj, _ = plan9j.closure(['m2'])
+bad9 = []
+for t, why in (('m2', 'itself'), ('w2', 'size'), ('nope', 'not drawn')):
+    pj = dict(pix9, w2=rnd(60, 12)) if why == 'size' else pix9     # 12 doesn't tile into 16 (8 would: M88)
+    try:
+        G.Plan(sorted(pj), dict(res9, m2=types.SimpleNamespace(**dict(vars(res9['m2']), params={'maps': True, 'join': (t, ())}))),
+               pj, cen9, {'f': 'h', 'g': 'h2'})
+    except ValueError:
+        bad9.append(why)
+check('join (9.5): the plan names the joined texture and the closure draws it; itself, a size that doesn\'t tile or no texture refused',
+      plan9j.join == {'m2': ('h2', ())} and 'h2' in dj and plan9j.group['m2'] == ['m2'] and bad9 == ['itself', 'size', 'not drawn'], f'{plan9j.join} {dj} {bad9}')
+# a smaller neighbour joins tiled (M88): the member holds it 2 by 2 in its left half
+small9 = rnd(61, 8)
+big9 = rnd(62)
+big9[1:15, :8] = np.vstack([small9, small9])[1:15]      # no whole cell of it: that would make it a crop
+pix9s = dict(pix9, m2=big9, h2=small9)
+plan9s = G.Plan(sorted(pix9s), dict(res9, m2=types.SimpleNamespace(**dict(vars(res9['m2']), params={'maps': True, 'join': ('h2', ())}))),
+                pix9s, cen9, {'f': 'h', 'g': 'h2'})
+src9s = G.sources(['m2'], pix9s, 0, True, {'m2': ('h2', None)})
+dr_small = np.random.default_rng(63).integers(0, 255, (32, 32, 3), dtype=np.uint8)
+us, _ = G.unify(['m2'], pix9s, {'m2': [np.full((64, 64, 3), 7, np.uint8)], 'h2': [dr_small]}, 4, joins={'m2': ('h2', None)})
+check('join (9.5): a neighbour whose size divides the member\'s joins tiled; its drawing taken tiled',
+      plan9s.join == {'m2': ('h2', ())} and (src9s[2:14, 1:7] == 1).all() and (src9s[:, 7:] == 0).all() and (src9s[[0, 15]] == 0).all()
+      and (us['m2'][0][12:52, 8:24] == np.vstack([dr_small, dr_small])[12:52, 8:24]).all() and (us['m2'][0][:, 40:] == 7).all()
+      and (G.fit(small9, (16, 16)) == np.tile(small9, (2, 2, 1))).all() and G.fit(small9, (12, 16)) is small9)
+# a set's later member takes the earlier one's join where it takes its texels (M88)
+ja, jt = rnd(70), rnd(72)
+jb = ja.copy()
+jb[:, 8:] = rnd(71)[:, 8:]                  # b shares a's left half
+jt[:, :8] = ja[:, :8]                       # the joined texture holds it too
+pj9 = {'a': ja, 'b': jb, 't': jt}
+sb = G.sources(['a', 'b'], pj9, 1, True, {'a': ('t', None)})
+sa = G.sources(['a', 'b'], pj9, 0, True, {'a': ('t', None)})
+check('join (9.5): a set\'s later member takes the joined drawing where it takes the joining member\'s texels',
+      (sa[:, 1:7] == 2).all() and (sb[:, 1:7] == 2).all() and (sb[:, 9:15] == 1).all())
+# the code review's: a copy of a crop doesn't repeat either; a set with a tile=y strip wraps top to bottom only
+bigc = rnd(80, 32)
+pixc = {'bigc': bigc, 'qc': bigc[16:, 16:].copy()}       # a cell of bigc's grid: a crop
+pixc['qc2'] = pixc['qc'].copy()
+resc = {s: fr('faithful') for s in pixc}
+planc = G.Plan(sorted(pixc), resc, pixc, {}, {})
+ty_res = {'s1': types.SimpleNamespace(params={'tile': 'y'}), 's2': types.SimpleNamespace(params={}),
+          's0': types.SimpleNamespace(params={'tile': 0})}
+ea = rnd(81)
+eb = ea.copy()
+eb[5, 15] = (eb[5, 15] + 1) % 255          # a difference in the last column only
+check('repeats and tiles (9.5): a crop\'s copy doesn\'t repeat; tile=y sets wrap top to bottom only, its margin not across',
+      planc.rep['qc2'] == 'qc' and 'qc' in planc.crop and 'qc2' not in planc.crop
+      and not planc.repeats('qc') and not planc.repeats('qc2') and planc.repeats('bigc')
+      and G.tiles(ty_res, ['s2', 's1']) == 'y' and G.tiles(ty_res, ['s1', 's0']) is False and G.tiles(ty_res, ['s2']) is True
+      and G.equal(ea, eb, True)[5, 0] == False and G.equal(ea, eb, 'y')[5, 0] == True and G.equal(ea, eb, 'y')[5, 14] == False  # noqa: E712
+      and (G.feather(np.eye(8, dtype=bool)[::-1], 2, 'y') >= 0).all())
+mj = np.zeros((16, 16), bool)
+mj[:, 10:] = True
+mj[5, 12] = False                           # a gap among the blades
+mj[2, 2] = True                             # a stray texel
+jm = G.join_mask(mj, 2, 0.02)
+res9t = dict(res9, w1=types.SimpleNamespace(**dict(vars(res9['w1']), params={'maps': True, 'tile': 0})))
+check('groups (9.5): a member that doesn\'t repeat comes after those that do (it has the most area)',
+      plan9.group['w1'] == ['w1', 'w2'] and G.Plan(sorted(pix9), res9t, pix9, cen9, {'f': 'h', 'g': 'h2'}).group['w1'] == ['w2', 'w1'])
+check('join_mask (9.5): the gaps closed, the specks dropped', jm[5, 12] and not jm[2, 2] and jm[:, 10:].all() and not jm[:, :8].any(), str(jm.astype(int)))
+L9 = rnd(50)
+pj9 = L9.copy()
+pj9[:, :8] = rnd(51)[:, :8]                 # its left half its own, its right half Raven's paste of L
+own9, lawn9 = [np.full((64, 64, 3), 50, np.uint8)], [np.full((64, 64, 3), 200, np.uint8)]
+uj, _ = G.unify(['p'], {'p': pj9, 'L': L9}, {'p': own9, 'L': lawn9}, 4, False, joins={'p': ('L', None)})
+inner_j = G.shared_interior(pj9, L9, 4, False)
+mr = np.zeros((16, 16), bool)
+mr[:, 12:] = True
+ur, fr9 = G.unify(['p'], {'p': pj9, 'L': L9}, {'p': list(own9), 'L': lawn9}, 4, False, scale=lambda j, own, comp: 2.0, joins={'p': ('L', mr)})
+# a set (a, b share their left halves) whose b joins L everywhere: the shared texels stay a's
+a9 = rnd(52)
+b9 = rnd(53)
+b9[:, :8] = a9[:, :8]
+us, _ = G.unify(['a', 'b'], {'a': a9, 'b': b9, 'L': L9}, {'a': [np.full((64, 64, 3), 10, np.uint8)], 'b': [np.full((64, 64, 3), 90, np.uint8)], 'L': lawn9},
+                4, False, joins={'b': ('L', np.ones((16, 16), bool))})
+inner_ab = G.shared_interior(b9, a9, 4, False)
+check('unify (9.5): a join takes the joined drawing where the originals are equal, or on its texels; a set\'s shared texels stay the set\'s; '
+      'a first member that joins is rebalanced',
+      inner_j.any() and (uj['p'][0][inner_j] == 200).all() and (uj['p'][0][:, :24] == 50).all()
+      and (ur['p'][0][:, 52:] == 200).all() and fr9.get('p') == 2.0 and (ur['p'][0][:, :40] > 50).all()
+      and inner_ab.any() and (us['b'][0][inner_ab] == 10).all() and (us['b'][0][:, 44:] == 200).all() and (us['a'][0] == 10).all(),
+      f"{fr9} {ur['p'][0][0, ::8, 0]}")
 
 
 class FakeComfy9:
@@ -739,7 +898,7 @@ class FakeComfy9:
     home = ''
 
     def __init__(self):
-        self.ims, self.calls = {}, []
+        self.ims, self.calls, self.prompts = {}, [], []
 
     def start(self, log=None):
         pass
@@ -756,6 +915,8 @@ class FakeComfy9:
         im = Image.open(io.BytesIO(self.ims[wf['4']['inputs']['image']])).convert('RGB')
         seed = wf['19']['inputs']['noise_seed']
         self.calls.append((seed, '40' in wf))
+        self.prompts.append(wf['11']['inputs']['text'])
+        self.inputs = getattr(self, 'inputs', []) + [self.ims[wf['4']['inputs']['image']]]
         b = io.BytesIO()
         im = np.asarray(im.resize((wf['9']['inputs']['width'], wf['9']['inputs']['height']), Image.BICUBIC)).astype(int)
         Image.fromarray(np.clip(im + seed % 5, 0, 255).astype(np.uint8)).save(b, 'PNG')     # another seed, another image
@@ -834,6 +995,136 @@ with tempfile.TemporaryDirectory() as tmp:
     _, fc_f, (made_f, _, _) = run9([dict(r, overrides='seed=0') if r['pattern'] == 'h' else r for r in rows9e], ['m1'])
     check('redraw run: a hero without its model image is drawn again; seed=0 is a seed', os.path.exists(a_h) and fc_f.calls and fc_f.calls[0][0] == 0,
           f'{made_f} {fc_f.calls}')
+    # painting (9.5): faithful but for the prompt; a set member, never a hero's member, its shapes checked
+    fc_p = FakeComfy9()
+    rows9p = [dict(r, tier='painting') if r['pattern'] in ('c1', 'c2', 'm1') else r for r in rows9]
+    rd_p = RD.Redraw(ex, os.path.join(tmp, 'paint'), classes, fc_p, ents9, rows9p, cen9, {'f': 'h'}, pal9, restart_every=0, log=lambda m: None)
+    rd_p.maps = FakeMaps9()
+    made_p, _, _ = rd_p.run(['c1', 'm1'])
+    check('painting (9.5): its own prompt, no hero reference, a set member, shapes checked as faithful',
+          made_p == 2 and len(fc_p.prompts) == 2 and all('not modelled in 3D' in p for p in fc_p.prompts) and not any(c[1] for c in fc_p.calls)
+          and 'm1' not in rd_p.plan.hero and 'painting' in G.SET_TIERS and V.LAYOUT['painting'] == V.LAYOUT['faithful']
+          and 'painting' in V.SHAPE_TIERS and 'painting' in classes['labels']['tiers'], f'{made_p} {fc_p.calls}')
+    # tile=0 (9.5): a picture that doesn't repeat is padded mirrored, not wrapped round
+    fc_t0 = FakeComfy9()
+    rows9t = [dict(r, overrides='tile=0') if r['pattern'] == 'm1' else r for r in rows9]
+    rd_t0 = RD.Redraw(ex, os.path.join(tmp, 'tile0'), classes, fc_t0, ents9, rows9t, cen9, {'f': 'h'}, pal9, restart_every=0, log=lambda m: None)
+    rd_t0.maps = FakeMaps9()
+    made_t0, _, _ = rd_t0.run(['m1'])
+    import io as _io
+    pin = np.asarray(Image.open(_io.BytesIO(fc_t0.inputs[-1])).convert('RGB'))
+    m9 = P.margin_for(32, 32)
+    check('tile=0 (9.5): padded mirrored, drawn and written; a set of only tiling members wraps',
+          M.resolve('x', 'world', [row('x', 'stone', '', 'tile=0')], classes).params['tile'] == 0 and made_t0 == 2
+          and (pin[m9:m9 + 32, m9 - 1] == t9['m1'][:, 0]).all() and not (pin[m9:m9 + 32, m9 - 1] == t9['m1'][:, -1]).all()
+          and os.path.exists(os.path.join(tmp, 'tile0', 'textures', 'm1.png'))
+          and G.tiles(rd_p.res, ['c1', 'm1']) and not G.tiles(rd_t0.res, ['h', 'm1']), f'{made_t0}')
+    # join (9.5): c1 takes w2's finished drawing on its grey texels (all of them), its copy c2 too;
+    # a new drawing of w2 rewrites them
+    rows9j = [dict(r, overrides='join=w2@grey') if r['pattern'] in ('c1', 'c2') else r for r in rows9]
+
+    def run9j(rows, stems):
+        rd = RD.Redraw(ex, os.path.join(tmp, 'join'), classes, FakeComfy9(), ents9, rows, cen9, {'f': 'h'}, pal9, restart_every=0, log=lambda m: None)
+        rd.maps = FakeMaps9()
+        return rd.run(stems)
+    jx = lambda s: np.asarray(Image.open(os.path.join(tmp, 'join', 'textures', s + '.png')))  # noqa: E731
+    made_j, _, wrote_j = run9j(rows9j, ['c1'])
+    same_j = (jx('c1') == jx('w2')).all() and (jx('c2') == jx('w2')).all()
+    rd_jv = RD.Redraw(ex, os.path.join(tmp, 'join'), classes, None, ents9, rows9j, cen9, {'f': 'h'}, pal9, restart_every=0, log=lambda m: None)
+    gc_ok = V.groups_check(os.path.join(tmp, 'join'), rd_jv.plan, ['c1', 'c2'], rd_jv.orig, pal9)
+    bad_c1 = jx('c1').copy()
+    bad_c1[40:44, 40:44] = 0
+    Image.fromarray(bad_c1).save(os.path.join(tmp, 'join', 'textures', 'c1.png'))
+    gc_bad = V.groups_check(os.path.join(tmp, 'join'), rd_jv.plan, ['c1'], rd_jv.orig, pal9)
+    check('join (9.5): verify holds a join to its neighbour\'s texels', gc_ok == {} and any('a join' in x for x in gc_bad.get('c1', [])),
+          f'{gc_ok} {gc_bad}')
+    os.remove(os.path.join(tmp, 'join', 'textures', 'c1.png'))      # the run below writes it again
+    w2_old = jx('w2')
+    rows9k = [dict(r, overrides='seed=78') if r['pattern'] == 'w1' else r for r in rows9j]
+    made_k, _, wrote_k = run9j(rows9k, ['c1'])
+    check('join (9.5): drawn after the joined set, its finished drawing taken, copies too; a new drawing of the joined rewrites it',
+          made_j == 3 and same_j and made_k == 2 and wrote_k == 4 and not (jx('w2') == w2_old).all() and (jx('c1') == jx('w2')).all(),
+          f'{made_j} {wrote_j} {made_k} {wrote_k}')
+    # crops and wholes (9.5, M81): q is big's right half; pa over pb make the picture `pic`
+    ex2, out2 = os.path.join(tmp, 'ex2'), os.path.join(tmp, 'pack2')
+    os.makedirs(os.path.join(ex2, 'textures'))
+    big2 = np.hstack([smooth(21), smooth(22)])
+    t2 = {'big': big2, 'q': big2[:, 32:].copy(), 'pa': smooth(23), 'pb': smooth(24)}
+    t2['qa'] = t2['pa'][:16, 16:].copy()       # a crop of a piece
+    lines2 = ['file,name,crc,width,height,kind,alpha,variants,used in,from']
+    for s, im in t2.items():
+        Image.fromarray(im).save(os.path.join(ex2, 'textures', s + '.png'))
+        lines2.append(f'textures/{s}.png,{s},0000,{im.shape[1]},{im.shape[0]},world,none,1,m1,data1/pak0.pak')
+    with open(os.path.join(ex2, 'textures.csv'), 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines2) + '\n')
+    rows2 = [lab9('big', 'faithful'), lab9('q', 'faithful'), lab9('pa', 'faithful', o='whole=pic@0,0'),
+             lab9('pb', 'faithful', o='whole=pic@32,0'), lab9('pic', 'faithful', o='seed=7;tile=0'),
+             lab9('qa', 'faithful')]
+    ents2 = P.load_export(ex2)
+    fc2 = FakeComfy9()
+    rd2 = RD.Redraw(ex2, out2, classes, fc2, ents2, rows2, {}, {}, pal9, restart_every=0, log=lambda m: None)
+    rd2.maps = FakeMaps9()
+    d2, w2 = rd2.plan.closure(['q', 'qa'])
+    made2, _, _ = rd2.run(['q', 'qa'])
+    tx2 = lambda s, suf='.png': np.asarray(Image.open(os.path.join(out2, 'textures', s + suf)))  # noqa: E731
+    wk2 = np.asarray(Image.open(os.path.join(out2, 'work', 'pic.png')))
+    check('crops and wholes (9.5): found, drawn once each (the whole with its seed and twice the model pixels), cut into the textures',
+          rd2.plan.crop == {'q': ('big', 0, 32), 'qa': ('pa', 0, 16)} and rd2.plan.whole == {'pa': ('pic', 0, 0), 'pb': ('pic', 32, 0)}
+          and set(d2) == {'big', 'q', 'pa', 'pb', 'qa'} and made2 == 5 and (tx2('qa') == tx2('pa')[:64, 64:]).all() and len(fc2.calls) == 2 and (7, False) in fc2.calls
+          and rd2._gen_scale('pic') == 2.0 and 'pic' not in ents2 and not os.path.exists(os.path.join(out2, 'textures', 'pic.png'))
+          and (tx2('q') == tx2('big')[:, 128:]).all() and (tx2('q', '_n.png') == tx2('big', '_n.png')[:, 128:]).all()
+          and (np.vstack([tx2('pa'), tx2('pb')]) == wk2).all() and not rd2.plan.repeats('q') and not rd2.plan.repeats('pa')
+          and rd2.plan.repeats('big') and V.groups_check(out2, rd2.plan, ['q'], rd2.orig) == {}, f'{made2} {fc2.calls} {d2}')
+    made2b, skipped2b, _ = rd2.run(['q', 'qa'])
+    Image.fromarray(np.zeros_like(tx2('q'))).save(os.path.join(out2, 'textures', 'q.png'))
+    check('crops and wholes (9.5): a second run draws nothing; verify fails a crop that isn\'t its region',
+          made2b == 0 and skipped2b == 5 and bool(V.groups_check(out2, rd2.plan, ['q'], rd2.orig).get('q')))
+    for what, rows_bad in (('a gap', [r if r['pattern'] != 'pb' else lab9('pb', 'faithful', o='whole=pic@40,0') for r in rows2]),
+                           ('no row of its own', [r for r in rows2 if r['pattern'] != 'pic'])):
+        try:
+            RD.Redraw(ex2, out2, classes, FakeComfy9(), ents2, rows_bad, {}, {}, pal9, restart_every=0, log=lambda m: None)
+            check(f'wholes (9.5): {what} is refused', False)
+        except ValueError:
+            check(f'wholes (9.5): {what} is refused', True)
+    # pieces that overlap (M86): pb 8 rows into pa, the picture's there; verify measures pa against it
+    rows3 = [r if r['pattern'] != 'pb' else lab9('pb', 'faithful', o='whole=pic@24,0') for r in rows2]
+    out3 = os.path.join(tmp, 'pack3')
+    rd3 = RD.Redraw(ex2, out3, classes, FakeComfy9(), ents2, rows3, {}, {}, pal9, restart_every=0, log=lambda m: None)
+    rd3.maps = FakeMaps9()
+    rd3.run(['pa'])
+    tx3 = lambda s: np.asarray(Image.open(os.path.join(out3, 'textures', s + '.png')))  # noqa: E731
+    res_pa = M.resolve('pa', 'world', rows3, classes)
+    e_ok, _ = V.check_redraw(ex2, out3, ents2['pa'], res_pa, pal9, MT.table(classes), None, False, rd3.orig['pic'][:32])
+    e_bad, _ = V.check_redraw(ex2, out3, ents2['pa'], res_pa, pal9, MT.table(classes), None, False, t2['big'][:, :32])
+    check('wholes (9.5): pieces may overlap, the lower one is the picture there; the upper\'s rows there are cut from it; '
+          'verify measures a piece against its region of the picture',
+          rd3.orig['pic'].shape[:2] == (56, 32) and (rd3.orig['pic'][:24] == t2['pa'][:24]).all() and (rd3.orig['pic'][24:] == t2['pb']).all()
+          and (tx3('pa')[96:] == tx3('pb')[:32]).all() and not any('shapes moved' in x for x in e_ok)
+          and any('shapes moved' in x for x in e_bad), f'{e_ok} {e_bad}')
+    # a quarter mirrored into its picture (M87): `mirror=xy` on the picture's row
+    rows4 = [r for r in rows2 if r['pattern'] not in ('pa', 'pb')] + [
+        lab9('pa', 'faithful', o='whole=hp@0,0'), lab9('pb', 'faithful'), lab9('hp', 'faithful', o='seed=5;tile=0;mirror=xy')]
+    out4 = os.path.join(tmp, 'pack4')
+    rd4 = RD.Redraw(ex2, out4, classes, FakeComfy9(), ents2, rows4, {}, {}, pal9, restart_every=0, log=lambda m: None)
+    rd4.maps = FakeMaps9()
+    rd4.run(['pa'])
+    hp = rd4.orig['hp']
+    wk4 = np.asarray(Image.open(os.path.join(out4, 'work', 'hp.png')))
+    tx4 = np.asarray(Image.open(os.path.join(out4, 'textures', 'pa.png')))
+    rd5 = RD.Redraw(ex2, os.path.join(tmp, 'pack5'), classes, FakeComfy9(), ents2,
+                    [r if r['pattern'] != 'pb' else lab9('pb', 'faithful', o='mirror=xy') for r in rows4], {}, {}, pal9,
+                    restart_every=0, log=lambda m: None)
+    rd5.maps = FakeMaps9()
+    try:
+        rd5.draw('pb')
+        refused = False
+    except ValueError:
+        refused = True
+    check('wholes (9.5): mirror=xy draws a quarter as its picture mirrored right and down, at twice the pixels (the cap); '
+          'refused on a row that is no picture\'s',
+          hp.shape[:2] == (64, 64) and (hp[:32, :32] == t2['pa']).all() and (hp[:, 32:] == hp[:, 31::-1]).all()
+          and (hp[32:] == hp[31::-1]).all() and rd4._gen_scale('hp') == RD.WHOLE_SCALE == 2.0 and tx4.shape[:2] == (128, 128)
+          and (tx4[..., :3] == wk4[:128, :128, :3]).all() and refused)
     rows9b = [dict(r, overrides='seed=0') if r['pattern'] == 'h' else r for r in rows9e]
     res_v = {s: M.resolve(s, 'world', rows9b, classes) for s in t9}
     sel_v = [ents9[s] for s in sorted(t9)]
@@ -845,4 +1136,196 @@ with tempfile.TemporaryDirectory() as tmp:
     Image.fromarray(np.where(inner[..., None], 0, ib).astype(np.uint8)).save(tx('w2'))
     errs = V.groups_check(out, rd_c.plan, ['w2'], rd_c.orig)
     check('verify: a set\'s differing shared texels fail', bool(errs.get('w2')), str(errs))
+
+    # -- story 9.5: hero candidates, reseeds, the review, the liquids' checks --------------
+    import heroes as HE
+    import reseed as RS
+    import review as RV
+    quiet = lambda m: None  # noqa: E731
+    cand = os.path.join(tmp, 'cand')
+
+    fc_h = FakeComfy9()
+    rd_h = RD.Redraw(ex, os.path.join(cand, 'c1'), classes, fc_h, ents9, rows9b, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet)
+    rd_h.maps = FakeMaps9()
+    items_h = HE.families(rd_h.plan, rd_h.res, {'f': {'family': 'f', 'hub': 'blackmarsh', 'lead': 'h'}}, cen9)
+    check('heroes: a family\'s lead and its layout member that takes it as the reference', items_h == [('f', 'blackmarsh', 'h', 'm1')], str(items_h))
+    info_h = HE.draw(rd_h, cand, items_h, {'f': [('rougher', 'flaking rust'), ('finer', 'an even patina')]}, log=quiet)
+    cs = info_h['f']['cands']
+    sd = [c['seed'] for c in cs]
+    check('heroes: the label, the rougher and the finer finish with two seeds each, the first the seed a run uses (the row\'s seed=0)',
+          [c['name'] for c in cs] == ['as labeled'] * 2 + ['rougher'] * 2 + ['finer'] * 2 and sd[0] == 0 and sd[0::2] == [0] * 3
+          and sd[1::2] == [sd[1]] * 3 and sd[1] != 0, str(cs))
+    pr_h = fc_h.prompts
+    check('heroes: each candidate the lead with its seed and finish, then the member with a reference and the same finish',
+          [c[0] for c in fc_h.calls[0::2]] == sd and all(c[1] for c in fc_h.calls[1::2]) and not any(c[1] for c in fc_h.calls[0::2])
+          and not any('flaking' in p or 'patina' in p for p in pr_h[:4]) and all('flaking rust' in p for p in pr_h[4:8])
+          and all('an even patina' in p for p in pr_h[8:12])
+          and all(os.path.exists(os.path.join(cand, f'c{k}', 'textures', s + f)) for k in range(1, 7) for s in ('h', 'm1')
+                  for f in ('.png', '_n.png', '_orm.png', '.mat')), str(fc_h.calls))
+    check('heroes: the candidates leave the seeds, finishes and pack as they were', rd_h.seeds == {} and rd_h.finishes == {}
+          and rd_h.seed_of('h') == 0 and rd_h.out == os.path.join(cand, 'c1'))
+    fc_t = FakeComfy9()
+    rd_t = RD.Redraw(ex, os.path.join(tmp, 'cand2', 'c1'), classes, fc_t, ents9, rows9b, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet)
+    rd_t.maps = FakeMaps9()
+    HE.draw(rd_t, os.path.join(tmp, 'cand2'), HE.textures(rd_t.plan, rd_t.res, cen9, ['m1']), None, log=quiet, pack=os.path.join(cand, 'c1'))
+    check('heroes --stems: a layout member drawn with its hero\'s drawing from the pack as the reference, six seeds (the code review\'s)',
+          len(fc_t.calls) == 6 and all(c[1] for c in fc_t.calls) and len({c[0] for c in fc_t.calls}) == 6
+          and os.path.exists(os.path.join(tmp, 'cand2', 'c6', 'textures', 'm1.png')), str(fc_t.calls))
+    pg = os.path.join(tmp, 'heroes.html')
+    with contextlib.redirect_stdout(_io.StringIO()):
+        HE.page(ex, ents9, {'h': rd_h.res['h']}, info_h, cand, pg)
+    text = open(pg, encoding='utf-8').read()
+    check('heroes page: a family\'s six candidates and none, the member\'s row, the finishes',
+          text.count('type="radio" name="f"') == 7 and 'its layout member m1' in text and 'flaking rust' in text and '6. finer' in text)
+    fam95 = os.path.join(tmp, 'families.csv')
+    with open(fam95, 'w', encoding='utf-8', newline='') as f:
+        f.write('# a comment\r\nfamily,hub,lead,what\r\nf,blackmarsh,h,"a wall, grey"\r\ng,keep,x,other\r\n')
+    rows95 = [lrow('h', 'layout', 'stone', 'claude', 'a wall', 'bump=2'), lrow('x', 'layout', 'stone', 'claude', 'x')]
+    pk = os.path.join(tmp, 'picks.csv')
+    with open(pk, 'w', encoding='utf-8', newline='') as f:
+        f.write('family,lead,finish,seed,note\nf,h,flaking rust,42,\ng,x,,,darker please\n')
+    ch95 = HE.apply(pk, fam95, rows95, log=quiet)
+    import labels as LB
+    ff = LB.load_families(fam95)
+    check('heroes apply: the family\'s finish into families.csv (comments and line ends kept), the lead\'s seed as the owner\'s, a none left',
+          ff['f']['finish'] == 'flaking rust' and not ff['g'].get('finish') and ff['f']['what'] == 'a wall, grey'
+          and open(fam95, encoding='utf-8', newline='').read().startswith('# a comment\r\nfamily,hub,lead,what,finish\r\n')
+          and rows95[0]['overrides'] == 'bump=2;seed=42' and rows95[0]['source'] == 'human' and rows95[1]['source'] == 'claude'
+          and len(ch95) == 1 and LB.finishes(ff) == {'f': 'flaking rust'}, str(ff))
+    rd_f = RD.Redraw(ex, out, classes, None, ents9, rows9b, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet,
+                     finishes={'f': 'flaking rust'})
+    check('redraw: a family\'s finish in its layout and reimagine members\' descriptions, not elsewhere',
+          rd_f.description('m1') == 'a wall; flaking rust' and rd_f.description('w1') == 'a wall' and rd_f.description('c1') == 'a wall')
+
+    # reseed: m1 failed on its shapes (another seed is tried and written), h on a seam with the owner's seed (left alone)
+    rows_r = [dict(r) for r in rows9b]
+    rows_r = [dict(r, source='human') if r['pattern'] == 'h' else r for r in rows_r]
+    os.makedirs(os.path.join(out, '.texpack'), exist_ok=True)
+
+    def roll_half(stem):        # the pack's albedo shifted by half: its shapes moved, as verify sees it
+        im = np.asarray(Image.open(tx(stem)))
+        Image.fromarray(np.roll(im, (im.shape[0] // 2, im.shape[1] // 2), axis=(0, 1))).save(tx(stem))
+    roll_half('m1')
+    roll_half('h')
+    # c1's row in verify.csv is older than the pack (it passes now): left as it is
+    V._save_report(out, {'m1': {'stem': 'm1', 'tier': 'layout', 'result': 'FAIL', 'errors': 'the shapes moved: layout kept 0.10'},
+                         'h': {'stem': 'h', 'tier': 'layout', 'result': 'FAIL', 'errors': 'the shapes moved: layout kept 0.05'},
+                         'c1': {'stem': 'c1', 'tier': 'faithful', 'result': 'FAIL', 'errors': 'the shapes moved: layout kept 0.05'},
+                         'w1': {'stem': 'w1', 'tier': 'reimagine', 'result': 'FAIL', 'errors': 'stone: roughness outside 0.6..0.9 in 9 % of its texels'}})
+    man_r = os.path.join(tmp, 'mr.csv')
+    M.write_manifest(man_r, rows_r)
+    fc_r = FakeComfy9()
+    rd_r = RD.Redraw(ex, out, classes, fc_r, ents9, rows_r, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet)
+    rd_r.maps = FakeMaps9()
+    recs = RS.run(rd_r, ex, out, rows_r, man_r, tries=2, log=quiet)
+    want_seed = P.seed_for('m1', 9100 + RS.OFFSET + 1)
+    got_r = {q['pattern']: q for q in M.load_manifest(man_r)}
+    check('reseed: a failure another seed may fix gets the first seed that passes, in the manifest; the owner\'s seed, other failures '
+          'and a stale verify.csv row left',
+          [r['set'] for r in recs] == ['c2', 'h', 'm1'] and 'passes now' in recs[0]['result'] and 'owner' in recs[1]['result']
+          and recs[2]['seed'] == want_seed and os.path.exists(os.path.join(out, '.texpack', 'reseed.csv'))
+          and got_r['m1']['overrides'] == f'seed={want_seed}' and got_r['h']['overrides'] == 'seed=0' and fc_r.calls == [(want_seed, True)]
+          and not os.path.exists(os.path.join(out, '.texpack', 'reseed', 'm1')) and rd_r.out == out, f'{recs} {fc_r.calls}')
+    # again: m1 continues after reseed's seed it has now; w2's set is drawn whole and unified before its check
+    # (w1 and w2 layout here: a reimagine texture has no shapes to keep, and their originals don't tile, so no seam check)
+    rows_r2 = [dict(r, tier='layout') if r['pattern'] in ('w1', 'w2') else dict(r) for r in rows_r]
+    roll_half('w2')
+    V._save_report(out, {'m1': {'stem': 'm1', 'tier': 'layout', 'result': 'FAIL', 'errors': 'the shapes moved: layout kept 0.20'},
+                         'w2': {'stem': 'w2', 'tier': 'layout', 'result': 'FAIL', 'errors': 'the shapes moved: layout kept 0.10'}})
+    fc_r2 = FakeComfy9()
+    rd_r2 = RD.Redraw(ex, out, classes, fc_r2, ents9, rows_r2, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet)
+    rd_r2.maps = FakeMaps9()
+    recs2 = RS.run(rd_r2, ex, out, rows_r2, man_r, tries=1, log=quiet)
+    s_m1, s_w = P.seed_for('m1', 9100 + RS.OFFSET + 2), P.seed_for('w1', 9100 + RS.OFFSET + 1)
+    check('reseed: the next seed after an earlier reseed\'s; a set drawn whole, its seed on its first member',
+          fc_r2.calls == [(s_m1, True), (s_w, False), (s_w, False)] and [r['seed'] for r in recs2] == [s_m1, s_w]
+          and next(r for r in rows_r2 if r['pattern'] == 'w1')['overrides'] == f'seed={s_w}', f'{recs2} {fc_r2.calls}')
+    rows_p = [lrow('w1', 'reimagine', 'stone', 'claude', 'a wall', 'seed=5'), lrow('w2', 'reimagine', 'stone', 'claude', 'a wall')]
+    pk2 = os.path.join(tmp, 'picks2.csv')
+    with open(pk2, 'w', encoding='utf-8', newline='') as f:
+        f.write('family,lead,finish,seed,note\nzz,w2,,9,\n')
+    HE.apply(pk2, fam95, rows_p, rd_r.plan, log=quiet)
+    check('heroes apply: another member\'s seed in the lead\'s set is taken off (it would hide the pick)',
+          rows_p[0]['overrides'] == '' and rows_p[1]['overrides'] == 'seed=9' and rd_r.plan.group['w2'] == ['w1', 'w2'], str(rows_p))
+
+    # the review
+    cen_v = {'a': {'hubs': 'blackmarsh keep'}, 'b': {'hubs': 'deathmatch'}, 'c': {'hubs': '', 'anim': 'c d'}, 'd': {'hubs': 'tulku', 'anim': 'c d'}}
+    check('review: a texture\'s page is its home hub, the deathmatch maps\' other, an unseen frame its animation\'s',
+          [RV.page_hub(cen_v, s) for s in 'abce'] == ['blackmarsh', 'other', 'tulku', 'other'])
+    cards9 = RV.cards(sorted(t9), rd_r.res, cen9, {'f': {'lead': 'h', 'what': ''}})
+    check('review: a family together, its hero first, then the rest by area', cards9[:3] == [('f', 'h'), ('f', 'm1'), ('', 'w1')]
+          and len(cards9) == len(t9), str(cards9))
+    p1, p2 = RV.split(cards9, 1, 2), RV.split(cards9, 2, 2)
+    check('review: a page in parts keeps a family whole', p1 + p2 == cards9 and ('f', 'm1') in p1 and len(p2) > 0, f'{p1} {p2}')
+    s1 = RV.next_seed(rd_r, 'w1')
+    rows_v = [dict(r) for r in rows_r]
+    RS.set_seed(next(r for r in rows_v if r['pattern'] == 'w1'), s1)
+    rd_v = RD.Redraw(ex, out, classes, None, ents9, rows_v, cen9, {'f': 'h'}, pal9, restart_every=0, log=quiet)
+    s2 = RV.next_seed(rd_v, 'w2')
+    check('review: "another seed" steps through the review\'s seeds of the set',
+          s1 == P.seed_for('w1', 9100 + RV.REVIEW_SEED + 1) and s2 == P.seed_for('w1', 9100 + RV.REVIEW_SEED + 2), f'{s1} {s2}')
+    vd = os.path.join(tmp, 'verdicts.csv')
+    with open(vd, 'w', encoding='utf-8', newline='') as f:
+        f.write('pattern,verdict,tier,regions,description,note\nm1,label,,,an oak door,the iron is bronze\nw2,seed,,,,\nc1,candidates,,,,\nh,ok,,,,\n'
+                'c2,label,,,a copied panel,\n')
+    rows_a = [dict(r) for r in rows_r]
+    lab_a, ch_a = RV.apply(rd_r, rows_a, vd, out, log=quiet)
+    check('review apply (9.5): a label edit goes onto the copies too', sorted(r['pattern'] for r in lab_a if r['description'] == 'a copied panel') == ['c1', 'c2'],
+          str(lab_a))
+    lab_a = [r for r in lab_a if r['pattern'] not in ('c1', 'c2')]
+    check('review apply: a label edit for merge (every label column), another seed on the set\'s seed row, candidates listed',
+          lab_a == [{'tier': 'layout', 'regions': rd_r.res['m1'].regions, 'description': 'an oak door', 'pattern': 'm1'}] and ch_a
+          and next(r for r in rows_a if r['pattern'] == 'w1')['overrides'] == f'seed={s1}'
+          and open(os.path.join(out, '.texpack', 'candidates.txt')).read() == 'c1\n', f'{lab_a}')
+    man_l = os.path.join(tmp, 'ml.csv')
+    M.write_manifest(man_l, [dict(lrow('m1', 'layout', 'stone', 'claude', 'a wall'), regions='*=stone;yellow=gold')])
+    lab_csv2 = os.path.join(tmp, 'review_labels.csv')
+    import csv
+    with open(lab_csv2, 'w', encoding='utf-8', newline='') as f:
+        w = csv.DictWriter(f, ['pattern', 'tier', 'regions', 'description', 'source'], lineterminator='\n')
+        w.writeheader()
+        w.writerows([dict(r, source='human') for r in lab_a])
+    with contextlib.redirect_stdout(_io.StringIO()):
+        TP.cmd_merge(types.SimpleNamespace(edits=lab_csv2, manifest=man_l))
+    ml = M.load_manifest(man_l)[0]
+    check('review apply + merge: the edit lands, the tier and regions stay (the code review\'s)',
+          ml['description'] == 'an oak door' and ml['tier'] == 'layout' and ml['regions'] == rd_r.res['m1'].regions and ml['source'] == 'human', str(ml))
+
+    # packviews: a run's shots, its hits and the brightness against the same run's originals
+    run_d = os.path.join(tmp, 'run')
+    os.makedirs(run_d)
+    with open(os.path.join(run_d, 'views.csv'), 'w', encoding='utf-8', newline='') as f:
+        f.write('name,stem,map,close,wide\nh,h,demo1,0 0 0 0 0,0 0 0 0 0\nm1,m1,demo1,0 0 0 0 0,0 0 0 0 0\n')
+    with open(os.path.join(run_d, 'debug_h2.log'), 'w', encoding='latin-1') as f:
+        f.write('\n'.join(['T92_VIEW h close', 'here: world opaque, 90 units away: h (material 1)',
+                           '  files: textures/h~0000 (this texture\'s pixels only) or textures/h (every texture of the name)',
+                           'T92_VIEW h wide', 'T92_VIEW m1 close', 'here: world opaque, 90 units away: zz (material 2)',
+                           '  files: textures/zz~0000 (this texture\'s pixels only) or textures/zz (every texture of the name)', 'T92_END']) + '\n')
+    for name, v in (('h_close', 80), ('h_close_orig', 40), ('h_wide', 60), ('h_wide_orig', 60), ('m1_close', 50)):
+        Image.fromarray(np.full((8, 8, 3), v, np.uint8)).save(os.path.join(run_d, name + '.tga'))
+    shots95 = os.path.join(tmp, 'shots')
+    pv = RV.read_runs([run_d], shots95, {}, None, log=quiet)
+    rh = (80 / 40) ** 2.2
+    check('packviews: the PNGs, a hit, a miss named, the brightness ratios against the run\'s originals',
+          pv['h']['hit'] == 'ok' and abs(float(pv['h']['close']) - rh) < 0.01 and abs(float(pv['h']['wide']) - 1) < 0.01
+          and 'zz' in pv['m1']['hit'] and 'close' not in pv['m1'] and os.path.exists(os.path.join(shots95, 'h_close_orig.png'))
+          and os.path.exists(os.path.join(shots95, 'packviews.csv')), str(pv))
+    pr = os.path.join(tmp, 'review.html')
+    with contextlib.redirect_stdout(_io.StringIO()):
+        nr = RV.page(ex, ents9, rd_r.res, cen9, {'f': {'lead': 'h', 'what': 'a wall'}}, cards9, out, shots95, None,
+                     pr, 'test', {'m1': {'result': 'FAIL', 'errors': 'the shapes moved'}}, {'w1': 'a crack drawn across'})
+    text = open(pr, encoding='utf-8').read()
+    check('review page: every card, a verdict each, verify\'s failure and Claude\'s flag shown',
+          nr == len(cards9) and text.count('value="candidates"') == nr and 'the shapes moved' in text and 'a crack drawn across' in text
+          and 'brightness: close x' in text)
+
+# the liquids: their caustic against the original's (6.16, X29)
+dark = np.uint8(np.clip(field(64, 64, 3, 31) * 80 + 10, 0, 255))
+flatl = np.uint8(np.clip((dark.astype(float) - dark.mean()) * 0.3 + dark.mean(), 0, 255))
+glint = dark.copy()
+glint.reshape(-1, 3)[::40] = 255            # 2.5 % of the texels white
+check('caustic: none for the original itself, less of it and glints at the cap noted',
+      V.caustic_notes(dark, dark) == [] and any('spread' in n for n in V.caustic_notes(dark, flatl))
+      and any('cap' in n for n in V.caustic_notes(dark, glint)), f'{V.caustic(dark)} {V.caustic(flatl)} {V.caustic(glint)}')
+check('verify: liquids and lava fail where their shapes moved', {'liquid', 'lava'} <= set(V.SHAPE_TIERS))
 sys.exit(1 if fails else 0)

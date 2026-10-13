@@ -22,12 +22,14 @@ SMALL = 0.02        # a material on fewer of the texels than this takes the text
 CAVITY = (0.05, 0.15)   # near black (roughness 1, occluded): the albedo's linear luminance against
                         # its material's median, from fully (below the first) to not at all (above)
 CAVITY_TIERS = ('reimagine', 'layout')  # a faithful picture's black is paint, not a gap
+NO_CLIP = 0.95      # a metal's brightest colour channel at most this (its 99th percentile; M75)
 
 
 def table(classes):
-    """Every material's values, [defaults]' filled in."""
+    """Every material's values, [defaults]' filled in; a metal's `reflectance` only where it has
+    one (a key every material had would change every texture's stage key)."""
     d = classes['defaults']
-    return {m: {k: float(v.get(k, d[k])) for k in KEYS}
+    return {m: dict({k: float(v.get(k, d[k])) for k in KEYS}, **({'reflectance': float(v['reflectance'])} if 'reflectance' in v else {}))
             for m, v in classes.get('materials', {}).items() if isinstance(v, dict)}
 
 
@@ -43,7 +45,7 @@ def texel_materials(rgb, alpha, palette, regions, params, tab):
     idx = np.zeros(rgb.shape[:2], np.int32)
     if palette is not None and regions:
         ramps = labels.texel_ramps(rgb, palette)
-        named, star = set(), None
+        named, star, black = set(), None, None
         for rs, mats in labels.parse_regions(regions):
             m = mats[0]
             if m not in tab:
@@ -55,11 +57,16 @@ def texel_materials(rgb, alpha, palette, regions, params, tab):
             for r in rs:
                 if r == '*':
                     star = k
+                elif r == 'black':
+                    black = k
                 else:
                     named.add(labels.RAMP_NAMES.index(r))
                     idx[ramps == labels.RAMP_NAMES.index(r)] = k
         if star is not None:
             idx[~np.isin(ramps, sorted(named))] = star
+        if black is not None:       # the near-black, out of grey and `*` (labels.BLACK)
+            pi = labels.texel_index(rgb, palette)
+            idx[(pi >= 0) & (pi < labels.BLACK)] = black
     if alpha is not None:
         idx[alpha == 0] = -1
     return idx, names, values
@@ -116,25 +123,49 @@ def _per(W, values, key):
     return np.tensordot(np.array([v[key] for v in values]), W, axes=1)
 
 
-def targets(rgb, alpha, idx, values):
+def effective_ratio(mean, v):
+    """A material's albedo ratio, at most what brings its mean to a real metal's reflectance (9.5,
+    M75: a metal's albedo is its reflectance, and Raven painted metals 20 to 50 times darker than
+    any real metal reflects, so their ratio is 5; a bright gilding stays under real gold's)."""
+    r = v['albedo_ratio']
+    f0 = v.get('reflectance', 0.0)
+    return min(r, f0 / mean) if f0 > 0 and mean > 0 else r
+
+
+def ratio_map(rgb, idx, values):
+    """Per texel of the original its material's effective albedo ratio (1 in a hole): the
+    original's luminance times it is what the run aims for, so a layout measure that compares
+    them sees the shapes, not the metals made 5 times brighter than the stone around them (M75)."""
+    y = _luma(rgb)
+    eff = [effective_ratio(float(y[idx == i].mean()) if (idx == i).any() else 0.0, v) for i, v in enumerate(values)]
+    return np.where(idx >= 0, np.array(eff)[np.maximum(idx, 0)], 1.0)
+
+
+def targets(rgb, alpha, idx, values, plain=False):
     """Each material's wanted mean linear luminance: the original's there times its albedo_ratio
-    (None for a material on fewer than SMALL of the texels), and the whole texture's."""
+    (a metal's at most its reflectance; None for a material on fewer than SMALL of the texels),
+    and the whole texture's. plain: the original's alone (ratio 1: the floor of a metal's
+    no-clip cap in match)."""
     y = _luma(rgb)
     op = idx >= 0
-    ratio = np.array([v['albedo_ratio'] for v in values])[np.maximum(idx, 0)]
+    eff = [1.0 if plain else effective_ratio(float(y[idx == i].mean()) if (idx == i).any() else 0.0, v)
+           for i, v in enumerate(values)]
+    ratio = np.array(eff)[np.maximum(idx, 0)]
     whole = float((y * ratio)[op].mean()) if op.any() else 0.0
     out = []
     for i in range(len(values)):
         sel = idx == i
-        out.append(float(y[sel].mean()) * values[i]['albedo_ratio'] if sel.sum() >= max(8, SMALL * op.sum()) else None)
+        out.append(float(y[sel].mean()) * eff[i] if sel.sum() >= max(8, SMALL * op.sum()) else None)
     return out, whole
 
 
-def match(rgb, a4, W, values, want, whole, contrast=True):
+def match(rgb, a4, W, values, want, whole, contrast=True, floor=None):
     """5.8's brightness match (M37, M43) per material: the contrast (a power on the linear
     luminance, the color scaled with it) by each texel's material, then each material's mean
     brought to its target, the gains blended by the weights. With one material it is
-    pipeline.match_luminance. Returns the albedo and the gains."""
+    pipeline.match_luminance. A metal's gain stops before its brightest channel clips, but not
+    below what brings it to `floor` (targets(plain=True): the original's own brightness, as
+    before 9.5; glinting gold coins came out darker than that). Returns the albedo and the gains."""
     lin = _lin(rgb)
     if contrast:
         c = _per(W, values, 'contrast')
@@ -149,7 +180,16 @@ def match(rgb, a4, W, values, want, whole, contrast=True):
         w = W[i] * op
         s = w.sum()
         cur_i = float((w * y).sum() / s) if s > 0 else 0.0
-        gains.append(want[i] / cur_i if want[i] is not None and cur_i > 0 else g_all)
+        g = want[i] / cur_i if want[i] is not None and cur_i > 0 else g_all
+        if values[i].get('reflectance', 0.0) > 0:
+            # a metal's gain stops before its brightest colour channel clips (5 times the coins' gold
+            # washed out to silvery white): its hue kept (M75)
+            core = (W[i] >= CORE) & op
+            if core.any():
+                cap = NO_CLIP / max(float(np.percentile(lin[core].max(axis=-1), 99)), 1e-6)
+                low = floor[i] / cur_i if floor is not None and floor[i] is not None and cur_i > 0 else 0.0
+                g = min(g, max(cap, low))
+        gains.append(g)
     G = np.tensordot(np.array(gains), W, axes=1)
     return _enc(np.clip(lin * G[..., None], 0.0, 1.0)), gains
 

@@ -29,6 +29,7 @@ class/description replaces an earlier one's, its overrides add to them.
 """
 import csv
 import fnmatch
+import re
 import os
 import tomllib
 
@@ -142,6 +143,37 @@ def resolve(stem, kind, rows, classes):
     for k, v in over.items():
         if k == 'seed':     # the redraw's seed (9.4): an override only, so 5.8's keys of other rows stay
             params[k] = int(v)
+            continue
+        if k == 'hero':     # `hero=none`: a layout member drawn without its family's hero (9.5)
+            if v != 'none':
+                raise ValueError(f"{stem}: hero={v}: only hero=none")
+            params[k] = v
+            continue
+        if k == 'whole':    # `whole=<name>@<y>,<x>`: a piece of one picture, drawn whole and cut out (9.5)
+            m = re.fullmatch(r'([^@\s]+)@(\d+),(\d+)', v)
+            if not m:
+                raise ValueError(f"{stem}: whole={v}: whole=<name>@<y>,<x>")
+            params[k] = (m.group(1), int(m.group(2)), int(m.group(3)))
+            continue
+        # `tile=0`: a picture that doesn't repeat, padded mirrored, no seam blended; `tile=y`: a strip
+        # that repeats only top to bottom (9.5)
+        if k == 'tile':
+            if v not in ('0', '1', 'y'):
+                raise ValueError(f"{stem}: tile={v}: 0, 1 or y")
+            params[k] = v if v == 'y' else int(v)
+            continue
+        # `mirror=x`: the drawing's left half mirrored over its right; `mirror=xy`, a whole's row:
+        # its pieces mirrored to the right and below (9.5)
+        if k == 'mirror':
+            if v not in ('x', 'xy'):
+                raise ValueError(f"{stem}: mirror={v}: mirror=x or mirror=xy")
+            params[k] = v
+            continue
+        if k == 'join':     # `join=<stem>[@<ramp>,...]`: the neighbour's drawing on the texels it shares (9.5)
+            m = re.fullmatch(r'([^@\s]+)(?:@([a-z]+(?:,[a-z]+)*))?', v)
+            if not m:
+                raise ValueError(f"{stem}: join={v}: join=<stem> or join=<stem>@<ramp>,<ramp>")
+            params[k] = (m.group(1), tuple(m.group(2).split(',')) if m.group(2) else ())
             continue
         if k not in params:
             raise ValueError(f"{stem}: unknown override key '{k}'")

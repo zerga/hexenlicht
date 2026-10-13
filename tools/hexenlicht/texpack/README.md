@@ -166,7 +166,8 @@ None is vendored here; see THIRD_PARTY.md.
 `texpack.py run` redraws a world or liquid texture instead of upscaling it when its label
 (9.3: "Labels" below) gives it a redrawn **tier** (DECISIONS M46–M53, M66–M71; PLAN E9):
 reimagine (a new surface at the same arrangement), layout (every shape in place), faithful
-(restored, no new content), glass, liquid, lava. `redraw.py` has the stages. FLUX.2 klein 4B
+(restored, no new content), painting (as faithful, but painted or cut flat and weathered, never
+modelled in relief: 9.5, DECISIONS M78), glass, liquid, lava. `redraw.py` has the stages. FLUX.2 klein 4B
 (distilled, 4 steps, M50) gets the 4x upscale of the padded original and the tier's prompt with
 the texture's description, and draws it as a real material under a soft frontal light. What
 follows is this process, not a model:
@@ -194,10 +195,18 @@ follows is this process, not a model:
   nothing; change the regions or a material's values instead. A hole takes the material of the
   nearest opaque texel. The materials are only as good as the ramps: where Raven painted two
   materials in one ramp (rtex367's dark wood in the grey of its iron straps) the regions decide.
+  `black` (9.5, M82) names the near-black, the grey ramp's indices 0-2, apart from the rest of
+  grey: `grey=iron;black=wood;*=wood` keeps a door's black plank gaps wood while its grey iron
+  stays iron (rtex509's gaps, all index 2, had turned into metal veins under `*=iron`).
 - **Brightness, then colors:** 5.8's match (M37, M43) per material (each material's mean to the
-  original's there times its ratio: gold stays as bright against the stone as Raven painted
-  it), then the original's broad colors put back (Oklab; the models draw real-world colors,
-  Hexen II's palette is the theme), then the brightness again.
+  original's there times its ratio), then the original's broad colors put back (Oklab; the
+  models draw real-world colors, Hexen II's palette is the theme), then the brightness again.
+  **Metals** (since 9.5, M75): a metal's albedo is its reflectance (it has no diffuse light),
+  and Raven painted metals 20 to 50 times darker than any real metal reflects, so in the game
+  they read far darker than his diffuse paint (a door at a quarter of its original's
+  brightness). Their ratio is 5, at most a clean real metal's `reflectance` (iron 0.57, gold
+  0.74), and a metal's gain stops before its brightest colour channel clips (5 times washed bright
+  gold out to white), though not below the original's own brightness.
 - **Cavities** (M68): where the albedo is near black against its material's median (a gap
   between planks, a joint the redraw drew black; reimagine and layout, not a picture's black
   paint) the roughness is 1. `_orm`'s red is an occlusion: the redraw's own frontal shading term
@@ -214,8 +223,10 @@ follows is this process, not a model:
   a wall with and without its chains, the switches' discs) and an animation's frames are a
   **set**: each member is drawn alone with one seed, its first member's (the most area; or the
   first `seed=` override among the members), and
-  then each texel takes the drawing of the first member whose original has the same color there,
-  in every map (a ramp of a texel where that member changes), and each member's own texels are
+  then each texel takes the drawing of the first member whose original has the same color there
+  and in the texels around it (`MARGIN`, 1: beside a part one member has and the other lacks,
+  the drawing carries that part's bevel and shadow; 9.5's review found marble with marbleseam's
+  seam highlights), in every map (a ramp of a texel where that member changes), and each member's own texels are
   scaled to its brightness target again (a rune's brightest frame had come out at 0.66 of it). A
   canvas of the set side by side broke beyond four framed panels, and a member as another's
   reference copied its rune (9.4's spike).
@@ -224,7 +235,58 @@ follows is this process, not a model:
   its detail and wear, image 1's layout": an ashlar trim's layout kept 0.63 with it, 0.22
   without). Not reimagine members (the hero's arrangement leaked into them: a rock face 0.86 ->
   0.18, planks 0.65 -> 0.34), faithful ones (their content must not change) nor members of the
-  hero's set. A new hero (9.5 picks one by `seed=`) redraws its layout members.
+  hero's set. A new hero (9.5 picks one by `seed=`) redraws its layout members. A row's
+  `hero=none` override draws a layout member without it, where the hero's content comes through
+  (9.5: `rtex362~89e7` took its hero door's ring handle under every seed).
+- **Pictures that don't repeat** (9.5, M80): a row's `tile=0` override pads the redraw's image
+  mirrored and leaves its edges unblended (the wrap blends each edge into the opposite one so a
+  wall tiles: on a quarter of the floor sundial it blurred and washed the edges), and `verify`
+  skips its seam check; a set with such a member unifies without wrapping, and the member comes
+  after those that repeat (a repeating wall that took its texels would no longer tile).
+  Half-pictures the game mirrors at an edge (a half mask, a half arch) take it too: the wrap had
+  drawn a pale line down the middle of the arch's mask; so do the paths of mirrored strips whose
+  grassy edge the wrap blended into the other edge (the middle of the path). `tile=y` (M89): a
+  strip that repeats only top to bottom, padded wrapped there and mirrored at its sides, only its
+  top and bottom blended, `verify`'s seam check on its rows: Tulku's cobble transitions
+  `ttex099` and `ttex103` run from dark brown cobbles at the left to pale grey ones at the right,
+  and the wrap had faded each side into the other (the strip came out pale at its brown edge and
+  dark at its grey one, a step against both neighbours). A set with such a strip finds its shared
+  texels wrapping top to bottom only, and the strip comes after the members that repeat both ways.
+- **Joins** (9.5, M85): a texture that meets another in the maps can take that one's finished
+  drawing where it shares its texels, so the two meet without a join. `join=<stem>`: where their
+  originals are equal (Raven pasted the lawn `rtex388~6280` into the grassy edge of the path
+  `rtex430~6995`); `join=<stem>@<ramp>,...`: where its original has those ramps, closed by two
+  texels and pieces under 1 % dropped (the path `rtex456~b5c4`'s grass, painted apart from its
+  snowy lawn `rtex459~e725`, takes the lawn's drawing at the same place). Not a set: each keeps its
+  seed and the joined texture's files stay as they are; the joining texture's own texels are
+  rebalanced, and `verify` holds the taken texels to the neighbour's files. A neighbour whose size
+  divides the texture's joins tiled (M88: Tulku's brick wall `ttex153` is pasted 2 by 2 into its
+  rock corners `ttex152` and `ttex206`). In a set, the texels a member shares with an earlier
+  member stay that member's, joined there or not: the corners' set shares those bricks, so all
+  four of its members take the wall's drawing there.
+- **Symmetry** (9.5, M83): a row's `mirror=x` override puts the drawing's left half, mirrored,
+  over its right half before every stage, so the maps follow. The model doesn't keep Raven's
+  symmetry (rtex258's capital: 0.92 left against right in the original, 0.57-0.81 in six
+  drawings).
+- **Crops and wholes** (9.5, M81): a texture whose original is a cell of a larger one's grid (the
+  same pixels at a multiple of its size: the floor sundial's quarters are its halves' right halves;
+  the only two in both games) is not drawn but cut from the larger one's drawing, every map, so the
+  two meet without a join. Pieces of one picture carry `whole=<name>@<y>,<x>` (the texel where the
+  piece sits in it) and the picture a labeled row of its own name (`starmap`: the sundial's
+  halves): the run puts the pieces' originals together, draws the picture once with the model's
+  image as many times larger as the picture is than its largest piece (at most 2: the sundial at 2
+  MP, as fine as a half alone; at 4 MP the model drew a slab a third larger than Raven's), and cuts
+  the pieces out. Pieces may overlap: there the piece placed further down, then right, is the
+  picture (M86: the upper halves of tibet10's carved panels hold 56 rows the maps never show,
+  under the lower halves' top). The picture's row's `mirror=xy` adds its pieces mirrored to the
+  right and below (M87: `ttex379` is the upper-left quarter of tibet5's hexagonal floor slab, which
+  the map mirrors into the other three; drawn alone, the model made a whole slab of the quarter).
+  Crops and pieces are in no set, take no
+  hero, don't repeat (no seam check), and their seed is their source's row's (`reseed` and the
+  review's "another seed" leave them to the owner); a hero that is one hands its members its region
+  of the source's drawing. `verify` measures a piece against its region of the picture, and leaves
+  its cavities and roughness ranges alone: the run found them against the whole picture's medians
+  (Tulku's door: none of the picture's wood outside its range, 17-20 % of two pieces measured alone).
 
 A run draws what a selection needs: its sets whole, its copies' sources, its heroes. It is
 incremental as 5.8's (M41): a texture is skipped when its model image (the source, the prompt,
@@ -315,9 +377,9 @@ in the manifest's columns:
 | Column | What |
 |---|---|
 | `purpose` | what the texture is for: fill, trim, pillar, panel, door, window, grate, picture, sign, symbol, prop, liquid, sky, tool; skins: creature, player, weapon, item, object, debris, fx (`classes.toml`'s `[labels]`) |
-| `tier` | how far a redraw may depart (redraw.py's reimagine, layout, faithful, glass, liquid, lava, skin; fx: upscaled only; skip) |
+| `tier` | how far a redraw may depart (redraw.py's reimagine, layout, faithful, painting, glass, liquid, lava, skin; fx: upscaled only; skip) |
 | `family` | the textures that should read as one material (`families.csv`: name, hub, lead, what; each family's lead is redrawn as its hero in 9.5) |
-| `regions` | which of the palette's ramps is which material (`grey,taupe=iron;orange,amber=wood`; `*` the ramps not named; `a/b` a ramp of two materials, the larger first), from `classes.toml`'s `[materials]` |
+| `regions` | which of the palette's ramps is which material (`grey,taupe=iron;orange,amber=wood`; `*` the ramps not named; `a/b` a ramp of two materials, the larger first; `black` the grey ramp's near-black apart from the rest of grey), from `classes.toml`'s `[materials]` |
 | `source` | `claude` for 9.3's labels; the owner's answers make a row `human` |
 
 The palette's 256 colors are 17 **ramps** (`labels.py`): one grey of 32 (black to white), then
@@ -383,3 +445,87 @@ unlit, from given sides (yaw 0 its front), each side at one scale: the skin card
 ```
 & $py tools\hexenlicht\texpack\mdlview.py models/archer.mdl --png orig=<export png> klein=<pack png> --views 0,45,90,180 --out archer.png --data <data copy>
 ```
+
+## The world pack (story 9.5)
+
+Every world, liquid and glass texture of both games through the redraw, each family's look
+picked by the owner, each hub reviewed in the game against the originals (DECISIONS M72–M76;
+TESTING.md "The world pack (9.5)"). `$py` is ComfyUI's Python, `<data>` a data copy as 9.2's
+(never your own folder), `<export>` both games' export; the commands run in this folder.
+
+1. **The families' look** (`heroes.py`): a seed changes only a drawing's detail, words about the
+   finish change its character (9.5's spike, M72). So each family's lead is drawn as the label
+   has it and with a rougher and a finer finish (`finishes.csv`: per family, in its hub's terms,
+   STYLE.md), two seeds each, and the family's largest layout member with each candidate as its
+   reference and the same finish; candidate k is a pack, `<dir>\c<k>`. Families whose lead is
+   faithful get six seeds (a finish doesn't reach faithful textures).
+   ```
+   & $py texpack.py heroes --out <dir> --finishes finishes.csv --data <data> --export <export>
+   & $py texpack.py views --game data1 --stems <the leads and members> --out heroes_data1.txt   (and portals)
+   & pwsh views_run.ps1 -Views heroes_data1.txt -Pack <dir>\c1 -Data <data> -Out <runs> -Tag c1_data1 -Release   (each k, each game)
+   & $py texpack.py packviews <runs>\c1_data1 <runs>\c1_portals --shots <shots>\c1
+   & $py texpack.py heroes --out <dir> --page heroes.html --shots <shots>
+   & $py texpack.py heroes --apply texpack_heroes.csv
+   ```
+   The page shows each candidate tiled, a corner at full size, its layout kept and seam (red
+   where `verify` would fail it) and in the game at the texture's close view; `--apply` puts the
+   pick's finish into `families.csv`'s `finish` (the redraw adds it to every reimagine and layout
+   member's description) and the lead's `seed=` into its row as the owner's, and into its copies'
+   and animation frames' rows (labeled alike). Two families whose leads share a set (their
+   originals share texels) share its one seed: the lead first in the set's order decides.
+2. **The run:** `texpack.py run --kind world,liquid --out <pack>` (about 7 s a texture; what no
+   pick changes can go first: the faithful, glass, liquid and lava textures and those of no
+   family).
+3. **Verify and reseed:** `verify` writes each texture's result into `<pack>\.texpack\verify.csv`;
+   `reseed` checks each failure there on the pack as it is now (the run may have redrawn it),
+   draws the set of what still fails on a seam or moved shapes again with the next seeds (up to
+   `--tries`, after the set's own earlier reseed seed; each into `.texpack\reseed\`, unified as
+   the run writes it and checked as `verify` checks) and writes the first that passes as the
+   set's `seed=` (and its copies' and frames'), the manifest after each set; a set whose seed is
+   the owner's, a set with a join, a crop or a piece, or one that no try fixes, is left to the
+   owner (`.texpack\reseed.csv`); `run` then
+   redraws them.
+   ```
+   & $py texpack.py verify --kind world,liquid --data <data> --pack <pack>
+   & $py texpack.py reseed --pack <pack> --data <data>
+   ```
+   Since 9.5 `verify` also fails liquids and lava whose shapes moved (the warp moves their
+   pattern, 6.16's caustic projects it) and notes a liquid whose caustic pattern has less or more
+   spread than the original's, or glints at the caustic's cap.
+4. **In the game:** `views_run.ps1 -Pack <pack> -Before` copies the pack into the data copy's
+   `data1\textures` for the run and shoots each of 9.2's views twice at the same paused frame,
+   the original (`r_materials 0`) and the pack; `packviews` makes the PNGs and
+   `<shots>\packviews.csv`: whether the view still names the texture, and each view's brightness
+   against the original's (the mean linear luminance of the frame and of its darkest fifth).
+   ```
+   & $py texpack.py views --game data1 --out views_data1.txt   (and portals)
+   & pwsh views_run.ps1 -Views views_data1.txt -Pack <pack> -Before -Data <data> -Out <runs> -Tag p1_data1 -Release
+   & $py texpack.py packviews <runs>\p1_data1 <runs>\p1_portals --shots <shots>
+   ```
+5. **Claude's pre-review:** `review --png` writes a hub's textures as PNG pages, 5 to a page
+   (the original and the pack tiled, a corner at full size, both at the close and the wide view)
+   with a .txt of the labels, `verify`'s result and the brightness; Sonnet subagents flag what
+   breaks STYLE.md (readable letters, invented content, a scene behind glass, the wrong material,
+   banding, a texture that doesn't match its family), Claude reviews the flags and redraws the
+   clear failures; the flags become a CSV (`stem,flag`) for the owner's page.
+6. **The owner's review**, a page per hub (`--part 1/2` halves one; `other` has the deathmatch
+   maps, the test map and the textures on no drawn face): per texture the tiles, the four shots,
+   the numbers and Claude's flag, a verdict (ok, another seed, candidates, edit the label) and a
+   note. `--apply` takes the download: label edits as the owner's rows (onto the texture's copies and
+   animation frames too, which are labeled alike), another seed (the
+   review's own seeds, in turn) on the set's seed row, candidates into
+   `<pack>\.texpack\candidates.txt` for `heroes --stems @<that file> --pack <pack>` (a layout
+   member's hero drawing comes from the pack); then `run` redraws them and `views_run.ps1 -Only`
+   shoots them again.
+   ```
+   & $py texpack.py review --pack <pack> --shots <shots> --hub blackmarsh --flags flags.csv --out blackmarsh.html
+   & $py texpack.py review --pack <pack> --hub blackmarsh --png --out <dir>\blackmarsh
+   & $py texpack.py review --pack <pack> --apply texpack_review.csv
+   ```
+7. **Ship:** `pack_dds.ps1` (AUTHORING.md section 7) makes DDS with full mip chains (6.16's
+   caustic needs them). A PNG of the same name in the game's `textures\` wins over the DDS:
+   remove an older pack first.
+
+The candidates, the pack, the shots and the pages are derived from Raven's textures: they stay
+outside the repository; `finishes.csv` and the picks (`families.csv`'s finishes, the manifest's
+seeds) are in it.
